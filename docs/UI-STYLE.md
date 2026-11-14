@@ -153,3 +153,7 @@ Don't
   the same panel and puts two squads in columns; the better number of a pair is green.
 - It updates at 4 Hz at most and only while open; it never asks the renderer for a frame.
 - On the results screen and the report overlay it floats over the other army's table.
+
+## Portraits
+
+Lord and unit portraits are **illuminated-manuscript miniatures** (gold leaf, tempera, decorated vine borders), chosen over Amiga pixel art, woodcut, stained glass and 80s module-cover styles. Prompt and process: `tools/art/ui-prompts/_style_manuscript.txt`. New portraits must match this style.
