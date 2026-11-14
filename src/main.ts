@@ -9,7 +9,7 @@
 import './style.css';
 import type { Intent, LordId, Replay, Seat, UnitType } from './sim/types.ts';
 import { Net, type NetStatus } from './net/client.ts';
-import type { AiLevel, RoomView } from './net/protocol.ts';
+import type { AiLevel, ClientMsg, RoomView } from './net/protocol.ts';
 import { LORDS } from './sim/data/lords.ts';
 import { UNITS } from './sim/data/units.ts';
 import { itemName } from './sim/loot.ts';
@@ -29,6 +29,7 @@ import { art, loadArt } from './ui/art.ts';
 import { battleHints } from './ui/insights.ts';
 import { installLoadTracker, LoadChip, loadFraction, loadState, onLoad } from './ui/loading.ts';
 import { Coach } from './ui/tutorial.ts';
+import { setRulesContext } from './ui/rules.ts';
 
 installLoadTracker();
 migratePowerKeys();
@@ -95,7 +96,10 @@ class App {
       if (!s?.quality || !s.power) return null;
       return { ...s.quality(), ...s.power() };
     };
-    this.shell.onLeave = () => this.backend?.leave();
+    // PvP: conceding keeps the player in the room to see the result; everything else leaves it
+    this.shell.onLeave = (kind) => (kind === 'pvp' && this.backend?.concede ? this.backend.concede() : this.backend?.leave());
+    // the codex quotes the viewer's own deploy limit while they are in a match
+    setRulesContext(() => (this.room && this.room.phase !== 'lobby' && this.room.phase !== 'over' ? this.room.view?.you?.deployLimit ?? null : null));
     // a hidden tab: pause CSS animation (the scene and battle loops stop by themselves)
     document.addEventListener('visibilitychange', () => document.body.classList.toggle('tab-hidden', document.hidden));
     onLoad(() => this.loadProgress());
@@ -221,6 +225,16 @@ class App {
         history.replaceState(null, '', location.pathname);
         this.title();
       },
+      // `concede` ends the match with the opponent as the winner and keeps this player in the room.
+      // (Net has no method for it yet, so the message goes through its private `send`.) If the room
+      // answers with nothing at all (the socket was down), leave instead: that concedes as well.
+      concede: () => {
+        const before = this.room;
+        (net as unknown as { send(m: ClientMsg): void }).send({ t: 'concede' });
+        setTimeout(() => {
+          if (this.net === net && this.room === before && before?.phase !== 'over') this.backend?.leave();
+        }, 2500);
+      },
     };
     return net;
   }
@@ -241,9 +255,22 @@ class App {
 
   /** The guided first match: offline, no timers, the easy AI, and the coach. */
   tutorial(name: string): void {
-    this.offline('easy', 'match', { timers: false, untimed: true, name });
+    this.offline('easy', 'match', { timers: false, untimed: true, tutorial: true, name });
+    this.startCoach();
+  }
+
+  /** The coach for a local match. "Finish tutorial" leaves the match for the title; "Keep playing" only drops the coach. */
+  private startCoach(): void {
     this.coach?.dispose();
-    this.coach = new Coach(ui, () => this.room, () => (this.coach = null));
+    this.coach = new Coach(
+      ui,
+      () => this.room,
+      (toTitle) => {
+        this.coach = null;
+        if (toTitle) this.backend?.leave();
+      },
+      () => this.local?.tutorialGrant ?? 0,
+    );
   }
 
   private useLocal(m: LocalMatch): void {
@@ -350,7 +377,7 @@ class App {
     const b = new BattleScreen(ui, this.scene, replay, offsetMs, { seat: me, names, lords }, () => {
       const stats = b.stats();
       const pov = (me ?? 0) as Seat;
-      const report: BattleReport = { round: replay.round, stats, hints: battleHints(stats, pov, { gold: goldHeld }), me: pov, spectator: me === null, names };
+      const report: BattleReport = { round: replay.round, stats, decoded: b.decoded, hints: battleHints(stats, pov, { gold: goldHeld }), me: pov, spectator: me === null, names };
       this.reports = this.reports.filter((r) => r.round !== replay.round).concat(report);
       this.backend?.battleDone();
       this.route();
@@ -375,6 +402,12 @@ class App {
     const was = this.prevPhase;
     if (this.screen instanceof BattleScreen && !this.screen.isDone && phase !== 'lobby') {
       this.prevPhase = phase;
+      // A spectator's playback does not hold the room up: when the players have moved on (they
+      // skipped, or finished at a higher speed), jump to the end banner and follow them, so the
+      // results are seen and no battle keeps rendering behind the players' menus.
+      const round = this.lastBattle?.replay.round ?? 0;
+      const movedOn = phase === 'results' || phase === 'over' || phase === 'lordPick' || (phase === 'planning' && (room.view?.round ?? 0) > round);
+      if (this.seat === null && movedOn) this.screen.skip();
       return;
     }
     const scene = this.scene;
@@ -499,7 +532,7 @@ class App {
       ...(lord ? { lord } : {}),
       timers,
     });
-    if (p.get('coach') === '1') this.coach = new Coach(ui, () => this.room, () => (this.coach = null));
+    if (p.get('coach') === '1') this.startCoach();
   }
 }
 

@@ -15,6 +15,9 @@
 //
 // PLANNING
 //   view.setPlanning({ visible: true, seat, grid: true })  // deploy-zone glow (+ fine grid while placing); RTS camera
+//   Ghost owners' squads draw as intel: solid team-coloured figures with a bright rim plus a ground footprint
+//   (formation outline + facing chevron); no dither. view.setHomeFarEdge(yCm | null) extends the home view to a
+//   far field y (e.g. the ghosts' rearmost squad) while keeping the home pitch; null = enemy zone front edge.
 //   view.showArmy(squads, { ghostOwners: [enemySeat], highlight: { [squadId]: 'selected' } })
 //       squads: ArmySquad[] (sim Squad is compatible: id, owner, type, lord, pos [cm], facing 0..255, level)
 //   view.highlightSquads({ [id]: 'hover' | 'selected' | 'invalid' })
@@ -30,7 +33,10 @@
 //   Planning: trees standing in a visible deploy zone shrink to saplings (no dither / transparency), so units
 //   and the grid read; the forest floor still marks the forest.
 //   Battle: soldiers hidden behind canopies / walls / hills show a team-coloured silhouette.
-//   Cameras never enter tree crowns / props: the rig lifts its pitch until the view clears (field.canopyAt).
+//   Player cameras (rts / free / orbit) are never lifted by obstacles: height and pitch are pure orbit maths with a
+//   smoothed floor over ground, solid geometry and big / flying units. A Keep or arrow tower between the lens and the
+//   focus fades to a 30 % ghost (per object, no dither); leaves and particles right at the lens fade out. Only the
+//   director raises its pitch to clear crowns, by at most camera.maxLift (0.3 rad).
 //
 // BATTLE
 //   import { decodeReplay, sampleReplay, makeTransforms } from '../sim/index.ts';
@@ -39,6 +45,10 @@
 //   pb.playing = false / true;  pb.speed = 2;  pb.seek(ms);  pb.timeMs;  pb.durationMs
 //   view.stopBattle()
 //   Events drive units (attack/cast one-shots, hit flashes, deaths), the director and VFX automatically.
+//   Item skills (replay v3): replaySource passes `decoded.skills` through as `source.skills`; each cast plays its
+//   signature effect in sync with its tick and fires the hook  onSkill(e: SkillEvent, ms)  (e.squad = casting row of
+//   Replay.squads, e.skill = SkillId) for banners / the kill feed. A custom or flipped BattleSource must carry
+//   `skills` itself (pos in the same field cm as its events, i.e. flipped with them).
 //
 // VFX (direct triggers, world-space THREE.Vector3; also used by the event mapping)
 //   view.vfx.projectile(kind, from, to, flightSec, arc) · impact(kind, pos, splashM) · hitSpark(pos, {crit, magic})
@@ -46,6 +56,8 @@
 //   skyfall(from, to) · breath(origin, dir, len, halfAngle, dur) · stomp · marchDust · keepHit · keepCollapse
 //   death(pos, size) · keepFire(points, dur) · levelUp · lootBeam(pos, rarity) → { setPosition, dispose }
 //   damageNumber(pos, value, style, key?)  (key = squad id: hits within 0.75 s merge into one total; crits pop alone)
+//   Skills: castFlare · firePatch · frostNova · mendingLight · shieldWall(follow, width, dur) · warCry · cleaveArc ·
+//   arrowRain · chargeImpact · knockback · trample · diveStrike; projectile kinds fire_arrow · pin_shot · fire_pot · skill_fireball
 //   settle() ends ambient emitters (called when a battle ends) · clear()
 //   view.field.keep(seat).setStage(0..4) · view.engine.addShake(m) · view.engine.addFlash(k)
 //
@@ -53,7 +65,8 @@
 //   view.camera.mode: 'rts' (planning) | 'director' (battle auto) | 'free' (user grabbed it during battle) | 'orbit'
 //   view.setCameraMode(m) is the only way the mode changes (the rig binds no C / Home key: the UI does, and calls
 //   setCameraMode('director' | 'free') or view.resetCamera()). view.resetCamera(): planning = fitted home view
-//   (own Keep .. enemy front line between the HUD insets, any aspect; undoes rotation / zoom), battle = director.
+//   (a ~45 degree shot of the deploy zone, river and enemy front line between the HUD insets, any aspect; the own
+//   Keep is cropped / ghosted; undoes rotation / zoom), battle = director.
 //   view.camera.home(seat, overview?) re-fits when the viewport / insets change until the player moves the camera.
 //   view.camera.onUserControl / onReturnToDirector callbacks (show a "Press C for director" hint)
 //   Controls: WASD/arrows/edge pan, wheel zoom towards the cursor (tilt curve), Q/E or right-drag rotate, drag pan,

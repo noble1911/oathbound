@@ -16,6 +16,9 @@ blender -b --factory-startup --python tools/art/blender/anim_library.py   # rebu
 blender -b --factory-startup --python tools/art/blender/anim_strip.py -- out.png public/models/v2/cavalier.glb run:12:90 walk:8:90   # frame strips of clips
 blender -b --factory-startup --python tools/art/blender/anim_audit.py -- golem militia   # ground contact / stride speed per clip
 node e2e/anim-strips.mjs golem,cavaliers,pegasus,wyvern,dragon            # the same strips in the engine -> e2e/shots/anim-*.png
+node e2e/anim-clips.mjs lord_warden,lord_marshal                          # every clip of a hero, side + RTS view -> e2e/shots/anim-<id>-clips-*.png
+node e2e/unit-sweep.mjs after                                             # all units of both teams at RTS distance -> e2e/shots/sweep-after-*.png
+blender -b --factory-startup --python tools/art/blender/cleanup.py -- berserker --regrade   # re-apply `grade` without re-baking
 ```
 
 `run.mjs` packs and writes the manifest entries of **only the ids it rebuilt** (`pack.mjs --only`, `manifest.mjs --only`);
@@ -63,8 +66,14 @@ override the defaults in `mesh.mjs` (the q8 set only ships the 512 flows); `BLEN
 * **Clips** (every humanoid / mounted unit): `idle, walk, run, attack_melee_a, attack_melee_b, attack_bow, cast,
   hit, death_a, death_b, victory` (loops: idle, walk, run, victory). The manifest `clips` map gives the canonical
   renderer names: `idle, move, run, attack, attack2, cast, hit, death, death2, victory`. Clip sources per
-  `clipset`: sword = upright procedural swings; spear = carry-forward idle/walk/run + thrusts; bow = draw-and-loose;
-  cast = Quaternius spell; fist = jab/cross.
+  `clipset`: sword = upright procedural swings, sword arm held in the ready stance while running; spear =
+  carry-forward idle/walk/run + thrusts driven from the chest; bow = draw-and-loose; cast = Quaternius spell;
+  fist = jab/cross; greataxe (Warden) = two-handed port-arms carry, overhead chop, horizontal cleave, both arms
+  solved by IK onto the shaft, walk / jog retimed 1.25x / 1.14x slower. `assets.json` `clips` overrides single
+  slots (the Marshal and Archmage run on `jog` / `jog_sword`: the library jog with its leg swing cut to 58 %).
+* **Clip ground speeds.** The mannequin's walk covers 1.06 m/s and its jog 5.9 m/s (x leg length / 0.92 m on a
+  fitted rig); `anim_audit.py` prints what each unit's clips cover. `src/render/crowd/archetypes.ts`
+  `walkSpeed` / `runSpeed` must be those numbers or planted feet slide (the Lords' and golem's are set from it).
 * **Loops** end on a key equal to their first frame (clip duration = one cycle), in the GLBs and the VAT source.
 * **Mount gaits** (`creature.py`, hand-authored): the horse walks a 4-beat lateral sequence (LH, LF, RH, RF,
   duty 0.6, 0.67 s) and gallops transverse (LH, RH, LF, RF, duty 0.27, 0.5 s) with a suspension phase; the
@@ -75,6 +84,8 @@ override the defaults in `mesh.mjs` (the q8 set only ships the 512 flows); `BLEN
 * **Mount rig frame**: `creatures.json` gives a yaw / x shift per mount mesh (TRELLIS returned the wyvern 30 deg
   and the dragon 60 deg off axis) so every creature faces +Z, then its joints in metres. Author it with
   `creature_view.py` + `creature_grid.py` (orthographic views with a metric grid and the joints drawn in).
+* **Hip height.** `rig.py` puts the hip joint 5 % of the height above the detected crotch. Under a long skirt it
+  detects the hem; `assets.json` `hip` (fraction of the height) overrides it (Warden 0.45: he had 22 cm thighs).
 * **Ground contact** (`rig.py: ground_fix`): after retargeting, toes that dip under the floor are un-pitched at
   the ankle and the hips are lifted by what the lowest body vertex still lacks (golem feet, bodies lying down).
 * **Build checks** (the build fails, exit code 1): `creature.py` -- every leg / wing / tail / neck bone must own
@@ -86,7 +97,7 @@ override the defaults in `mesh.mjs` (the q8 set only ships the 512 flows); `BLEN
 * **Keep** `keep.glb`: root with children `stage0` (intact) .. `stage3` (ruin); show exactly one. Cuts are a
   seeded noise surface (vertices above it removed, holes capped with `Rubble`), plus a rubble skirt.
 * **Props** (manifest `props`): static, one mesh, LOD0 + LOD1 (`<id>_lod1.glb`), 512² atlas (LOD1 256²),
-  origin at the base centre (rocks, ruins, bridge, arrow tower; vegetation is procedural, section 7). `bridge` spans along three.js **Z** (8 m long x 4 m wide,
+  origin at the base centre (rocks, ruins, arrow tower; vegetation and bridges are procedural, section 7). (The former art `bridge` spanned three.js **Z**, 8 m long x 4 m wide,
   non-uniform fit); `arrow_tower` (7 m) carries a team-tinted banner.
 * **Metalness**: TRELLIS paints stone and cloth with mid metalness; cleanup keeps metal only where the bake is
   clearly metal (`smoothstep(0.5, 0.8, m)`), so stone/wood/cloth are ~0.
@@ -110,6 +121,19 @@ attributes from the packed files, so use `tintMask` everywhere). Untinted, team 
 **Loading:** packed GLBs use `EXT_meshopt_compression` + `KHR_mesh_quantization` + `EXT_texture_webp`:
 `gltfLoader.setMeshoptDecoder(MeshoptDecoder)` (`three/examples/jsm/libs/meshopt_decoder.module.js`). Packing
 wraps each mesh in its named node (`weapon_sword_R`, `stage2`, ...): address nodes by name, not mesh name.
+
+### Team colour that reads from the RTS camera
+
+* `assets.json` `grade` (applied by `cleanup.py` after the bake, re-runnable with `--regrade`): `lift` /
+  `sat` brighten dark TRELLIS bakes (wyvern, dragon); `fur` recolours white fur and turns the mantle above
+  `zmin` into a team-tinted pelt (berserker, who showed only white from behind); `mask_open` removes team-mask
+  speckle (blue-white shadows on white coats).
+* `creatures.json` `team_wings`: wing membranes (texels skinned to the wing bones) are neutralised and added to
+  the team mask -- the dragon's and wyvern's team colour from above.
+* Mounted units: `creature.py` packs the rider and mount atlases side by side into one material and writes one
+  mask, `art-work/clean/<id>_unit_team.png` (shipped as `<id>_team.png`). Before, the wyvern had no `tintMask`.
+* `lod1_voxel_div`: crowd LOD1 from a filled voxel hull (`cleanup.py: solid_mesh`) for furry meshes whose
+  decimated LOD1 fell apart into shards.
 
 ## 4. Crowd VAT contract (squads)
 
@@ -206,3 +230,14 @@ colour keeps 7+ bits. The atlas is saved with `exact` RGB under transparent texe
 Licences (all **CC0 1.0**, polyhaven.com): textures `sparse_grass`, `forest_leaves_03`, `rocky_trail`,
 `brown_mud_03`, `mossy_rock`, `bark_brown_02`, `pine_bark`, `tree_bark_03`; leaf / twig scans from the models
 `island_tree_02`, `shrub_01`, `shrub_03`, `fir_tree_01`. Tree geometry and the reed clump are ours.
+
+* **Bridges** are procedural too (`terrain/bridge.ts`): a humped two-arch stone bridge with a mid-stream pier and
+  pointed cutwaters, raised voussoir rings, string course, parapets with coping and capped end posts, a cobbled
+  deck, fitted to each crossing. Masonry: `stone_wall_{a,n}.webp` / `stone_deck_{a,n}.webp` (512², albedo x AO +
+  GL normal map; CC0 Poly Haven `medieval_blocks_05`, `cobblestone_floor_08`), weathered with vertex colours
+  (damp and moss towards the water). The TRELLIS `bridge` GLB is gone. Only the largest rocks use the
+  art `rocks` mesh (its LOD1 is shredded, so LOD0 at ~2.5k triangles is capped by a triangle budget); pebbles
+  stay procedural.
+* **Keep footprint contract**: the sim's siege constants (`KEEP_FRONT`, `KEEP_HALF_W`, `TOWER_FRONT` in
+  `src/sim/battle.ts`) are measured from the art Keep as the renderer places it (front wall 3.4 m in front of
+  the sim keep point, 18.2 m wide). Re-measure them if `keep.glb` or `terrain/keep.ts` placement changes.

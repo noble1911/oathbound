@@ -136,6 +136,103 @@ def procedural(rig, keys, total):
     return extra
 
 
+def lerp_keys(keys, f):
+    """keys: [(frame, value-dict)]; smoothstep interpolation of every numeric tuple in the dicts."""
+    if f <= keys[0][0]:
+        return keys[0][1]
+    for (f0, a), (f1, b) in zip(keys, keys[1:]):
+        if f0 <= f <= f1:
+            t = 0 if f1 == f0 else (f - f0) / (f1 - f0)
+            t = t * t * (3 - 2 * t)
+            return {k: tuple(x + (y - x) * t for x, y in zip(a[k], b[k])) for k in a}
+    return keys[-1][1]
+
+
+def two_handed(rig, keys, grip=0.45, bob=None):
+    """Two-handed polearm layer. keys: [(frame, {'R': right-hand position relative to the chest (spine3 head,
+    armature axes, metres on the 1.83 m mannequin), 'axis': direction of the weapon head})]. Both arms are
+    solved by 2-bone IK every frame: the right hand goes to R with the weapon along `axis`, the left hand grips
+    the shaft `grip` metres further down. Fitted characters copy the bone orientations, so their hands meet the
+    shaft to within their difference in proportions."""
+    B = rig.data.bones
+    def rel(parent, child):
+        return B[parent].matrix_local.to_3x3().inverted() @ (B[child].head_local - B[parent].head_local)
+    off = {sd: (rel('spine3', f'shoulder.{sd}'), rel(f'shoulder.{sd}', f'upper_arm.{sd}')) for sd in 'LR'}
+    l1 = B['upper_arm.L'].length; l2 = B['forearm.L'].length
+    rest = {b.name: b.matrix_local.to_3x3() for b in B}
+
+    def solve(S, T, pole):
+        d = T - S
+        dist = min(d.length, (l1 + l2) * 0.985)
+        dn = d.normalized()
+        a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist)
+        h = math.sqrt(max(0.0, l1 * l1 - a * a))
+        pp = pole - dn * pole.dot(dn)
+        pp = pp.normalized() if pp.length > 1e-4 else Vector((0, 0, -1))
+        E = S + dn * a + pp * h
+        return E, S + dn * dist
+
+    def extra(f, rot, tgt):
+        k = lerp_keys(keys, f)
+        R = Vector(k['R']); axis = Vector(k['axis']).normalized()
+        if bob:
+            R = R + Vector(bob(f))
+        hands = {'R': R, 'L': R - axis * grip}
+        for sd, sg in (('R', -1.0), ('L', 1.0)):
+            Rs3 = rot.get('spine3', rest['spine3'])
+            Rsh = rot.get(f'shoulder.{sd}', rest[f'shoulder.{sd}'])
+            S = Rs3 @ off[sd][0] + Rsh @ off[sd][1]
+            E, T = solve(S, hands[sd], Vector((sg * 0.65, 0.35, -0.65)))
+            up = (E - S).normalized(); fore = (T - E).normalized()
+            bend = fore - up * fore.dot(up)
+            bend = bend.normalized() if bend.length > 1e-3 else Vector((0, -1, 0))
+            rot[f'upper_arm.{sd}'] = frame_rot(tgt, f'upper_arm.{sd}', up, bend)
+            rot[f'forearm.{sd}'] = frame_rot(tgt, f'forearm.{sd}', fore, axis)
+            fing = fore - axis * fore.dot(axis)
+            fing = fing.normalized() if fing.length > 1e-3 else up
+            rot[f'hand.{sd}'] = frame_rot(tgt, f'hand.{sd}', fing, axis)
+    return extra
+
+
+def stride(rig, k):
+    """Shorten a locomotion clip's stride: blend the leg bones toward the straight standing pose (k = 1 keeps
+    the clip, 0.5 halves the leg swing). The mannequin's walk covers 1.06 m/s and its 'jog' 5.9 m/s; nothing in
+    the library fits the 2.6-3.4 m/s most units move at, so the jog is cut down to a contained trot."""
+    legs = [f'{b}.{sd}' for b in ('thigh', 'shin', 'foot', 'toe') for sd in 'LR']
+    stand = {b: rig.data.bones[b].matrix_local.to_3x3() for b in legs}
+    def extra(f, rot, tgt):
+        for b in legs:
+            if b in rot:
+                rot[b] = blend_rot(stand[b], rot[b], k)
+    return extra
+
+
+def chain(*layers):
+    def extra(f, rot, tgt):
+        for l in layers:
+            l(f, rot, tgt)
+    return extra
+
+
+# great axe, two-handed (the Warden). R = right hand relative to the chest, axis = where the axe head points.
+AX_READY = dict(R=(-0.13, -0.27, 0.00), axis=(-0.32, -0.12, 0.94))            # port arms: head over the right shoulder
+AX_CARRY = dict(R=(-0.14, -0.26, -0.03), axis=(-0.38, -0.05, 0.92))
+AX_CHARGE = dict(R=(-0.20, -0.30, -0.14), axis=(-0.22, -0.62, 0.75))          # run: axe lowered toward the enemy
+AX_UP = dict(R=(-0.10, 0.02, 0.50), axis=(-0.12, 0.62, 0.78))                 # wound up behind the head
+AX_HIT = dict(R=(-0.04, -0.50, -0.30), axis=(0.02, -0.90, -0.44))             # buried in front
+AX_SUNK = dict(R=(-0.04, -0.50, -0.36), axis=(0.02, -0.86, -0.52))
+AX_WIND = dict(R=(-0.36, -0.06, -0.04), axis=(-0.72, 0.62, 0.30))             # drawn back to the right
+AX_SWEEP = dict(R=(0.10, -0.46, -0.10), axis=(0.55, -0.83, 0.05))             # through the target
+AX_FOLLOW = dict(R=(0.20, -0.34, -0.06), axis=(0.93, -0.30, 0.20))
+AX_ALOFT = dict(R=(-0.26, -0.06, 0.60), axis=(-1.0, 0.0, 0.08))               # victory: axe held overhead in both hands
+SPINE_BACK = {'spine3': ((0, 0.20, 1), (-0.15, -0.99, 0)), 'spine1': ((0, 0.10, 1), (0, -1, 0))}
+SPINE_CRUNCH = {'spine3': ((0, -0.38, 1), (0.1, -1, 0)), 'spine1': ((0, -0.22, 1), (0, -1, 0))}
+SPINE_NEUTRAL = {'spine3': ((0, 0.02, 1), (0, -1, 0)), 'spine1': ((0, 0.0, 1), (0, -1, 0))}
+SPINE_COIL = {'spine3': ((0, 0.04, 1), (-0.55, -0.83, 0)), 'spine1': ((0, 0.0, 1), (-0.25, -0.97, 0))}
+SPINE_UNCOIL = {'spine3': ((0, -0.12, 1), (0.55, -0.83, 0)), 'spine1': ((0, -0.06, 1), (0.25, -0.97, 0))}
+SPINE_HEAVY = {'spine3': ((0, -0.10, 1), (0, -1, 0))}                          # weight carried low and forward
+SPINE_LEAN = {'spine3': ((0, -0.26, 1), (0, -1, 0)), 'spine1': ((0, -0.12, 1), (0, -1, 0))}
+
 BOW_READY = {'upper_arm.L': (0.35, -0.45, -0.82), 'forearm.L': (0.25, -0.85, -0.45), 'hand.L': (0.2, -0.9, -0.38)}
 BOW_AIM = {'upper_arm.L': (0.3, -1, 0.06), 'forearm.L': (0.22, -1, 0.06), 'hand.L': (0.2, -1, 0.06),
            'upper_arm.R': (-0.72, 0.6, 0.06), 'forearm.R': (0.83, -0.54, 0.12), 'hand.R': (0.83, -0.54, 0.12)}
@@ -145,8 +242,11 @@ VIC_UP = {'upper_arm.R': (-0.25, -0.12, 0.96), 'forearm.R': (-0.08, -0.12, 0.99)
 # spear: forearm level, wrist flexed inward so the fist's thumb side (= weapon axis) points forward
 TH_READY = {'upper_arm.R': (-0.3, -0.25, -0.92), 'forearm.R': (-0.05, -0.97, -0.2), 'hand.R': ((0.95, -0.1, -0.2), (0, -1, 0.05)),
             'upper_arm.L': (0.25, -0.35, -0.9), 'forearm.L': (-0.3, -0.9, -0.3)}
-TH_PULL = dict(TH_READY, **{'upper_arm.R': (-0.45, 0.45, -0.77), 'forearm.R': (0.1, -0.98, -0.1)})
-TH_HIT = dict(TH_READY, **{'upper_arm.R': (-0.15, -0.95, -0.25), 'forearm.R': (0.0, -1, 0.0), 'hand.R': ((0.95, -0.1, 0.05), (0, -1, 0.0))})
+# the thrust comes from the body: chest coils back to the spear side, then drives forward over the front foot
+TH_READY = dict(TH_READY, **{'spine3': ((0, 0.02, 1), (0, -1, 0))})
+TH_PULL = dict(TH_READY, **{'upper_arm.R': (-0.45, 0.45, -0.77), 'forearm.R': (0.1, -0.98, -0.1), 'spine3': ((0, 0.10, 1), (-0.42, -0.91, 0))})
+TH_HIT = dict(TH_READY, **{'upper_arm.R': (-0.15, -0.95, -0.25), 'forearm.R': (0.0, -1, 0.0), 'hand.R': ((0.95, -0.1, 0.05), (0, -1, 0.0)),
+                            'spine3': ((0, -0.30, 1), (0.34, -0.94, 0))})
 TH_HIGH_PULL = dict(TH_READY, **{'upper_arm.R': (-0.6, 0.3, 0.55), 'forearm.R': (0.15, -0.6, 0.8), 'hand.R': ((0.9, 0.1, 0.3), (0, -0.8, -0.6))})
 TH_HIGH_HIT = dict(TH_READY, **{'upper_arm.R': (-0.3, -0.85, 0.35), 'forearm.R': (0.05, -0.97, -0.25), 'hand.R': ((0.9, -0.1, 0.1), (0, -0.95, -0.3))})
 # upright sword swings (squads attack constantly: silhouettes stay tall). Hand specs are (finger dir, thumb dir);
@@ -225,6 +325,34 @@ def main():
     R.bake(lib, 'lib_thrust_a', [U1('Sword_Idle', start=0, end=27)], rule='delta', extra=th)
     th2 = procedural(lib, [(0, TH_READY), (9, TH_HIGH_PULL), (14, TH_HIGH_HIT), (20, TH_HIGH_HIT), (30, TH_READY)], 0)
     R.bake(lib, 'lib_thrust_b', [U1('Sword_Idle', start=0, end=29)], rule='delta', extra=th2)
+    ax = lambda keys, **k: two_handed(lib, keys, **k)
+    hold = lambda sp: procedural(lib, [(0, sp), (999, sp)], 0)
+    # ---- two-handed great axe (Warden): heavy timing -- walk and jog play 1.25x / 1.14x slower than the mannequin's
+    R.bake(lib, 'lib_idle_axe', [U1('Idle_Loop')], rule='delta', extra=chain(hold(SPINE_HEAVY),
+           ax([(0, AX_READY), (999, AX_READY)], bob=lambda f: (0, 0, 0.012 * math.sin(2 * math.pi * f / 60)))))
+    R.bake(lib, 'lib_walk_axe', [U1('Walk_Loop')], rule='delta', fps_step=0.8, extra=chain(hold(SPINE_HEAVY),
+           ax([(0, AX_CARRY), (999, AX_CARRY)], bob=lambda f: (0, 0, 0.018 * math.sin(4 * math.pi * f / 40)))))
+    R.bake(lib, 'lib_jog', [U1('Jog_Fwd_Loop')], rule='delta', extra=stride(lib, 0.58))
+    # sword arm carried in the ready stance while running: the mannequin pumps its fists, which swung the
+    # blade point-down behind the runner (a visible weapon flip between walk and run)
+    carry_sw = {k: SW_READY[k] for k in ('upper_arm.R', 'forearm.R', 'hand.R')}
+    R.bake(lib, 'lib_run_sword', [U1('Jog_Fwd_Loop')], rule='delta', extra=hold(carry_sw))
+    R.bake(lib, 'lib_jog_sword', [U1('Jog_Fwd_Loop')], rule='delta', extra=chain(stride(lib, 0.58), hold(carry_sw)))
+    # the Warden keeps both hands on the axe when struck, and raises it to call his ability
+    R.bake(lib, 'lib_hit_axe', [U1('Hit_Chest')], rule='delta', extra=ax([(0, AX_READY), (4, AX_CARRY), (999, AX_READY)]))
+    R.bake(lib, 'lib_cast_axe', [U1('Sword_Idle', start=0, end=37)], rule='delta', extra=chain(
+           procedural(lib, [(0, SPINE_NEUTRAL), (10, SPINE_BACK), (22, SPINE_BACK), (37, SPINE_NEUTRAL)], 0),
+           ax([(0, AX_READY), (10, AX_ALOFT), (22, AX_ALOFT), (37, AX_READY)])))
+    R.bake(lib, 'lib_run_axe', [U1('Jog_Fwd_Loop')], rule='delta', fps_step=0.88, extra=chain(stride(lib, 0.64), hold(SPINE_LEAN),
+           ax([(0, AX_CHARGE), (999, AX_CHARGE)], bob=lambda f: (0, 0, 0.025 * math.sin(4 * math.pi * f / 25)))))
+    R.bake(lib, 'lib_chop2h', [U1('Sword_Idle', start=0, end=37)], rule='delta', extra=chain(
+           procedural(lib, [(0, SPINE_NEUTRAL), (7, SPINE_BACK), (11, SPINE_CRUNCH), (19, SPINE_CRUNCH), (37, SPINE_NEUTRAL)], 0),
+           ax([(0, AX_READY), (7, AX_UP), (11, AX_HIT), (15, AX_SUNK), (20, AX_SUNK), (37, AX_READY)])))
+    R.bake(lib, 'lib_cleave2h', [U1('Sword_Idle', start=0, end=37)], rule='delta', extra=chain(
+           procedural(lib, [(0, SPINE_NEUTRAL), (8, SPINE_COIL), (12, SPINE_UNCOIL), (20, SPINE_UNCOIL), (37, SPINE_NEUTRAL)], 0),
+           ax([(0, AX_READY), (8, AX_WIND), (12, AX_SWEEP), (16, AX_FOLLOW), (21, AX_FOLLOW), (37, AX_READY)])))
+    R.bake(lib, 'lib_victory_axe', [U1('Idle_Loop', start=0, end=47)], rule='delta', extra=chain(hold(SPINE_BACK),
+           ax([(0, AX_ALOFT), (999, AX_ALOFT)], bob=lambda f: (0, 0, 0.07 * math.sin(4 * math.pi * f / 48)))))
     vic = procedural(lib, [(0, VIC_UP), (12, VIC_BENT), (24, VIC_UP), (36, VIC_BENT), (48, VIC_UP)], 0)
     act = R.bake(lib, 'lib_victory', [U1('Idle_Loop', start=0, end=47)], rule='delta', extra=vic)
     print(f'[anim] victory: {int(act["frames"])} frames')

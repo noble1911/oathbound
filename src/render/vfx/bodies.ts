@@ -6,7 +6,12 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Engine } from '../core/engine.ts';
 import { LAYER_VFX } from '../core/post.ts';
 
-export type ProjectileKind = 'arrow' | 'bolt' | 'stone' | 'fireball' | 'firebreath' | 'lightning' | 'tower_arrow';
+export type ProjectileKind =
+  | 'arrow' | 'bolt' | 'stone' | 'fireball' | 'firebreath' | 'lightning' | 'tower_arrow'
+  /** Skill variants: burning arrows, heavy pinning arrows, a burning pitch pot, an empowered fireball. */
+  | 'fire_arrow' | 'pin_shot' | 'fire_pot' | 'skill_fireball';
+/** Which instanced mesh draws a kind, and at what scale (skill variants reuse the base meshes: no extra draws). */
+const MESH_OF: Partial<Record<ProjectileKind, [ProjectileKind, number]>> = { fire_arrow: ['arrow', 1.1], pin_shot: ['arrow', 1.5], fire_pot: ['stone', 0.75], skill_fireball: ['fireball', 1.7] };
 export type ArcType = 'line' | 'arc' | 'high_arc';
 type Ground = (wx: number, wz: number) => number;
 
@@ -154,19 +159,21 @@ export class Projectiles {
         continue;
       }
       this.hooks.trail(f.kind, this.p, this.d, dt);
-      const mesh = this.meshes.get(f.kind);
+      const alias = MESH_OF[f.kind];
+      const mk = alias ? alias[0] : f.kind;
+      const mesh = this.meshes.get(mk);
       if (mesh) {
-        const n = this.counts.get(f.kind) ?? 0;
+        const n = this.counts.get(mk) ?? 0;
         if (n < MAX_PER_KIND) {
           this.q.setFromUnitVectors(this.fwd, this.d);
-          if (f.kind === 'stone' || f.kind === 'fireball') {
+          if (mk === 'stone' || mk === 'fireball') {
             this.qs.setFromAxisAngle(this.s.set(1, 0.3, 0.2).normalize(), f.t * (4 + f.spin));
             this.q.multiply(this.qs);
           }
-          const sc = f.kind === 'fireball' ? 1 + 0.15 * Math.sin(f.t * 40) : 1;
+          const sc = (mk === 'fireball' ? 1 + 0.15 * Math.sin(f.t * 40) : 1) * (alias ? alias[1] : 1);
           this.m4.compose(this.p, this.q, this.s.set(sc, sc, sc));
           mesh.setMatrixAt(n, this.m4);
-          this.counts.set(f.kind, n + 1);
+          this.counts.set(mk, n + 1);
         }
       }
       this.live[w++] = f;

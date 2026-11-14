@@ -93,6 +93,10 @@ export class Engine {
   private awake = false;
   private quiet = 0;
   private last = 0;
+  private lastRaf = 0;
+  /** Smoothed display frame interval (ms) and the next due time of a capped frame. */
+  private rafMs = 16.7;
+  private capDue = 0;
   private lastDrawn = 0;
   private probe = new FrameProbe();
   private probeCeiling: QualityTier;
@@ -132,7 +136,7 @@ export class Engine {
     this.sky = new Sky(this.sun.direction, this.sun.color);
     this.scene.add(this.sky.mesh);
     // aerial perspective: a warm haze matching the sky's horizon band
-    this.scene.fog = new THREE.FogExp2(new THREE.Color('#c6c4b2'), 0.0024);
+    this.scene.fog = new THREE.FogExp2(new THREE.Color('#b4baa6'), 0.0019);
     this.scene.environment = this.sky.buildEnvironment(r);
     this.scene.environmentIntensity = 0.85;
     this.post = new PostStack(r, this.scene, this.camera);
@@ -359,7 +363,16 @@ export class Engine {
     if (this.fpsCap > 0) cap = cap > 0 ? Math.min(cap, this.fpsCap) : this.fpsCap;
     if (this.backdrop) cap = cap > 0 ? Math.min(cap, this.backdropFps) : this.backdropFps;
     if (idle && this.idleFps > 0) cap = cap > 0 ? Math.min(cap, this.idleFps) : this.idleFps;
-    if (cap > 0 && now - this.lastDrawn < 1000 / cap - 2) return;
+    // pacing: an accumulator of due times, tested against the display's own frame interval, so a
+    // 60 fps cap gives 60 on a 165 Hz (or 144 / 120 Hz) display instead of every 3rd refresh (55)
+    const raf = now - this.lastRaf;
+    this.lastRaf = now;
+    if (raf > 2 && raf < 50) this.rafMs += (raf - this.rafMs) * 0.1;
+    if (cap > 0) {
+      const interval = 1000 / cap;
+      if (now < this.capDue - this.rafMs * 0.5) return;
+      this.capDue = now - this.capDue > interval ? now + interval : this.capDue + interval;
+    }
     const rawDt = (now - this.last) / 1000;
     this.last = now;
     if (!idle) this.probe.push(now - this.lastDrawn);

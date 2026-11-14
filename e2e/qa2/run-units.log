@@ -1,0 +1,29 @@
+home camera {"mode":"rts","dist":99.94,"yaw":0,"pitch":0.86,"pos":[0,76.7,97.9]} idle fps 0
+group 0: ["lord","militia","pikemen","archers","knights"]
+  lord: after cursor zoom squad at screen 960,521 (dist from centre 18) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[0,10.1,36.3]}
+  militia: after cursor zoom squad at screen 639,480 (dist from centre 326) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[-24.2,10.5,34.6]}
+  pikemen: after cursor zoom squad at screen 808,471 (dist from centre 166) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[-12.1,11,34.7]}
+  archers: after cursor zoom squad at screen 1122,500 (dist from centre 166) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[12.1,10.3,34.4]}
+  knights: after cursor zoom squad at screen 1282,487 (dist from centre 326) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[24.2,10.7,34.6]}
+group 1: ["lord","cavaliers","mages","clerics","pegasus","ballista"]
+  cavaliers: after cursor zoom squad at screen 638,476 (dist from centre 327) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[-24.2,10.5,34.7]}
+  mages: after cursor zoom squad at screen 808,471 (dist from centre 166) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[-12.1,11,34.7]}
+  clerics: after cursor zoom squad at screen 960,502 (dist from centre 37) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[0,10.1,34.4]}
+  pegasus: after cursor zoom squad at screen 1122,500 (dist from centre 166) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[12.1,10.3,34.4]}
+  ballista: after cursor zoom squad at screen 1281,487 (dist from centre 326) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[24.2,10.7,34.6]}
+group 2: ["lord","trebuchet","golem","dragon"]
+  trebuchet: after cursor zoom squad at screen 638,475 (dist from centre 327) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[-24.2,10.5,34.7]}
+  golem: after cursor zoom squad at screen 808,471 (dist from centre 166) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[-12.1,11,34.7]}
+  dragon: after cursor zoom squad at screen 1122,501 (dist from centre 166) cam {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[12.1,10.3,34.4]}
+camera rotated+zoomed {"mode":"rts","dist":9.287,"yaw":0,"pitch":0.524,"pos":[12.1,10.3,34.4]} -> after Home {"mode":"rts","dist":99.922,"yaw":0,"pitch":0.86,"pos":[0,86.4,84.4]}
+terrain features [{"k":"river","x":0,"y":5500,"w":8000,"h":1000,"r":0},{"k":"bridge","x":1400,"y":5500,"w":800,"h":1000,"r":0},{"k":"bridge","x":5800,"y":5500,"w":800,"h":1000,"r":0},{"k":"forest","x":1996,"y":3138,"w":0,"h":0,"r":792},{"k":"forest","x":6003,"y":8861,"w":0,"h":0,"r":792},{"k":"forest","x":5071,"y":2688,"w":0,"h":0,"r":837},{"k":"forest","x":2928,"y":9311,"w":0,"h":0,"r":837},{"k":"forest","x":6924,"y":4204,"w":0,"h":0,"r":977},{"k":"forest","x":1075,"y":7795,"w":0,"h":0,"r":977},{"k":"hill","x":3403,"y":4553,"w":0,"h":0,"r":712},{"k":"hill","x":4596,"y":7446,"w":0,"h":0,"r":712},{"k":"hill","x":3002,"y":1620,"w":0,"h":0,"r":688},{"k":"hill","x":4997,"y":10379,"w":0,"h":0,"r":688},{"k":"ruins","x":1267,"y":4673,"w":0,"h":0,"r":567},{"k":"ruins","x":6732,"y":7326,"w":0,"h":0,"r":567}]
+max zoom-out cam {"mode":"rts","dist":199.999,"yaw":0,"pitch":1.12,"pos":[0,181.1,117.9]}
+rotated cam {"mode":"rts","dist":200,"yaw":-2.5,"pitch":1.12,"pos":[-52.2,181.1,-39.1]}
+stats {"tier":"high","draws":144,"tris":5955549,"gpu":"ANGLE (NVIDIA, NVIDIA GeForce RTX 4080 SUPER (0x00002702) Direct3D11 vs_5_0 ps_5_0, D3D11)"}
+LOG
+[units] console.warn: THREE.WebGLProgram: Program Info Log: (210,91-147): warning X4122: sum of 0.996094 and -2.98545e-017 cannot be represented accurately in double precision
+(209,41-69): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision
+(210,92-120): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision
+(209,41-69): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision
+(210,92-120): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision
+[units] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0

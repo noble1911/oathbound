@@ -1,5 +1,5 @@
 {
- "_doc": "Roster for the AI art pipeline (docs/ART.md). kind: humanoid | mounted | flier | large | siege | structure | prop | weapon. height in metres (feet to top of head/structure, weapons excluded). lod0/lod1 = triangle budgets. squad=true -> VAT bake. weapons: [weaponId, bone] attached rigidly. prompt defaults to the id; style picks prompts/_style_<style>.txt.",
+ "_doc": "Roster for the AI art pipeline (docs/ART.md). kind: humanoid | mounted | flier | large | siege | structure | prop | weapon. height in metres (feet to top of head/structure, weapons excluded). lod0/lod1 = triangle budgets. squad=true -> VAT bake. weapons: [weaponId, bone] attached rigidly. prompt defaults to the id; style picks prompts/_style_<style>.txt. grade = albedo / team-mask grading applied after the bake (cleanup.py: grade). lod1_voxel_div = build LOD1 from a coarse voxel shell (largest dimension / N). hip = hip-joint height as a fraction of the height (overrides crotch detection). clips = per-asset clip overrides {final: library clip}.",
  "assets": [
   {
    "id": "militia",
@@ -48,7 +48,21 @@
      "R"
     ]
    ],
-   "clipset": "sword"
+   "clipset": "sword",
+   "lod1_voxel_div": 55,
+   "grade": {
+    "fur": {
+     "to": [
+      0.4,
+      0.31,
+      0.24
+     ],
+     "team": 0.95,
+     "zmin": 0.45,
+     "grey": 0.45
+    },
+    "mask_open": 5
+   }
   },
   {
    "id": "archer",
@@ -199,7 +213,14 @@
    "lod0": 15000,
    "lod1": 3000,
    "squad": false,
-   "style": "object"
+   "style": "object",
+   "grade": {
+    "lift": [
+     0.65,
+     1.2
+    ],
+    "sat": 1.1
+   }
   },
   {
    "id": "lord_marshal",
@@ -214,7 +235,10 @@
      "R"
     ]
    ],
-   "clipset": "sword"
+   "clipset": "sword",
+   "clips": {
+    "run": "jog_sword"
+   }
   },
   {
    "id": "lord_archmage",
@@ -229,7 +253,10 @@
      "L"
     ]
    ],
-   "clipset": "cast"
+   "clipset": "cast",
+   "clips": {
+    "run": "jog"
+   }
   },
   {
    "id": "lord_warden",
@@ -244,7 +271,8 @@
      "R"
     ]
    ],
-   "clipset": "sword"
+   "clipset": "greataxe",
+   "hip": 0.45
   },
   {
    "id": "lord_skylady",
@@ -328,7 +356,13 @@
      "R"
     ]
    ],
-   "clipset": "sword"
+   "clipset": "sword",
+   "grade": {
+    "lift": [
+     0.75,
+     1.2
+    ]
+   }
   },
   {
    "id": "horse",
@@ -337,7 +371,10 @@
    "lod0": 4000,
    "lod1": 750,
    "part": true,
-   "style": "object"
+   "style": "object",
+   "grade": {
+    "mask_open": 9
+   }
   },
   {
    "id": "pegasus_mount",
@@ -346,7 +383,10 @@
    "lod0": 4000,
    "lod1": 750,
    "part": true,
-   "style": "object"
+   "style": "object",
+   "grade": {
+    "mask_open": 9
+   }
   },
   {
    "id": "wyvern_mount",
@@ -355,7 +395,14 @@
    "lod0": 9000,
    "lod1": 2000,
    "part": true,
-   "style": "object"
+   "style": "object",
+   "grade": {
+    "lift": [
+     0.62,
+     1.25
+    ],
+    "sat": 1.15
+   }
   },
   {
    "id": "weapon_sword",
@@ -489,18 +536,6 @@
    "lod0": 2500,
    "lod1": 700,
    "style": "object"
-  },
-  {
-   "id": "bridge",
-   "kind": "prop",
-   "height": 3,
-   "lod0": 4000,
-   "lod1": 1000,
-   "style": "object",
-   "fit_xy": [
-    4,
-    8
-   ]
   },
   {
    "id": "arrow_tower",

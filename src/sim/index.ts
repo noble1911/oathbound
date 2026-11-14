@@ -27,11 +27,37 @@ export {
   CATCHUP_GOLD, CATCHUP_PER_ROUND, CATCHUP_PER_DEFICIT, UNDERDOG_DEFICIT,
 } from './match.ts';
 // roundOutcomeText(summaryOrResult, seat): {outcome: 'won'|'lost'|'draw', title, detail} — the one wording for round results
-// comebackFor(me, enemy, round, lost): Comeback       — the catch-up bonus rule (PlayerState.comeback holds the live value)
-// usableSlots(player): Slot[]                          — slots with an empty open slot to fill (loot offers lean toward these)
+// comebackFor(): Comeback                              — deprecated: always zeros (there is no catch-up; both players are equal)
+// usableSlots(player): Slot[]                          — slots with an empty open slot to fill (informational)
 // squadFootprint(type) / overlappingSquad(squads, type, pos, ignoreId?) / freeSpotNear(squads, seat, type, pos, ignoreId?)
 //                                                     — deploy/move footprints: squads of one player may not overlap
+export { concede, armyClasses, suddenDeathPct, unlockOptions, SUDDEN_DEATH_ROUND, SUDDEN_DEATH_PCT, FIRST_UNLOCKS } from './match.ts';
+// concede(state, seat): IntentResult                  — `seat` gives up: phase 'over', the other seat wins, overReason 'concede'
+// suddenDeathPct(round)                               — keep-damage multiplier (percent): sudden death from round 10
+// unlockOptions(player, round): UnitType[]            — what may be unlocked this round (= PlayerState.draftOptions; not random)
 export { POINTS_MARGIN } from './battle.ts';
+
+// ---- Skills (data/skills.ts) ----
+export {
+  SKILLS, SKILL_IDS, UNIT_CLASS, LORD_CLASS, UNIT_CLASSES, CLASS_NAME, classesOf, squadClasses, canEquip, unitSkills, lordSkills, squadSkills,
+  skillText, skillNum, skillCooldownSec, usableByText,
+} from './data/skills.ts';
+// unitSkills(type: UnitType): SkillInfo[]                         — innate abilities of a unit type (traits, counters), real numbers
+// lordSkills(lord: LordId, level?: number): SkillInfo[]           — a Lord's passive + auto ability (with cooldown)
+// squadSkills(squad, lord?: LordId | null): SkillInfo[]           — innate (or Lord) + legendary powers + item skills of a squad
+// canEquip(item, squadType, lord): boolean                        — class gate of skill items (applyIntent enforces it)
+// classesOf(squadType, lord): UnitClass[];  SKILLS[id]: SkillDef  — classes, cooldown (ticks), trigger, slot
+
+// ---- Inspector: stats sheet and battle statistics ----
+export { squadSheet, replaySquadSheet, sheetOf } from './sheet.ts';
+export type { SquadSheet, StatLine, StatKey, SheetItem } from './sheet.ts';
+// squadSheet(view: PlayerView, squadId: number): SquadSheet | null — stats base -> effective, items (+ tooltip lines), skills
+// replaySquadSheet(replay: Replay, row: number): SquadSheet | null — the same for any squad of a battle replay
+export { squadStatsAt, squadStatsOf, squadDamagePairs, replaySquads } from './stats.ts';
+export type { SquadStats, SkillStat, BattleStatsAt, SideStats } from './stats.ts';
+// squadStatsAt(decoded: DecodedReplay, tick: number): BattleStatsAt — per-squad damage / healing / kills / skills up to `tick`
+// squadStatsOf(stats, side, squadId): SquadStats | null
+// squadDamagePairs(decoded, tick): Map<rowA, Map<rowB, damage>>     — who hurt whom (for the battle report)
 // newMatch(seed: number, lords: [LordId, LordId] | null): MatchState
 // applyIntent(state, seat, intent): IntentResult           — validates everything (phase, gold, zone, limits, slots)
 // viewFor(state, seat: Seat | null): PlayerView            — seat's own full state + enemy's LAST-ROUND army only
@@ -42,7 +68,7 @@ export { POINTS_MARGIN } from './battle.ts';
 export { simulateBattle } from './battle.ts';
 // simulateBattle(state: MatchState, opts?: SimulateOptions): BattleOutput   — pure; same state => byte-identical replay
 
-export { decodeReplay, sampleReplay, makeTransforms, replayHash, keepSource, KEEP_SRC_BASE } from './replay.ts';
+export { decodeReplay, sampleReplay, makeTransforms, replayHash, keepSource, KEEP_SRC_BASE, REPLAY_VERSION, TALLY_TICKS } from './replay.ts';
 // decodeReplay(replay): DecodedReplay
 // sampleReplay(decoded, timeMs, out: SoldierTransforms): SoldierTransforms   — interpolated transforms, allocation-free
 // keepSource(seat, n): number  — the `src` used in events for keep towers (n = 0,1) and the keep itself (n = 2)
@@ -51,7 +77,9 @@ export { botPlan, BOT_STRATEGIES } from './bot.ts';
 // botPlan(state, seat, strategy: BotStrategy, rngSalt?: number): void — applies a full planning turn for `seat`
 // through applyIntent (so it obeys the same rules), including lord pick, drafts, loot pick, equips, deploys and ready.
 
-export { itemName, itemLines, itemPower, rollLoot, RARITY_COLOR } from './loot.ts';
+export { itemName, itemLines, itemPower, rollLoot, lootSchedule, lootTopSlot, RARITY_COLOR, SKILL_CHANCE } from './loot.ts';
+// rollLoot(seed, round, count, nextId): Item[]   the round's offer, identical for both players: one item per slot
+// lootSchedule(round): [Rarity, Rarity, Rarity]  the fixed rarities of that offer (no rarity rolls)
 // itemName(item): string          e.g. "Vicious Ironbark Bow of Haste"
 // itemLines(item): ItemLine[]     ARPG tooltip lines (name, base type, implicit, affixes, legendary power, flavour)
 

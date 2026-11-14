@@ -95,14 +95,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "militia.glb": 424304,
+    "militia.glb": 424236,
     "militia.vat.json": 1627,
     "militia.vat.pos.bin": 744448,
-    "militia_lod1.glb": 384600,
+    "militia_lod1.glb": 384436,
     "militia_lod1_tint.png": 36150,
     "militia_team.png": 29374
    },
-   "totalBytes": 1620503
+   "totalBytes": 1620271
   },
   "pikeman": {
    "kind": "humanoid",
@@ -184,14 +184,14 @@
     "lod1": 1412
    },
    "bytes": {
-    "pikeman.glb": 333676,
+    "pikeman.glb": 334316,
     "pikeman.vat.json": 1626,
     "pikeman.vat.pos.bin": 722944,
-    "pikeman_lod1.glb": 368112,
+    "pikeman_lod1.glb": 368920,
     "pikeman_lod1_tint.png": 24585,
     "pikeman_team.png": 19274
    },
-   "totalBytes": 1470217
+   "totalBytes": 1471665
   },
   "berserker": {
    "kind": "humanoid",
@@ -273,14 +273,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "berserker.glb": 519984,
+    "berserker.glb": 516096,
     "berserker.vat.json": 1633,
-    "berserker.vat.pos.bin": 703488,
-    "berserker_lod1.glb": 426548,
-    "berserker_lod1_tint.png": 15744,
-    "berserker_team.png": 14676
+    "berserker.vat.pos.bin": 758784,
+    "berserker_lod1.glb": 326376,
+    "berserker_lod1_tint.png": 36776,
+    "berserker_team.png": 53297
    },
-   "totalBytes": 1682073
+   "totalBytes": 1692962
   },
   "archer": {
    "kind": "humanoid",
@@ -455,14 +455,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "knight.glb": 450484,
+    "knight.glb": 451128,
     "knight.vat.json": 1623,
     "knight.vat.pos.bin": 805888,
-    "knight_lod1.glb": 384836,
+    "knight_lod1.glb": 385644,
     "knight_lod1_tint.png": 24313,
     "knight_team.png": 17432
    },
-   "totalBytes": 1684576
+   "totalBytes": 1686028
   },
   "mage": {
    "kind": "humanoid",
@@ -650,7 +650,8 @@
    "vat": "cavalier.vat.json",
    "tintMask": "cavalier_lod1_tint.png",
    "detail": {
-    "glb": "cavalier.glb"
+    "glb": "cavalier.glb",
+    "tintMask": "cavalier_team.png"
    },
    "clips": {
     "idle": "idle",
@@ -721,13 +722,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "cavalier.glb": 1423548,
+    "cavalier.glb": 1426280,
     "cavalier.vat.json": 1627,
     "cavalier.vat.pos.bin": 709544,
     "cavalier_lod1.glb": 534280,
-    "cavalier_lod1_tint.png": 37224
+    "cavalier_lod1_tint.png": 36165,
+    "cavalier_team.png": 61583
    },
-   "totalBytes": 2706223
+   "totalBytes": 2769479
   },
   "pegasus": {
    "kind": "flier",
@@ -737,7 +739,8 @@
    "vat": "pegasus.vat.json",
    "tintMask": "pegasus_lod1_tint.png",
    "detail": {
-    "glb": "pegasus.glb"
+    "glb": "pegasus.glb",
+    "tintMask": "pegasus_team.png"
    },
    "clips": {
     "idle": "idle",
@@ -808,13 +811,14 @@
     "lod1": 1442
    },
    "bytes": {
-    "pegasus.glb": 1515748,
+    "pegasus.glb": 1513204,
     "pegasus.vat.json": 1621,
     "pegasus.vat.pos.bin": 771496,
-    "pegasus_lod1.glb": 580944,
-    "pegasus_lod1_tint.png": 18095
+    "pegasus_lod1.glb": 581752,
+    "pegasus_lod1_tint.png": 17737,
+    "pegasus_team.png": 41055
    },
-   "totalBytes": 2887904
+   "totalBytes": 2926865
   },
   "wyvern": {
    "kind": "flier",
@@ -822,6 +826,7 @@
    "height": 3.6,
    "glb": "wyvern.glb",
    "lod1": "wyvern_lod1.glb",
+   "tintMask": "wyvern_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -891,10 +896,11 @@
     "lod1": 3239
    },
    "bytes": {
-    "wyvern.glb": 1414984,
-    "wyvern_lod1.glb": 561192
+    "wyvern.glb": 1562904,
+    "wyvern_lod1.glb": 561192,
+    "wyvern_team.png": 64280
    },
-   "totalBytes": 1976176
+   "totalBytes": 2188376
   },
   "ballista": {
    "kind": "siege",
@@ -1148,11 +1154,11 @@
     "lod1": 2954
    },
    "bytes": {
-    "dragon.glb": 989736,
+    "dragon.glb": 1090988,
     "dragon_lod1.glb": 361956,
-    "dragon_team.png": 6696
+    "dragon_team.png": 29457
    },
-   "totalBytes": 1358388
+   "totalBytes": 1482401
   },
   "lord_marshal": {
    "kind": "humanoid",
@@ -1230,11 +1236,11 @@
     "lod1": 2953
    },
    "bytes": {
-    "lord_marshal.glb": 822648,
-    "lord_marshal_lod1.glb": 363564,
+    "lord_marshal.glb": 822496,
+    "lord_marshal_lod1.glb": 363412,
     "lord_marshal_team.png": 41639
    },
-   "totalBytes": 1227851
+   "totalBytes": 1227547
   },
   "lord_archmage": {
    "kind": "humanoid",
@@ -1312,11 +1318,11 @@
     "lod1": 2942
    },
    "bytes": {
-    "lord_archmage.glb": 978160,
-    "lord_archmage_lod1.glb": 471176,
+    "lord_archmage.glb": 978116,
+    "lord_archmage_lod1.glb": 471132,
     "lord_archmage_team.png": 36040
    },
-   "totalBytes": 1485376
+   "totalBytes": 1485288
   },
   "lord_warden": {
    "kind": "humanoid",
@@ -1343,27 +1349,27 @@
      "loop": true
     },
     "walk": {
-     "duration": 1.3333,
+     "duration": 1.6667,
      "loop": true
     },
     "run": {
-     "duration": 0.9167,
+     "duration": 1.0417,
      "loop": true
     },
     "attack_melee_a": {
-     "duration": 1.2083,
+     "duration": 1.5417,
      "loop": false
     },
     "attack_melee_b": {
-     "duration": 1.2083,
+     "duration": 1.5417,
      "loop": false
     },
     "attack_bow": {
-     "duration": 1.4583,
+     "duration": 1.5417,
      "loop": false
     },
     "cast": {
-     "duration": 1.5,
+     "duration": 1.5417,
      "loop": false
     },
     "hit": {
@@ -1394,11 +1400,11 @@
     "lod1": 2954
    },
    "bytes": {
-    "lord_warden.glb": 988240,
-    "lord_warden_lod1.glb": 356848,
+    "lord_warden.glb": 992784,
+    "lord_warden_lod1.glb": 360080,
     "lord_warden_team.png": 12368
    },
-   "totalBytes": 1357456
+   "totalBytes": 1365232
   },
   "lord_skylady": {
    "kind": "humanoid",
@@ -1476,11 +1482,11 @@
     "lod1": 2920
    },
    "bytes": {
-    "lord_skylady.glb": 951396,
-    "lord_skylady_lod1.glb": 378988,
+    "lord_skylady.glb": 952064,
+    "lord_skylady_lod1.glb": 379652,
     "lord_skylady_team.png": 14371
    },
-   "totalBytes": 1344755
+   "totalBytes": 1346087
   },
   "skeleton": {
    "kind": "humanoid",
@@ -1562,14 +1568,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "skeleton.glb": 452556,
-    "skeleton.vat.json": 1629,
+    "skeleton.glb": 452464,
+    "skeleton.vat.json": 1630,
     "skeleton.vat.pos.bin": 652288,
-    "skeleton_lod1.glb": 411992,
+    "skeleton_lod1.glb": 411832,
     "skeleton_lod1_tint.png": 28877,
     "skeleton_team.png": 17531
    },
-   "totalBytes": 1564873
+   "totalBytes": 1564622
   },
   "keep": {
    "kind": "structure",
@@ -1658,21 +1664,6 @@
     "ruins_column_lod1.glb": 53716
    },
    "totalBytes": 261060
-  },
-  "bridge": {
-   "kind": "prop",
-   "height": 3,
-   "glb": "bridge.glb",
-   "lod1": "bridge_lod1.glb",
-   "tris": {
-    "lod0": 3940,
-    "lod1": 984
-   },
-   "bytes": {
-    "bridge.glb": 193984,
-    "bridge_lod1.glb": 44516
-   },
-   "totalBytes": 238500
   },
   "arrow_tower": {
    "kind": "prop",

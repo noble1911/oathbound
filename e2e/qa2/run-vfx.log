@@ -1,0 +1,18 @@
+dev battle r9 {"sec":61.1,"soldiers":169,"types":["lord","cavaliers","militia","berserkers","wyvern","pikemen","ballista","dragon","knights","archers","pegasus","golem"]}
+  r9 battle fps 126 {"tier":"high","draws":323,"tris":8492543,"soldiers":144,"frameMs":8.098387096798227,"gpuMs":6.836958948307363}
+  free close cam {"mode":"free","dist":9,"yaw":0,"pitch":0.5,"pos":[-15.4,8.2,5.6]}
+  C back -> mode director
+dev battle r12 {"sec":45.95,"soldiers":174,"types":["lord","cavaliers","militia","pegasus","mages","ballista","archers","pikemen","knights","wyvern","golem"]}
+  r12 battle fps 150.5 {"tier":"high","draws":259,"tris":8297334,"soldiers":157,"frameMs":6.746666666666665,"gpuMs":5.125303595159815}
+  free close cam {"mode":"free","dist":9,"yaw":0,"pitch":0.5,"pos":[-12.2,16,22.2]}
+  C back -> mode director
+LOG
+[vfx9] console.warn: THREE.WebGLProgram: Program Info Log: (210,91-147): warning X4122: sum of 0.996094 and -2.98545e-017 cannot be represented accurately in double precision
+(209,41-69): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision
+(210,92-120): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision
+(209,41-69): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision
+(210,92-120): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision
+[vfx9] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0
+[vfx9] console.warn: THREE.WebGLProgram: Program Info Log: (56,12-86): warning X3595: gradient instruction used in a loop with varying iteration; partial derivatives may have undefined value
+(56,12-86): warning X3595: gradient instruction used in a loop with varying iteration; partial derivatives may have undefined value
+[vfx12] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0

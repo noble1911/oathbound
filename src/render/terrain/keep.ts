@@ -23,11 +23,17 @@ export interface KeepView {
   readonly towers: THREE.Vector3[];
   /** A random world point on the walls facing the field (for impacts). */
   hitPoint(): THREE.Vector3;
+  /** The point on the castle wall (or arrow tower) nearest an attacker: where his blow / shot lands. */
+  hitPointNear(from: THREE.Vector3): THREE.Vector3;
   /** 0 intact … 4 destroyed. */
   setStage(stage: number): void;
   readonly stage: number;
   /** Replace the procedural castle with the art keep (child nodes stage0..stage3). */
   useModel(model: THREE.Object3D | null): void;
+  /** World box of the castle body (walls / corner towers; not the arrow towers out in the field). */
+  bodyBox(out?: THREE.Box3): THREE.Box3;
+  /** Opacity of the castle body (0) or arrow tower i + 1: 1 = solid, < 1 = see-through ghost. */
+  setFade(part: number, alpha: number): void;
   /** Replace the procedural arrow towers with the art tower (geometry base at y=0, team material). */
   useTowerModel(geometry: THREE.BufferGeometry | null, material: THREE.Material | null, height: number): void;
 }
@@ -388,7 +394,12 @@ export class Keep implements KeepView {
     this.towerBase.forEach((base, i) => {
       this.towers[i].copy(base).setY(base.y + (art ? height * 0.86 : 7.6));
       if (!art) return;
-      const m = new THREE.Mesh(geometry!, material!);
+      // one material per tower, so each can fade on its own when it blocks the view
+      const tm = material!.clone();
+      tm.onBeforeCompile = material!.onBeforeCompile;
+      tm.customProgramCacheKey = material!.customProgramCacheKey;
+      this.engine.prepare(new THREE.Mesh(undefined, tm));
+      const m = new THREE.Mesh(geometry!, tm);
       this.group.updateMatrixWorld();
       m.position.copy(this.group.worldToLocal(base.clone()));
       m.rotation.y = Math.PI; // art faces +Z; the castle's local front is -Z
@@ -398,6 +409,7 @@ export class Keep implements KeepView {
       this.group.add(m);
       this.towerMeshes.push(m);
     });
+    for (let i = 1; i <= this.towerMeshes.length; i++) this.applyFade(i);
     this.engine.markShadows();
     this.engine.wake();
   }
@@ -419,8 +431,28 @@ export class Keep implements KeepView {
           m.castShadow = true;
           m.receiveShadow = true;
           // masonry is not metal: the generated MR maps read as near-black metal, so cap metalness
-          const mats = Array.isArray(m.material) ? m.material : [m.material];
-          for (const mat of mats as THREE.MeshStandardMaterial[]) if (mat.isMeshStandardMaterial && mat.metalness > 0.2) mat.metalness = 0.08;
+          // per-keep copies: each castle fades on its own when it blocks the view
+          const own = (Array.isArray(m.material) ? m.material : [m.material]).map((src) => {
+            let c = this.modelMats.get(src);
+            if (!c) {
+              c = src.clone();
+              this.modelMats.set(src, c);
+            }
+            return c;
+          });
+          m.material = Array.isArray(m.material) ? own : own[0];
+          const mats = own;
+          for (const mat of mats as THREE.MeshStandardMaterial[]) {
+            if (!mat.isMeshStandardMaterial || mat.userData.obLifted) continue;
+            mat.userData.obLifted = true;
+            // the baked stone is dark and its MR map reads as near-black metal: no metal, rough
+            // stone, a lighter warm-grey albedo, a little more sky light in the shaded faces
+            mat.metalness = 0;
+            mat.metalnessMap = null;
+            mat.roughness = Math.max(mat.roughness, 0.85);
+            mat.color.setRGB(1.55, 1.5, 1.42);
+            mat.envMapIntensity = 1.5;
+          }
         }
       });
       this.group.add(root);
@@ -432,8 +464,67 @@ export class Keep implements KeepView {
       this.model = { root, stages, box };
     }
     this.applyStage(false);
+    this.applyFade(0);
     this.engine.markShadows();
     this.engine.wake();
+  }
+
+  private modelMats = new Map<THREE.Material, THREE.Material>();
+  private fades: number[] = [];
+
+  bodyBox(out = new THREE.Box3()): THREE.Box3 {
+    this.group.updateMatrixWorld();
+    if (this.model) return out.copy(this.model.box).applyMatrix4(this.group.matrixWorld);
+    return out.setFromCenterAndSize(new THREE.Vector3(this.position.x, this.position.y + 7, this.position.z), new THREE.Vector3(20, 14, 20));
+  }
+
+  setFade(part: number, alpha: number): void {
+    if ((this.fades[part] ?? 1) === alpha) return;
+    this.fades[part] = alpha;
+    this.applyFade(part);
+  }
+
+  /** Push a part's stored opacity to its current materials (also after the art model / towers arrive). */
+  private applyFade(part: number): void {
+    const alpha = this.fades[part] ?? 1;
+    const mats: THREE.Material[] = part === 0 ? [...this.modelMats.values()] : this.towerMeshes[part - 1] ? [this.towerMeshes[part - 1].material as THREE.Material] : [];
+    for (const m of mats) {
+      // depth is still written: the ghost is one clean layer over whatever stands behind it
+      const tr = alpha < 0.999;
+      if (m.transparent !== tr) {
+        m.transparent = tr;
+        m.needsUpdate = true;
+      }
+      m.opacity = alpha;
+    }
+  }
+
+  private nearBox = new THREE.Box3();
+  hitPointNear(from: THREE.Vector3): THREE.Vector3 {
+    // candidates: the castle body (as tall as its current ruin stage) and each arrow tower
+    const hk = [1, 0.85, 0.6, 0.4, 0.25][this.stage] ?? 0.3;
+    const b = this.nearBox;
+    const out = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    let best = Infinity;
+    for (let i = 0; i <= this.towers.length; i++) {
+      if (i === 0) {
+        this.bodyBox(b);
+        b.max.y = b.min.y + (b.max.y - b.min.y) * hk * 0.8;
+      } else {
+        const t = this.towers[i - 1];
+        b.min.set(t.x - 1.7, t.y - 6.5, t.z - 1.7);
+        b.max.set(t.x + 1.7, t.y, t.z + 1.7);
+      }
+      p.set(Math.min(b.max.x, Math.max(b.min.x, from.x)), 0, Math.min(b.max.z, Math.max(b.min.z, from.z)));
+      const d = Math.hypot(p.x - from.x, p.z - from.z);
+      if (d >= best) continue;
+      best = d;
+      // melee land at weapon height (fliers: up on the wall); shots spread over the wall face
+      const y = d < 4.5 ? from.y + 0.9 + this.rnd() * 0.6 : b.min.y + 1.5 + this.rnd() * Math.max(1, (b.max.y - b.min.y) * 0.6);
+      out.set(p.x, Math.min(b.max.y, Math.max(b.min.y + 0.6, y)), p.z);
+    }
+    return out;
   }
 
   hitPoint(): THREE.Vector3 {

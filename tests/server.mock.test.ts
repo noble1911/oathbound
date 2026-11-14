@@ -6,7 +6,7 @@ import WebSocket from 'ws';
 const calls: string[] = [];
 vi.mock('../src/sim/index.ts', () => {
   type P = { seat: number; lord: string | null; ready: boolean; lootOffer: unknown; squads: { type: string; pos: number[] }[]; lastArmy: unknown };
-  type S = { round: number; phase: string; players: P[]; winner: unknown };
+  type S = { round: number; phase: string; players: P[]; winner: unknown; overReason?: string };
   const player = (seat: number): P => ({ seat, lord: null, ready: false, lootOffer: null, squads: [], lastArmy: null });
   return {
     LORD_IDS: ['marshal', 'archmage', 'warden', 'skylady'],
@@ -26,7 +26,14 @@ vi.mock('../src/sim/index.ts', () => {
     },
     viewFor: (s: S, seat: number | null) => {
       const enemy = (x: P) => ({ seat: x.seat, lord: x.lord, ready: x.ready, lastArmy: x.lastArmy });
-      return { round: s.round, phase: s.phase, seat, winner: s.winner, you: seat === null ? null : s.players[seat], enemy: enemy(s.players[seat === null ? 1 : 1 - seat]) };
+      return { round: s.round, phase: s.phase, seat, winner: s.winner, overReason: s.overReason, you: seat === null ? null : s.players[seat], enemy: enemy(s.players[seat === null ? 1 : 1 - seat]) };
+    },
+    concede: (s: S, seat: number) => {
+      if (s.phase === 'over') return { ok: false, error: 'match is over' };
+      s.phase = 'over';
+      s.winner = 1 - seat;
+      s.overReason = 'concede';
+      return { ok: true };
     },
     allReady: (s: S) => s.players.every((p) => p.ready),
     forceReady: (s: S) => {
@@ -37,7 +44,7 @@ vi.mock('../src/sim/index.ts', () => {
     applyBattle: (s: S) => {
       calls.push('applyBattle');
       for (const p of s.players) p.lastArmy = p.squads.map((q) => ({ ...q }));
-      if (s.round >= 3) (s.phase = 'over'), (s.winner = 0);
+      if (s.round >= 3) (s.phase = 'over'), (s.winner = 0), (s.overReason = 'keep');
       else s.phase = 'results';
     },
     nextRound: (s: S) => {
@@ -290,6 +297,78 @@ describe('phase machine (fake sim)', () => {
     await back.wait('room', (m) => m.room.phase === 'results');
     for (const c of [...all, back]) c.close();
   }, 10_000);
+
+  it('concede ends a pvp match with the opponent as the winner; so does leaving it; a disconnect does not', async () => {
+    // an explicit concession during planning
+    {
+      const { host, guest, all, code } = await makeRoom(url);
+      const spec = await connect(url);
+      spec.send({ t: 'join', code, name: 'Watcher' });
+      await spec.wait('welcome');
+      spec.send({ t: 'concede' });
+      expect((await spec.wait('rejected')).error).toMatch(/no match|spectators/);
+      host.send({ t: 'concede' });
+      expect((await host.wait('rejected')).error).toMatch(/no match/);
+      host.send({ t: 'start' });
+      host.send({ t: 'intent', intent: { t: 'pickLord', lord: 'marshal' } });
+      guest.send({ t: 'intent', intent: { t: 'pickLord', lord: 'archmage' } });
+      await host.wait('room', (m) => m.room.phase === 'planning');
+      spec.send({ t: 'concede' });
+      expect((await spec.wait('rejected')).error).toMatch(/spectators/);
+      guest.send({ t: 'concede' });
+      for (const c of [host, guest, spec]) {
+        const over = await c.wait('room', (m) => m.room.phase === 'over');
+        expect(over.room.over).toEqual({ reason: 'concede', by: 1 });
+        expect(over.room.view!.winner).toBe(0);
+        expect(over.room.view!.overReason).toBe('concede');
+        expect(over.room.phaseEndsAt).toBe(0);
+        expect(over.room.seats[1]!.botControlled).toBe(false);
+      }
+      expect((await host.wait('chat', (m) => m.system && /concedes/.test(m.text))).text).toMatch(/Guest/);
+      // the match is over: a second concession is refused, a rematch still works
+      host.send({ t: 'concede' });
+      expect((await host.wait('rejected')).error).toMatch(/not running/);
+      host.send({ t: 'rematch' });
+      guest.send({ t: 'rematch' });
+      const fresh = await host.wait('room', (m) => m.room.phase === 'lordPick');
+      expect(fresh.room.over).toBeUndefined();
+      for (const c of [...all, spec]) c.close();
+    }
+    // leaving mid-battle concedes too
+    {
+      const { host, guest, all } = await makeRoom(url);
+      host.send({ t: 'start' });
+      host.send({ t: 'intent', intent: { t: 'pickLord', lord: 'marshal' } });
+      guest.send({ t: 'intent', intent: { t: 'pickLord', lord: 'archmage' } });
+      await host.wait('room', (m) => m.room.phase === 'planning');
+      host.send({ t: 'intent', intent: { t: 'ready' } });
+      guest.send({ t: 'intent', intent: { t: 'ready' } });
+      await guest.wait('battle');
+      host.send({ t: 'leave' });
+      const over = await guest.wait('room', (m) => m.room.phase === 'over');
+      expect(over.room.over).toEqual({ reason: 'concede', by: 0 });
+      expect(over.room.view!.winner).toBe(1);
+      expect(over.room.seats[0]!.botControlled).toBe(false);
+      await sleep(500); // the battle timer is gone: the room stays over
+      expect(guest.last!.phase).toBe('over');
+      for (const c of all) c.close();
+    }
+    // a match that ends by itself says why
+    {
+      const { host, all } = await makeRoom(url, 'vsAI', 'easy');
+      host.send({ t: 'start' });
+      host.send({ t: 'intent', intent: { t: 'pickLord', lord: 'marshal' } });
+      for (let r = 0; r < 3; r++) {
+        await host.wait('room', (m) => m.room.phase === 'planning' && m.room.view!.round === r + 1);
+        host.send({ t: 'intent', intent: { t: 'ready' } });
+        await host.wait('battle');
+        host.send({ t: 'battleDone' });
+      }
+      const over = await host.wait('room', (m) => m.room.phase === 'over', 3000);
+      expect(over.room.over).toEqual({ reason: 'keep', by: null });
+      for (const c of all) c.close();
+    }
+  }, 20_000);
 
   it('every snapshot is viewFor(the socket seat): the enemy current deploys never reach the other seat or spectators', async () => {
     const { host, guest, all, code } = await makeRoom(url);

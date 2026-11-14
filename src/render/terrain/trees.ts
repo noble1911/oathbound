@@ -291,6 +291,15 @@ function conifer(s: Conifer, lod: TreeLod): THREE.BufferGeometry {
       b.card(c, n, len * 0.95, len, -ang, 'fir', axis, tint, lod === 0 ? len * 0.12 : 0, shade, (p) => Math.min(1, swayH(p) + 0.05), 0.15);
     }
   }
+  // a core: two crossed full-height silhouettes (the fir cell is a whole little tree), darker than
+  // the boughs, so the gaps between whorls show foliage instead of stacked cards with sky between
+  const ch = s.h - s.bare * 0.6;
+  for (let k = 0; k < 2; k++) {
+    const n = V(Math.cos(k * 1.57 + 1.1), 0, Math.sin(k * 1.57 + 1.1));
+    axis.set(0, s.h * 0.2, 0);
+    const core: RGB = [s.tint[0] * 0.62, s.tint[1] * 0.62, s.tint[2] * 0.62];
+    b.card(V(0, s.bare * 0.6 + ch * 0.5, 0), n, s.r * 1.25, ch, 0, 'fir', axis, core, 0, (p) => 0.75 + 0.25 * Math.min(1, p.y / s.h), (p) => swayH(p), 0.1);
+  }
   // the tip: two crossed upright boughs
   const th = 3.2;
   for (let k = 0; k < 2; k++) {

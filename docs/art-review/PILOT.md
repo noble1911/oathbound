@@ -105,6 +105,22 @@ Frame strips: `e2e/shots/anim-*.png` (in the engine) and `anim_strip.py` (Blende
 * **Mounts.** The old creature rig put two short bones per leg at the wrong height and placed them from point clouds, so bone-heat gave the legs almost no weight: the horse rocked as one piece. The wyvern and dragon also faced 30° / 60° off axis. Mounted units also shipped a rider-only `idle` (the mount froze) with the real clip exported as `idle.001`.
 * **Checks.** `creature.py` and `vat.py` now fail the build when a limb bone owns no vertices or when hooves / wing tips do not move against the body in the locomotion clips.
 
+### Second pass (QA build + the Lords)
+
+* **Berserkers** were white from behind and their crowd mesh was shards with no thighs: the fur mantle is now a
+  team-tinted pelt, boot / bracer fur is brown, and LOD1 is a filled voxel hull.
+* **Wyvern, dragon**: albedo lifted (mean 0.11 -> 0.26, 0.10 -> 0.20), wing membranes carry the team colour,
+  and the wyvern finally has a tint mask (rider + mount share one atlas).
+* **Warden**: his hip joint sat at the hem of his armoured skirt (0.5 m on a 2.1 m lord), so he waddled on
+  22 cm thighs, and he swung a great axe one-handed. He now strides from a 0.92 m hip, carries the axe at port
+  arms in both hands, chops overhead and cleaves across, and keeps both hands on it when hit. Mesh and textures
+  are unchanged; only the rig fit, skin weights and clips.
+* **Lords' speed**: no library clip fitted their 2.6-3.2 m/s (walk 1.1, jog 5.9), so they shuffled or skated.
+  Marshal, Archmage and Warden now move on a shortened jog that covers 4.0 / 3.7 / 2.4 m/s at rate 1, and the
+  renderer's Lord speeds are set from the measured clips.
+* **Sword flip**: running swung the blade point-down behind the runner; the sword arm now stays in the ready
+  stance. Spear thrusts are driven from the chest.
+
 Still weak:
 * Everything on the mounts is hand-authored, not captured. The gallop reads well at game distance; close up the legs are a little rubbery (the crowd horse is 750 triangles, with few edge loops at the joints) and the tail moves as one sheet.
 * Horse and pegasus manes, barding and the rider's cloak are skinned to the nearest bones: no secondary cloth motion.

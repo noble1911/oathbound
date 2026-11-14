@@ -1,8 +1,10 @@
 // Battle playback HUD: Keep bars (driven by keepHit events), a squad tally per side, the sim clock,
 // 1×/2×/4× speed, director/free camera (the UI owns C and Home and sets the rig's mode explicitly,
-// both ways), Skip (End; Enter is chat on every screen), a kill feed of notable events (Lord abilities,
-// legendary procs, squads wiped, Keep breaches) and big banners for Lord abilities. Battle audio
-// is driven from the same events (src/audio.ts). The clients never simulate: playback only.
+// both ways), Skip (End; Enter is chat on every screen), a battle log of notable events (Lord abilities,
+// item skills, legendary procs, squads wiped, Keep breaches) and big banners for Lord abilities.
+// Click any squad (or a log entry) to inspect it; Shift+click a second to compare; Tab cycles; Esc
+// closes (src/ui/inspector.ts). Battle audio is driven from the same events (src/audio.ts). The
+// clients never simulate: playback only. Power: the HUD and the inspector tick at 4 Hz, never per frame.
 import type { DecodedReplay, LordId, Replay, ReplayEvent, Seat } from '../sim/types.ts';
 import { decodeReplay } from '../sim/index.ts';
 import { LORDS } from '../sim/data/lords.ts';
@@ -16,6 +18,12 @@ import { unitName } from './gamedata.ts';
 import { TopBar } from './hud.ts';
 import { battleStats, type BattleStats } from './insights.ts';
 import { outcomeText } from './results.ts';
+import { Inspector } from './inspector.ts';
+import { castEvents, inspectRow, rowOfSoldier, rowOfSquad, type CastEvent } from './inspect-data.ts';
+import { SKILLS } from '../sim/data/skills.ts';
+import { replaySquads } from '../sim/stats.ts';
+import { skillGlyph } from './items.ts';
+import type { SkillId } from '../sim/types.ts';
 
 export interface BattleInfo {
   seat: Seat | null;
@@ -57,6 +65,10 @@ export class BattleScreen {
   private doneSent = false;
   isDone = false;
   private off: (() => void)[] = [];
+  private insp: Inspector;
+  private casts: CastEvent[];
+  private castAt = 0;
+  private hoverRow = -1;
 
   private scene: SceneAdapter;
   private info: BattleInfo;
@@ -86,6 +98,13 @@ export class BattleScreen {
       <div class="b-banner"></div>
     </div>`);
     ui.appendChild(this.root);
+    this.insp = new Inspector(this.root, {
+      decoded: this.decoded, viewer: info.seat, names: info.names,
+      tick: () => Math.min(this.decoded.replay.ticks, Math.floor((this.finished ? this.end : this.t) / 50)),
+      onChange: () => this.syncSelection(),
+    });
+    this.casts = castEvents(this.decoded);
+    while (this.castAt < this.casts.length && this.casts[this.castAt]!.tick * 50 <= this.t) this.castAt++;
     this.top = new TopBar(this.root);
     this.top.ticking = false;
     this.feed = $(this.root, '.b-feed');
@@ -102,6 +121,11 @@ export class BattleScreen {
         this.ev++;
         this.apply(e, false);
         if (this.volleyCount === 1) setTimeout(() => this.flushVolley(), 0);
+      },
+      // an item skill fires: the log line and the inspector's chip flash, on the frame its effect starts
+      onSkill: (e) => {
+        const row = inspectRow(this.decoded, e.squad);
+        if (row >= 0) this.cast({ tick: e.tick, row, id: e.skill, name: SKILLS[e.skill]?.name ?? e.skill, lord: false });
       },
       onEnd: () => this.finish(false),
     });
@@ -129,13 +153,29 @@ export class BattleScreen {
       } else if (e.key === 'End' && !this.finished) {
         e.preventDefault();
         this.skip();
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        this.insp.cycle(e.shiftKey ? -1 : 1);
+      } else if (e.key === 'Escape' && this.insp.isOpen && !document.querySelector('.settings.on, .chat.on')) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.insp.back();
       }
     };
     // capture phase: ahead of the camera rig's own window listener
     window.addEventListener('keydown', key, true);
     this.off.push(() => removeEventListener('keydown', key, true));
+    this.bindField();
+    this.feed.addEventListener('click', (e) => {
+      const n = (e.target as HTMLElement).closest<HTMLElement>('.kf[data-row]');
+      if (n) this.insp.open(Number(n.dataset.row));
+    });
+    const onResize = () => this.syncInsets();
+    window.addEventListener('resize', onResize);
+    this.off.push(() => removeEventListener('resize', onResize));
     this.renderTop();
     this.renderTally();
+    this.syncInsets();
     sound.setTerrain(replay.terrain);
     if (offsetMs < 500) {
       sound.battleStart(replay.round);
@@ -149,6 +189,74 @@ export class BattleScreen {
   private mySeat(): Seat {
     return (this.info.seat ?? 0) as Seat;
   }
+
+  /**
+   * Clicks on the field pick squads: a press that did not travel is a click (a drag is the camera's).
+   * Shift adds a second squad to compare; empty ground closes the inspector. Hover marks the plate.
+   */
+  private bindField(): void {
+    const cv = this.scene.canvas;
+    if (!this.scene.pickSoldier) return;
+    let down: { x: number; y: number; t: number } | null = null;
+    let hoverAt = 0;
+    const rowAt = (x: number, y: number): number => {
+      const i = this.scene.pickSoldier!(x, y);
+      return i === null ? -1 : rowOfSoldier(this.decoded, i);
+    };
+    const onDown = (e: PointerEvent) => { down = e.button === 0 ? { x: e.clientX, y: e.clientY, t: performance.now() } : null; };
+    const onUp = (e: PointerEvent) => {
+      const d = down;
+      down = null;
+      if (!d || e.button !== 0 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || performance.now() - d.t > 600) return;
+      const row = rowAt(e.clientX, e.clientY);
+      if (row < 0) this.insp.close();
+      else if (e.shiftKey) this.insp.compare(row);
+      else this.insp.open(row);
+      if (row >= 0) sound.click();
+    };
+    const onMove = (e: PointerEvent) => {
+      if (e.buttons || performance.now() - hoverAt < 90) return;
+      hoverAt = performance.now();
+      const row = rowAt(e.clientX, e.clientY);
+      if (row === this.hoverRow) return;
+      this.hoverRow = row;
+      cv.style.cursor = row >= 0 ? 'pointer' : '';
+      this.syncSelection(false);
+    };
+    const onLeave = () => { if (this.hoverRow >= 0) { this.hoverRow = -1; cv.style.cursor = ''; this.syncSelection(false); } };
+    cv.addEventListener('pointerdown', onDown);
+    cv.addEventListener('pointerup', onUp);
+    cv.addEventListener('pointermove', onMove);
+    cv.addEventListener('pointerleave', onLeave);
+    this.off.push(() => {
+      cv.removeEventListener('pointerdown', onDown);
+      cv.removeEventListener('pointerup', onUp);
+      cv.removeEventListener('pointermove', onMove);
+      cv.removeEventListener('pointerleave', onLeave);
+      cv.style.cursor = '';
+    });
+  }
+
+  /** The inspector's selection (and the hover) on the in-world plates, and the view inset beside the panel. */
+  private syncSelection(insets = true): void {
+    const rows = replaySquads(this.decoded);
+    const id = (row: number): number | null => rows[row]?.id ?? null;
+    this.scene.markSquads?.(this.insp.rows.map(id).filter((x): x is number => x !== null), this.hoverRow >= 0 ? id(this.hoverRow) : null);
+    this.root.classList.toggle('has-insp', this.insp.isOpen);
+    if (insets) this.syncInsets();
+  }
+
+  /** Keep the fight out from under the HUD: the top bar and tally, the controls, and the inspector when open. */
+  private syncInsets(): void {
+    const top = this.tally.getBoundingClientRect().bottom;
+    const ctrl = $(this.root, '.b-ctrl').getBoundingClientRect();
+    const dock = this.insp.root.classList.contains('min') ? 0 : this.insp.dockWidth();
+    const next = `${Math.round(top)}/${Math.round(innerHeight - ctrl.top)}/${dock}`;
+    if (next === this.insetSig) return;
+    this.insetSig = next;
+    this.scene.setInsets({ top: Math.round(top), bottom: Math.max(0, Math.round(innerHeight - ctrl.top)), right: dock });
+  }
+  private insetSig = '';
 
   private setSpeed(s: number): void {
     this.speed = s;
@@ -187,7 +295,7 @@ export class BattleScreen {
     for (const [sq, a] of this.alive) if (a > 0) n[this.squadSide.get(sq)!]++;
     const me = this.mySeat();
     const spect = this.info.seat === null;
-    this.tally.innerHTML = `<div class="tl me" data-tip="${spect ? esc(this.info.names[me]) + "'s" : 'Your'} squads still standing">${icon('squads')}<b>${n[me]}</b></div><i>squads</i><div class="tl foe" data-tip="${spect ? esc(this.info.names[1 - me]) + "'s" : 'Enemy'} squads still standing"><b>${n[1 - me]}</b>${icon('squads')}</div>`;
+    this.tally.innerHTML = `<div class="tl me" data-tip="${spect ? esc(this.info.names[me]) + "'s" : 'Your'} squads still standing"><i class="tl-cap"></i><b>${n[me]}</b></div><i>squads standing</i><div class="tl foe" data-tip="${spect ? esc(this.info.names[1 - me]) + "'s" : 'Enemy'} squads still standing"><b>${n[1 - me]}</b><i class="tl-cap"></i></div>`;
   }
 
   /** "Your" / "Enemy" for a player; the commander's name for a spectator. */
@@ -202,17 +310,49 @@ export class BattleScreen {
     return s === this.mySeat() ? 'Your' : 'Enemy';
   }
 
-  private squadLabel(squadId: number): { name: string; side: Seat; crest: string } {
+  private squadLabel(squadId: number): { name: string; side: Seat; crest: string; row: number } {
     const sol = this.decoded.replay.soldiers[this.squadSoldier.get(squadId) ?? 0]!;
-    return { name: unitName(sol.type === 'skeleton' ? 'militia' : sol.type, sol.lord), side: sol.side, crest: crest(sol.type === 'skeleton' ? 'militia' : sol.type, sol.lord, 'sm') };
+    return { name: unitName(sol.type === 'skeleton' ? 'militia' : sol.type, sol.lord), side: sol.side, crest: crest(sol.type === 'skeleton' ? 'militia' : sol.type, sol.lord, 'sm'), row: rowOfSquad(this.decoded, squadId, sol.side) };
   }
+
+  /**
+   * Casts up to now, from the replay's own lists at the HUD's 4 Hz: Lord abilities flash their chip
+   * (their banner and log line come from the 'ability' event), and item skills are logged here when
+   * the scene has not already reported them through onSkill (the stand-in scene never does).
+   */
+  private runCasts(quiet: boolean): void {
+    const tick = Math.floor(this.t / 50);
+    while (this.castAt < this.casts.length && this.casts[this.castAt]!.tick <= tick) {
+      const c = this.casts[this.castAt++]!;
+      if (!quiet) this.cast(c);
+    }
+  }
+
+  /** One cast, once: the inspector's chip flash, and for an item skill a log line ("Mages cast Fireball"). */
+  private cast(c: CastEvent): void {
+    const once = `${c.tick}:${c.row}:${c.id}`;
+    if (this.castSeen.has(once)) return;
+    this.castSeen.add(once);
+    this.insp.flash(c.row, c.id);
+    if (c.lord) return;
+    const q = replaySquads(this.decoded)[c.row];
+    if (!q) return;
+    // a squad that casts again within a few seconds does not flood the log
+    const key = `${c.row}:${c.id}`;
+    if (performance.now() - (this.procSeen.get(key) ?? -1e9) < 3000) return;
+    this.procSeen.set(key, performance.now());
+    const t = q.type === 'skeleton' ? 'militia' : q.type;
+    const mine = q.side === this.mySeat();
+    this.push(`${skillGlyph(c.id as SkillId)}${crest(t, q.lord ?? q.ownerLord ?? null, 'sm')}<span>${this.sideName(q.side)} ${esc(unitName(t, q.lord ?? q.ownerLord ?? null))} cast <b>${esc(c.name)}</b></span>`, `skill ${mine ? 'mine' : 'foe'}`, c.row);
+  }
+  private castSeen = new Set<string>();
 
   private soldierSide(i: number): Seat | null {
     return this.decoded.replay.soldiers[i]?.side ?? null;
   }
 
-  private push(html: string, cls: string): void {
-    const n = el(`<div class="kf ${cls}">${html}</div>`);
+  private push(html: string, cls: string, row = -1): void {
+    const n = el(`<div class="kf ${cls}"${row >= 0 ? ` data-row="${row}" data-tip="Click to inspect"` : ''}>${html}</div>`);
     this.feed.prepend(n);
     while (this.feed.children.length > 6) this.feed.lastElementChild!.remove();
     setTimeout(() => n.classList.add('old'), 6000);
@@ -242,9 +382,9 @@ export class BattleScreen {
             sound.wipe(this.posOf(e.tgt, e.tick), s.type === 'lord');
             const mine = L.side === this.mySeat();
             if (s.type === 'lord') {
-              this.push(`${icon('skull')}${L.crest}<span><b>${esc(L.name)}</b> has fallen</span>`, mine ? 'bad big' : 'good big');
+              this.push(`${icon('skull')}${L.crest}<span><b>${esc(L.name)}</b> has fallen</span>`, mine ? 'bad big' : 'good big', L.row);
               this.banner(`${L.name} has fallen`, `${this.plainSide(L.side)} Lord`, mine ? 'bad' : 'good');
-            } else this.push(`${icon('skull')}${L.crest}<span>${this.sideName(L.side)} <b>${esc(L.name)}</b> wiped out</span>`, mine ? 'bad' : 'good');
+            } else this.push(`${icon('skull')}${L.crest}<span>${this.sideName(L.side)} <b>${esc(L.name)}</b> wiped out</span>`, mine ? 'bad' : 'good', L.row);
           }
         }
         if (!quiet) this.renderTally();
@@ -260,7 +400,7 @@ export class BattleScreen {
           this.procSeen.set(key, performance.now());
           const L = this.squadLabel(s.squad);
           const n = e.cause === 'undying_oath' ? LEGENDARIES.undying_oath.name : 'of the Phoenix';
-          this.push(`${icon(e.cause === 'undying_oath' ? 'star' : 'flame')}${L.crest}<span>${this.sideName(L.side)} ${esc(L.name)}: <em class="leg">${esc(n)}</em></span>`, 'proc');
+          this.push(`${icon(e.cause === 'undying_oath' ? 'star' : 'flame')}${L.crest}<span>${this.sideName(L.side)} ${esc(L.name)}: <em class="leg">${esc(n)}</em></span>`, 'proc', L.row);
         }
         break;
       }
@@ -277,7 +417,7 @@ export class BattleScreen {
           const srcSol = sol[e.src];
           if (srcSol) {
             const L = this.squadLabel(srcSol.squad);
-            this.push(`${icon('skull')}${L.crest}<span>${this.sideName(L.side)} ${esc(L.name)}: <em class="leg">Gravebloom</em> raises the dead</span>`, 'proc');
+            this.push(`${icon('skull')}${L.crest}<span>${this.sideName(L.side)} ${esc(L.name)}: <em class="leg">Gravebloom</em> raises the dead</span>`, 'proc', L.row);
           }
         }
         break;
@@ -316,7 +456,7 @@ export class BattleScreen {
           if (performance.now() - (this.procSeen.get(key) ?? -1e9) > 7000) {
             this.procSeen.set(key, performance.now());
             const L = this.squadLabel(src.squad);
-            this.push(`${icon(proc.ic)}${L.crest}<span>${this.sideName(L.side)} ${esc(L.name)}: <em class="leg">${esc(proc.name)}</em></span>`, 'proc');
+            this.push(`${icon(proc.ic)}${L.crest}<span>${this.sideName(L.side)} ${esc(L.name)}: <em class="leg">${esc(proc.name)}</em></span>`, 'proc', L.row);
           }
           if (e.ability === 'chain') sound.lightning(e.pos);
           else if (e.ability === 'ember_burst') sound.boom(3, e.pos);
@@ -390,6 +530,8 @@ export class BattleScreen {
 
   private tickClock(): void {
     this.t = this.pb.timeMs;
+    this.runCasts(false);
+    this.insp.update();
     const fight = Math.min(this.t, 90_000);
     const sec = Math.floor(fight / 1000);
     // elapsed against the 1:30 limit: at the limit the battle is called and Keep damage is halved
@@ -409,6 +551,7 @@ export class BattleScreen {
       while (this.ev < evs.length) this.apply(evs[this.ev++]!, true);
       this.t = this.end;
       this.pb.seek(this.end);
+      this.runCasts(true);
       this.tickClock();
       this.renderTop();
       this.renderTally();
@@ -422,6 +565,8 @@ export class BattleScreen {
     this.banner(title, end === 'stalemate' ? 'Neither army could harm the other' : r.timeout ? 'Time is up: 1:30' : 'The field falls silent', won === null ? 'neutral' : won ? 'good' : 'bad');
     this.root.classList.add('over');
     $(this.root, '.skip').setAttribute('disabled', '');
+    // the last numbers of the fight (the 4 Hz clock has stopped)
+    this.insp.update();
     setTimeout(() => this.done(), skipped ? 900 : 2200);
   }
 
@@ -448,16 +593,7 @@ export class BattleScreen {
   /** Damage dealt per squad id (MVP on the results screen). */
   damageBySquad(): Map<number, { dmg: number; kills: number }> {
     const m = new Map<number, { dmg: number; kills: number }>();
-    const sol = this.decoded.replay.soldiers;
-    for (const e of this.decoded.events) {
-      if (e.k !== 'hit' && e.k !== 'death') continue;
-      const s = sol[e.src];
-      if (!s) continue;
-      const r = m.get(s.squad) ?? { dmg: 0, kills: 0 };
-      if (e.k === 'hit' && !e.miss) r.dmg += e.dmg;
-      if (e.k === 'death') r.kills++;
-      m.set(s.squad, r);
-    }
+    for (const q of battleStats(this.decoded).squads) m.set(q.id, { dmg: q.dealt, kills: q.kills });
     return m;
   }
 
@@ -467,6 +603,9 @@ export class BattleScreen {
     if (!this.finished) sound.battleEnd(null);
     if (this.clock) clearInterval(this.clock);
     this.pb.stop();
+    this.insp.dispose();
+    this.scene.markSquads?.([], null);
+    this.scene.setInsets({});
     this.scene.onCameraMode = null;
     this.off.forEach((f) => f());
     this.top.dispose();

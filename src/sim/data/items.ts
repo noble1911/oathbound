@@ -25,8 +25,9 @@ export interface AffixDef {
 export interface LegendaryDef { id: LegendaryId; name: string; slot: Slot; text: string; flavor: string; power: number }
 
 export const RARITIES: readonly Rarity[] = ['common', 'magic', 'rare', 'legendary'];
-export const RARITY_WEIGHT: Record<Rarity, number> = { common: 40, magic: 35, rare: 20, legendary: 5 };
+/** The first round whose offer holds a Legendary (then every LEGENDARY_EVERY rounds; see lootSchedule in loot.ts). */
 export const LEGENDARY_MIN_ROUND = 3;
+export const LEGENDARY_EVERY = 3;
 
 /** Squad level at which each slot opens (the Lord has all three from the start). */
 export const SLOT_UNLOCK_LEVEL: Record<Slot, number> = { weapon: 1, armor: 2, relic: 4 };
@@ -75,15 +76,15 @@ export const LEGENDARIES: Record<LegendaryId, LegendaryDef> = {
   undying_oath: { id: 'undying_oath', name: 'Undying Oath', slot: 'armor', power: 18,
     text: 'Each soldier rises once at 50% life after falling', flavor: '"Not yet. The oath is not yet fulfilled."' },
   ember_crown: { id: 'ember_crown', name: 'Ember Crown', slot: 'relic', power: 14,
-    text: 'Fallen soldiers explode for 40 (+5 per item level) fire damage within 3.5 m', flavor: 'Its wearers do not die. They become the fire.' },
+    text: 'Fallen soldiers explode for 90 (+12 per item level) fire damage within 4.5 m', flavor: 'Its wearers do not die. They become the fire.' },
   mirror_aegis: { id: 'mirror_aegis', name: 'Mirror Aegis', slot: 'armor', power: 14,
     text: 'The first 3 projectiles striking each soldier are reflected', flavor: 'Polished by a thousand years of sorrow.' },
   warhorn: { id: 'warhorn', name: 'Warhorn of Valor', slot: 'relic', power: 18,
     text: '+3 soldiers (+1 for squads of 3-4; squads of 1-2 gain +35% life and damage instead)', flavor: 'One blast, and the fallen of Aster Field march again.' },
   gravebloom: { id: 'gravebloom', name: 'Gravebloom', slot: 'relic', power: 14,
-    text: 'Enemies slain by this squad rise as skeletons for the rest of the battle (max 10)', flavor: 'Where it is planted, nothing stays buried.' },
+    text: 'Enemies slain by this squad rise as skeletons for the rest of the battle (max 14)', flavor: 'Where it is planted, nothing stays buried.' },
   bloodthirst: { id: 'bloodthirst', name: 'Bloodthirst', slot: 'weapon', power: 14,
-    text: 'Each kill heals 12% life and grants +10% attack speed (stacks 3 times)', flavor: 'It drinks. It is never full.' },
+    text: 'Each kill heals 10% life and grants +10% attack speed (stacks 3 times)', flavor: 'It drinks. It is never full.' },
   earthshaker: { id: 'earthshaker', name: 'Earthshaker', slot: 'weapon', power: 14,
     text: 'Every 4th attack shakes the ground, dealing full damage within 3 m', flavor: 'The mountain remembers every footstep.' },
   frostheart: { id: 'frostheart', name: 'Frostheart', slot: 'weapon', power: 14,
@@ -91,7 +92,7 @@ export const LEGENDARIES: Record<LegendaryId, LegendaryDef> = {
   lifebinder: { id: 'lifebinder', name: 'Lifebinder', slot: 'relic', power: 14,
     text: 'The squad regenerates 1.5% of maximum life per second', flavor: 'Woven from the roots of the first oak.' },
   hydra_volley: { id: 'hydra_volley', name: 'Hydra Volley', slot: 'weapon', power: 16,
-    text: 'Attacks strike 2 additional nearby enemies for 55% damage', flavor: 'Cut one string, and two more sing.' },
+    text: 'Attacks strike 2 additional nearby enemies for 40% damage', flavor: 'Cut one string, and two more sing.' },
   windrunner: { id: 'windrunner', name: 'Windrunner', slot: 'armor', power: 12,
     text: '+40% movement speed and +25% attack speed; each soldier\'s first strike deals 300% damage', flavor: 'Faster than the rumour of its coming.' },
   sunfire: { id: 'sunfire', name: 'Sunfire Mantle', slot: 'armor', power: 14,

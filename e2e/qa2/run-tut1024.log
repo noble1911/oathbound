@@ -1,0 +1,117 @@
+title: tutorial button {"cls":"btn big tutorial fresh","text":"Tutorial | New here? Start with this","rect":[319,446,704,496],"menu":[297,298,726,725]}
+title fps 2.5
+STEP 1 [1 / 13] "Choose your Lord" slot=top phase=lordPick r0 :: Your Lord is a hero who fights on the field. Each one brings two signature units, a passive and an ability that fires by itself. Marshal Aldric is a forgiving first pick: he lets you deploy an extra squad every round.
+   rect 15,15,317,216 offscreen=false targets=0 visible=0 [] coachCovers=[".lcard"]
+   -> picked marshal
+(coach quiet) phase=planning r1 modal=null screen=screen planning
+STEP 3 [2 / 13] "Raise your companies" slot=modal phase=planning r1 :: Unlock 2 more unit types for the whole match. Hover a card to see what it beats and what beats it. A front line plus something ranged is a sound start.
+   rect 60,79,274,288 offscreen=false targets=3 visible=3 [{"cls":"dcard.coach-target","r":[207,448,397,633],"vis":true},{"cls":"dcard.coach-target","r":[416,448,606,633],"vis":true},{"cls":"dcard.coach-target","r":[626,448,816,633],"vis":true}] coachCovers=[".notices",".modal .loot-head"]
+   -> clicked draft notice
+STEP 4 [2 / 13] "Raise your companies" slot=modal phase=planning r1 :: Unlock 2 more unit types for the whole match. Hover a card to see what it beats and what beats it. A front line plus something ranged is a sound start.
+   rect 60,79,274,289 offscreen=false targets=3 visible=3 [{"cls":"dcard.coach-target","r":[207,446,397,631],"vis":true},{"cls":"dcard.coach-target","r":[416,446,607,631],"vis":true},{"cls":"dcard.coach-target","r":[626,446,816,631],"vis":true}] coachCovers=[".notices",".modal .loot-head"]
+   -> draft pick
+   -> draft pick
+STEP 5 [3 / 13] "Deploy a squad" slot=side phase=planning r1 :: These are your unit types. Drag a card onto your half of the field (inside the glowing border), or press 1 and click the ground. Q E turn it while you place.
+   rect 60,263,306,463 offscreen=false targets=4 visible=4 [{"cls":"ucard.coach-target","r":[258,633,369,753],"vis":true},{"cls":"ucard.coach-target","r":[376,633,487,753],"vis":true},{"cls":"ucard.coach-target","r":[494,633,606,753],"vis":true}] coachCovers=[]
+   -> deploy drag to 4000,3200 -> squads 1->2 gold 300->200
+STEP 6 [4 / 13] "2 deploys left" slot=side phase=planning r1 :: You may add only a few new squads each round, so every one counts. Put tough units in front and archers or mages behind them. Your army is permanent: it comes back every round.
+   rect 60,263,306,484 offscreen=false targets=1 visible=1 [{"cls":"deploy-badge.coach-target","r":[15,652,117,755],"vis":true}] coachCovers=[]
+   -> deploy drag to 2800,3200 -> squads 2->3 gold 200->50
+STEP 7 [6 / 13] "Ready" slot=side phase=planning r1 :: Happy with your army? Press Ready Space. The battle starts when both commanders are ready.
+   rect 60,263,306,443 offscreen=false targets=1 visible=1 [{"cls":"ready-btn.coach-target","r":[865,659,1008,732],"vis":true}] coachCovers=[]
+   -> ready
+(coach quiet) phase=battle r1 modal=null screen=screen battle
+STEP 9 [7 / 13] "The battle" slot=side phase=battle r1 :: The armies fight on their own. Whoever is left standing marches on the enemy Keep. C frees the camera, 1 2 4 set the speed, End skips.
+   rect 60,263,306,463 offscreen=false targets=1 visible=1 [{"cls":"b-ctrl.panel","r":[543,698,1008,752],"vis":true}] coachCovers=[]
+   battle fps 125
+   !! stuck on "The battle" for ~20 s {"phase":"battle","gold":50,"deploys":1,"stash":0}
+(coach quiet) phase=battle r1 modal=null screen=screen battle over
+(coach quiet) phase=results r1 modal=null screen=screen results
+STEP 12 [8 / 13] "Read the round" slot=low phase=results r1 :: The report says why the round went as it did, squad by squad. Losing is not the end: the loser gets catch-up gold and better loot.
+   rect 15,572,285,752 offscreen=false targets=1 visible=1 [{"cls":"res-hints.coach-target","r":[60,209,963,241],"vis":true}] coachCovers=[".res-card"]
+STEP 13 [11 / 13] "New recruits" slot=modal phase=planning r2 :: Every round you unlock one more unit type. Pick what counters the army the enemy fielded last round.
+   rect 60,79,274,247 offscreen=false targets=2 visible=2 [{"cls":"dcard.coach-target","r":[312,446,502,631],"vis":true},{"cls":"dcard.coach-target","r":[521,446,711,631],"vis":true}] coachCovers=[".notices"]
+   -> draft pick
+STEP 14 [9 / 13] "Spoils of War" slot=modal phase=planning r2 :: After every round you claim one item. It works on every soldier of the squad that carries it. Best on names the squad it helps most; a greyed line does nothing there.
+   rect 60,79,274,266 offscreen=false targets=0 visible=0 [] coachCovers=[".notices",".modal .loot-head"]
+   -> took loot
+STEP 15 [10 / 13] "Equip your loot" slot=side phase=planning r2 :: Drag the item from your stash onto a squad or your Lord. Squads carry a Weapon from level 1, Armor from level 2; your Lord has all three slots.
+   rect 60,263,306,463 offscreen=false targets=1 visible=1 [{"cls":"stash.panel","r":[15,461,261,602],"vis":true}] coachCovers=[]
+   coach while dragging: {"n":"10 / 13","t":"Drop it on a squad","x":"Release the item over a squad on the field, or over a slot in its panel.","slot":"side","rect":[60,263,306,423],"off":false,"targets":1,"targetsVisible":1,"tg":[{"cls":"stash.panel","r":[15,461,261,602],"vis":true}],"covers":[]}
+   -> dragged item onto militia -> stash 1->0
+STEP 16 [4 / 13] "3 deploys left" slot=side phase=planning r2 :: You may add only a few new squads each round, so every one counts. Put tough units in front and archers or mages behind them. Your army is permanent: it comes back every round.
+   rect 60,263,306,484 offscreen=false targets=1 visible=1 [{"cls":"deploy-badge.coach-target","r":[15,652,117,755],"vis":true}] coachCovers=[]
+   -> deploy drag to 5200,3200 -> squads 3->4 gold 300->150
+STEP 17 [4 / 13] "2 deploys left" slot=side phase=planning r2 :: You may add only a few new squads each round, so every one counts. Put tough units in front and archers or mages behind them. Your army is permanent: it comes back every round.
+   rect 60,263,306,484 offscreen=false targets=1 visible=1 [{"cls":"deploy-badge.coach-target","r":[15,652,117,755],"vis":true}] coachCovers=[]
+   -> deploy drag to 1600,3200 -> squads 4->5 gold 150->0
+STEP 18 [12 / 13] "Know your enemy" slot=side phase=planning r2 :: The red ghosts show where the enemy stood last round. You never see what they do now. Hover one to read it; Tab hides them. Then press Ready.
+   rect 60,263,306,463 offscreen=false targets=1 visible=1 [{"cls":"r-ghost.on","r":[482,73,719,114],"vis":true}] coachCovers=[]
+   -> hovered ghost, pressed Ready
+(coach quiet) phase=battle r2 modal=null screen=screen battle
+STEP 20 [7 / 13] "The battle" slot=side phase=battle r2 :: The armies fight on their own. Whoever is left standing marches on the enemy Keep. C frees the camera, 1 2 4 set the speed, End skips.
+   rect 60,263,306,463 offscreen=false targets=1 visible=1 [{"cls":"b-ctrl.panel","r":[543,698,1008,752],"vis":true}] coachCovers=[]
+   battle fps 165.3
+   -> End (skip)
+(coach quiet) phase=battle r2 modal=null screen=screen battle over
+STEP 22 [8 / 13] "Read the round" slot=low phase=results r2 :: The report says why the round went as it did, squad by squad. Losing is not the end: the loser gets catch-up gold and better loot.
+   rect 15,572,285,752 offscreen=false targets=1 visible=1 [{"cls":"res-hints.coach-target","r":[60,180,963,212],"vis":true}] coachCovers=[".res-card"]
+STEP 23 [] "You have the basics" slot=side phase=planning r3 :: Deploy, level up, equip, counter what you saw. Break their Keep! The codex F1 has every rule.
+   rect 60,263,306,423 offscreen=false targets=0 visible=0 [] coachCovers=[".notices",".modal .loot-head"]
+   -> wrap
+   -> wrap
+(coach quiet) phase=planning r3 modal=modal draft fresh screen=screen planning
+   !! coach silent for ~8s in phase planning; state {"gold":275,"deploys":3,"stash":0,"squads":5}
+   -> (uncoached) pressed Ready
+(coach quiet) phase=battle r3 modal=null screen=screen battle
+   !! coach silent for ~8s in phase battle; state {"gold":275,"deploys":3,"stash":0,"squads":5}
+(coach quiet) phase=results r3 modal=null screen=screen results
+(coach quiet) phase=planning r4 modal=null screen=screen planning
+   !! coach silent for ~8s in phase planning; state {"gold":680,"deploys":3,"stash":1,"squads":5}
+   -> (uncoached) pressed Ready
+(coach quiet) phase=battle r4 modal=null screen=screen battle
+   !! coach silent for ~8s in phase battle; state {"gold":680,"deploys":3,"stash":1,"squads":5}
+(coach quiet) phase=results r4 modal=null screen=screen results
+(coach quiet) phase=planning r5 modal=null screen=screen planning
+   !! coach silent for ~8s in phase planning; state {"gold":1144,"deploys":3,"stash":2,"squads":5}
+   -> (uncoached) pressed Ready
+(coach quiet) phase=battle r5 modal=null screen=screen battle
+   !! coach silent for ~8s in phase battle; state {"gold":1144,"deploys":3,"stash":2,"squads":5}
+(coach quiet) phase=results r5 modal=null screen=screen results
+(coach quiet) phase=planning r6 modal=null screen=screen planning
+   !! coach silent for ~8s in phase planning; state {"gold":1688,"deploys":3,"stash":3,"squads":5}
+   -> (uncoached) pressed Ready
+(coach quiet) phase=battle r6 modal=null screen=screen battle
+   !! coach silent for ~8s in phase battle; state {"gold":1688,"deploys":3,"stash":3,"squads":5}
+(coach quiet) phase=results r6 modal=null screen=screen results
+(coach quiet) phase=planning r7 modal=null screen=screen planning
+   !! coach silent for ~8s in phase planning; state {"gold":2330,"deploys":4,"stash":4,"squads":5}
+   -> (uncoached) pressed Ready
+(coach quiet) phase=battle r7 modal=null screen=screen battle
+   !! coach silent for ~8s in phase battle; state {"gold":2330,"deploys":4,"stash":4,"squads":5}
+(coach quiet) phase=results r7 modal=null screen=screen results
+(coach quiet) phase=planning r8 modal=null screen=screen planning
+   !! coach silent for ~8s in phase planning; state {"gold":3082,"deploys":4,"stash":5,"squads":5}
+   -> (uncoached) pressed Ready
+(coach quiet) phase=battle r8 modal=null screen=screen battle
+   !! coach silent for ~8s in phase battle; state {"gold":3082,"deploys":4,"stash":5,"squads":5}
+(coach quiet) phase=over r8 modal=null screen=screen over defeat
+coach steps seen in order: ["Choose your Lord","Raise your companies","Raise your companies","Deploy a squad","2 deploys left","Ready","The battle","Read the round","New recruits","Spoils of War","Equip your loot","3 deploys left","2 deploys left","Know your enemy","The battle","Read the round","You have the basics"]
+tutorial.done flag 1 keys ["oathbound.tutorial.done","oathbound.name"]
+state at end of coached part {"phase":"over","round":8,"left":-1794682056075,"gold":3082,"keep":0,"keepMax":4000,"ekeep":3628,"ekeepMax":4000,"deploys":4,"unlocked":["militia","cavaliers","clerics","berserkers","archers","wyvern","ballista","knights","golem","dragon","pegasus"],"squads":[{"id":2,"type":"lord","level":7,"pos":[3999,1200],"items":0},{"id":4,"type":"militia","level":1,"pos":[4000,3200],"items":1},{"id":5,"type":"clerics","level":1,"pos":[2800,3200],"items":0},{"id":14,"type":"clerics","level":1,"pos":[5200,3200],"items":0},{"id":15,"type":"berserkers","level":1,"pos":[1600,3200],"items":0}],"stash":6,"draft":[],"draftPicks":0,"lastArmy":["lord9","berserkers1","knights1","archers2","berserkers1","cavaliers1","clerics1","clerics1","knights1","archers1","knights1","cavaliers1","pegasus1","pikemen1","archers1","ballista1"],"screen":"On","winner":1}
+untimed clock text null leave btn Leave
+leave dialog null
+back at title true tutorial btn now Tutorial | Guided first match
+LOG
+[tut1024] console.warn: THREE.WebGLProgram: Program Info Log: (210,91-147): warning X4122: sum of 0.996094 and -2.98545e-017 cannot be represented accurately in double precision
+(209,41-69): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision
+(210,92-120): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision
+(209,41-69): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision
+(210,92-120): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision
+[tut1024] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0
+[tut1024] console.warn: THREE.WebGLProgram: Program Info Log: (56,12-86): warning X3595: gradient instruction used in a loop with varying iteration; partial derivatives may have undefined value
+(56,12-86): warning X3595: gradient instruction used in a loop with varying iteration; partial derivatives may have undefined value
+[tut1024] console.warn: THREE.WebGLProgram: Program Info Log: (198,12-86): warning X3595: gradient instruction used in a loop with varying iteration; partial derivatives may have undefined value
+(198,12-86): warning X3595: gradient instruction used in a loop with varying iteration; partial derivatives may have undefined value
+(419,1): warning X4000: use of potentially uninitialized variable (f_ApplyFXAA)
+[tut1024] requestfailed https://games.noblehaus.uk/oathbound/audio/music/battle_b.webm net::ERR_ABORTED

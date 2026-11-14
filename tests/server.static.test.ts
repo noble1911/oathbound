@@ -14,6 +14,9 @@ const files: Record<string, Buffer> = {
   'models/v2/knight.vat.json': Buffer.from(JSON.stringify({ frames: Array.from({ length: 300 }, (_, i) => i) })),
   'ui/unit_knights.webp': Buffer.from(Array.from({ length: 5000 }, (_, i) => (i * 7919) & 255)),
   'audio/theme.webm': Buffer.from(Array.from({ length: 4000 }, (_, i) => i & 255)),
+  'models/v2/manifest.json': Buffer.from(JSON.stringify({ version: 2, models: { knight: { glb: 'knight.glb' } } })),
+  'models/v2/knight.glb': Buffer.from(Array.from({ length: 3000 }, (_, i) => (i * 31) & 255)),
+  'textures/grass.webp': Buffer.from(Array.from({ length: 2000 }, (_, i) => (i * 13) & 255)),
 };
 for (const [p, b] of Object.entries(files)) {
   mkdirSync(join(dir, p, '..'), { recursive: true });
@@ -77,19 +80,53 @@ describe('static files', () => {
     expect(new Set([br.headers.etag, gz.headers.etag, none.headers.etag]).size).toBe(3);
   });
 
-  it('models and UI art: a week fresh + stale-while-revalidate; VAT .bin and .json compressed; revalidates with 304', async () => {
+  it('models and UI art without a version revalidate every time; VAT .bin and .json compressed; 304 via the ETag', async () => {
     const bin = await get('/models/v2/knight.vat.bin', { 'Accept-Encoding': 'br' });
-    expect(bin.headers['cache-control']).toBe('public, max-age=604800, stale-while-revalidate=86400');
+    expect(bin.headers['cache-control']).toBe('no-cache');
     expect(bin.headers['content-encoding']).toBe('br');
     expect(bin.body.length).toBeLessThan(files['models/v2/knight.vat.bin'].length / 10);
     const again = await get('/models/v2/knight.vat.bin', { 'Accept-Encoding': 'br', 'If-None-Match': String(bin.headers.etag) });
     expect(again.status).toBe(304);
     const json = await get('/models/v2/knight.vat.json', { 'Accept-Encoding': 'gzip' });
     expect(json.headers['content-encoding']).toBe('gzip');
+    expect(json.headers['cache-control']).toBe('no-cache');
     const art = await get('/ui/unit_knights.webp', { 'Accept-Encoding': 'br, gzip' });
-    expect(art.headers['cache-control']).toBe('public, max-age=604800, stale-while-revalidate=86400');
+    expect(art.headers['cache-control']).toBe('no-cache');
     expect(art.headers['content-encoding']).toBeUndefined(); // images are never re-encoded
     expect(art.headers.etag).toBeTruthy();
+  });
+
+  it('versioned art (?v=hash) is immutable; the served manifest and /asset-versions.json carry the hashes', async () => {
+    const man = await get('/models/v2/manifest.json');
+    expect(man.status).toBe(200);
+    expect(man.headers['cache-control']).toBe('no-cache');
+    const m = JSON.parse(man.body.toString());
+    expect(m.models.knight.glb).toBe('knight.glb'); // the manifest itself is untouched
+    expect(Object.keys(m.hashes).sort()).toEqual(['knight.glb', 'knight.vat.bin', 'knight.vat.json']);
+    expect(m.hashes['knight.glb']).toMatch(/^[\w-]{12}$/);
+    expect((await get('/models/v2/manifest.json', { 'If-None-Match': String(man.headers.etag) })).status).toBe(304);
+    const all = await get('/asset-versions.json');
+    expect(all.headers['cache-control']).toBe('no-cache');
+    const v = JSON.parse(all.body.toString());
+    expect(v['models/v2/knight.glb']).toBe(m.hashes['knight.glb']);
+    expect(v['textures/grass.webp']).toBeTruthy();
+    expect(v['audio/theme.webm']).toBeTruthy();
+    expect(v['ui/unit_knights.webp']).toBeTruthy();
+    expect(v['index.html']).toBeUndefined();
+    for (const p of ['models/v2/knight.glb', 'textures/grass.webp', 'audio/theme.webm', 'ui/unit_knights.webp']) {
+      const r = await get(`/${p}?v=${v[p]}`);
+      expect(r.status).toBe(200);
+      expect(r.headers['cache-control'], p).toBe('public, max-age=31536000, immutable');
+      expect(r.body.equals(files[p])).toBe(true);
+      expect((await get(`/${p}`)).headers['cache-control']).toBe('no-cache');
+    }
+    // JSON metadata is never immutable, versioned or not
+    expect((await get('/models/v2/knight.vat.json?v=abc')).headers['cache-control']).toBe('no-cache');
+    // a redeployed model changes its hash, so its versioned URL changes
+    writeFileSync(join(dir, 'models/v2/knight.glb'), Buffer.from('new model bytes'));
+    const m2 = JSON.parse((await get('/models/v2/manifest.json', { 'If-None-Match': String(man.headers.etag) })).body.toString());
+    expect(m2.hashes['knight.glb']).not.toBe(m.hashes['knight.glb']);
+    expect(m2.hashes['knight.vat.bin']).toBe(m.hashes['knight.vat.bin']);
   });
 
   it('a changed file gets a new ETag (the hash follows the content)', async () => {

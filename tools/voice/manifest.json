@@ -1,0 +1,112 @@
+{
+  "about": "Lord voice lines for Oathbound. Rendered with Breeze-TTS-2 by tools/voice/render.py (WSL), built to public/audio/voice/<lord>/<event>_<n>.webm by tools/voice/build.py. Every voice is designed from the text description below; no reference audio of any real person is used. Licence: see docs/AUDIO.md (Voices).",
+  "cfg_scale": 4.0,
+  "events": {
+    "pick": "Proud and assured, introducing yourself.",
+    "taunt": "A taunt to the rival across the field, relishing it.",
+    "deploy": "A short, crisp acknowledgement of an order.",
+    "ready": "Firm and decisive, announcing readiness.",
+    "charge": "Shouting a battle cry over the noise of an army.",
+    "ability": "Calling out a powerful ability with full force.",
+    "roundWon": "Satisfied after a won fight.",
+    "roundLost": "Grim but unbroken after a lost fight.",
+    "keep": "Urgent alarm, the fortress is under heavy attack.",
+    "legendary": "Impressed and admiring, holding a rare treasure.",
+    "victory": "Triumphant and proud, the war is won.",
+    "defeat": "Defeated and heavy, but keeping dignity."
+  },
+  "lords": {
+    "marshal": {
+      "name": "Marshal Aldric",
+      "voice": "A man in his late fifties with a deep, low-pitched baritone voice and a refined southern English accent. A seasoned knight-general: calm, steady and noble, speaking in a low register with warm chest resonance and quiet authority. Natural and grounded, never shrill, not theatrical.",
+      "style": "Steady, noble, commanding baritone.",
+      "reference_text": "I have held this line through winter and fire. Stand with me, and no banner of ours will ever fall.",
+      "f0": [85, 145],
+      "rate": 2.5,
+      "seed": 37,
+      "lines": {
+        "pick": ["Aldric of the Marches. The line is mine to hold."],
+        "taunt": ["Lay down your banners. I'll see they're folded with honour."],
+        "deploy": ["Form up, there.", "Shields to the front.", "Hold that ground."],
+        "ready": ["The line is drawn. We are ready."],
+        "charge": ["Forward, together! Advance!", "Steady, steady. Now! Take the field!"],
+        "ability": ["Rally to me! Rally!", "On my banner! Strike as one!"],
+        "roundWon": ["Well fought. Hold the line.", "The field is ours. See to the wounded."],
+        "roundLost": ["We fell back. We did not break.", "A hard lesson. Regroup."],
+        "keep": ["The keep is under siege! To the walls!"],
+        "legendary": ["A blade worthy of a king."],
+        "victory": ["Victory. Let the bells ring in every village."],
+        "defeat": ["The field is lost. But not the oath."]
+      }
+    },
+    "archmage": {
+      "name": "Archmage Sefa",
+      "voice": "A composed woman in her forties with a cool, smooth alto and crisp, precise English diction. Wry, dry and quietly menacing, unhurried and faintly amused, as if she already knows how this ends. Controlled and intimate, never shouting, with an otherworldly calm.",
+      "style": "Cool, wry, crisp and quietly menacing.",
+      "reference_text": "Magic is only patience with a sharper edge. Sit still, and I shall show you exactly how the stars fall.",
+      "f0": [150, 240],
+      "rate": 2.4,
+      "seed": 37,
+      "lines": {
+        "pick": ["Sefa. Do try to keep up."],
+        "taunt": ["I've read how this ends. You won't enjoy the last page."],
+        "deploy": ["As you wish.", "Placed.", "There. Precisely there."],
+        "ready": ["The pattern is set. Begin."],
+        "charge": ["Let them come to the fire.", "Burn brightly, my dears."],
+        "ability": ["Meteor. Do look up.", "The sky is falling. On you."],
+        "roundWon": ["Predictable. Delightfully so.", "Ash and quiet. Just how I like it."],
+        "roundLost": ["Hm. A variable I missed.", "Interesting. It won't happen twice."],
+        "keep": ["Someone is knocking on my tower. Rudely."],
+        "legendary": ["Oh, this one hums. I'll keep it."],
+        "victory": ["Checkmate. It was never in doubt."],
+        "defeat": ["Well. I shall remember your name."]
+      }
+    },
+    "warden": {
+      "name": "Warden Hrolf",
+      "voice": "An enormous old Nordic chieftain with a very deep, rumbling bass voice in the lowest register, rough and gravelly, with a strong Scandinavian accent. He speaks slowly and deliberately, booming and resonant from a huge barrel chest, heavy and unhurried, like a giant warrior speaking in a stone hall.",
+      "style": "Very deep, gravelly, slow and booming.",
+      "reference_text": "My fathers built this wall from stone and stubbornness. Many have come to break it. None of them went home.",
+      "f0": [55, 105],
+      "rate": 1.9,
+      "seed": null,
+      "lines": {
+        "pick": ["Hrolf. I am the wall."],
+        "taunt": ["Come, little one. Break yourself on me."],
+        "deploy": ["Aye. Here.", "Plant your feet.", "Stand. Do not move."],
+        "ready": ["Shields locked. Let them come."],
+        "charge": ["Shields up! Forward, slow and sure!", "Now we crush them!"],
+        "ability": ["Bulwark! Behind me, all of you!", "Lock shields! Bulwark!"],
+        "roundWon": ["(laugh) They broke like ice.", "Good. Tonight, we drink."],
+        "roundLost": ["Bah. Mend the shields.", "We bend. We do not break."],
+        "keep": ["They hammer at my hall! Hold the gate!"],
+        "legendary": ["Now that is good iron."],
+        "victory": ["The wall stands. The wall always stands."],
+        "defeat": ["The wall has fallen. Sing of it."]
+      }
+    },
+    "skylady": {
+      "name": "Skylady Ione",
+      "voice": "A young woman in her twenties with a bright, clear, energetic voice and a lively Irish accent. Fierce, quick and exhilarated, a little breathless with excitement, like a daring sky-rider captain calling to her squadron over the wind.",
+      "style": "Bright, fierce, fast and exhilarated.",
+      "reference_text": "There's nothing like it, the wind in your face and the whole world down below. Hold on tight, we're going up!",
+      "f0": [180, 320],
+      "rate": 3.1,
+      "seed": 53,
+      "lines": {
+        "pick": ["Ione of the high wind! Let's fly!"],
+        "taunt": ["You'll never see me coming. Nobody ever does."],
+        "deploy": ["Wings ready!", "On it!", "Into the sky!"],
+        "ready": ["Saddled and ready! Give the word!"],
+        "charge": ["Up, up, and into them!", "Ride the wind! Go!"],
+        "ability": ["Skyfall! Out of the sun!", "Diving! Skyfall!"],
+        "roundWon": ["(laugh) What a ride!", "Clear skies! They're scattered!"],
+        "roundLost": ["Ugh. They clipped our wings.", "We'll climb higher next time."],
+        "keep": ["They're at the keep! Wheel around, now!"],
+        "legendary": ["Oh, would you look at that shine!"],
+        "victory": ["The sky is ours! Every last cloud!"],
+        "defeat": ["Grounded. For now."]
+      }
+    }
+  }
+}

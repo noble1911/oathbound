@@ -7,7 +7,8 @@ import { sound } from '../audio.ts';
 import { $, el, esc } from './dom.ts';
 import { icon } from './icons.ts';
 import { itemIcon, itemTooltip } from './items.ts';
-import { bestFit, RARITY_LABEL, rarityRank, SLOT_LABEL, slotOpen, unitName, type Fit } from './gamedata.ts';
+import { SKILLS, canEquip, usableByText, UNIT_CLASS, UNIT_CLASSES, CLASS_NAME } from '../sim/data/skills.ts';
+import { bestFit, counters, RARITY_LABEL, rarityRank, SLOT_LABEL, slotOpen, tagsOf, TAG_LABEL, unitName, type Fit } from './gamedata.ts';
 import { SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
 import { crest, unitTooltip } from './units.ts';
 import { tip } from './dom.ts';
@@ -24,6 +25,8 @@ function fitLine(item: Item, me: PlayerState, fit: Fit | null): string {
     const dead = fit.dead ? ` <em>${fit.dead} line${fit.dead === 1 ? '' : 's'} wasted</em>` : '';
     return `<span class="fit good">${icon('ready')}Best on: <b>${who}</b>${fit.replaces ? ' (replaces its ' + slot + ')' : ''}${dead}</span>`;
   }
+  // a skill item nobody in the army has the class for
+  if (item.skill && !me.squads.some((q) => canEquip(item, q.type, me.lord))) return `<span class="fit none">${icon('lock')}Only ${esc(usableByText(item.skill))} can use ${esc(SKILLS[item.skill].name)}: nobody in your army can yet</span>`;
   const open = me.squads.some((s) => slotOpen(s, item.slot));
   if (!open) return `<span class="fit none">${icon('lock')}No open ${slot} slot yet: squads open it at level ${SLOT_UNLOCK_LEVEL[item.slot]}</span>`;
   return `<span class="fit none">${icon('bag')}No upgrade for your army right now</span>`;
@@ -42,16 +45,16 @@ export class LootModal {
     this.root = el(`<div class="modal loot ${best === 3 ? 'has-leg' : ''}">
       <div class="loot-bg"></div>
       <header class="loot-head">
-        <small class="eyebrow">${me.lostLast ? 'Fortune favours the fallen' : 'After the battle'}</small>
+        <small class="eyebrow">After the battle</small>
         <h2>Spoils of War</h2>
-        <p>${me.lostLast ? 'You lost the last battle: this offer rolled <b>one rarity tier higher</b>.' : 'Choose one. It goes to your stash; equip it on a squad or your Lord.'}</p>
+        <p>Choose one. It goes to your stash; equip it on a squad or your Lord. <span class="loot-same">Your opponent is offered the same items.</span></p>
       </header>
       <div class="loot-row n${offer.length}">
         ${offer
           .map((it, i) => {
             const fit = bestFit(it, me.squads, me.lord);
-            // judged against the squad it suits best (else the Lord, who always has the slot)
-            const on = fit?.squad ?? lordSq ?? null;
+            // judged against the squad it suits best (else the Lord, who always has the slot, if the Lord can use it)
+            const on = fit?.squad ?? (lordSq && canEquip(it, 'lord', me.lord) ? lordSq : null);
             const cur = on?.items[it.slot] ?? null;
             const onName = on ? unitName(on.type, me.lord) : '';
             const cmp = on ? { compare: cur, compareLabel: cur ? `vs ${onName}'s ${SLOT_LABEL[it.slot].toLowerCase()}` : `On ${onName} (empty ${SLOT_LABEL[it.slot].toLowerCase()} slot)`, on: { type: on.type, lord: me.lord } } : {};
@@ -110,6 +113,43 @@ export class LootModal {
   }
 }
 
+/** The recruit picker's order: by class (line, ranged, casters, riders, fliers, siege, giants), then by cost. */
+export function draftOrder(options: UnitType[]): UnitType[] {
+  return [...options].sort((x, y) => UNIT_CLASSES.indexOf(UNIT_CLASS[x]) - UNIT_CLASSES.indexOf(UNIT_CLASS[y]) || UNITS[x].cost - UNITS[y].cost || options.indexOf(x) - options.indexOf(y));
+}
+
+export interface DraftLine { label: 'Beats' | 'Supports' | 'Role' | 'Fears'; tone: 'good' | 'bad' | 'info'; text: string; tip: string }
+
+/**
+ * The two lines under a recruit card, never empty: what the unit is for (the squads it beats; for a
+ * healer what it supports; for a unit with a damage bonus but no hard counter, the bonus), and what
+ * it fears (or that nothing counters it outright).
+ */
+export function draftLines(u: UnitType): [DraftLine, DraftLine] {
+  const d = UNITS[u];
+  const c = counters(u);
+  const short = (list: UnitType[]): string => list.slice(0, 3).map((x) => UNITS[x].name.replace(/ (Knights|Riders)$/, '')).join(', ');
+  const full = (list: UnitType[]): string => list.map((x) => UNITS[x].name).join(', ');
+  let first: DraftLine;
+  if (d.traits.includes('healer')) first = { label: 'Supports', tone: 'good', text: 'Heals nearby squads', tip: 'Restores the life of wounded allies in range instead of fighting on the line' };
+  else if (c.strongVs.length) first = { label: 'Beats', tone: 'good', text: short(c.strongVs), tip: full(c.strongVs) };
+  else {
+    // no hard counter of its own: say what its damage bonus is against (Archers: fliers), else its job
+    const bonus = (Object.entries(d.effective ?? {}) as [keyof typeof TAG_LABEL, number][]).filter(([, m]) => m > 100).map(([tag, m]) => `${tag === 'flier' ? 'Fliers' : tag === 'infantry' ? 'Infantry' : `${TAG_LABEL[tag]} units`} ×${(m / 100).toFixed(m % 100 ? 1 : 0)}`);
+    const ranged = d.range >= 400 ? (bonus.length ? '' : 'Anything in range, fliers included') : '';
+    first = bonus.length ? { label: 'Beats', tone: 'good', text: bonus.join(', '), tip: `Deals bonus damage to ${bonus.join(' and ')}${d.range >= 400 ? '; one of the few units that can hit fliers' : ''}` }
+      : ranged ? { label: 'Beats', tone: 'good', text: ranged, tip: 'A ranged unit: it can hit fliers, and whatever it outranges' }
+      : { label: 'Role', tone: 'info', text: d.role, tip: d.role };
+  }
+  const second: DraftLine = c.weakTo.length ? { label: 'Fears', tone: 'bad', text: short(c.weakTo), tip: full(c.weakTo) } : { label: 'Fears', tone: 'info', text: 'No hard counter', tip: 'No unit counters it outright' };
+  return [first, second];
+}
+
+/**
+ * "Recruit a new unit type": a free choice of any eligible unit (both commanders get the same
+ * options). A grid of unit cards sorted by class, each with its role, cost and what it beats and
+ * fears. If planning ends first the sim takes the first option, which is marked on its card.
+ */
 export class DraftModal {
   readonly root: HTMLElement;
   key: string;
@@ -117,23 +157,30 @@ export class DraftModal {
   /** `fresh`: the draft just appeared (not reopened from the notice): sting + "New recruits!" ribbon. */
   constructor(host: HTMLElement, me: PlayerState, round: number, onPick: (u: UnitType) => void, onClose: () => void, fresh = false) {
     this.key = me.draftOptions.join(',') + ':' + me.draftPicks;
-    const first = round <= 1;
-    this.root = el(`<div class="modal draft${fresh ? ' fresh' : ''}">
+    const n = me.draftPicks;
+    const fallback = me.draftOptions[0];
+    const card = (u: UnitType): string => {
+      const d = UNITS[u];
+      const row = (l: DraftLine): string => `<span class="dc-ctr ${l.tone}"><small>${l.label}</small><span class="dc-m"><span data-tip="${esc(l.tip)}">${esc(l.text)}</span></span></span>`;
+      return `<button class="dcard" data-u="${u}">
+        ${u === fallback ? '<em class="dc-def" data-tip="Recruited for you if planning ends before you choose">Default</em>' : ''}
+        ${crest(u, null, 'lg')}
+        <b>${esc(d.name)}</b>
+        <small>${esc(d.role)} · ${esc(CLASS_NAME[UNIT_CLASS[u]])}</small>
+        <span class="dc-cost">${icon('gold')}${d.cost} <em>×${d.squadSize}</em><span class="dc-tags">${tagsOf(u).map((g) => `<i data-tip="${esc(TAG_LABEL[g])}">${icon(g)}</i>`).join('')}</span></span>
+        ${draftLines(u).map(row).join('')}
+      </button>`;
+    };
+    const opts = draftOrder(me.draftOptions);
+    this.root = el(`<div class="modal draft${fresh ? ' fresh' : ''}" data-n="${opts.length}">
       ${fresh ? '<div class="draft-ribbon">New recruits!</div>' : ''}
-      <header class="loot-head"><small class="eyebrow">${first ? 'Muster' : `Round ${round}`}</small>
-        <h2>${first ? 'Raise your companies' : 'New recruits'}</h2>
-        <p>${first ? `Unlock <b>${me.draftPicks}</b> more unit type${me.draftPicks > 1 ? 's' : ''} for the whole match, alongside your Lord's signature units.` : 'Unlock one more unit type. Choose what counters your rival.'}</p>
+      <header class="loot-head"><small class="eyebrow">${round <= 1 ? 'Muster' : `Round ${round}`}</small>
+        <h2>Recruit a new unit type</h2>
+        <p>Choose <b>any ${n > 1 ? n : 'one'}</b> of these ${opts.length}. ${n > 1 ? 'They join' : 'It joins'} your shop for the whole match. <span class="loot-same">Your opponent has the same choice.</span></p>
       </header>
-      <div class="draft-row">
-        ${me.draftOptions
-          .map(
-            (u) => `<button class="dcard" data-u="${u}">${crest(u, null, 'lg')}<b>${esc(UNITS[u].name)}</b><small>${esc(UNITS[u].role)}</small>
-              <span class="dc-cost">${icon('gold')}${UNITS[u].cost} <em>×${UNITS[u].squadSize}</em></span></button>`,
-          )
-          .join('')}
-      </div>
-      <div class="draft-have"><small>Unlocked</small>${me.unlocked.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('')}</div>
-      <footer class="loot-foot"><button class="btn later">Later</button><small class="muted">If planning ends first, the first option is unlocked.</small></footer>
+      <div class="draft-row" style="--cols:${Math.min(5, Math.max(3, Math.ceil(opts.length / 2)))}">${opts.map(card).join('')}</div>
+      <div class="draft-have"><small>Already yours</small>${me.unlocked.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('')}</div>
+      <footer class="loot-foot"><button class="btn later">Later</button><small class="muted">${fallback ? `If planning ends first, <b>${esc(UNITS[fallback].name)}</b> is recruited for you.` : ''}</small></footer>
     </div>`);
     host.appendChild(this.root);
     if (fresh) sound.draft();

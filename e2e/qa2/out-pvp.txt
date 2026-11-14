@@ -1,0 +1,66 @@
+room D7QS
+lobby fps A/B/S 0 0 0
+AUDIT A lordpick: ["OVERLAP .shell .corner x .lp-head by 252x30"]
+AUDIT B lordpick: ["OVERLAP .shell .corner x .lp-head by 198x24"]
+AUDIT S lordpick: ["OVERLAP .shell .corner x .lp-head by 179x21"]
+S lord pick foot while A has picked The commanders are choosing their Lords… S sees chosen cards 0
+seats A/B 0 1
+B deployed through UI: squads ["lord","berserkers"]
+AUDIT S plan r1: ["OVERLAP .shop x .spect-note by 457x63","OVERLAP .ready-box x .stop-watch by 179x47"]
+r1 planning: S HUD {"note":"Spectating\nThe commanders plan in secret. You see each army as it last fought.","armies":null,"keys":["seed","round","phase","terrain","winner","history","seat","you","enemy","enemies"],"clock":"48"}
+r1 planning idle fps A/B/S 0 0 0
+r1 colours: B own-squad side {"n":7,"sides":[0]}
+A ready, B not: A note Ready | CLICK TO UN-READY | Brann is planning B sees Ready | SPACE | Alda is ready
+r1 replay sigs same=true [{"h":0,"ticks":730,"w":0,"round":1},{"h":0,"ticks":730,"w":0,"round":1},{"h":0,"ticks":730,"w":0,"round":1}] S in battle true
+r1 battle fps A/B/S 75.3 49.3 50.7 clocks ["0:12","0:11","0:10"]
+r1 S battle controls ["1×","2×","4×","Director","Free","SkipEnd"] S feed sample ["Warden Hrolf casts Bulwark"]
+A skipped, B watching: A sees Waiting for the other commander…
+both skipped -> results after 3351 ms; S phase/screen now {"phase":"results","battle":true,"results":false}
+3 s later S {"phase":"results","battle":true,"results":false,"planning":false}
+r1 {"r":1,"ms":25163,"keepA":4000,"keepB":4656,"goldB":494,"bDeploys":2} B result title null B catch-up []
+r2 planning: S HUD {"note":null,"armies":null,"keys":["seed","round","phase","terrain","winner","history","seat","you","enemy","enemies"],"clock":"0:26"}
+r2 planning idle fps A/B/S 0 0 163.3
+r2 colours: B own-squad side {"n":7,"sides":[0]}
+r2 replay sigs same=true [{"h":0,"ticks":534,"w":0,"round":2},{"h":0,"ticks":534,"w":0,"round":2},{"h":0,"ticks":534,"w":0,"round":2}] S in battle true
+r2 battle fps A/B/S 104 94 99.3 clocks ["0:11","0:11","0:11"]
+r2 S battle controls ["1×","2×","4×","Director","Free","SkipEnd"] S feed sample ["Warden Hrolf casts Bulwark"]
+AUDIT B results r2: ["OVERLAP .shell .corner x .res-card by 183x22"]
+r2 {"r":2,"ms":15229,"keepA":4000,"keepB":4373,"goldB":494,"bDeploys":2} B result title Defeat B catch-up ["Catch-up (you are behind) +122"]
+r3 {"r":3,"ms":5389,"keepA":4000,"keepB":3948,"goldB":891,"bDeploys":2} B result title Defeat B catch-up ["Catch-up (you are behind) +159"]
+r4 {"r":4,"ms":5463,"keepA":4000,"keepB":3387,"goldB":1350,"bDeploys":2} B result title Defeat B catch-up ["Catch-up (you are behind) +205","Underdog: extra deploy +1"]
+r5 planning: S HUD {"note":null,"armies":null,"keys":["seed","round","phase","terrain","winner","history","seat","you","enemy","enemies"],"clock":"0:15"}
+r5 planning idle fps A/B/S 0 0 166
+r5 colours: B own-squad side {"n":7,"sides":[0]}
+r5 battle fps A/B/S 101.3 101.3 102.7 clocks ["0:11","0:11","0:11"]
+r5 S battle controls ["1×","2×","4×","Director","Free","SkipEnd"] S feed sample ["Brann's Berserkers wiped out","Warden Hrolf casts Bulwark"]
+r5 {"r":5,"ms":14602,"keepA":4000,"keepB":2687,"goldB":1880,"bDeploys":3} B result title Defeat B catch-up ["Catch-up (you are behind) +260","Underdog: extra deploy +1"]
+r6 {"r":6,"ms":5443,"keepA":4000,"keepB":1826,"goldB":2490,"bDeploys":3} B result title Defeat B catch-up ["Catch-up (you are behind) +321","Underdog: extra deploy +1"]
+r7 {"r":7,"ms":5410,"keepA":4000,"keepB":829,"goldB":3186,"bDeploys":3} B result title Defeat B catch-up ["Catch-up (you are behind) +394","Underdog: extra deploy +1"]
+r8 {"r":8,"ms":6656,"keepA":4000,"keepB":0,"goldB":3980,"bDeploys":3} B result title null B catch-up []
+match over=true after 8 rounds, 165s
+A over: {"cls":"screen over victory","word":"Victory | The enemy Keep lies in ruins.","acts":["Rematch","Leave"]} fps 9.5
+B over: {"cls":"screen over defeat","word":"Defeat | Your Keep has fallen.","acts":["Rematch","Leave"]} fps 10
+S over: {"acts":[]} fps 165.5
+A asked rematch: A btn Waiting for your rival… (1/2) | B btn Rematch (1/2: your rival is ready) | S sees  | chat B ["Alda wants a rematch.","Alda wants a rematch."]
+rematch started (lordPick): true S follows: false
+rematch fresh state A {"round":1,"gold":300,"keep":4000,"squads":1,"stash":0,"unlocked":["pegasus","archers"],"lastArmy":null} seats swapped? 0 1
+rematch: report panel / old state leaks A {"reportBtn":false,"feed":0}
+B reload mid-planning: rejoined true
+B leave tip Concede
+concede dialog Concede the match? | You give up your seat: the AI plays out your side and you cannot return. | Keep playing | Concede
+after B conceded: A {"phase":"planning","winner":null,"seat1":{"name":"Brann","bot":false,"botCtl":true,"conn":false},"over":null,"toast":[],"chat":["Brann reconnected.","Brann left: the AI plays their seat."]}
+S after concede {"phase":"planning","over":null}
+LOG
+[A] console.warn: THREE.WebGLProgram: Program Info Log: (210,91-147): warning X4122: sum of 0.996094 and -2.98545e-017 cannot be represented accurately in double precision
+(209,41-69): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision
+(210,92-120): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision
+(209,41-69): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision
+(210,92-120): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision
+[A] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0
+[B] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0
+[S] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0
+[A] console.warn: THREE.WebGLProgram: Program Info Log: (56,12-86): warning X3595: gradient instruction used in a loop with varying iteration; partial derivatives may have undefined value
+(56,12-86): warning X3595: gradient instruction used in a loop with varying iteration; partial derivatives may have undefined value
+[A] console.warn: THREE.WebGLProgram: Program Info Log: (198,12-86): warning X3595: gradient instruction used in a loop with varying iteration; partial derivatives may have undefined value
+(198,12-86): warning X3595: gradient instruction used in a loop with varying iteration; partial derivatives may have undefined value
+(419,1): warning X4000: use of potentially uninitialized variable (f_ApplyFXAA)

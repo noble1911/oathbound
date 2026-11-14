@@ -18,6 +18,7 @@
 //   background; the context is suspended while the tab is hidden or everything is muted. The
 //   mixer's timers run only while their phase is active. Nothing here touches the renderer.
 import { store } from './ui/dom.ts';
+import { assetUrl, loadAssetVersions } from './assets.ts';
 import type { Rarity, Terrain, Vec2 } from './sim/types.ts';
 import { BANK, MUSIC, attenuate, dbToGain, distanceCutoff, smooth, type Bus, type LoadGroup, type MusicId, type SoundDef, type SoundId } from './audio/bank.ts';
 
@@ -77,6 +78,8 @@ class Sound {
   private bus: Record<Bus | 'music', GainNode> | null = null;
   private musicDuck: GainNode | null = null;
   private ambDuck: GainNode | null = null;
+  /** Ducks the battle effects under Lord voice lines (src/audio/voice.ts). */
+  private sfxDuck: GainNode | null = null;
   private verbIn: GainNode | null = null;
   private buffers = new Map<string, AudioBuffer>();
   private raw = new Map<string, Promise<ArrayBuffer | null>>();
@@ -143,7 +146,8 @@ class Sound {
     };
     this.musicDuck = g(this.master);
     this.ambDuck = g(this.master);
-    this.bus = { ui: g(this.master), sfx: g(this.master), amb: g(this.ambDuck), music: g(this.musicDuck) };
+    this.sfxDuck = g(this.master);
+    this.bus = { ui: g(this.master), sfx: g(this.sfxDuck), amb: g(this.ambDuck), music: g(this.musicDuck) };
     // a short stereo hall (decaying filtered noise) as a shared send
     const len = Math.floor(ctx.sampleRate * 2.0);
     const ir = ctx.createBuffer(2, len, ctx.sampleRate);
@@ -265,7 +269,8 @@ class Sound {
   private fetchRaw(f: string): Promise<ArrayBuffer | null> {
     let p = this.raw.get(f);
     if (!p) {
-      p = fetch(`audio/${f}.webm`)
+      p = loadAssetVersions()
+        .then(() => fetch(assetUrl(`audio/${f}.webm`)))
         .then((r) => (r.ok ? r.arrayBuffer() : null))
         .catch(() => null);
       this.raw.set(f, p);
@@ -454,6 +459,22 @@ class Sound {
     }
   }
 
+  /** Under a Lord voice line: the battle effects dip by `db` for `hold` s (the music via duck()). */
+  duckSfx(db: number, hold: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.sfxDuck) return;
+    const t = ctx.currentTime;
+    const n = this.sfxDuck.gain;
+    n.cancelScheduledValues(t);
+    n.setTargetAtTime(dbToGain(-db), t, 0.04);
+    n.setTargetAtTime(1, t + hold, 0.35);
+  }
+
+  /** The context and master bus once unlocked, for the voice bus (src/audio/voice.ts); null before the first gesture. */
+  mixer(): { ctx: AudioContext; master: GainNode } | null {
+    return this.ctx && this.master ? { ctx: this.ctx, master: this.master } : null;
+  }
+
   // ---------------------------------------------------------------- music & phases
   private music(id: MusicId | null, fade = 2.5): void {
     const ctx = this.ctx;
@@ -474,7 +495,7 @@ class Sound {
     if (!id) return;
     let tr = this.tracks.get(id);
     if (!tr) {
-      const el = new Audio(MUSIC[id]);
+      const el = new Audio(assetUrl(MUSIC[id]));
       el.loop = true;
       el.preload = 'auto';
       const src = ctx.createMediaElementSource(el);

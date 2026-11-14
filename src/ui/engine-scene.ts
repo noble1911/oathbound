@@ -13,7 +13,7 @@
 // mirror), so "my army is blue and at the bottom" holds for both seats. Everything crossing this
 // seam is mapped (`in*` towards the engine, `out*` back); the screens only ever see sim coordinates.
 import * as THREE from 'three';
-import type { DecodedReplay, ReplayEvent, Seat, Terrain, Vec2 } from '../sim/types.ts';
+import type { DecodedReplay, ReplayEvent, Seat, SkillEvent, Terrain, Vec2 } from '../sim/types.ts';
 import { sampleReplay, makeTransforms } from '../sim/index.ts';
 import { BattleView, replaySource, type ArmySquad } from '../render/index.ts';
 import type { CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual } from './scene-adapter.ts';
@@ -50,7 +50,8 @@ export class EngineScene implements SceneAdapter {
   private v3 = new THREE.Vector3();
 
   constructor(host: HTMLElement) {
-    this.view = new BattleView(host, { quality: 'auto', idleFps: 0, artManifest: 'models/v2/manifest.json', seat: 0 });
+    // no `quality` here: the engine restores the stored tier (the settings popover's choice)
+    this.view = new BattleView(host, { idleFps: 0, artManifest: 'models/v2/manifest.json', seat: 0 });
     this.canvas = this.view.engine.canvas;
     this.batterySaver = !!this.view.stats.batterySaver;
     const mk = (color: string, inner: number) => {
@@ -117,6 +118,7 @@ export class EngineScene implements SceneAdapter {
     this.seat = s;
     this.flip = s === 1;
     // the engine always looks from seat 0's end; a seat-1 viewer's world is rotated instead
+    this.syncHomeFar();
     this.rebuild();
   }
 
@@ -213,6 +215,7 @@ export class EngineScene implements SceneAdapter {
   setGhosts(squads: SquadVisual[] | null): void {
     this.ghosts = squads;
     this.ghostIds = new Set((squads ?? []).map((s) => s.id));
+    this.syncHomeFar();
     this.rebuild();
   }
 
@@ -315,13 +318,32 @@ export class EngineScene implements SceneAdapter {
       // a spectator watches both halves: the whole field, not one deploy zone
       this.view.setCameraMode('rts');
       this.view.camera.home(0, true);
-    } else if (typeof v.resetCamera === 'function') v.resetCamera();
-    else this.view.camera.home(0);
+    } else {
+      this.syncHomeFar();
+      if (typeof v.resetCamera === 'function') v.resetCamera();
+      else this.view.camera.home(0);
+    }
   }
+
+  /**
+   * The planning home view reaches the rearmost squad of last round's enemy army (the ghosts), so they
+   * never sit under the top HUD; with no ghosts it ends at the enemy front line again.
+   */
+  private syncHomeFar(): void {
+    const v = this.view as unknown as { setHomeFarEdge?: (yCm: number | null) => void };
+    if (typeof v.setHomeFarEdge !== 'function') return;
+    let far: number | null = null;
+    // engine frame: the viewer always sits at the low-y end (a seat-1 viewer's world is rotated)
+    if (!this.spectator) for (const g of this.ghosts ?? []) far = Math.max(far ?? -Infinity, this.inPos([g.pos[0], g.pos[1]])[1]);
+    if (far === this.homeFar) return;
+    this.homeFar = far;
+    v.setHomeFarEdge(far);
+  }
+  private homeFar: number | null = null;
 
   // ---------------------------------------------------------------- battle
 
-  playReplay(d: DecodedReplay, o: { offsetMs: number; onEvent(e: ReplayEvent, ms: number): void; onEnd(): void }): PlaybackHandle {
+  playReplay(d: DecodedReplay, o: { offsetMs: number; onEvent(e: ReplayEvent, ms: number): void; onSkill?(e: SkillEvent, ms: number): void; onEnd(): void }): PlaybackHandle {
     this.setRange(null);
     let src;
     let onEvent = o.onEvent;
@@ -330,7 +352,8 @@ export class EngineScene implements SceneAdapter {
       src = f;
       onEvent = (e, ms) => o.onEvent(f.original.get(e) ?? e, ms);
     } else src = replaySource(d, sampleReplay, makeTransforms);
-    const pb = this.view.playBattle(src, { onEvent, onEnd: o.onEnd, damageNumbers: 'important', director: true });
+    // skill casts: only the target point is rotated for a seat-1 viewer; the squad row and skill id are the replay's own
+    const pb = this.view.playBattle(src, { onEvent, onSkill: o.onSkill ? (e, ms) => o.onSkill!(e, ms) : undefined, onEnd: o.onEnd, damageNumbers: 'important', director: true });
     if (o.offsetMs > 0) pb.seek(o.offsetMs);
     return {
       get speed() { return pb.speed; },
@@ -343,8 +366,34 @@ export class EngineScene implements SceneAdapter {
   }
 
   clearReplay(): void {
+    this.markSquads([], null);
     this.view.stopBattle();
     this.rebuild();
+  }
+
+  /** The replay soldier under the pointer: the same pick as planning (ray, then screen footprint), by soldier. */
+  pickSoldier(x: number, y: number): number | null {
+    if (!this.view.battle) return null;
+    const hit = this.squadAt(x, y);
+    if (!hit) return null;
+    let dead: number | null = null;
+    for (const s of this.view.units.slots) {
+      if (s.header.squad !== hit.id) continue;
+      if (s.visible && s.deadAt < 0) return s.header.id;
+      dead ??= s.header.id;
+    }
+    return dead;
+  }
+
+  private marked = new Set<number>();
+  markSquads(selected: number[], hovered: number | null): void {
+    const want = new Map<number, { selected?: boolean; hovered?: boolean }>();
+    if (hovered !== null) want.set(hovered, { hovered: true });
+    for (const id of selected) want.set(id, { selected: true });
+    for (const id of this.marked) if (!want.has(id)) this.view.setSquadPlate(id, {});
+    for (const [id, st] of want) this.view.setSquadPlate(id, st);
+    this.marked = new Set(want.keys());
+    this.view.engine.wake();
   }
 
   /** Explicit, both ways: the UI owns the C key (the rig's own toggle only ever went one way). */

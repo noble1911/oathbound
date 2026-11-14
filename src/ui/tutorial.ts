@@ -3,6 +3,11 @@
 // looking at right now (Lord pick → the unlock draft → deploying → deploys left → Ready → the
 // battle → the results → loot → equipping → levelling up → the next draft), with the control it
 // talks about ringed in gold. It never blocks input; "Skip tutorial" dismisses it for good.
+// Steps are numbered in the order they are first shown (a step that comes back is a reminder and
+// carries no number). Round 2 always teaches levelling up (the tutorial match grants the gold for
+// it, see LocalMatch.tutorialGrant). The coach ends with a choice once round 3's planning is on
+// screen with no modal open: "Finish tutorial" (back to the title) or "Keep playing" (the match
+// goes on without the coach).
 import type { RoomView } from '../net/protocol.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
@@ -18,11 +23,19 @@ interface Step {
   text: string;
   /** What to ring. */
   target?: string;
-  /** Where the card sits: beside the field, top-left (Lord pick), low-left (results) or beside a modal's heading. */
-  slot?: 'side' | 'top' | 'low' | 'modal';
+  /**
+   * Where the card sits: beside the field (left), on the right of the field (while the shop's
+   * tooltips open on the left), along the bottom edge (Lord pick: clear of the heading and the
+   * cards), low-left (results) or beside a modal's heading.
+   */
+  slot?: 'side' | 'right' | 'foot' | 'low' | 'modal';
 }
 
-const ORDER = ['lord', 'draft1', 'deploy', 'deploys', 'level', 'ready', 'battle', 'results', 'loot', 'equip', 'draft2', 'ghosts', 'done'];
+/** The numbered steps of the guided match ("n / 13"); anything else is an unnumbered reminder. */
+const MAIN = ['lord', 'draft1', 'deploy', 'deploys', 'ready', 'battle', 'results', 'draft2', 'loot', 'equip', 'level', 'ghosts', 'finish'];
+/** Taught once: these do not come back in later rounds. */
+const ONCE = new Set(['battle', 'results']);
+const MODALS = '.modal, .reveal, .dialog-veil, .rules-veil, .report-veil';
 
 export class Coach {
   readonly root: HTMLElement;
@@ -31,23 +44,39 @@ export class Coach {
   private seen = new Set<string>();
   private ringed: Element[] = [];
   private done = false;
+  /** Numbered steps in the order they were first shown. */
+  private order: string[] = [];
+  /** The round a taught-once step was shown in. */
+  private taughtIn = new Map<string, number>();
+  /** The closing choice is up (Finish tutorial / Keep playing). */
+  private final = false;
 
   private ui: HTMLElement;
   private room: () => RoomView | null;
-  private onEnd: () => void;
+  private onEnd: (toTitle: boolean) => void;
+  private grant: () => number;
 
-  constructor(ui: HTMLElement, room: () => RoomView | null, onEnd: () => void) {
+  /**
+   * `onEnd(toTitle)`: the coach is gone; `toTitle` = the player chose "Finish tutorial".
+   * `grant` = the gold the tutorial match added for the level-up lesson (0 = none).
+   */
+  constructor(ui: HTMLElement, room: () => RoomView | null, onEnd: (toTitle: boolean) => void, grant: () => number = () => 0) {
     this.ui = ui;
     this.room = room;
     this.onEnd = onEnd;
+    this.grant = grant;
     this.root = el(`<aside class="coach panel" aria-live="polite">
       <header><i>${icon('star')}</i><small>Tutorial</small><em class="coach-n"></em></header>
       <b class="coach-t"></b>
       <p class="coach-x"></p>
       <footer><button class="linkish coach-skip">Skip tutorial</button></footer>
+      <div class="coach-acts"><button class="btn coach-keep">Keep playing</button><button class="btn primary coach-finish">Finish tutorial</button></div>
     </aside>`);
     ui.appendChild(this.root);
-    $(this.root, '.coach-skip').addEventListener('click', () => this.finish());
+    $(this.root, '.coach-skip').addEventListener('click', () => this.finish(false));
+    $(this.root, '.coach-keep').addEventListener('click', () => (sound.click(), this.finish(false)));
+    $(this.root, '.coach-finish').addEventListener('click', () => (sound.click(), this.finish(true)));
+    this.setFinal(false);
     this.iv = setInterval(() => this.tick(), 350);
     this.tick();
   }
@@ -62,7 +91,7 @@ export class Coach {
     const armor = SLOT_UNLOCK_LEVEL.armor;
     if (has('.lordpick')) {
       if (has('.lordpick.has-pick')) return null;
-      return { id: 'lord', slot: 'top', title: 'Choose your Lord', text: 'Your Lord is a hero who fights on the field. Each one brings <b>two signature units</b>, a passive and an ability that fires by itself. <b>Marshal Aldric</b> is a forgiving first pick: he lets you deploy an extra squad every round.' };
+      return { id: 'lord', slot: 'foot', target: '.lcard[data-lord="marshal"]', title: 'Choose your Lord', text: 'Your Lord is a hero who fights on the field. Each one brings <b>two signature units</b>, a passive and an ability that fires by itself. <b>Marshal Aldric</b> is a forgiving first pick: he lets you deploy an extra squad every round.' };
     }
     if (has('.reveal')) return null;
     if (has('.modal.draft')) {
@@ -77,6 +106,11 @@ export class Coach {
       const left = me.deployLimit - me.deploysUsed;
       const cheapest = Math.min(...me.unlocked.map((u) => UNITS[u].cost));
       const canDeploy = left > 0 && me.gold >= cheapest;
+      const round = v?.round ?? 1;
+      // beside the field on the right while the shop is in use (its tooltips open over the left);
+      // back on the left when a squad is selected (its panel takes the right)
+      const shopSlot = has('.planning.has-sel') ? 'side' : 'right';
+      const grant = this.grant();
       if (me.ready) return null;
       if (me.draftPicks > 0 && me.draftOptions.length) return { id: 'draft-n', target: '.draft-n', title: 'Recruits are waiting', text: 'Click <b>New recruits!</b> to unlock a unit type before you plan.' };
       if (me.lootOffer) return { id: 'loot-n', target: '.loot-n', title: 'Spoils are waiting', text: 'Click <b>Spoils of War</b> to claim an item.' };
@@ -84,35 +118,73 @@ export class Coach {
         if (has('.planning.item-dragging')) return { id: 'equip', target: '.stash', title: 'Drop it on a squad', text: 'Release the item over a squad on the field, or over a slot in its panel.' };
         return { id: 'equip', target: '.stash', title: 'Equip your loot', text: `<b>Drag the item</b> from your stash onto a squad or your Lord. Squads carry a Weapon from level 1, Armor from level ${armor}; your Lord has all three slots.` };
       }
-      if (!army.length && canDeploy) return { id: 'deploy', target: '.ucard:not(.off)', title: 'Deploy a squad', text: 'These are your unit types. <b>Drag a card onto your half of the field</b> (inside the glowing border), or press <kbd>1</kbd> and click the ground. <kbd>Q</kbd> <kbd>E</kbd> turn it while you place.' };
-      if (canDeploy) return { id: 'deploys', target: '.deploy-badge', title: `${left} deploy${left === 1 ? '' : 's'} left`, text: 'You may add only a few new squads each round, so every one counts. Put tough units in front and archers or mages behind them. <b>Your army is permanent</b>: it comes back every round.' };
+      if (!army.length && canDeploy) return { id: 'deploy', slot: shopSlot, target: '.ucard:not(.off)', title: 'Deploy a squad', text: 'These are your unit types. <b>Drag a card onto your half of the field</b> (inside the glowing border), or press <kbd>1</kbd> and click the ground. <kbd>Q</kbd> <kbd>E</kbd> turn it while you place.' };
       const up = army.find((s) => s.level < MAX_SQUAD_LEVEL && me.gold >= levelUpCost(s.type as never, s.level));
-      if (up && !has('.planning.has-sel')) return { id: 'level', title: 'Spend what is left', text: `No deploys left, but gold remains. <b>Click one of your squads</b>, then <b>Level up</b> <kbd>U</kbd>: +25% life, +20% damage, and level ${armor} opens its Armor slot.` };
-      if (up) return { id: 'level', target: '.sqpanel .lvl', title: 'Level up', text: 'Press <b>Level up</b> <kbd>U</kbd>. Levelling is unlimited, unlike deploying.' };
-      if ((v?.round ?? 1) >= 2 && v?.enemy.lastArmy && !this.seen.has('ghosts-done')) return { id: 'ghosts', target: '.r-ghost', title: 'Know your enemy', text: 'The <b>red ghosts</b> show where the enemy stood last round. You never see what they do now. Hover one to read it; <kbd>Tab</kbd> hides them. Then press Ready.' };
+      if (army.some((s) => s.level > 1)) this.seen.add('level-done');
+      // round 2 teaches levelling up before anything else is bought (the tutorial match pays for it)
+      const teach = round >= 2 && !this.seen.has('level-done');
+      const levelStep = (): Step => {
+        if (has('.sqpanel .lvl')) return { id: 'level', target: '.sqpanel .lvl', title: 'Level up', text: `Press <b>Level up</b> <kbd>U</kbd>: +25% life and +20% damage for the whole squad, and level ${armor} opens its Armor slot. Levelling is unlimited, unlike deploying.` };
+        const lead = !teach ? 'No deploys left, but gold remains.' : grant ? `Gold also makes the squads you have stronger, and the tutorial has added <b>${grant} gold</b> to try it.` : 'Gold also makes the squads you have stronger.';
+        return { id: 'level', title: teach ? 'Level up a squad' : 'Spend what is left', text: `${lead} <b>Click one of your squads</b> on the field (or press <kbd>Tab</kbd>), then <b>Level up</b> <kbd>U</kbd>.` };
+      };
+      if (up && teach) return levelStep();
+      if (canDeploy) return { id: 'deploys', slot: shopSlot, target: '.deploy-badge', title: `${left} deploy${left === 1 ? '' : 's'} left`, text: `You may add up to <b>${me.deployLimit} new squad${me.deployLimit === 1 ? '' : 's'}</b> this round, so every one counts. Put tough units in front and archers or mages behind them. <b>Your army is permanent</b>: it comes back every round.` };
+      if (up) return levelStep();
+      if (round >= 2 && v?.enemy.lastArmy && !this.seen.has('ghosts-done')) return { id: 'ghosts', target: '.r-ghost', title: 'Know your enemy', text: 'The <b>red ghosts</b> on the far half show where the enemy stood last round. They are always shown from round 2; you never see what the enemy does now. Hover one to read it, plan against it, then press Ready.' };
       return { id: 'ready', target: '.ready-btn', title: 'Ready', text: 'Happy with your army? Press <b>Ready</b> <kbd>Space</kbd>. The battle starts when both commanders are ready.' };
     }
     if (has('.battle')) {
-      if (has('.battle.over')) return null;
+      if (has('.battle.over') || this.repeat('battle', v?.round ?? 1)) return null;
       return { id: 'battle', target: '.b-ctrl', title: 'The battle', text: 'The armies fight on their own. Whoever is left standing <b>marches on the enemy Keep</b>. <kbd>C</kbd> frees the camera, <kbd>1</kbd> <kbd>2</kbd> <kbd>4</kbd> set the speed, <kbd>End</kbd> skips.' };
     }
-    if (has('.results')) return { id: 'results', slot: 'low', target: '.res-hints', title: 'Read the round', text: 'The report says <b>why</b> the round went as it did, squad by squad. Losing is not the end: the loser gets <b>catch-up gold and better loot</b>.' };
-    if (has('.screen.over')) return { id: 'done', title: 'That is the war', text: 'You know the ropes now. The codex <kbd>F1</kbd> has every rule if you want the numbers.' };
+    if (has('.results') && this.repeat('results', v?.round ?? 1)) return null;
+    if (has('.results')) return { id: 'results', slot: 'low', target: '.res-hints', title: 'Read the round', text: 'The report says <b>why</b> the round went as it did, squad by squad. Both commanders get the <b>same gold, loot and recruits</b> every round: only your choices differ.' };
     return null;
+  }
+
+  /** A taught-once step in a later round than the one it was taught in. */
+  private repeat(id: string, round: number): boolean {
+    if (!ONCE.has(id)) return false;
+    const r = this.taughtIn.get(id);
+    if (r === undefined) this.taughtIn.set(id, round);
+    return r !== undefined && r !== round;
+  }
+
+  /** The closing card swaps "Skip tutorial" for the two choices. */
+  private setFinal(on: boolean): void {
+    this.root.classList.toggle('final', on);
+    $(this.root, '.coach-acts').style.display = on ? '' : 'none';
+    $(this.root, 'footer').style.display = on ? 'none' : '';
   }
 
   private tick(): void {
     if (this.done) return;
     const room = this.room();
-    // enough guidance once round 3 planning is under way
-    if ((room?.view?.round ?? 1) >= 3 && room?.phase === 'planning' && !this.seen.has('wrap')) {
-      this.seen.add('wrap');
-      this.show({ id: 'wrap', title: 'You have the basics', text: 'Deploy, level up, equip, counter what you saw. Break their Keep! The codex <kbd>F1</kbd> has every rule.' });
-      setTimeout(() => this.finish(), 9000);
+    const me = room?.view?.you;
+    const has = (sel: string) => !!this.ui.querySelector(sel);
+    const modal = has(MODALS);
+    // Enough guidance once round 3's planning is on screen (its recruits and spoils dealt with), or
+    // the match is over: close with a choice, and never over a modal.
+    if (!this.final && !modal) {
+      const waiting = !!me && ((me.draftPicks > 0 && me.draftOptions.length > 0) || !!me.lootOffer);
+      if (has('.screen.over .over-word') || ((room?.view?.round ?? 1) >= 3 && room?.phase === 'planning' && has('.planning') && !waiting)) this.final = true;
+    }
+    if (this.final) {
+      if (modal) {
+        this.root.classList.remove('on');
+        this.ring([]);
+        this.cur = '';
+        return;
+      }
+      const over = has('.screen.over .over-word');
+      this.setFinal(true);
+      this.show({
+        id: 'finish', slot: over ? 'low' : 'side', title: over ? 'That is the war' : 'You have the basics',
+        text: `Deploy, level up, equip, and counter what you saw last round. The codex <kbd>F1</kbd> has every rule. ${over ? '<b>Finish tutorial</b> returns to the title.' : '<b>Keep playing</b> to break their Keep without the coach, or <b>finish</b> here and return to the title.'}`,
+      });
       return;
     }
-    if (this.seen.has('wrap')) return;
-    const me = room?.view?.you;
     if (me && this.seen.has('equip') && !me.stash.length) this.seen.add('equip-done');
     const s = this.pick();
     if (!s) {
@@ -130,8 +202,14 @@ export class Coach {
     this.seen.add(s.id);
     const html = s.text;
     if (fresh) {
-      const n = ORDER.indexOf(s.id);
-      $(this.root, '.coach-n').textContent = n >= 0 ? `${n + 1} / ${ORDER.length}` : '';
+      // numbered by first appearance, so the count only ever goes up; a step that returns is a reminder
+      let label = '';
+      if (MAIN.includes(s.id) && !this.order.includes(s.id)) {
+        this.order.push(s.id);
+        const n = this.order.length;
+        label = `${n} / ${s.id === 'finish' ? n : Math.max(n, MAIN.length)}`;
+      }
+      $(this.root, '.coach-n').textContent = label;
       $(this.root, '.coach-t').textContent = s.title;
       $(this.root, '.coach-x').innerHTML = html;
       this.root.classList.remove('pop');
@@ -157,11 +235,11 @@ export class Coach {
     for (const n of list) n.classList.add('coach-target');
   }
 
-  private finish(): void {
+  private finish(toTitle: boolean): void {
     if (this.done) return;
     store.set('tutorial.done', '1');
     this.dispose();
-    this.onEnd();
+    this.onEnd(toTitle);
   }
 
   dispose(): void {

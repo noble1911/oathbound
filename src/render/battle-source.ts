@@ -7,9 +7,9 @@
 //
 // Anything that can fill `SoldierTransforms` for a time and list its events can drive playback
 // (the showcase's fake battle does exactly that).
-import type { DecodedReplay, KeepInfo, ReplayEvent, ReplaySoldier, SoldierTransforms, Terrain, AnimState } from '../sim/types.ts';
+import type { DecodedReplay, KeepInfo, ReplayEvent, ReplaySoldier, SkillEvent, SoldierTransforms, Terrain, AnimState } from '../sim/types.ts';
 
-export type { DecodedReplay, KeepInfo, ReplayEvent, ReplaySoldier, SoldierTransforms, Terrain, AnimState };
+export type { DecodedReplay, KeepInfo, ReplayEvent, ReplaySoldier, SkillEvent, SoldierTransforms, Terrain, AnimState };
 
 /** ANIM_STATES order from the sim contract (index stored in `SoldierTransforms.anim`). */
 export const ANIM: readonly AnimState[] = ['idle', 'move', 'attack', 'cast', 'dead'];
@@ -24,6 +24,8 @@ export interface BattleSource {
   durationMs: number;
   /** Sorted by tick. */
   events: ReplayEvent[];
+  /** Item-skill casts (replay v3 `DecodedReplay.skills`), sorted by tick; `pos` in field cm like the events'. */
+  skills?: SkillEvent[];
   /** Fill `out` for time `ms` (interpolated). Must not allocate. */
   sample(ms: number, out: SoldierTransforms): void;
   /** Output buffers sized for this source. */
@@ -55,6 +57,7 @@ export function replaySource(
     terrain: r.terrain,
     durationMs: r.ticks * TICK_MS,
     events: d.events,
+    skills: d.skills ?? [],
     sample: (ms, out) => void sample(d, ms, out),
     makeTransforms: () => make(d.soldierCount),
   };

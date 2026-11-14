@@ -7,7 +7,8 @@
 // One shared material: wind sway + leaf flutter in the vertex shader (shared uTime: it only advances
 // while frames are drawn, so idle = no motion and no rendering), normals bent away from the crown
 // centre and never flipped on back faces (a crown shades as one soft volume), a backlight /
-// translucency term on the leaves, and alpha coverage kept up at distance. In planning, trees
+// translucency term on the leaves, alpha coverage kept up at distance, and leaves within a few metres
+// of the lens eroding away (the player's camera is never pushed up by crowns). In planning, trees
 // standing in a visible deploy zone shrink to saplings (uPlan, same patch in the depth material), so
 // units and the grid read without any transparency or dithering.
 // Grass only receives shadows, is normal-up shaded so it melts into the ground, shrinks away with
@@ -105,7 +106,10 @@ const vegFragment: Hook = (shader) => {
 {
   vec2 obTx = vMapUv * 1024.0;
   float obLod = max(0.0, 0.5 * log2(max(dot(dFdx(obTx), dFdx(obTx)), dot(dFdy(obTx), dFdy(obTx)))));
-  diffuseColor.a *= 1.0 + obLod * 0.4;
+  diffuseColor.a *= 1.0 + obLod * 0.75;
+  // foliage right at the lens erodes away along its own alpha (no dither): the player's camera
+  // may pass through a crown without being pushed up
+  diffuseColor.a *= smoothstep(2.0, 6.5, length(vViewPosition));
 }`,
   );
   f = after(f, '#include <normal_fragment_begin>', 'normal = normalize(vNormal);');
@@ -162,7 +166,7 @@ export class Foliage {
       return m;
     };
     this.treeMat = mk('ob-veg-tree', vegVertex(3.5, true));
-    this.plantMat = mk('ob-veg-plant', vegVertex(1.6, false));
+    this.plantMat = mk('ob-veg-plant', vegVertex(1.6, true));
     this.farMat = mk('ob-veg-far', impostorVertex);
     this.treeDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: atlas, alphaTest: 0.5, side: THREE.DoubleSide });
     const dh = vegVertex(3.5, true);
@@ -457,7 +461,7 @@ export class Foliage {
   }
 }
 
-/** One clump: 9 bent, tapered blades with root-dark → tip-light vertex colours. */
+/** One clump: 9 bent, tapered blades (27 triangles) with root-dark → tip-light vertex colours. */
 function grassClump(): THREE.BufferGeometry {
   const rnd = mulberry32(99);
   const pos: number[] = [];
@@ -479,7 +483,8 @@ function grassClump(): THREE.BufferGeometry {
     const dx = Math.cos(yaw);
     const dz = Math.sin(yaw);
     const base = pos.length / 3;
-    const rows = [0, 0.45, 0.8, 1];
+    // two segments per blade (3 triangles): at RTS distance the extra bend ring was invisible and cost 40 %
+    const rows = [0, 0.55, 1];
     for (let i = 0; i < rows.length; i++) {
       const t = rows[i];
       const ww = w * (1 - t * 0.85);
@@ -506,8 +511,7 @@ function grassClump(): THREE.BufferGeometry {
     // rows 0..2 have 2 verts, tip 1
     const v = (row: number, side: number) => base + row * 2 + side;
     idx.push(v(0, 0), v(0, 1), v(1, 0), v(0, 1), v(1, 1), v(1, 0));
-    idx.push(v(1, 0), v(1, 1), v(2, 0), v(1, 1), v(2, 1), v(2, 0));
-    idx.push(v(2, 0), v(2, 1), base + 6);
+    idx.push(v(1, 0), v(1, 1), base + 4);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

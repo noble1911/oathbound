@@ -150,9 +150,70 @@ export class Battlefield {
   private art: Map<string, PropAsset> | null = null;
   private canopy = new CanopyGrid();
 
-  /** Highest tree crown / prop / castle top at a world point (−1e9 on open ground): the camera stays above it. */
+  private solids = new CanopyGrid();
+
+  /** Highest tree crown / prop / tower / castle-body top at a world point (−1e9 on open ground): the director's view stays clear of it. */
   canopyAt(x: number, z: number): number {
     return this.canopy.at(x, z);
+  }
+  /** Top of solid geometry only (ruins, arrow towers, castle bodies; no foliage): no camera sits inside it. */
+  solidAt(x: number, z: number): number {
+    return this.solids.at(x, z);
+  }
+
+  private fadeBox = new THREE.Box3();
+  private fadeRay = new THREE.Ray();
+  private fadeHit = new THREE.Vector3();
+  private fadeNow: number[][] = [[1, 1, 1], [1, 1, 1]];
+  /**
+   * Castles and arrow towers standing between the camera and its focus fade to a 30 % ghost (one
+   * opacity per object, depth still written: no dither); also when the lens is inside one. Looking
+   * AT a castle (focus inside it) leaves it solid. `also`: more points that must stay visible. Returns true while a fade is still moving.
+   */
+  fadeOccluders(cam: THREE.Vector3, look: THREE.Vector3, dt: number, also: THREE.Vector3[] = []): boolean {
+    let busy = false;
+    const ray = this.fadeRay;
+    const len = cam.distanceTo(look);
+    ray.origin.copy(cam);
+    ray.direction.subVectors(look, cam).normalize();
+    const b = this.fadeBox;
+    const blocks = (): boolean => {
+      if (b.containsPoint(cam)) return true;
+      if (b.containsPoint(look)) return false;
+      const h = ray.intersectBox(b, this.fadeHit);
+      if (h && h.distanceTo(cam) < len) return true;
+      // other ground the player must see (planning: the back rows of the deploy zone)
+      for (const p of also) {
+        ray.direction.subVectors(p, cam);
+        const l = ray.direction.length();
+        ray.direction.divideScalar(l);
+        const hit = ray.intersectBox(b, this.fadeHit);
+        ray.direction.subVectors(look, cam).normalize();
+        if (hit && hit.distanceTo(cam) < l) return true;
+      }
+      return false;
+    };
+    this.keeps.forEach((k, s) => {
+      if (!k) return;
+      const parts = 1 + k.towers.length;
+      for (let p = 0; p < parts; p++) {
+        if (p === 0) k.bodyBox(b).expandByScalar(0.6);
+        else {
+          const t = k.towers[p - 1];
+          b.min.set(t.x - 2.4, t.y - 9, t.z - 2.4);
+          b.max.set(t.x + 2.4, t.y + 2.5, t.z + 2.4);
+        }
+        const target = blocks() ? 0.3 : 1;
+        const cur = this.fadeNow[s][p] ?? 1;
+        if (cur === target) continue;
+        let next = cur + (target - cur) * (1 - Math.exp(-dt * 9));
+        if (Math.abs(next - target) < 0.01) next = target;
+        else busy = true;
+        this.fadeNow[s][p] = next;
+        k.setFade(p, next);
+      }
+    });
+    return busy;
   }
 
   private rebuildCanopy(): void {
@@ -163,7 +224,25 @@ export class Battlefield {
       const m = o as THREE.InstancedMesh;
       if (m.isInstancedMesh && !/rocks|bush|reeds|bridge/.test(m.name)) c.instanced(m, 0.9);
     });
-    for (const k of this.keeps) if (k) c.box(new THREE.Box3().setFromObject(k.group));
+    // solids: ruins, arrow towers and the castle bodies, each with its own tight footprint (one box
+    // around a whole castle group, towers included, used to push the camera up over half the yard)
+    const s = this.solids;
+    s.clear();
+    this.props.group.traverse((o) => {
+      const m = o as THREE.InstancedMesh;
+      if (m.isInstancedMesh && /ruin/.test(m.name)) s.instanced(m, 0.7);
+    });
+    const box = new THREE.Box3();
+    for (const k of this.keeps) {
+      if (!k) continue;
+      k.bodyBox(box);
+      // the body's wall-walk height, not its spire tips
+      box.max.y = box.min.y + (box.max.y - box.min.y) * 0.8;
+      for (const g of [c, s]) {
+        g.rect(box);
+        for (const t of k.towers) g.disc(t.x, t.z, 1.2, t.y + 1.5);
+      }
+    }
   }
   private artProps: ArtProps | null = null;
   private towerGeo: THREE.BufferGeometry | null = null;

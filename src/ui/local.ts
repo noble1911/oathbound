@@ -9,7 +9,8 @@
 //   ?dev=results    round 3 results screen
 //   &round=N        pre-roll to round N instead of 3;  &seed=N;  &lord=marshal|archmage|warden|skylady
 //   &timer=0        no phase timers (iterate without the clock)
-import type { BattleResult, BotStrategy, Intent, LordId, MatchState, Seat } from '../sim/types.ts';
+import type { BattleResult, BotStrategy, Intent, LordId, MatchState, Seat, UnitType } from '../sim/types.ts';
+import { levelUpCost, MAX_SQUAD_LEVEL } from '../sim/match.ts';
 import * as sim from '../sim/index.ts';
 import { Rng } from '../sim/rng.ts';
 import { rollItem } from '../sim/loot.ts';
@@ -29,6 +30,8 @@ export interface LocalOptions {
   timers?: boolean;
   /** No countdown at all (the tutorial): phases only end when the player acts. */
   untimed?: boolean;
+  /** The guided first match: round 2 adds the gold for the coach's level-up lesson (never in a real match). */
+  tutorial?: boolean;
   /** The difficulty shown for the bot seat. */
   level?: AiLevel;
   name?: string;
@@ -44,11 +47,13 @@ export class LocalMatch implements Backend {
   private h: AppHandlers;
   private o: Required<LocalOptions>;
   private rematchVote = false;
+  /** Gold the tutorial added in round 2 so that levelling a squad costs the learner no deploy (0 = none). */
+  tutorialGrant = 0;
 
   constructor(h: AppHandlers, opts: LocalOptions) {
     this.h = h;
     this.o = {
-      seed: 20261114, round: 3, lord: 'marshal', enemyLord: 'warden', strategy: 'best', timers: true, untimed: false, level: 'hard', name: 'You',
+      seed: 20261114, round: 3, lord: 'marshal', enemyLord: 'warden', strategy: 'best', timers: true, untimed: false, tutorial: false, level: 'hard', name: 'You',
       ...opts,
     } as Required<LocalOptions>;
     const o = this.o;
@@ -140,6 +145,16 @@ export class LocalMatch implements Backend {
   private enterPlanning(): void {
     const s = this.s;
     sim.botPlan(s, 1, this.o.strategy, s.round);
+    if (this.o.tutorial && s.round === 2 && !this.tutorialGrant) {
+      // the price of the cheapest level-up among the learner's squads, on top of the round's income
+      const p = s.players[0];
+      const costs = p.squads.filter((q) => q.type !== 'lord' && q.level < MAX_SQUAD_LEVEL).map((q) => levelUpCost(q.type as UnitType, q.level));
+      if (costs.length) {
+        this.tutorialGrant = Math.min(...costs);
+        p.gold += this.tutorialGrant;
+        this.h.onChat(null, '', `Tutorial: +${this.tutorialGrant} gold to level up a squad.`, true);
+      }
+    }
     const loot = !!s.players[0].lootOffer;
     this.setPhase('planning', PLANNING_MS + (loot ? LOOT_BONUS_MS : 0));
   }

@@ -1,14 +1,21 @@
 // The QA-pass rules: deploy footprints, slot unlocks + usable loot, stalemates and points, comeback, AI levels.
 import { describe, expect, it } from 'vitest';
 import {
-  newMatch, applyIntent, simulateBattle, applyBattle, nextRound, viewFor, botPlan, rollLoot, freeSpotNear, squadFootprint,
+  newMatch, applyIntent, simulateBattle, applyBattle, nextRound, viewFor, botPlan, freeSpotNear, squadFootprint,
   overlappingSquad, usableSlots, comebackFor, roundOutcomeText, SLOT_UNLOCK_LEVEL, POINTS_MARGIN, CATCHUP_GOLD, CATCHUP_PER_ROUND,
-  CATCHUP_PER_DEFICIT, UNDERDOG_DEFICIT, MAX_BATTLE_TICKS, mirrorPos, UNITS,
+  CATCHUP_PER_DEFICIT, UNDERDOG_DEFICIT, MAX_BATTLE_TICKS, mirrorPos, UNITS, decodeReplay,
 } from '../src/sim/index.ts';
 import { rollItem } from '../src/sim/loot.ts';
 import { Rng } from '../src/sim/rng.ts';
 import type { BotStrategy, Item, MatchState, RoundSummary, Seat, Squad } from '../src/sim/types.ts';
 import { playMatch } from '../src/sim/tournament.ts';
+import { KEEP_DMG_BASE_PER_ROUND, MAX_LORD_LEVEL, concede, keepDamageOf, suddenDeathPct, unlockOptions } from '../src/sim/match.ts';
+import { itemName, lootSchedule } from '../src/sim/loot.ts';
+import { income } from '../src/sim/match.ts';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { canEquip } from '../src/sim/data/skills.ts';
+import { LORD_IDS } from '../src/sim/data/lords.ts';
 
 const squad = (s: MatchState, seat: Seat, type: Squad['type'], pos: [number, number], level = 1): Squad => {
   const q: Squad = { id: s.nextId++, owner: seat, type, level, pos, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: s.round, spent: type === 'lord' ? 0 : UNITS[type].cost * level };
@@ -86,28 +93,10 @@ describe('item slots and loot', () => {
     expect(usableSlots(p)).toEqual(['weapon', 'armor']);
   });
 
-  it('offers lean toward usable slots: at least 2 of 3 (3 of 4) fit, reproducibly', () => {
-    for (let seed = 0; seed < 300; seed++) {
-      for (const count of [3, 4]) {
-        let id = 1;
-        const a = rollLoot(seed, 5, seed & 1, seed % 3 === 0, count, () => id++, ['relic']);
-        expect(a.filter((it) => it.slot === 'relic').length).toBeGreaterThanOrEqual(count - 1);
-        id = 1;
-        expect(rollLoot(seed, 5, seed & 1, seed % 3 === 0, count, () => id++, ['relic'])).toEqual(a);
-        for (const it of a) if (it.legendary) expect(it.slot).toBe(it.slot); // legendary slots stay consistent
-      }
-    }
-    // no preference given (or nothing usable): the plain roll
-    let id = 1;
-    const plain = rollLoot(9, 5, 0, false, 3, () => id++);
-    id = 1;
-    expect(rollLoot(9, 5, 0, false, 3, () => id++, [])).toEqual(plain);
-  });
-
-  it('after a battle, the offer is biased by what the player can equip', () => {
+  it('the offer does not depend on what the player can equip: it is the same three slots for everyone', () => {
     const s = newMatch(21, ['skylady', 'warden']);
     const mk = (slot: Item['slot'], id: number): Item => ({ ...rollItem(new Rng(id), id, 1, 'common', slot), id });
-    // seat 0's Lord already wears a weapon and armour and nothing else can take any: only relics are usable
+    // seat 0's Lord already wears a weapon and armour: the offer still holds one item per slot
     s.players[0].squads[0].items.weapon = mk('weapon', 801);
     s.players[0].squads[0].items.armor = mk('armor', 802);
     applyIntent(s, 0, { t: 'ready' });
@@ -115,7 +104,8 @@ describe('item slots and loot', () => {
     applyBattle(s, simulateBattle(s, { record: false }).result);
     const offer = s.players[0].lootOffer!;
     expect(offer.length).toBe(4); // Skylady
-    expect(offer.filter((it) => it.slot === 'relic').length).toBeGreaterThanOrEqual(3);
+    expect(offer.slice(0, 3).map((it) => it.slot)).toEqual(['weapon', 'armor', 'relic']);
+    expect(s.players[1].lootOffer!.map((it) => it.slot)).toEqual(['weapon', 'armor', 'relic']);
   });
 });
 
@@ -134,7 +124,15 @@ describe('stalemates, points and result wording', () => {
     expect(result.score[0]).toBeGreaterThan(result.score[1] - 100);
     const lead = result.score[0] - result.score[1];
     expect(result.winner).toBe(lead >= POINTS_MARGIN ? 0 : lead <= -POINTS_MARGIN ? 1 : null);
-    if (result.winner !== null) expect(result.keepDamage[result.winner]).toBe(0); // the points loser deals nothing
+    if (result.winner !== null) {
+      expect(result.keepDamage[result.winner]).toBe(0); // the points loser deals nothing
+      // ...and the points winner deals its survivors' damage in full, round bonus included
+      const w = result.winner, full = keepDamageOf(s.players[w].squads, result.survivors[w], s.round, true, false);
+      expect(result.keepDamage[1 - w]).toBe(full);
+      expect(full).toBeGreaterThan(KEEP_DMG_BASE_PER_ROUND * s.round);
+    }
+    // a helpless side ends the battle within about 10 s of the last hope, not 15
+    expect(result.ticks).toBeLessThanOrEqual(1000);
     applyBattle(s, result);
     const h = s.history[0];
     expect(h.end).toBe('stalemate');
@@ -163,35 +161,141 @@ describe('stalemates, points and result wording', () => {
   });
 });
 
-describe('comeback', () => {
-  it('pays the round loser more as rounds go on and as its keep falls behind, plus a deploy when far behind', () => {
-    const s = newMatch(1, ['marshal', 'archmage']);
-    const [a, b] = s.players;
-    a.keepHp = 4000; b.keepHp = 2000; // b is 50 points behind
-    expect(comebackFor(b, a, 6, true)).toEqual({ gold: CATCHUP_GOLD + CATCHUP_PER_ROUND * 6 + CATCHUP_PER_DEFICIT * 50, deploys: 1, deficit: 50 });
-    expect(comebackFor(a, b, 6, false)).toEqual({ gold: 0, deploys: 0, deficit: 0 });
-    // won the round but still far behind: no gold, still the extra deploy
-    expect(comebackFor(b, a, 6, false)).toEqual({ gold: 0, deploys: 1, deficit: 50 });
-    b.keepHp = 4000 - Math.trunc((UNDERDOG_DEFICIT - 1) * 40);
-    expect(comebackFor(b, a, 2, true).deploys).toBe(0);
-  });
+describe('equal conditions: no catch-up, no random offers', () => {
+  const strip = (items: Item[] | null): unknown => (items ?? []).map((it) => ({ ...it, id: 0 }));
 
-  it('nextRound pays it: income + comeback gold, and the extra deploy slot', () => {
+  it('there is no comeback: the loser gets no gold, no extra deploy and no better loot', () => {
+    expect([CATCHUP_GOLD, CATCHUP_PER_ROUND, CATCHUP_PER_DEFICIT, UNDERDOG_DEFICIT]).toEqual([0, 0, 0, 0]);
     const s = newMatch(2, ['archmage', 'archmage']);
     s.players[1].squads = [];
     s.players[0].keepHp = 4000;
-    s.players[1].keepHp = 1500;
+    s.players[1].keepHp = 1500; // far behind
+    expect(comebackFor(s.players[1], s.players[0], 6, true)).toEqual({ gold: 0, deploys: 0, deficit: 0 });
     applyIntent(s, 0, { t: 'ready' });
     applyIntent(s, 1, { t: 'ready' });
     applyBattle(s, simulateBattle(s, { record: false }).result); // seat 0's Lord routs an empty army
-    const p = s.players[1];
-    expect(p.lostLast).toBe(true);
-    expect(p.comeback.deploys).toBe(1);
-    const gold = p.gold;
+    const [w, l] = s.players;
+    expect(l.lostLast).toBe(true);
+    expect(l.comeback).toEqual({ gold: 0, deploys: 0, deficit: 0 });
+    expect(strip(l.lootOffer)).toEqual(strip(w.lootOffer)); // same items, same rarities
+    const gold = [w.gold, l.gold];
     nextRound(s);
-    expect(p.gold).toBe(gold + 250 + p.comeback.gold);
-    expect(p.deployLimit).toBe(3);
-    expect(s.players[0].deployLimit).toBe(2);
+    expect(w.gold - gold[0]).toBe(250);
+    expect(l.gold - gold[1]).toBe(250);
+    expect(l.deployLimit).toBe(2);
+    expect(w.deployLimit).toBe(2);
+  });
+
+  it('fairness: for a match seed and round, both players get identical loot, unlock options, income and deploy limit', () => {
+    for (const [seed, lord, strats] of [[11, 'marshal', ['hard', 'easy']], [12, 'skylady', ['rush', 'hard']], [13, 'archmage', ['normal', 'air']], [14, 'warden', ['hard', 'hard']]] as const) {
+      // Both pick the same Lord (allowed), then play very differently: one side keeps losing.
+      const s = newMatch(seed, null);
+      expect(applyIntent(s, 0, { t: 'pickLord', lord }).ok).toBe(true);
+      expect(applyIntent(s, 1, { t: 'pickLord', lord }).ok).toBe(true);
+      expect(s.phase).toBe('planning');
+      let rounds = 0, decided = 0;
+      while (s.phase === 'planning' && rounds < 12) {
+        const [a, b] = s.players;
+        // identical offers at the start of every planning phase
+        expect(strip(b.lootOffer), `loot seed ${seed} round ${s.round}`).toEqual(strip(a.lootOffer));
+        if (a.lootOffer) {
+          expect(a.lootOffer.length).toBe(lord === 'skylady' ? 4 : 3);
+          expect(a.lootOffer.map((it) => it.rarity).slice(0, 3).sort()).toEqual([...lootSchedule(s.round - 1)].sort());
+          // names match too, though the item ids differ
+          expect(b.lootOffer!.map(itemName)).toEqual(a.lootOffer.map(itemName));
+          expect(new Set([...a.lootOffer, ...b.lootOffer!].map((it) => it.id)).size).toBe(2 * a.lootOffer.length);
+        }
+        expect(b.deployLimit).toBe(a.deployLimit);
+        expect(b.draftPicks).toBe(a.draftPicks);
+        // unlock options: everything still locked and of age, for each player
+        for (const p of s.players) expect(p.draftOptions).toEqual(unlockOptions(p, s.round));
+        const goldBefore = [a.gold, b.gold];
+        botPlan(s, 0, strats[0], 1);
+        botPlan(s, 1, strats[1], 2);
+        // same deploy limit even after the round's commands (both could wear an 'of Command' relic: skip then)
+        const r = simulateBattle(s, { record: false }).result;
+        const spent = [goldBefore[0] - a.gold, goldBefore[1] - b.gold];
+        applyBattle(s, r);
+        if (r.winner !== null) decided++;
+        expect(a.comeback).toEqual({ gold: 0, deploys: 0, deficit: 0 });
+        expect(b.comeback).toEqual({ gold: 0, deploys: 0, deficit: 0 });
+        if ((s.phase as string) !== 'results') break;
+        const before = [a.gold, b.gold];
+        nextRound(s);
+        // the same income for the winner and the loser
+        expect(a.gold - before[0]).toBe(income(s.round));
+        expect(b.gold - before[1]).toBe(income(s.round));
+        expect(spent[0]).toBeGreaterThanOrEqual(0);
+        rounds++;
+      }
+      expect(decided).toBeGreaterThan(2);
+    }
+  }, 120_000);
+
+  it('unlocks are a free choice from the full eligible list, the same rule for both', () => {
+    const s = newMatch(7, ['warden', 'warden']);
+    const [a, b] = s.players;
+    expect(b.draftOptions).toEqual(a.draftOptions);
+    expect(a.draftOptions).toEqual(['militia', 'pikemen', 'archers', 'cavaliers', 'mages', 'clerics', 'pegasus']);
+    expect(a.draftPicks).toBe(1); // round 1 is like every round: any ONE unit
+    // any of them may be picked: here the two players choose differently
+    expect(applyIntent(s, 0, { t: 'draft', unit: 'pegasus' }).ok).toBe(true);
+    expect(applyIntent(s, 0, { t: 'draft', unit: 'mages' }).ok).toBe(false);
+    expect(applyIntent(s, 1, { t: 'draft', unit: 'golem' }).ok).toBe(false); // not in the basic pool
+    applyIntent(s, 0, { t: 'ready' });
+    applyIntent(s, 1, { t: 'ready' }); // seat 1 leaves its pick open: it resolves to the first option
+    applyBattle(s, simulateBattle(s, { record: false }).result);
+    nextRound(s);
+    expect(a.unlocked).toEqual(['berserkers', 'knights', 'pegasus']);
+    expect(b.unlocked).toEqual(['berserkers', 'knights', 'militia']);
+    expect(a.draftPicks).toBe(1);
+    expect(a.draftOptions).toEqual(unlockOptions(a, 2));
+    expect(a.draftOptions).toContain('golem');
+    expect(a.draftOptions).toContain('trebuchet');
+    expect(a.draftOptions).not.toContain('dragon'); // minRound 5
+    expect(a.draftOptions).not.toContain('pegasus');
+    expect(a.draftOptions).toContain('archers');
+    expect(applyIntent(s, 0, { t: 'draft', unit: 'golem' }).ok).toBe(true);
+    expect(unlockOptions({ unlocked: ['militia'] }, 5)).toContain('dragon');
+    expect(unlockOptions({ unlocked: ['militia'] }, 4)).not.toContain('dragon');
+  });
+
+  it('both players may pick the same Lord', () => {
+    for (const lord of LORD_IDS) {
+      const s = newMatch(1, null);
+      expect(applyIntent(s, 0, { t: 'pickLord', lord })).toEqual({ ok: true });
+      expect(applyIntent(s, 1, { t: 'pickLord', lord })).toEqual({ ok: true });
+      expect(s.players.map((p) => p.lord)).toEqual([lord, lord]);
+      expect(s.players[0].unlocked).toEqual(s.players[1].unlocked);
+      expect(s.players[0].deployLimit).toBe(s.players[1].deployLimit);
+      expect(s.players[0].keepMax).toBe(s.players[1].keepMax);
+    }
+  });
+
+  it('the battle rolls nothing: crits come on a counter and forest cover is a flat reduction', () => {
+    const src = readFileSync(join(__dirname, '../src/sim/battle.ts'), 'utf8').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(src).not.toMatch(/mix4\(|\brnd\(|Rng\b|hash\(/);
+    // the match seed only picks the terrain: on the same terrain, a different seed fights the identical battle
+    const mk = (seed: number): MatchState => {
+      const s = newMatch(5, ['marshal', 'warden']);
+      for (let i = 0; i < 3; i++) { squad(s, 0, 'archers', [2000 + i * 1500, 2500]); squad(s, 1, 'berserkers', mirrorPos([2000 + i * 1500, 3500])); }
+      s.seed = seed;
+      return s;
+    };
+    const a = simulateBattle(mk(5)), b = simulateBattle(mk(999));
+    expect(b.result).toEqual(a.result);
+    expect(b.replay.frames).toBe(a.replay.frames);
+    expect(b.replay.events).toBe(a.replay.events);
+    const d = decodeReplay(a.replay);
+    const hits = d.events.filter((e) => e.k === 'hit') as { src: number; crit: boolean; miss: boolean; tick: number }[];
+    expect(hits.some((h) => h.miss)).toBe(false);
+    // 5% base crit: an archer's every 20th arrow is critical, never two in a row
+    const arrows = d.events.filter((e) => e.k === 'attack' && e.src < 1_000_000 && d.replay.soldiers[e.src].type === 'archers').length;
+    const crits = hits.filter((h) => h.crit && d.replay.soldiers[h.src].type === 'archers').length;
+    expect(arrows).toBeGreaterThan(100);
+    expect(crits).toBeGreaterThan(0);
+    expect(crits).toBeLessThanOrEqual(Math.ceil(arrows / 20) + 27);
+    expect(crits).toBeGreaterThanOrEqual(Math.floor(arrows / 20) - 27);
   });
 });
 
@@ -263,4 +367,112 @@ describe('AI difficulty levels', () => {
     expect(hardVsEasy / n).toBeGreaterThanOrEqual(0.75);
     expect(normalVsEasy / n).toBeGreaterThanOrEqual(0.75);
   }, 120_000);
+});
+
+describe('match pacing: sudden death, clamped keep damage, concessions', () => {
+  it('sudden death: keep damage grows 25% a round from round 10', () => {
+    expect([1, 9, 10, 11, 14].map(suddenDeathPct)).toEqual([100, 100, 125, 150, 225]);
+    const s = newMatch(3, ['warden', 'warden']);
+    const q = squad(s, 0, 'knights', [4000, 3000]);
+    const ids = [q.id];
+    const at = (round: number): number => keepDamageOf(s.players[0].squads, ids, round, true, false);
+    expect(at(10)).toBe(Math.trunc((at(9) + KEEP_DMG_BASE_PER_ROUND) * 1.25));
+    expect(keepDamageOf(s.players[0].squads, ids, 12, false, true)).toBe(Math.trunc(Math.trunc(44 / 2) * 1.75));
+  });
+
+  it('keep damage is clamped to the keep: overkill is not damage taken', () => {
+    const s = newMatch(3, ['warden', 'warden']);
+    s.players[1].squads = [];
+    s.players[1].keepHp = 40;
+    for (let i = 0; i < 3; i++) squad(s, 0, 'knights', [2000 + i * 1500, 3000], 3);
+    const { result, replay } = simulateBattle(s);
+    expect(result.keepDamage[1]).toBe(40);
+    const d = decodeReplay(replay);
+    expect(d.events.filter((e) => e.k === 'keepHit').reduce((a, e) => a + (e as { dmg: number }).dmg, 0)).toBe(40);
+    applyBattle(s, { ...result, keepDamage: [0, 5271] });
+    expect(s.history[0].keepDamage).toEqual([0, 40]);
+    expect(s.phase).toBe('over');
+    expect(s.overReason).toBe('keep');
+    expect(viewFor(s, 1).overReason).toBe('keep');
+  });
+
+  it('concede ends the match at once with the opponent as the winner', () => {
+    const s = newMatch(8, ['marshal', 'skylady']);
+    botPlan(s, 0, 'hard', 1);
+    expect(concede(s, 1)).toEqual({ ok: true });
+    expect(s.phase).toBe('over');
+    expect(s.winner).toBe(0);
+    expect(s.overReason).toBe('concede');
+    expect(viewFor(s, 0).overReason).toBe('concede');
+    expect(concede(s, 0)).toEqual({ ok: false, error: 'match is over' });
+    expect(applyIntent(s, 0, { t: 'ready' }).ok).toBe(false);
+    // also during the Lord pick
+    const t = newMatch(8, null);
+    expect(concede(t, 0).ok).toBe(true);
+    expect(t.winner).toBe(1);
+  });
+
+  it('Lords level steadily: not maxed by round 7', () => {
+    for (const seed of [3, 4]) {
+      const s = newMatch(seed, ['marshal', 'archmage']);
+      for (let r = 0; r < 7 && s.phase === 'planning'; r++) {
+        botPlan(s, 0, 'hard', 1);
+        botPlan(s, 1, 'easy', 2);
+        applyBattle(s, simulateBattle(s, { record: false }).result);
+        if ((s.phase as string) !== 'results') break;
+        nextRound(s);
+      }
+      for (const p of s.players) expect(p.squads[0].level).toBeLessThan(MAX_LORD_LEVEL);
+    }
+  });
+});
+
+describe('bots and skill items', () => {
+  it('hard and normal equip skill items, always on a class that can use them; nothing is lost', () => {
+    const count: Record<string, number> = { hard: 0, normal: 0 };
+    let offered = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const s = newMatch(seed, [LORD_IDS[seed % 4], LORD_IDS[(seed + 1) % 4]]);
+      const strats: [BotStrategy, BotStrategy] = ['hard', 'normal'];
+      while (s.phase === 'planning') {
+        for (const p of s.players) offered += (p.lootOffer ?? []).filter((it) => it.skill).length;
+        botPlan(s, 0, strats[0], 1);
+        botPlan(s, 1, strats[1], 2);
+        for (const seat of [0, 1] as Seat[]) {
+          const p = s.players[seat];
+          const ids = new Set<number>();
+          for (const q of p.squads) {
+            for (const it of [q.items.weapon, q.items.armor, q.items.relic]) {
+              if (!it) continue;
+              expect(ids.has(it.id)).toBe(false);
+              ids.add(it.id);
+              expect(canEquip(it, q.type, p.lord), `${strats[seat]} put ${it.skill} on ${q.type}`).toBe(true);
+            }
+          }
+        }
+        applyBattle(s, simulateBattle(s, { record: false }).result);
+        if ((s.phase as string) !== 'results') break;
+        nextRound(s);
+      }
+      for (const seat of [0, 1] as Seat[]) for (const q of s.players[seat].squads) for (const it of Object.values(q.items)) if (it?.skill) count[strats[seat]]++;
+    }
+    expect(offered).toBeGreaterThan(10);
+    expect(count.hard).toBeGreaterThanOrEqual(4);
+    expect(count.normal).toBeGreaterThanOrEqual(2);
+  }, 120_000);
+
+  it('hard values a usable skill item above an unusable one', () => {
+    const s = newMatch(12, ['warden', 'marshal']);
+    const p = s.players[0];
+    p.gold = 2000;
+    p.unlocked = ['knights', 'berserkers'];
+    p.draftOptions = [];
+    p.draftPicks = 0;
+    const mk = (id: number, skill: 'fireball' | 'cleave'): Item => ({ id, base: 'steel_blade', slot: 'weapon', rarity: 'rare', ilvl: 3, implicit: { id: 'vicious', value: 9 }, affixes: [], legendary: null, skill });
+    p.lootOffer = [mk(901, 'fireball'), mk(902, 'cleave'), mk(903, 'fireball')];
+    botPlan(s, 0, 'hard', 1);
+    const worn = p.squads.flatMap((q) => Object.values(q.items)).filter((it) => it?.skill);
+    expect(worn.map((it) => it!.id)).toEqual([902]);
+    expect(p.stash.some((it) => it.skill === 'fireball')).toBe(false);
+  });
 });

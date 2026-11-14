@@ -20,7 +20,10 @@ const UNITS = {
   dragon: { t: 3000, dist: 18, views: [['side', 1.45, 0.05], ['rts', 0.9, 0.6]] },
   militia: { t: 3000, dist: 6, views: [['side', 1.45, 0.12]] },
   knights: { t: 3000, dist: 6, views: [['side', 1.45, 0.12]] },
-  lord_archmage: { t: 3000, dist: 7, views: [['side', 1.45, 0.12]] },
+  lord_marshal: { t: 300, dist: 5, views: [['side', -1.3, 0.1], ['rts', -0.75, 0.62]] },
+  lord_archmage: { t: 300, dist: 5, views: [['side', -1.3, 0.1], ['rts', -0.75, 0.62]] },
+  lord_warden: { t: 2500, dist: 5, views: [['side', -1.3, 0.1], ['rts', -0.75, 0.62]] },
+  lord_skylady: { t: 300, dist: 5, views: [['side', -1.3, 0.1], ['rts', -0.75, 0.62]] },
 };
 const want = (process.argv[2] ?? 'golem,cavaliers,pegasus,wyvern,dragon').split(',');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -33,7 +36,8 @@ try {
     const page = await browser.newPage();
     await page.setViewport({ width: TILE, height: TILE });
     page.on('pageerror', (e) => errors.push(`${id}: ${e.message}`));
-    await page.goto(`${BASE}render-test.html?real=all&tier=ultra&ui=0&blur=0&cam=free&t=${u.t}`, { waitUntil: 'load', timeout: 120000 });
+    const lords = id.startsWith('lord_') ? `&lords=${id.slice(5)},${id === 'lord_marshal' ? 'archmage' : 'marshal'}` : '';
+    await page.goto(`${BASE}render-test.html?real=all&tier=ultra&ui=0&blur=0&cam=free&t=${u.t}${lords}`, { waitUntil: 'load', timeout: 120000 });
     await page.waitForFunction(() => window.__rt?.ready, { timeout: 120000 });
     let prev = -1;
     for (let i = 0; i < 40; i++) {

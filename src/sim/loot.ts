@@ -1,7 +1,16 @@
 // ARPG loot: seeded rarity rolls, affix rolls scaled by item level, names and tooltip lines.
-import { AFFIXES, AFFIX_IDS, BASES, BASE_IDS, LEGENDARIES, LEGENDARY_IDS, LEGENDARY_MIN_ROUND, RARITIES, RARITY_WEIGHT, SLAY_TAGS } from './data/items.ts';
+import { AFFIXES, AFFIX_IDS, BASES, BASE_IDS, LEGENDARIES, LEGENDARY_EVERY, LEGENDARY_IDS, SLAY_TAGS } from './data/items.ts';
+import { SKILLS, SKILL_IDS, legendaryText, skillCooldownSec, skillText, usableByText } from './data/skills.ts';
 import { Rng, hash } from './rng.ts';
-import type { Affix, AffixId, Item, ItemLine, ItemSlots, Rarity, Slot, Tag } from './types.ts';
+import type { Affix, AffixId, Item, ItemLine, ItemSlots, Rarity, SkillId, Slot, Tag, UnitClass } from './types.ts';
+
+/** Chance (percent) that a Rare item grants an active skill; the skill takes the place of one affix. */
+export const SKILL_CHANCE = 50;
+
+/** Does `item` suit an army with these classes? (Plain items suit everyone.) */
+export function skillFits(item: Pick<Item, 'skill'>, classes: readonly UnitClass[] | undefined): boolean {
+  return !item.skill || !classes || SKILLS[item.skill].classes.some((c) => classes.includes(c));
+}
 
 export const RARITY_COLOR: Record<Rarity, string> = { common: '#e8e4da', magic: '#6f8cff', rare: '#ffd84a', legendary: '#ff8a1e' };
 
@@ -25,20 +34,40 @@ function weightedPick<T>(rng: Rng, items: readonly T[], weight: (t: T) => number
   return items[items.length - 1];
 }
 
-/** Rarity roll; `bump` = the round's loser rolls one tier higher (legendary only from round 3). */
-export function rollRarity(rng: Rng, round: number, bump: boolean): Rarity {
-  const pool = RARITIES.filter((r) => r !== 'legendary' || round >= LEGENDARY_MIN_ROUND);
-  let r = weightedPick(rng, pool, (x) => RARITY_WEIGHT[x]);
-  if (bump) {
-    const i = RARITIES.indexOf(r);
-    const up = RARITIES[Math.min(3, i + 1)];
-    r = up === 'legendary' && round < LEGENDARY_MIN_ROUND ? 'rare' : up;
-  }
-  return r;
+const LOOT_SLOTS: readonly Slot[] = ['weapon', 'armor', 'relic'];
+
+/**
+ * The fixed rarity schedule of a round's offer, the same for both players: [best, second, third] item.
+ *  - rounds 1-2: three Magic items;
+ *  - rounds 3-5: one Rare and two Magic;
+ *  - rounds 6-8: two Rare and one Magic;
+ *  - round 9 on: three Rare;
+ *  - every LEGENDARY_EVERY-th round (3, 6, 9, 12...): the best item is a Legendary instead.
+ * Nothing is rolled: no player ever gets a luckier tier than the other.
+ */
+export function lootSchedule(round: number): [Rarity, Rarity, Rarity] {
+  const out: [Rarity, Rarity, Rarity] = round <= 2 ? ['magic', 'magic', 'magic'] : round <= 5 ? ['rare', 'magic', 'magic'] : round <= 8 ? ['rare', 'rare', 'magic'] : ['rare', 'rare', 'rare'];
+  if (round >= LEGENDARY_EVERY && round % LEGENDARY_EVERY === 0) out[0] = 'legendary';
+  return out;
 }
 
-/** Roll one item. `onlySlot` forces the slot (used to bias offers toward slots the player can fill). */
-export function rollItem(rng: Rng, id: number, ilvl: number, rarity: Rarity, onlySlot?: Slot): Item {
+/**
+ * The slot of the round's best item. It rotates so that every slot gets its turn: the Legendary rounds (3, 6, 9)
+ * visit the three slots in order, and so do the rounds in between. Where the rotation starts is set by the match
+ * seed (the same for both players), so matches differ but the players never do.
+ */
+export function lootTopSlot(seed: number, round: number): Slot {
+  const start = hash(seed, 'lootslot') % 3;
+  const legendary = round >= LEGENDARY_EVERY && round % LEGENDARY_EVERY === 0;
+  return LOOT_SLOTS[(start + (legendary ? round / LEGENDARY_EVERY : round)) % 3];
+}
+
+/**
+ * Roll one item. `onlySlot` forces the slot (used to bias offers toward slots the player can fill).
+ * Rare items have a SKILL_CHANCE% chance to grant an active skill of their slot instead of their last affix.
+ * `classes` (optional, not used by match loot): restrict the skill to those these unit classes can use.
+ */
+export function rollItem(rng: Rng, id: number, ilvl: number, rarity: Rarity, onlySlot?: Slot, classes?: readonly UnitClass[]): Item {
   let legendary: Item['legendary'] = null;
   let slot: Slot;
   let baseId;
@@ -75,38 +104,43 @@ export function rollItem(rng: Rng, id: number, ilvl: number, rarity: Rarity, onl
     if (AFFIXES[a].kind === 'prefix') prefixes++; else suffixes++;
     affixes.push(af);
   }
-  return { id, base: baseId, slot, rarity, ilvl, implicit, affixes, legendary };
+  const item: Item = { id, base: baseId, slot, rarity, ilvl, implicit, affixes, legendary };
+  if (rarity === 'rare' && rng.int(100) < SKILL_CHANCE) {
+    const pool = SKILL_IDS.filter((k) => SKILLS[k].slot === slot && (!classes || SKILLS[k].classes.some((c) => classes.includes(c))));
+    if (pool.length) {
+      item.skill = rng.pick(pool);
+      if (affixes.length > 2) affixes.pop();
+    }
+  }
+  return item;
 }
 
 /**
- * The loot offer for one seat after a round. Seeded by (match seed, round, seat) so it is reproducible,
- * and both seats draw from the same distribution. `count` is 3 (4 for Skylady).
- *
- * `usable` = the slots the player can fill right now (see usableSlots in match.ts). When given and non-empty,
- * all but one offer (at least 2 of 3, 3 of 4) are in a usable slot: offers in other slots are re-rolled into
- * a usable slot at the same rarity.
+ * The loot offer of a round. It is seeded by (match seed, round) only, so BOTH players are offered exactly the same
+ * items (apart from the item ids): one per slot (weapon, armor, relic), with the rarities of lootSchedule(round).
+ * The slot that gets the best item rotates with the round (lootTopSlot). `count` 4 (Skylady's passive) adds a fourth item of the
+ * round's lowest tier in a rolled slot; two Skyladies see the same fourth item.
+ * Affix values, legendary powers and skills still vary from round to round, but never between the players.
  */
-export function rollLoot(seed: number, round: number, seat: number, bump: boolean, count: number, nextId: () => number, usable?: readonly Slot[]): Item[] {
-  const rng = new Rng(hash(seed, 'loot', round, seat));
+export function rollLoot(seed: number, round: number, count: number, nextId: () => number): Item[] {
+  const rng = new Rng(hash(seed, 'loot', round));
+  const tiers = lootSchedule(round);
+  const top = LOOT_SLOTS.indexOf(lootTopSlot(seed, round));
   const out: Item[] = [];
-  const seenLegendary = new Set<string>();
-  const need = usable && usable.length ? count - 1 : 0;
-  let ok = 0;
   for (let i = 0; i < count; i++) {
-    const rarity = rollRarity(rng, round, bump);
-    let it = rollItem(rng, 0, round, rarity);
-    const fits = (x: Item): boolean => !usable || !usable.length || usable.includes(x.slot);
-    // Too many unusable offers so far: force this one into a usable slot.
-    const force = !fits(it) && ok + (count - i - 1) < need;
-    if (force) it = rollItem(rng, 0, round, rarity, usable![rng.int(usable!.length)]);
-    const keepSlot = force || (need && fits(it)) ? it.slot : undefined;
-    for (let k = 0; k < 4 && it.legendary && seenLegendary.has(it.legendary); k++) it = rollItem(rng, 0, round, rarity, keepSlot);
-    if (it.legendary) seenLegendary.add(it.legendary);
-    if (fits(it)) ok++;
-    it.id = nextId();
+    // Item k of the schedule goes k slots after the round's top slot.
+    const rarity = i < 3 ? tiers[i] : tiers[2];
+    const slot = i < 3 ? LOOT_SLOTS[(top + i) % 3] : LOOT_SLOTS[rng.int(3)];
+    let it = rollItem(rng, 0, round, rarity, slot);
+    // One offer never shows the same legendary power or the same skill twice.
+    for (let k = 0; k < 6 && out.some((o) => (it.legendary && o.legendary === it.legendary) || (it.skill && o.skill === it.skill)); k++) it = rollItem(rng, 0, round, rarity, slot);
     out.push(it);
   }
-  return out;
+  // Listed weapon, armor, relic (then the extra item).
+  const head = out.slice(0, 3).sort((x, y) => LOOT_SLOTS.indexOf(x.slot) - LOOT_SLOTS.indexOf(y.slot));
+  const all = [...head, ...out.slice(3)];
+  for (const it of all) it.id = nextId();
+  return all;
 }
 
 // ---------------------------------------------------------------- names & tooltips
@@ -127,12 +161,15 @@ export function itemName(item: Item): string {
   if (item.rarity === 'legendary' && item.legendary) { const n = LEGENDARIES[item.legendary].name; return n.includes(' ') ? n : `${n} ${base}`; }
   const pre = item.affixes.find((a) => AFFIXES[a.id].kind === 'prefix');
   const suf = item.affixes.find((a) => AFFIXES[a.id].kind === 'suffix');
+  // A granted skill names the item: "Doom Brand, Vicious Grimoire of Fireball".
+  const tail = item.skill ? SKILLS[item.skill].suffix : suf ? affixName(suf) : '';
   if (item.rarity === 'rare') {
-    const h = hash(item.id, item.base, item.ilvl);
+    // Named from what the item is (not its id), so both players see the same name for the same offer.
+    const h = hash(item.base, item.ilvl, item.implicit.value, item.affixes.map((x) => `${x.id}${x.value}${x.tag ?? ''}`).join(','), item.skill ?? '');
     const title = `${RARE_A[h % RARE_A.length]} ${RARE_B[(h >>> 8) % RARE_B.length]}`;
-    return `${title}, ${[pre ? affixName(pre) : '', base, suf ? affixName(suf) : ''].filter(Boolean).join(' ')}`;
+    return `${title}, ${[pre ? affixName(pre) : '', base, tail].filter(Boolean).join(' ')}`;
   }
-  return [pre ? affixName(pre) : '', base, suf ? affixName(suf) : ''].filter(Boolean).join(' ');
+  return [pre ? affixName(pre) : '', base, tail].filter(Boolean).join(' ');
 }
 
 function affixText(a: Affix): string {
@@ -151,11 +188,16 @@ export function itemLines(item: Item): ItemLine[] {
   lines.push({ text: `Item Level ${item.ilvl}`, style: 'meta' });
   lines.push({ text: affixText(item.implicit), style: 'implicit' });
   for (const a of item.affixes) lines.push({ text: affixText(a), style: 'affix' });
+  if (item.skill) {
+    // The skill block: name + cooldown, what it does and when it is cast, and who can use it.
+    const d = SKILLS[item.skill];
+    lines.push({ text: `Grants ${d.name} (${skillCooldownSec(d.id)} s cooldown)`, style: 'affix', kind: 'skill' });
+    lines.push({ text: `${skillText(d.id, item.ilvl)}. Cast when: ${d.trigger}.`, style: 'affix', kind: 'skillText' });
+    lines.push({ text: `Usable by: ${usableByText(d.id)}`, style: 'meta', kind: 'usable' });
+  }
   if (item.legendary) {
     const L = LEGENDARIES[item.legendary];
-    const text = item.legendary === 'sunfire' ? L.text.replace('20 (+2 per item level)', String(20 + 2 * item.ilvl))
-      : item.legendary === 'ember_crown' ? L.text.replace('40 (+5 per item level)', String(40 + 5 * item.ilvl)) : L.text;
-    lines.push({ text, style: 'legendary' });
+    lines.push({ text: legendaryText(item.legendary, item.ilvl), style: 'legendary' });
     lines.push({ text: L.flavor, style: 'flavor' });
   }
   return lines;
@@ -166,6 +208,7 @@ export function itemPower(item: Item): number {
   let p = 0;
   for (const a of [item.implicit, ...item.affixes]) p += a.value * AFFIXES[a.id].power;
   if (item.legendary) p += LEGENDARIES[item.legendary].power;
+  if (item.skill) p += SKILLS[item.skill].power;
   return Math.round(p);
 }
 
@@ -177,9 +220,11 @@ export interface ItemMods {
   slay: Partial<Record<Tag, number>>;
   legend: Set<string>;
   ilvl: number;
+  /** Item-granted active skills with the level of the item that grants each. */
+  skills: { id: SkillId; ilvl: number }[];
 }
 export function emptyMods(): ItemMods {
-  return { dmg: 0, hp: 0, as: 0, crit: 0, leech: 0, mr: 0, move: 0, thorns: 0, armor: 0, burn: 0, frost: 0, range: 0, phoenix: false, command: 0, slay: {}, legend: new Set(), ilvl: 1 };
+  return { dmg: 0, hp: 0, as: 0, crit: 0, leech: 0, mr: 0, move: 0, thorns: 0, armor: 0, burn: 0, frost: 0, range: 0, phoenix: false, command: 0, slay: {}, legend: new Set(), ilvl: 1, skills: [] };
 }
 export function modsOf(slots: ItemSlots): ItemMods {
   const m = emptyMods();
@@ -206,6 +251,7 @@ export function modsOf(slots: ItemSlots): ItemMods {
       }
     }
     if (it.legendary) m.legend.add(it.legendary);
+    if (it.skill && !m.skills.some((k) => k.id === it.skill)) m.skills.push({ id: it.skill, ilvl: it.ilvl });
   }
   return m;
 }

@@ -9,6 +9,10 @@
 //                `returnToDirector()` hands back. The rig binds no mode keys: the UI owns C / Home
 //                and calls `setMode` / `BattleView.resetCamera()`.
 //   'orbit'    — slow automatic orbit around the target (title / loot screen backdrops).
+// Obstacles never lift a player camera (rts / free / orbit): its height and pitch are pure orbit maths,
+// with only a smoothed floor keeping the lens out of the ground and of solid geometry. Castles and
+// towers that sit between the lens and the focus fade, leaves near the lens erode. The director may
+// raise its pitch to clear crowns, by at most `maxLift`.
 import * as THREE from 'three';
 import type { Engine } from '../core/engine.ts';
 
@@ -34,7 +38,10 @@ export interface Shot {
 }
 
 const MIN_DIST = 9;
-const MAX_DIST = 200;
+/** Planning home view: radians above the horizon (0.78 = a ~45 degree battlefield shot, not a map view). */
+const HOME_PITCH = 0.78;
+/** Zoom-out stops where the dressed world still fills the frame (the home fit needs <= ~130 m). */
+const MAX_DIST = 140;
 
 export class CameraRig {
   mode: CameraMode = 'rts';
@@ -52,6 +59,8 @@ export class CameraRig {
   homeYaw = 0;
   /** The yaw the player last used in planning: the free battle camera starts from it. */
   planYaw = 0;
+  /** World z the home view must reach on the enemy side (null = the enemy deploy-zone front edge). */
+  private homeFar: number | null = null;
   /** The current view is the fitted home framing (re-fitted when the viewport / HUD insets change). */
   private atHome: { seat: 0 | 1; overview: boolean } | null = null;
   /** Edge pan arms only after the pointer has really moved since the last home / mode change. */
@@ -73,8 +82,16 @@ export class CameraRig {
   private mouse = { x: -1, y: -1, inside: false };
   private readonly engine: Engine;
   private ground: (x: number, z: number) => number = () => 0;
-  /** Obstacle tops (tree crowns, ruins, castles); the camera and its view stay above them. */
+  /** Obstacle tops for the director's line of sight (tree crowns, ruins, towers, castle bodies). */
   private obstacle: (x: number, z: number) => number = () => -1e9;
+  /** Solid tops (ruins, towers, castle bodies; no foliage): no camera ever sits inside these. */
+  private solid: (x: number, z: number) => number = () => -1e9;
+  /** Smoothed minimum camera height (ground / solids under the camera): no popping while panning. */
+  private floorY = -1e9;
+  /** The point the camera looks at (world), updated every frame. */
+  readonly lookPoint = new THREE.Vector3();
+  /** Director only: the most extra pitch (rad) the line-of-sight lift may add to a shot. */
+  maxLift = 0.3;
   /** Extra pitch (rad) currently added to clear obstacles; eases in fast, out slowly. */
   private lift = 0;
   private tmpA = new THREE.Vector3();
@@ -98,7 +115,13 @@ export class CameraRig {
   setGround(fn: (x: number, z: number) => number): void {
     this.ground = fn;
   }
-  setObstacles(fn: (x: number, z: number) => number): void {
+  /**
+   * `fn`: obstacle tops for the director's line of sight; `solid`: tops of solid geometry only (the
+   * player's cameras ignore foliage and never lift for the line of sight: occluding castles fade and
+   * leaves near the lens erode instead; see Battlefield.fadeOccluders / foliage.ts).
+   */
+  setObstacles(fn: (x: number, z: number) => number, solid?: (x: number, z: number) => number): void {
+    if (solid) this.solid = solid;
     this.obstacle = fn;
   }
 
@@ -198,8 +221,10 @@ export class CameraRig {
 
   /**
    * Frame the home view for planning (seat 0 looks from +Z, seat 1 from -Z) and restore the home
-   * rotation: the own Keep, the whole deploy zone, the river and the enemy front line fit between
-   * the HUD insets at any aspect (4:3 .. 32:9). Re-fitted when the viewport or the insets change,
+   * rotation: a low battlefield shot (HOME_PITCH, ~45 degrees) of the deploy zone, the river and
+   * the enemy front line between the HUD insets at any aspect (4:3 .. 32:9). The own Keep and the
+   * last few metres of the zone in front of it are cropped at the bottom (scroll back to reach
+   * them; whatever of the Keep / towers still overlaps the zone is ghosted by the field). Re-fitted when the viewport or the insets change,
    * until the player moves the camera. `overview` frames the whole field instead.
    */
   home(seat: 0 | 1 = 0, overview = false): void {
@@ -212,14 +237,26 @@ export class CameraRig {
     this.disarmEdge();
   }
 
+  /** Extend (or reset with null) the far edge of the home framing; re-fits if the camera is at home. */
+  setHomeFar(z: number | null): void {
+    if (z === this.homeFar) return;
+    this.homeFar = z;
+    if (this.atHome && this.mode === 'rts') this.fitHome(this.atHome.seat, this.atHome.overview);
+  }
+
   /** Solve target + distance so the home rectangle (on the ground plane) fills the free viewport. */
   private fitHome(seat: 0 | 1, overview: boolean): void {
     const sgn = seat === 0 ? 1 : -1;
-    // near edge: just behind the own Keep; far edge: the enemy front line (their deploy-zone edge)
-    const zNear = 63 * sgn;
-    const zFar = (overview ? -63 : -21) * sgn;
+    // near edge: 6 m short of the zone's back line (the Keep stays out of frame); far edge: the
+    // enemy front line (their deploy-zone edge). The width has to fit up to 16 m short of the back line:
+    // the nearest corners may run off the sides on narrow screens.
+    const zNear = (overview ? 63 : 50) * sgn;
+    // (never nearer than the enemy front line, never beyond the enemy Keep)
+    const far = this.homeFar === null ? -21 : Math.max(-63, Math.min(-21, this.homeFar * sgn));
+    const zFar = (overview ? -63 : far) * sgn;
+    const zWide = (overview ? 63 : 40) * sgn;
     const halfX = 41;
-    const pitch = 0.86;
+    const pitch = overview ? 0.86 : HOME_PITCH;
     const tanV = Math.tan(THREE.MathUtils.degToRad(34 / 2));
     const tanH = tanV * Math.max(0.2, this.engine.camera.aspect);
     const margin = 0.04;
@@ -248,7 +285,7 @@ export class CameraRig {
         if (top + bot > 0) a = tz;
         else b = tz;
       }
-      const wide = Math.max(Math.abs(ndc(tz, dist, halfX, zNear)[0]), Math.abs(ndc(tz, dist, halfX, zFar)[0]));
+      const wide = Math.max(Math.abs(ndc(tz, dist, halfX, zWide)[0]), Math.abs(ndc(tz, dist, halfX, zFar)[0]));
       return { tz, ok: top <= 1 - margin && bot >= -(1 - margin) && wide <= 1 - margin };
     };
     let lo = 30;
@@ -541,27 +578,49 @@ export class CameraRig {
     this.fov += (g.fov - this.fov) * kk;
     this.dofAmount += (this.dofGoal - this.dofAmount) * (1 - Math.exp(-dt * 3));
 
-    // place the camera; keep it above the ground, and it and its view out of tree crowns / props:
-    // raise the pitch until the line of sight clears (director: whole line; manual: the first 12 m)
+    // place the camera.
+    //  * Player cameras (rts / free / orbit): pure orbit maths. Nothing lifts the pitch: a castle or
+    //    tower between the lens and the focus fades instead, and foliage near the lens erodes, so
+    //    height and pitch stay flat while panning. Only the position is kept out of the ground and
+    //    out of solid geometry, through a smoothed floor.
+    //  * Director: the line of sight may raise the pitch to clear crowns / props, but only by
+    //    `maxLift` (it picks clear angles first), and it stays above crowns.
     const cam = this.engine.camera;
     const ty = this.ground(this.target.x, this.target.z);
     const look = this.look.set(this.target.x, ty + 1.2 + this.target.y, this.target.z);
-    const nearOnly = this.mode !== 'director';
+    this.lookPoint.copy(look);
+    const director = this.mode === 'director';
     let need = 0;
     const pos = this.tmpB;
-    for (; need < 1.2; need += 0.06) {
-      const pp = Math.min(1.45, this.pitch + need);
-      const cp0 = Math.cos(pp);
-      pos.set(look.x + Math.sin(this.yaw) * cp0 * this.dist, look.y + Math.sin(pp) * this.dist, look.z + Math.cos(this.yaw) * cp0 * this.dist);
-      if (this.blocked(pos, look, nearOnly) === 0 || pp >= 1.45) break;
+    if (director) {
+      for (; need < this.maxLift; need += 0.05) {
+        const pp = Math.min(1.45, this.pitch + need);
+        const cp0 = Math.cos(pp);
+        pos.set(look.x + Math.sin(this.yaw) * cp0 * this.dist, look.y + Math.sin(pp) * this.dist, look.z + Math.cos(this.yaw) * cp0 * this.dist);
+        if (this.blocked(pos, look) === 0 || pp >= 1.45) break;
+      }
+      need = Math.min(need, this.maxLift);
     }
-    this.lift += (need - this.lift) * (need > this.lift ? 1 - Math.exp(-dt * 14) : 1 - Math.exp(-dt * 1.5));
-    if (need > this.lift + 0.25) this.lift = need - 0.25; // never lag far behind (cuts)
+    this.lift += (need - this.lift) * (need > this.lift ? 1 - Math.exp(-dt * 8) : 1 - Math.exp(-dt * 1.5));
+    if (director && this.shot?.s.cut && this.shot.t <= dt * 1.5) this.lift = need; // a cut starts at its final pitch
+    if (this.lift < 1e-4 && need === 0) this.lift = 0;
     const pitch = Math.min(1.45, this.pitch + this.lift);
     const cp = Math.cos(pitch);
     cam.position.set(look.x + Math.sin(this.yaw) * cp * this.dist, look.y + Math.sin(pitch) * this.dist, look.z + Math.cos(this.yaw) * cp * this.dist);
-    const minY = Math.max(this.ground(cam.position.x, cam.position.z) + 1.8, this.obstacle(cam.position.x, cam.position.z) + this.clearance);
-    if (cam.position.y < minY) cam.position.y = minY;
+    // the floor under the camera: ground, solids (and crowns for the director), eased both ways
+    const cx = cam.position.x;
+    const cz = cam.position.z;
+    const top = director ? Math.max(this.obstacle(cx, cz) + this.clearance, this.solid(cx, cz) + 2) : this.solid(cx, cz) + 2;
+    const floor = Math.max(this.ground(cx, cz) + 1.8, top);
+    if (this.floorY < -1e8 || (director && this.shot?.s.cut && this.shot.t <= dt * 1.5)) this.floorY = floor;
+    else {
+      // eased, and never faster than 6 m/s: a hump over a wall, not a pop
+      const step = (floor - this.floorY) * (1 - Math.exp(-dt * (floor > this.floorY ? 5 : 2.5)));
+      this.floorY += Math.max(-6 * dt, Math.min(6 * dt, step));
+    }
+    if (Math.abs(floor - this.floorY) < 0.01) this.floorY = floor;
+    else if (cam.position.y < Math.max(floor, this.floorY) + 0.5) this.engine.wake();
+    if (cam.position.y < this.floorY) cam.position.y = this.floorY;
     if (Math.abs(need - this.lift) > 1e-3) this.engine.wake();
     if (Math.abs(cam.fov - this.fov) > 1e-3) {
       cam.fov = this.fov;

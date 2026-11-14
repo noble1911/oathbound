@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import type { Engine } from './core/engine.ts';
 import { LAYER_VFX } from './core/post.ts';
 import type { Slot } from './crowd/units.ts';
+import { assetUrl, loadAssetVersions } from '../assets.ts';
 
 export interface PlateState {
   selected?: boolean;
@@ -40,14 +41,19 @@ uniform float uSize;    // plate height as a fraction of the viewport height
 varying vec2 vP;
 varying vec4 vInfo;
 varying vec4 vTeam;
+varying vec3 vFlags;  // hovered, selected, lord (0 or 1)
 void main() {
-  if (aTeam.a <= 0.001) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); vP = vec2(0.0); vInfo = vec4(0.0); vTeam = vec4(0.0); return; }
+  if (aTeam.a <= 0.001) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); vP = vec2(0.0); vInfo = vec4(0.0); vTeam = vec4(0.0); vFlags = vec3(0.0); return; }
   vec4 mv = viewMatrix * vec4(aPos, 1.0);
   float dist = max(-mv.z, 1.0);
-  float st = aInfo.w;
-  float sel = step(1.5, mod(st, 4.0));
-  float hov = step(0.5, mod(st, 2.0));
-  float lord = step(3.5, st);
+  // The state bits are decoded HERE, from the exact attribute value. Decoding them per fragment
+  // from the interpolated varying made the Lord's plate flicker: its state is 4 (lord bit), and
+  // an interpolated 3.9999 turns mod(st, 4) / mod(st, 2) into "selected + hovered" for that pixel.
+  float st = floor(aInfo.w + 0.5);
+  float hov = mod(st, 2.0);
+  float sel = mod(floor(st * 0.5), 2.0);
+  float lord = mod(floor(st * 0.25), 2.0);
+  vFlags = vec3(hov, sel, lord);
   // constant screen size, a touch larger for Lords and for the hovered / selected squad
   float h = uSize * (1.0 + 0.16 * lord + 0.14 * sel + 0.07 * hov) * 2.0 * dist / projectionMatrix[1][1];
   vP = vec2(position.x * 3.4, position.y);
@@ -64,6 +70,7 @@ uniform sampler2D uIcons;
 varying vec2 vP;
 varying vec4 vInfo;
 varying vec4 vTeam;
+varying vec3 vFlags;
 float sdBox(vec2 p, vec2 b, float r) {
   vec2 d = abs(p) - b + r;
   return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - r;
@@ -78,10 +85,9 @@ void main() {
   vec2 p = vP;
   float aa = fwidth(p.y) * 1.3;
   float hp = clamp(vInfo.x, 0.0, 1.0);
-  float st = vInfo.w;
-  float sel = step(1.5, mod(st, 4.0));
-  float hov = step(0.5, mod(st, 2.0));
-  float lord = step(3.5, st);
+  float hov = step(0.5, vFlags.x);
+  float sel = step(0.5, vFlags.y);
+  float lord = step(0.5, vFlags.z);
   vec3 team = vTeam.rgb;
   vec3 gold = vec3(1.0, 0.76, 0.28);
   vec3 rim = mix(mix(team, vec3(1.0), 0.18), gold, lord);
@@ -242,7 +248,7 @@ export class SquadPlates {
         this.tex.needsUpdate = true;
         this.engine.wake();
       };
-      img.src = `${base}${name}.webp`;
+      void loadAssetVersions().then(() => (img.src = assetUrl(`${base}${name}.webp`)));
     });
   }
 

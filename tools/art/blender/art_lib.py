@@ -294,3 +294,99 @@ def export_glb(path, objs, anims=False, extra=None):
             if k in msg:
                 kw.pop(k)
         bpy.ops.export_scene.gltf(**kw)
+
+
+# ----------------------------------------------------------------------------------------------- texture-space helpers
+def box_blur(a, k):
+    """k x k box filter (edge-padded) of a 2-D array."""
+    p = k // 2
+    a2 = np.pad(a, p, mode='edge')
+    c = np.cumsum(np.cumsum(a2, 0), 1)
+    c = np.pad(c, ((1, 0), (1, 0)))
+    return (c[k:, k:] - c[:-k, k:] - c[k:, :-k] + c[:-k, :-k]) / (k * k)
+
+
+def raster_attr(ob, values, w, h, grow=3):
+    """Rasterise a per-vertex scalar into the object's UV layout -> [h, w] float array (row 0 = v 0), grown
+    `grow` texels past the island edges so bilinear sampling and mip-maps do not pull in the background."""
+    me = ob.data
+    me.calc_loop_triangles()
+    nt = len(me.loop_triangles)
+    li = np.empty(nt * 3, np.int32); me.loop_triangles.foreach_get('loops', li)
+    vi = np.empty(nt * 3, np.int32); me.loop_triangles.foreach_get('vertices', vi)
+    uv = np.empty(len(me.loops) * 2, np.float32); me.uv_layers.active.data.foreach_get('uv', uv)
+    uv = uv.reshape(-1, 2)[li].reshape(nt, 3, 2) * np.array([w, h], np.float32)
+    val = np.asarray(values, np.float32)[vi].reshape(nt, 3)
+    out = np.zeros((h, w), np.float32); cov = np.zeros((h, w), bool)
+    for t in range(nt):
+        (x0, y0), (x1, y1), (x2, y2) = uv[t]
+        xa, xb = int(max(0, math.floor(min(x0, x1, x2)))), int(min(w - 1, math.ceil(max(x0, x1, x2))))
+        ya, yb = int(max(0, math.floor(min(y0, y1, y2)))), int(min(h - 1, math.ceil(max(y0, y1, y2))))
+        if xb < xa or yb < ya:
+            continue
+        den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+        if abs(den) < 1e-9:
+            continue
+        xs, ys = np.meshgrid(np.arange(xa, xb + 1) + 0.5, np.arange(ya, yb + 1) + 0.5)
+        l0 = ((y1 - y2) * (xs - x2) + (x2 - x1) * (ys - y2)) / den
+        l1 = ((y2 - y0) * (xs - x2) + (x0 - x2) * (ys - y2)) / den
+        l2 = 1 - l0 - l1
+        m = (l0 >= -0.02) & (l1 >= -0.02) & (l2 >= -0.02)
+        if not m.any():
+            continue
+        v = l0 * val[t, 0] + l1 * val[t, 1] + l2 * val[t, 2]
+        sub = out[ya:yb + 1, xa:xb + 1]; sc = cov[ya:yb + 1, xa:xb + 1]
+        sub[m] = v[m]; sc[m] = True
+    for _ in range(grow):
+        a = np.pad(out, 1, mode='edge'); c = np.pad(cov, 1, mode='edge')
+        acc = np.zeros_like(out); n = np.zeros_like(out)
+        for dy in (0, 1, 2):
+            for dx in (0, 1, 2):
+                cc = c[dy:dy + h, dx:dx + w]
+                acc += np.where(cc, a[dy:dy + h, dx:dx + w], 0); n += cc
+        fill = ~cov & (n > 0)
+        out[fill] = acc[fill] / n[fill]; cov |= fill
+    return out
+
+
+def load_gray(path, w, h):
+    """R channel of an image file resized to w x h -> [h, w] (row 0 = v 0)."""
+    img = bpy.data.images.load(str(path), check_existing=False)
+    img.colorspace_settings.name = 'Non-Color'
+    if tuple(img.size) != (w, h):
+        img.scale(w, h)
+    a = img_np(img)[:, :, 0].copy()
+    bpy.data.images.remove(img)
+    return a
+
+
+def save_gray(arr, path, w=None, h=None):
+    hh, ww = arr.shape
+    img = bpy.data.images.new('_gray', ww, hh)
+    img.colorspace_settings.name = 'Non-Color'
+    px = np.ones((hh, ww, 4), np.float32); px[..., 0] = px[..., 1] = px[..., 2] = np.clip(arr, 0, 1)
+    np_img(img, px)
+    if w and (w, h) != (ww, hh):
+        img.scale(w, h)
+    img.filepath_raw = str(path); img.file_format = 'PNG'; img.save()
+    bpy.data.images.remove(img)
+
+
+def set_team_attr(ob, mask):
+    """Point attribute `_TEAM` = the mask averaged over each vertex's loop UVs."""
+    me = ob.data
+    hh, ww = mask.shape
+    uv = np.empty(len(me.loops) * 2, np.float32)
+    me.uv_layers.active.data.foreach_get('uv', uv)
+    uv = uv.reshape(-1, 2)
+    vi = np.empty(len(me.loops), np.int32)
+    me.loops.foreach_get('vertex_index', vi)
+    x = np.clip((uv[:, 0] * ww).astype(int), 0, ww - 1)
+    y = np.clip((uv[:, 1] * hh).astype(int), 0, hh - 1)
+    acc = np.zeros(len(me.vertices), np.float32); cnt = np.zeros(len(me.vertices), np.float32)
+    np.add.at(acc, vi, mask[y, x]); np.add.at(cnt, vi, 1)
+    t = acc / np.maximum(cnt, 1)
+    if '_TEAM' in me.attributes:
+        me.attributes.remove(me.attributes['_TEAM'])
+    me.attributes.new('_TEAM', 'FLOAT', 'POINT').data.foreach_set('value', t)
+    return float((t > 0.5).mean())

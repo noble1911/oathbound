@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { NOISE_GLSL, after, replace } from '../core/glsl.ts';
 import type { Engine } from '../core/engine.ts';
+import { assetUrl } from '../../assets.ts';
 
 export interface VatClip {
   name: string;
@@ -163,7 +164,7 @@ export function bakeVat(root: THREE.Object3D, mesh: THREE.SkinnedMesh, clips: TH
 export async function loadVat(url: string): Promise<VatData> {
   const meta = (await (await fetch(url)).json()) as VatMeta;
   const baseUrl = new URL(url, location.href);
-  const load = async (f: string) => (await fetch(new URL(f, baseUrl))).arrayBuffer();
+  const load = async (f: string) => (await fetch(assetUrl(new URL(f, baseUrl.href.split('?')[0]).href))).arrayBuffer();
   const oct = meta.nrm === null || meta.normalEncoding === 'octPosW45';
   const [pb, nb] = await Promise.all([load(meta.pos), oct || !meta.nrm ? Promise.resolve(null) : load(meta.nrm)]);
   const half = meta.format === 'f16';
@@ -179,7 +180,7 @@ export async function loadVat(url: string): Promise<VatData> {
 
 // ------------------------------------------------------------------ materials
 
-/** Shared fragment patch: team tint mask, per-vertex PBR, emissive, flash, dither fade, detail noise. */
+/** Shared fragment patch: team tint mask, per-vertex PBR, emissive, flash, ghost (intel) look, detail noise. */
 function patchFragment(fs: string, opts: { surf: boolean; tintAttr: boolean; tintMap: boolean }): string {
   fs = after(fs, '#include <common>', `
 ${NOISE_GLSL}
@@ -194,10 +195,7 @@ varying vec2 vObUv;
 varying float vMirror;
 ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
   fs = after(fs, 'void main() {', `
-  if (vFade < 0.999) {
-    float h = ob_hash12(floor(gl_FragCoord.xy));
-    if (h > vFade) discard;
-  }`);
+`);
   fs = after(fs, '#include <color_fragment>', `
   {
     float mask = vTintMask;
@@ -218,6 +216,14 @@ ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
   }
   fs = after(fs, '#include <emissivemap_fragment>', `
   totalEmissiveRadiance += diffuseColor.rgb * vSurf.z;
+  // ghosts (vFade < 1: the enemy's last-known positions while planning) read as intel: a solid
+  // figure washed in its team colour with a bright rim. No dither, no blending.
+  if (vFade < 0.999) {
+    float obLum = dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1));
+    diffuseColor.rgb = mix(vec3(obLum), vTeam, 0.75) * 0.7;
+    float obRim = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.0);
+    totalEmissiveRadiance += vTeam * (0.22 + 1.1 * obRim);
+  }
   // hit flash / highlight: a warm lift on top of the lit surface (never a flat white silhouette)
   totalEmissiveRadiance += vFlash * mix(vec3(0.5, 0.42, 0.34) + diffuseColor.rgb * 0.6, vec3(2.6, 0.3, 0.2), vFlashCol);`);
   return fs;
@@ -339,7 +345,8 @@ varying float vMirror;`);
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = vertexPatch(shader.vertexShader, true);
     shader.fragmentShader = after(shader.fragmentShader, '#include <common>', `${NOISE_GLSL}\nvarying float vFade;`);
-    shader.fragmentShader = after(shader.fragmentShader, 'void main() {', 'if (vFade < 0.999 && ob_hash12(floor(gl_FragCoord.xy)) > vFade) discard;');
+    // ghosts cast no shadow
+    shader.fragmentShader = after(shader.fragmentShader, 'void main() {', 'if (vFade < 0.999) discard;');
   };
   depth.customProgramCacheKey = () => `vatdepth:${o.key}:${vat.octNormals ? 'o' : ''}`;
   // occluded-unit silhouette: drawn only where something is MORE than ~4 m in front of the soldier

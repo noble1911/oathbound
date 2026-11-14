@@ -5,7 +5,7 @@
 // Coordinates are always field centimetres (see src/sim/types.ts): x in 0..8000, y in 0..12000,
 // facing as a 0..255 binary angle. The adapter turns the camera so the viewer's own Keep is at the
 // bottom of the screen (`setPerspective`).
-import type { DecodedReplay, LordId, Rarity, ReplayEvent, Seat, SquadType, Terrain, Vec2 } from '../sim/types.ts';
+import type { DecodedReplay, LordId, Rarity, ReplayEvent, Seat, SkillEvent, SquadType, Terrain, Vec2 } from '../sim/types.ts';
 
 export type SceneMode = 'title' | 'lobby' | 'lordPick' | 'planning' | 'battle' | 'results';
 export type CameraMode = 'director' | 'free';
@@ -88,9 +88,17 @@ export interface SceneAdapter {
   setInsets(i: { left?: number; right?: number; top?: number; bottom?: number }): void;
 
   // ---- battle playback
-  /** Play a decoded replay from `offsetMs`; every event reaches `onEvent` as it fires (sound, kill feed). */
-  playReplay(d: DecodedReplay, o: { offsetMs: number; onEvent(e: ReplayEvent, ms: number): void; onEnd(): void }): PlaybackHandle;
+  /**
+   * Play a decoded replay from `offsetMs`; every event reaches `onEvent` as it fires (sound, kill feed).
+   * Item-skill casts are not replay events: a scene that plays them reports each through `onSkill`
+   * (`e.squad` = the caster's row in Replay.squads) as its effect starts.
+   */
+  playReplay(d: DecodedReplay, o: { offsetMs: number; onEvent(e: ReplayEvent, ms: number): void; onSkill?(e: SkillEvent, ms: number): void; onEnd(): void }): PlaybackHandle;
   clearReplay(): void;
+  /** Battle: the replay soldier (index in Replay.soldiers) under the pointer, or null (the inspector's pick). */
+  pickSoldier?(clientX: number, clientY: number): number | null;
+  /** Battle: mark squads' in-world plates as selected / hovered (MatchState squad ids). */
+  markSquads?(selected: number[], hovered: number | null): void;
   setCameraMode(m: CameraMode): void;
   /** The battle camera's mode right now (the user may have grabbed it). */
   cameraMode?(): CameraMode;

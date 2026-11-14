@@ -1,8 +1,8 @@
-// Planning HUD: Keep bars / round / timer, the resource strip (gold, deploys n/limit, army, ghost
-// toggle), the shop bar of unlocked units, drag-to-deploy with a formation ghost and rotation
+// Planning HUD: Keep bars / round / timer, the resource strip (gold, deploys n/limit, army, the
+// enemy-intel label: last round's enemy positions are always drawn from round 2), the shop bar of unlocked units, drag-to-deploy with a formation ghost and rotation
 // (right-drag or Q/E), moving squads, the selected-squad panel (level-up, stats, item slots,
 // sell), the stash with drag-and-drop equipping and comparison tooltips, the loot and draft
-// modals, and Ready. Keys: Space ready, Tab ghosts, 1-9 0 - shop, Q/E turn the squad while placing
+// modals, and Ready. Keys: Space ready, Tab / Shift+Tab select the next / previous of your squads, 1-9 0 - shop, Q/E turn the squad while placing
 // or dragging (Shift+Q/E for the selected squad; otherwise Q/E turn the camera), U level up, Del
 // sell (press twice), Home reset the camera, Esc cancel. Spectators get a read-only version: both
 // Keeps, both last-round armies, no shop, no deploy badge.
@@ -17,8 +17,10 @@ import type { Backend } from './backend.ts';
 import type { SceneAdapter, SquadVisual } from './scene-adapter.ts';
 import { $, el, esc, hideTip, num, showTipAt, store, tip, toast } from './dom.ts';
 import { icon } from './icons.ts';
-import { deadSummary, itemIcon, itemTooltip, itemTooltipPair, slotLockText } from './items.ts';
-import { crest, squadTooltip, statBlock, countersBlock, tagIcons, unitTooltip } from './units.ts';
+import { deadSummary, equipRefusal, itemIcon, itemTooltip, itemTooltipPair, slotLockText } from './items.ts';
+import { crest, squadTooltip, statBlock, countersBlock, sheetStats, skillChips, skillTooltip, tagIcons, unitTooltip } from './units.ts';
+import { squadSheet } from '../sim/sheet.ts';
+import { squadSkills } from '../sim/data/skills.ts';
 import { defaultFacing, dps, rarityRank, SHOP_KEYS, SLOT_LABEL, SLOTS, slotOpen, soldierStats, unitName, allItems } from './gamedata.ts';
 import { niceError, TopBar } from './hud.ts';
 import { DraftModal, LootModal } from './loot.ts';
@@ -26,6 +28,9 @@ import { DraftModal, LootModal } from './loot.ts';
 type Drag =
   | { kind: 'place'; unit: UnitType; facing: number; fromShop: boolean; moved: boolean; pos: Vec2 | null; rot: Vec2 | null }
   | { kind: 'move'; id: number; facing: number; start: [number, number]; moved: boolean; pos: Vec2 | null; rot: Vec2 | null };
+
+const GHOST_TIP = 'The red ghosts on the far half are where the enemy army stood in the last battle. You never see what they are doing now. Hover or click one to read it.';
+const GHOST_TIP_NONE = 'From round 2 you always see where the enemy army stood in the last battle.';
 
 const ANG = (dx: number, dy: number) => Math.round(((Math.atan2(dy, dx) / (Math.PI * 2)) * 256 + 256)) & 255;
 
@@ -58,7 +63,6 @@ export class PlanningScreen {
   private seat: Seat = 0;
   private selected: number | null = null;
   private ghostSel: number | null = null;
-  private showGhosts = store.get('ghosts') !== '0';
   private drag: Drag | null = null;
   private pending: { id: number; pos: Vec2; facing: number } | null = null;
   private loot: LootModal | null = null;
@@ -89,7 +93,7 @@ export class PlanningScreen {
       <div class="res">
         <div class="r-gold" data-tip="Gold. Unspent gold carries over to the next round.">${icon('gold')}<b>0</b></div>
         <div class="r-army" data-tip="Squads in your army (cap ${ARMY_CAP}, Lord not counted)">${icon('squads')}<b>0/${ARMY_CAP}</b></div>
-        <button class="r-ghost" data-tip="Show where the enemy army stood last round [Tab]">${icon('eye')}<span>Enemy last round</span><kbd>Tab</kbd></button>
+        <div class="r-ghost na" data-tip="${GHOST_TIP_NONE}">${icon('eye')}<span>No intel until round 2</span></div>
       </div>
       <div class="notices"></div>
       <aside class="sqpanel panel"></aside>
@@ -111,7 +115,8 @@ export class PlanningScreen {
     this.notices = $(this.root, '.notices');
     this.hint = $(this.root, '.phint');
     scene.setMode('planning');
-    $(this.res, '.r-ghost').addEventListener('click', () => this.toggleGhosts());
+    // the old "hide the enemy's last round" preference is gone: the ghosts always show
+    store.set('ghosts', null);
     this.bind();
   }
 
@@ -280,18 +285,21 @@ export class PlanningScreen {
       const all = (v.enemies ?? [v.enemy]).flatMap((e) => (e.lastArmy ?? []).map((s) => visual(s, e.lord)));
       this.scene.setArmy(all);
     }
-    const ghosts = this.me && this.showGhosts && v.enemy.lastArmy ? v.enemy.lastArmy.map((s) => visual(s, v.enemy.lord)) : null;
+    const ghosts = this.me && v.enemy.lastArmy ? v.enemy.lastArmy.map((s) => visual(s, v.enemy.lord)) : null;
     this.scene.setGhosts(ghosts);
     this.scene.setSelected(this.selected ?? this.ghostSel);
   }
 
-  private toggleGhosts(): void {
-    this.showGhosts = !this.showGhosts;
-    store.set('ghosts', this.showGhosts ? '1' : '0');
+  /** Tab / Shift+Tab: select the next / previous of my squads (the Lord first, then left to right, front to back). */
+  private cycleSquad(dir: 1 | -1): void {
+    const me = this.me;
+    if (!me || !me.squads.length) return;
+    const fwd = this.seat === 0 ? 1 : -1;
+    const order = [...me.squads].sort((a, b) => (a.type === 'lord' ? -1 : b.type === 'lord' ? 1 : (a.pos[0] - b.pos[0]) * fwd || (b.pos[1] - a.pos[1]) * fwd || a.id - b.id));
+    const i = order.findIndex((q) => q.id === this.selected);
+    const next = order[i < 0 ? (dir > 0 ? 0 : order.length - 1) : (i + dir + order.length) % order.length]!;
     sound.click();
-    if (!this.showGhosts && this.ghostSel !== null) this.ghostSel = null;
-    this.drawArmy();
-    this.renderRes();
+    this.select(next.id);
   }
 
   // ---------------------------------------------------------------- panels
@@ -308,15 +316,13 @@ export class PlanningScreen {
     $(this.res, '.r-army b').textContent = `${army}/${ARMY_CAP}`;
     const g = $(this.res, '.r-ghost');
     const has = !!this.view?.enemy.lastArmy;
-    g.classList.toggle('on', this.showGhosts && has);
+    g.classList.toggle('on', has);
     g.classList.toggle('na', !has);
-    $(g, 'span').textContent = has ? (this.showGhosts ? 'Enemy last round: shown' : 'Enemy last round: hidden') : 'No intel until round 2';
-    g.dataset.tip = has ? 'The red ghosts are where the enemy army stood last round. You never see what they do now. [Tab]' : 'From round 2 you see where the enemy army stood in the last battle.';
+    $(g, 'span').textContent = has ? 'Enemy positions: last round' : 'No intel until round 2';
+    g.dataset.tip = has ? GHOST_TIP : GHOST_TIP_NONE;
     const badge = $(this.root, '.deploy-badge');
     $(badge, 'b').textContent = String(left);
-    const bonus = (me as unknown as { comeback?: { deploys: number } }).comeback?.deploys ?? 0;
-    $(badge, 'span').textContent = `of ${me.deployLimit} this round${bonus ? ' (+1 underdog)' : ''}`;
-    badge.classList.toggle('bonus', bonus > 0);
+    $(badge, 'span').textContent = `of ${me.deployLimit} this round`;
     badge.classList.toggle('none', left === 0);
   }
 
@@ -528,18 +534,46 @@ export class PlanningScreen {
     }).join('');
     const def = isLord ? null : UNITS[sq.type as UnitType];
     const s = soldierStats(sq.type, sq.level, lord);
+    // the sim's sheet: stats after level, items and the Lord's passive, next to the level-1 base
+    const ownerLord = watched ? watched.lord : ghost ? this.view!.enemy.lord : me!.lord;
+    const sheet = this.view ? squadSheet(this.view, sq.id) : null;
+    const stat = (k: string): number => sheet?.stats.find((l) => l.key === k)?.value ?? 0;
+    const brief = sheet
+      ? `${icon('heart')}${stat('hp')} ${icon('sword')}${(stat('damage') / Math.max(0.1, stat('attackInterval'))).toFixed(1)} ${icon('bow')}${stat('range') >= 4 ? stat('range').toFixed(0) + ' m' : 'melee'}`
+      : `${icon('heart')}${s.hp} ${icon('sword')}${dps(s.dmg, s.attackTicks).toFixed(1)} ${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + ' m' : 'melee'}`;
+    const squadDps = sheet ? stat('dps') : Number((dps(s.dmg, s.attackTicks) * s.size).toFixed(0));
+    // everything the squad can do: innate traits (or the Lord's passive and ability) and what its items grant
+    const skills = sheet?.skills ?? squadSkills(sq, ownerLord);
+    const worn = SLOTS.map((slot) => sq.items[slot]);
+    // the full stat table is one click away; open by default only where the screen has the room
+    const pref = store.get('spstats');
+    const statsOpen = pref ? pref === '1' : innerHeight >= 900;
+    const scroll = this.panel.scrollTop;
     this.panel.innerHTML = `
       <header class="sp-h">${crest(sq.type, lord, 'lg')}<div class="sp-t"><small>${watched ? `${esc(this.names[sq.owner === this.seat ? 0 : 1])} · last round` : ghost ? 'Enemy · last round' : sub}</small><b>${esc(name)}</b>${lvl}</div><button class="icon close" data-tip="Deselect [Esc]">${icon('close')}</button></header>
       ${actions}
-      <div class="sp-sec"><small>Equipment</small><div class="sp-slots">${slots}</div>${def?.traits?.includes('healer') ? '<p class="sp-note">Healers never attack: damage, critical and leech lines do nothing here. Life, haste and range still help.</p>' : ''}</div>
-      <div class="sp-sec"><small>Per soldier${!isLord ? ` · squad DPS ${(dps(s.dmg, s.attackTicks) * s.size).toFixed(0)}` : ''}</small>${statBlock(sq.type, sq.level, lord)}</div>
+      <div class="sp-row"><div class="sp-sec"><small>Equipment</small><div class="sp-slots">${slots}</div></div>${skills.length ? `<div class="sp-sec sk-d"><small>Abilities</small><div class="sp-skills">${skillChips(skills, worn)}</div></div>` : ''}${def?.traits?.includes('healer') ? '<p class="sp-note">Healers never attack: damage, critical and leech lines do nothing here. Life, haste and range still help.</p>' : ''}</div>
+      <details class="sp-sec st-d" ${statsOpen ? 'open' : ''}><summary><span data-tip="Stats of one soldier, after level and items">Stats${!isLord ? ` · squad DPS ${squadDps}` : ''}</span><span class="sp-brief">${brief}</span></summary>${sheet ? sheetStats(sheet) : statBlock(sq.type, sq.level, lord)}</details>
       ${isLord ? `<div class="sp-sec lt"><div class="lt-pass"><small>Passive</small>${esc(LORDS[lord!].passive)}</div><div class="lt-abil"><small>${esc(LORDS[lord!].abilityName)}</small>${esc(LORDS[lord!].abilityText)}</div></div>` : ''}
-      ${def ? `<details class="sp-sec ctr-d" ${store.get('ctr') === '1' ? 'open' : ''}><summary>Counters</summary>${countersBlock(def.id)}</details>` : ''}
+      ${def ? `<div class="sp-sec ctr-d"><small>Counters</small>${countersBlock(def.id)}</div>` : ''}
       ${!ghost && me ? '<p class="sp-hint">Drag on the field to move · <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turn the squad</p>' : ''}`;
     this.panel.querySelector('.close')!.addEventListener('click', () => this.select(null));
     this.panel.querySelector('.lvl')?.addEventListener('click', () => this.levelUp());
     this.panel.querySelector('.sell')?.addEventListener('click', () => this.sell());
-    this.panel.querySelector('.ctr-d')?.addEventListener('toggle', (e) => store.set('ctr', (e.target as HTMLDetailsElement).open ? '1' : '0'));
+    // (the event also fires for a table rendered open, so only a change counts: open, or closed again)
+    let wasOpen = statsOpen;
+    this.panel.querySelector('.st-d')?.addEventListener('toggle', (e) => {
+      const open = (e.target as HTMLDetailsElement).open;
+      if (open === wasOpen) return;
+      wasOpen = open;
+      store.set('spstats', open ? '1' : '0');
+    });
+    this.panel.querySelectorAll<HTMLElement>('.sk-chip').forEach((n) => {
+      const k = skills[Number(n.dataset.sk)];
+      if (k) tip(n, () => skillTooltip(k, k.item !== undefined ? worn.find((x) => x?.id === k.item) : null));
+    });
+    // a re-render (every snapshot) keeps the reader's place
+    this.panel.scrollTop = scroll;
     this.panel.querySelectorAll<HTMLElement>('.sp-slot').forEach((slotEl) => {
       const slot = slotEl.dataset.sslot as Slot;
       const it = sq.items[slot];
@@ -916,7 +950,7 @@ export class PlanningScreen {
       this.toggleReady();
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      this.toggleGhosts();
+      if (!this.drag) this.cycleSquad(e.shiftKey ? -1 : 1);
     } else if (e.key === 'Escape') {
       if (this.sellArmed) {
         this.sellArmed = null;
@@ -978,7 +1012,11 @@ export class PlanningScreen {
       d.el = el(`<div class="drag-avatar">${itemIcon(d.item, { size: 'md' })}</div>`);
       this.root.appendChild(d.el);
       this.root.classList.add('item-dragging');
-      this.root.querySelectorAll<HTMLElement>(`.sp-slot[data-sslot="${d.item.slot}"]:not(.locked)`).forEach((s) => s.classList.add('drop-ok'));
+      // the open slot of that kind lights up, or greys out when the squad's class cannot use the item's skill
+      this.root.querySelectorAll<HTMLElement>(`.sp-slot[data-sslot="${d.item.slot}"]:not(.locked)`).forEach((s) => {
+        const sq = this.squad(Number(s.dataset.squad));
+        s.classList.add(sq && this.refusal(d.item, sq) ? 'drop-no' : 'drop-ok');
+      });
       this.stash.classList.toggle('drop-ok', d.from !== null);
       sound.pick();
     }
@@ -989,7 +1027,10 @@ export class PlanningScreen {
       const hit = this.scene.squadAt(e.clientX, e.clientY);
       const sq = hit && !hit.ghost ? this.squad(hit.id) : null;
       this.scene.setHovered(sq?.id ?? null);
-      if (sq) {
+      const no = sq ? this.refusal(d.item, sq) : null;
+      d.el!.classList.toggle('no', !!no);
+      if (sq && no) showTipAt(e.clientX, e.clientY, `<div class="tip-plain bad">${esc(no)}</div>`);
+      else if (sq) {
         const open = slotOpen(sq, d.item.slot);
         showTipAt(e.clientX, e.clientY, open ? itemTooltipPair(d.item, sq.items[d.item.slot], `Drop to equip on ${unitName(sq.type, this.me!.lord)}`, { type: sq.type, lord: this.me!.lord }) : `<div class="tip-plain bad">${esc(unitName(sq.type, this.me!.lord))}: ${esc(slotLockText(d.item.slot))}</div>`);
       } else showTipAt(e.clientX, e.clientY, null);
@@ -998,8 +1039,13 @@ export class PlanningScreen {
       const slotEl = (under as HTMLElement | null)?.closest?.<HTMLElement>('.sp-slot');
       if (slotEl && slotEl.dataset.sslot === d.item.slot && !slotEl.classList.contains('locked')) {
         const sq = this.squad(Number(slotEl.dataset.squad));
-        showTipAt(e.clientX, e.clientY, sq ? itemTooltipPair(d.item, sq.items[d.item.slot], 'Drop to equip', { type: sq.type, lord: this.me!.lord }) : null);
-      } else showTipAt(e.clientX, e.clientY, null);
+        const no = sq ? this.refusal(d.item, sq) : null;
+        d.el!.classList.toggle('no', !!no);
+        showTipAt(e.clientX, e.clientY, no ? `<div class="tip-plain bad">${esc(no)}</div>` : sq ? itemTooltipPair(d.item, sq.items[d.item.slot], 'Drop to equip', { type: sq.type, lord: this.me!.lord }) : null);
+      } else {
+        d.el!.classList.remove('no');
+        showTipAt(e.clientX, e.clientY, null);
+      }
     }
   }
 
@@ -1010,7 +1056,9 @@ export class PlanningScreen {
       // a click: quick-equip a stash item on the selected squad
       const sel = this.squad(this.selected);
       if (d.from === null && sel && me) {
-        if (slotOpen(sel, d.item.slot)) {
+        const no = this.refusal(d.item, sel);
+        if (no) this.rejected(no);
+        else if (slotOpen(sel, d.item.slot)) {
           sound.equip();
           this.intent({ t: 'equip', item: d.item.id, squad: sel.id });
         } else this.rejected(slotLockText(d.item.slot));
@@ -1033,7 +1081,10 @@ export class PlanningScreen {
     }
     if (target !== null && target !== d.from) {
       const sq = this.squad(target);
-      if (sq && !slotOpen(sq, d.item.slot)) this.rejected(slotLockText(d.item.slot));
+      // refused here with the reason, rather than sent for the server to refuse
+      const no = sq ? this.refusal(d.item, sq) : null;
+      if (no) this.rejected(no);
+      else if (sq && !slotOpen(sq, d.item.slot)) this.rejected(slotLockText(d.item.slot));
       else if (sq) {
         sound.equip();
         this.intent({ t: d.from === null ? 'equip' : 'moveItem', item: d.item.id, squad: target });
@@ -1043,13 +1094,18 @@ export class PlanningScreen {
     this.cancelItem();
   }
 
+  /** Why this squad cannot wear the item (a skill item of another class), or null. */
+  private refusal(item: Item, sq: Squad): string | null {
+    return equipRefusal(item, { type: sq.type, lord: this.me?.lord ?? null });
+  }
+
   private cancelItem(): void {
     const d = this.itemDrag;
     if (!d) return;
     d.el?.remove();
     this.itemDrag = null;
     this.root.classList.remove('item-dragging');
-    this.root.querySelectorAll('.drop-ok').forEach((n) => n.classList.remove('drop-ok'));
+    this.root.querySelectorAll('.drop-ok, .drop-no').forEach((n) => n.classList.remove('drop-ok', 'drop-no'));
     this.stash.classList.remove('drop-ok');
     this.scene.setHovered(null);
     showTipAt(0, 0, null);

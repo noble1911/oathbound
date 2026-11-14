@@ -468,7 +468,9 @@ export class UnitRenderer {
     const a = s.anim;
     // base clip
     if (s.deadAt < 0) {
-      const moving = state === 1 && s.speed > 0.25;
+      // the sim may report idle/cast while a hero is still travelling (Lords recast on the march):
+      // play locomotion whenever the soldier actually moves, except mid-attack.
+      const moving = state !== 2 && s.speed > 0.25;
       s.moving = moving;
       const base = moving ? (s.speed > s.arch.runAbove ? 'run' : 'move') : 'idle';
       if (base !== a.clip) this.switchClip(s, base, t, false);
@@ -508,8 +510,9 @@ export class UnitRenderer {
     if (s.deadAt >= 0) {
       const since = t - s.deadAt;
       const sink = clamp((since - CORPSE_HOLD) / CORPSE_SINK, 0, 1);
-      gy -= sink * 0.8;
-      fade = 1 - sink;
+      // corpses sink fully below the ground rather than dither-fading: the screen-door fade read as
+      // black/red static on light coats (white horses, pegasi). Sink depth covers the unit's height.
+      gy -= sink * sink * (s.arch.chest * 1.6 + 0.6);
       if (sink >= 1) {
         if (s.hero) s.hero.root.visible = false;
         s.visible = false;

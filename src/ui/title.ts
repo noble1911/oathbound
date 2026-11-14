@@ -41,7 +41,7 @@ export class TitleScreen {
         <div class="title-menu panel">
           <label class="field"><span>Commander name</span><input class="name" maxlength="16" placeholder="Wanderer" value="${esc(name)}" autocomplete="nickname" spellcheck="false"></label>
           <div class="menu-block">
-            <button class="btn primary big vsai">${icon('ai')}<span>Play vs AI</span></button>
+            <button class="btn ${code ? '' : 'cta'} big vsai">${icon('ai')}<span>Play vs AI</span></button>
             <div class="seg diff" role="radiogroup" aria-label="AI difficulty">
               ${(['easy', 'normal', 'hard'] as AiLevel[]).map((l) => `<button data-lvl="${l}" class="${l === level ? 'on' : ''}" role="radio" aria-checked="${l === level}">${l[0]!.toUpperCase() + l.slice(1)}</button>`).join('')}
             </div>
@@ -51,7 +51,7 @@ export class TitleScreen {
           <button class="btn big create">${icon('sword2')}<span>${code ? 'Create a new PvP room' : 'Create PvP room'}</span></button>
           <div class="join-row">
             <input class="code" maxlength="4" placeholder="CODE" value="${esc(code)}" autocapitalize="characters" spellcheck="false" aria-label="Room code">
-            <button class="btn join ${code ? 'primary' : ''}">Join</button>
+            <button class="btn join ${code ? 'cta' : ''}">Join</button>
             <button class="btn spectate" data-tip="Watch the duel without taking a seat">${icon('eye')}<span>Watch</span></button>
           </div>
           <p class="err" role="status"></p>
@@ -209,7 +209,7 @@ export class LobbyScreen {
       <div class="lobby-foot">
         <span class="specs" data-tip="Spectators watching">${icon('eye')} ${specs} watching${room.me.spectator ? ' · you are spectating' : ''}</span>
       </div>
-      ${host ? `<button class="btn primary big start" ${full ? '' : 'disabled'}>${full ? 'Begin the war' : 'Waiting for an opponent…'}</button>` : `<p class="muted center">${room.me.spectator ? 'Waiting for the duel to begin…' : 'Waiting for the host to begin…'}</p>`}
+      ${host ? `<button class="btn cta big start" ${full ? '' : 'disabled'}>${full ? 'Begin the war' : 'Waiting for an opponent…'}</button>` : `<p class="muted center">${room.me.spectator ? 'Waiting for the duel to begin…' : 'Waiting for the host to begin…'}</p>`}
       <div class="lobby-acts"><button class="btn leave">${room.me.spectator ? 'Stop watching' : 'Leave room'}</button><button class="linkish how-btn">${icon('tome')}<span>How to play</span></button></div>`;
   }
 

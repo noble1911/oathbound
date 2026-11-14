@@ -16,6 +16,7 @@ import type { Engine } from '../core/engine.ts';
 import { bakeVat, loadVat, createCrowdMaterials, type VatData } from './vat.ts';
 import { buildClips } from './models.ts';
 import type { Archetype } from './archetypes.ts';
+import { assetUrl, loadAssetVersions, registerAssetHashes } from '../../assets.ts';
 
 export interface CrowdAsset {
   key: string;
@@ -122,7 +123,8 @@ export class UnitAssets {
   loadManifest(url: string): Promise<void> {
     this.manifestReady = (async () => {
       try {
-        const r = await fetch(url);
+        // the manifest is always revalidated; everything it points at is fetched by content hash
+        const [r] = await Promise.all([fetch(url, { cache: 'no-cache' }), loadAssetVersions()]);
         if (!r.ok) return;
         const j = (await r.json()) as unknown;
         if (j && typeof j === 'object') {
@@ -130,6 +132,7 @@ export class UnitAssets {
           this.manifest = (o.models ?? o.units ?? o) as ArtManifest;
           this.propManifest = (o.props ?? null) as ArtManifest | null;
           this.manifestBase = new URL('.', new URL(url, location.href)).href;
+          registerAssetHashes(url, o.hashes);
         }
       } catch {
         this.manifest = null;
@@ -149,7 +152,7 @@ export class UnitAssets {
     return null;
   }
   url(rel: string): string {
-    return new URL(rel, this.manifestBase).href;
+    return assetUrl(new URL(rel, this.manifestBase).href);
   }
   async ready(): Promise<void> {
     await this.manifestReady;

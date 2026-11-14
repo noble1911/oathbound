@@ -5,8 +5,9 @@ import { UNITS, UNIT_TYPES } from '../sim/data/units.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { AFFIXES, LEGENDARIES } from '../sim/data/items.ts';
 import { slotOpen as simSlotOpen } from '../sim/match.ts';
+import { SKILLS, canEquip as classFits } from '../sim/data/skills.ts';
 
-export const RARITY_CSS: Record<Rarity, string> = { common: '#e3ddd3', magic: '#7e9cff', rare: '#ffe35c', legendary: '#ff8a1e' };
+export const RARITY_CSS: Record<Rarity, string> = { common: '#bfc3c9', magic: '#6f9dff', rare: '#e6bd3c', legendary: '#f58b25' };
 export const RARITY_LABEL: Record<Rarity, string> = { common: 'Common', magic: 'Magic', rare: 'Rare', legendary: 'Legendary' };
 export const SLOTS: readonly Slot[] = ['weapon', 'armor', 'relic'];
 export const SLOT_LABEL: Record<Slot, string> = { weapon: 'Weapon', armor: 'Armor', relic: 'Relic' };
@@ -186,6 +187,10 @@ export function compareItems(next: Item, cur: Item | null): Delta[] {
     if (next.legendary) out.push({ text: `Gains: ${LEGENDARIES[next.legendary].name}`, good: true });
     if (cur?.legendary) out.push({ text: `Loses: ${LEGENDARIES[cur.legendary].name}`, good: false });
   }
+  if ((next.skill ?? null) !== (cur?.skill ?? null)) {
+    if (next.skill) out.push({ text: `Gains ability: ${SKILLS[next.skill].name}`, good: true });
+    if (cur?.skill) out.push({ text: `Loses ability: ${SKILLS[cur.skill].name}`, good: false });
+  }
   out.sort((x, y) => Number(y.good) - Number(x.good));
   return out;
 }
@@ -194,9 +199,9 @@ export function rarityRank(r: Rarity): number {
   return r === 'legendary' ? 3 : r === 'rare' ? 2 : r === 'magic' ? 1 : 0;
 }
 
-/** Squads that can take this item right now (slot open). */
-export function canEquip(sq: Pick<Squad, 'type' | 'level'>, item: Item): boolean {
-  return slotOpen(sq, item.slot);
+/** Squads that can take this item right now: the slot is open and, for a skill item, the class fits. */
+export function canEquip(sq: Pick<Squad, 'type' | 'level'>, item: Item, lord?: LordId | null): boolean {
+  return slotOpen(sq, item.slot) && classFits(item, sq.type, lord);
 }
 
 export function allItems(squads: Squad[]): { item: Item; squad: Squad }[] {
@@ -241,6 +246,7 @@ export function itemUse(item: Item, sq: Pick<Squad, 'type' | 'level'>, lord?: Lo
   let p = 0;
   for (const a of [item.implicit, ...item.affixes]) if (!affixDead(a, sq.type, lord)) p += a.value * AFFIXES[a.id].power;
   if (item.legendary && !legendaryDead(item, sq.type)) p += LEGENDARIES[item.legendary].power;
+  if (item.skill && classFits(item, sq.type, lord)) p += SKILLS[item.skill].power;
   return (p * squadWorth(sq)) / 100;
 }
 
@@ -260,7 +266,8 @@ export interface Fit {
 export function bestFit(item: Item, squads: Squad[], lord?: LordId | null): Fit | null {
   let best: Fit | null = null;
   for (const sq of squads) {
-    if (!slotOpen(sq, item.slot)) continue;
+    // a skill item only fits the classes of its skill
+    if (!slotOpen(sq, item.slot) || !classFits(item, sq.type, lord)) continue;
     const cur = sq.items[item.slot] ?? null;
     const gain = itemUse(item, sq, lord) - (cur ? itemUse(cur, sq, lord) : 0);
     if (gain <= 0) continue;

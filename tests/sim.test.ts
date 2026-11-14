@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import {
   newMatch, applyIntent, simulateBattle, applyBattle, nextRound, viewFor, botPlan, allReady, forceReady,
   decodeReplay, sampleReplay, makeTransforms, replayHash, itemName, itemLines, rollLoot, income, deployZone, levelUpCost,
-  UNITS, LORDS, LEGENDARIES, mirrorPos, KEEP_HP, ARMY_CAP, ANIM_STATES, KEEP_SRC_BASE,
+  UNITS, LORDS, LEGENDARIES, mirrorPos, KEEP_HP, ARMY_CAP, ANIM_STATES, KEEP_SRC_BASE, BASIC_POOL, UNIT_TYPES, lootSchedule, lootTopSlot,
 } from '../src/sim/index.ts';
 import type { Item, MatchState, Seat } from '../src/sim/types.ts';
 import { isqrt, angleOf, isin, icos } from '../src/sim/fixed.ts';
@@ -92,7 +92,7 @@ describe('terrain', () => {
 });
 
 describe('match rules', () => {
-  it('starts with 300 gold, the Lord placed, signature units + a 3-option draft (pick 2)', () => {
+  it('starts with 300 gold, the Lord placed, signature units + a free choice of 1 basic unit', () => {
     const s = newMatch(5, ['marshal', 'archmage']);
     expect(s.phase).toBe('planning');
     expect(s.round).toBe(1);
@@ -101,8 +101,8 @@ describe('match rules', () => {
       expect(p.squads.length).toBe(1);
       expect(p.squads[0].type).toBe('lord');
       expect(p.unlocked).toEqual(LORDS[p.lord!].signature);
-      expect(p.draftOptions.length).toBe(3);
-      expect(p.draftPicks).toBe(2);
+      expect(p.draftOptions).toEqual(BASIC_POOL.filter((u) => !LORDS[p.lord!].signature.includes(u))); // the whole basic pool, not a random 3
+      expect(p.draftPicks).toBe(1);
       expect(p.keepHp).toBe(KEEP_HP);
     }
     expect(s.players[0].deployLimit).toBe(3); // Marshal
@@ -207,14 +207,15 @@ describe('match rules', () => {
     expect(allReady(s)).toBe(true);
   });
 
-  it('income, catch-up gold and an unlock draft each round', () => {
+  it('income and one free unlock each round', () => {
     const s = playRounds(3, 2);
     expect(s.round).toBe(3);
     for (const p of s.players) {
       expect(p.draftPicks).toBe(1);
-      expect(p.draftOptions.length).toBe(2);
+      expect(p.draftOptions).toEqual(UNIT_TYPES.filter((u) => !p.unlocked.includes(u) && UNITS[u].minRound <= 3)); // every locked unit, no dragon yet
+      expect(p.draftOptions).not.toContain('dragon');
       expect(p.lootOffer?.length).toBe(p.lord === 'skylady' ? 4 : 3);
-      expect(p.unlocked.length).toBe(4 + 1);
+      expect(p.unlocked.length).toBe(2 + 2); // signature units + one unlock in each of rounds 1 and 2
       for (const u of p.draftOptions) expect(p.unlocked).not.toContain(u);
     }
   });
@@ -254,31 +255,47 @@ describe('hidden information', () => {
 });
 
 describe('loot', () => {
-  it('is reproducible per (seed, round, seat) and follows rarity rules', () => {
+  it('is reproducible per (seed, round), one item per slot, on a fixed rarity schedule', () => {
     let id = 1;
-    const a = rollLoot(42, 4, 0, false, 3, () => id++);
+    const a = rollLoot(42, 4, 3, () => id++);
     id = 1;
-    const b = rollLoot(42, 4, 0, false, 3, () => id++);
-    expect(a).toEqual(b);
+    expect(rollLoot(42, 4, 3, () => id++)).toEqual(a);
     id = 1;
-    expect(rollLoot(42, 4, 1, false, 3, () => id++)).not.toEqual(a);
-    let legendEarly = 0, bumpScore = 0, plainScore = 0;
+    expect(rollLoot(43, 4, 3, () => id++)).not.toEqual(a);
+    expect(lootSchedule(1)).toEqual(['magic', 'magic', 'magic']);
+    expect(lootSchedule(3)).toEqual(['legendary', 'magic', 'magic']);
+    expect(lootSchedule(4)).toEqual(['rare', 'magic', 'magic']);
+    expect(lootSchedule(6)).toEqual(['legendary', 'rare', 'magic']);
+    expect(lootSchedule(8)).toEqual(['rare', 'rare', 'magic']);
+    expect(lootSchedule(9)).toEqual(['legendary', 'rare', 'rare']);
+    expect(lootSchedule(10)).toEqual(['rare', 'rare', 'rare']);
+    // the three Legendary rounds of a match visit the three slots
+    for (let seed = 0; seed < 20; seed++) expect(new Set([3, 6, 9].map((r) => lootTopSlot(seed, r))).size).toBe(3);
     const rank = { common: 0, magic: 1, rare: 2, legendary: 3 };
-    for (let seed = 0; seed < 400; seed++) {
-      for (const it of rollLoot(seed, 2, 0, true, 3, () => 0)) if (it.rarity === 'legendary') legendEarly++;
-      for (const it of rollLoot(seed, 6, 0, true, 3, () => 0)) bumpScore += rank[it.rarity];
-      for (const it of rollLoot(seed, 6, 0, false, 3, () => 0)) {
-        plainScore += rank[it.rarity];
-        const n = it.affixes.length;
-        if (it.rarity === 'common') expect(n).toBe(0);
-        if (it.rarity === 'magic') expect(n >= 1 && n <= 2).toBe(true);
-        if (it.rarity === 'rare') expect(n >= 3 && n <= 4).toBe(true);
-        if (it.rarity === 'legendary') { expect(n).toBe(2); expect(LEGENDARIES[it.legendary!].slot).toBe(it.slot); }
-        if (it.affixes.some((x) => x.id === 'command')) { expect(it.slot).toBe('relic'); expect(['rare', 'legendary']).toContain(it.rarity); }
+    for (let seed = 0; seed < 200; seed++) {
+      for (const round of [1, 2, 3, 4, 5, 6, 8, 9, 12, 13]) {
+        const offer = rollLoot(seed, round, 3, () => 0);
+        // always one weapon, one armor, one relic: something is usable whatever the army
+        expect(offer.map((it) => it.slot)).toEqual(['weapon', 'armor', 'relic']);
+        // the rarities are the schedule's, exactly: nothing is rolled
+        expect(offer.map((it) => it.rarity).sort()).toEqual([...lootSchedule(round)].sort());
+        // the best item visits every slot in turn
+        const best = offer.reduce((x, y) => (rank[y.rarity] > rank[x.rarity] ? y : x));
+        if ((round >= 3 && round <= 6) || round % 3 === 0) expect(best.slot).toBe(lootTopSlot(seed, round));
+        for (const it of offer) {
+          expect(it.ilvl).toBe(round);
+          const n = it.affixes.length;
+          if (it.rarity === 'magic') expect(n >= 1 && n <= 2).toBe(true);
+          if (it.rarity === 'rare') expect(n + (it.skill ? 1 : 0) >= 3 && n + (it.skill ? 1 : 0) <= 4).toBe(true); // a granted skill takes an affix's place
+          if (it.rarity === 'legendary') { expect(n).toBe(2); expect(LEGENDARIES[it.legendary!].slot).toBe(it.slot); }
+          if (it.affixes.some((x) => x.id === 'command')) { expect(it.slot).toBe('relic'); expect(['rare', 'legendary']).toContain(it.rarity); }
+        }
+        // Skylady's fourth item is of the round's lowest tier, and the first three are unchanged
+        const four = rollLoot(seed, round, 4, () => 0);
+        expect(four.slice(0, 3)).toEqual(offer);
+        expect(four[3].rarity).toBe(lootSchedule(round)[2]);
       }
     }
-    expect(legendEarly).toBe(0);
-    expect(bumpScore).toBeGreaterThan(plainScore * 1.3);
   });
   it('affix values scale with item level', () => {
     let lo = 0, hi = 0;

@@ -20,7 +20,7 @@ const rows: Record<UnitType, Row> = {
   },
   archers: {
     name: 'Archers', role: 'Ranged', cost: 100, squadSize: 9, tags: ['infantry'], weapon: 'bow', damageType: 'physical', projectile: 'arrow',
-    hp: 44, dmg: 6, attackTicks: 32, range: 2500, speed: 14, radius: 42, armor: 0, magicResist: 0, effective: { flier: 200 }, traits: ['backline'],
+    hp: 44, dmg: 6, attackTicks: 32, range: 2500, speed: 14, radius: 42, armor: 0, magicResist: 0, effective: { flier: 125 }, traits: ['backline'],
   },
   knights: {
     name: 'Knights', role: 'Tank', cost: 200, squadSize: 4, tags: ['armored', 'infantry'], weapon: 'lance', damageType: 'physical', projectile: 'none',
@@ -44,11 +44,11 @@ const rows: Record<UnitType, Row> = {
   },
   ballista: {
     name: 'Ballista', role: 'Anti-large', cost: 200, squadSize: 1, tags: ['large'], weapon: 'bolt', damageType: 'physical', projectile: 'bolt',
-    hp: 280, dmg: 95, attackTicks: 60, range: 4000, speed: 9, radius: 110, armor: 20, magicResist: 0, effective: { large: 250 }, traits: ['pierce', 'backline'],
+    hp: 280, dmg: 95, attackTicks: 60, range: 4000, speed: 9, radius: 110, armor: 20, magicResist: 0, effective: { large: 200 }, traits: ['pierce', 'backline'],
   },
   trebuchet: {
     name: 'Trebuchet', role: 'Artillery', cost: 300, squadSize: 1, tags: ['large'], weapon: 'stone', damageType: 'physical', projectile: 'stone',
-    hp: 320, dmg: 120, attackTicks: 100, range: 6000, minRange: 1200, speed: 7, radius: 140, armor: 20, magicResist: 0, splash: 500,
+    hp: 320, dmg: 105, attackTicks: 100, range: 6000, minRange: 1200, speed: 7, radius: 140, armor: 20, magicResist: 0, splash: 500,
     traits: ['slowTurn', 'crushing', 'backline'],
   },
   golem: {

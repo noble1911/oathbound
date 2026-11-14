@@ -3,6 +3,11 @@ import type { LordDef, LordId } from '../types.ts';
 
 export const LORD_LEVEL_HP = 10;
 export const LORD_LEVEL_DMG = 8;
+/** Lord ability numbers (battle.ts and the skill lists read these). */
+export const RALLY_PCT = 40;
+export const METEOR_BASE = 18;
+export const METEOR_PER_LEVEL = 3;
+export const ARCHMAGE_MAGIC_PCT = 76;
 
 export const LORDS: Record<LordId, LordDef> = {
   marshal: {
@@ -10,13 +15,13 @@ export const LORDS: Record<LordId, LordDef> = {
     signature: ['militia', 'cavaliers'], tags: ['infantry'],
     hp: 900, dmg: 40, attackTicks: 20, range: 160, speed: 16, armor: 30, magicResist: 20, splash: 0,
     passive: '+1 squad deployment per round',
-    ability: 'rally', abilityName: 'Rally', abilityText: 'Allied squads within 20 m gain +30% attack speed for 10 s.',
+    ability: 'rally', abilityName: 'Rally', abilityText: `Allied squads within 20 m gain +${RALLY_PCT}% attack speed for 10 s.`,
   },
   archmage: {
     id: 'archmage', name: 'Sefa', title: 'Archmage', modelId: 'lord_archmage', weapon: 'tome', damageType: 'magic', projectile: 'fireball',
     signature: ['mages', 'clerics'], tags: ['infantry'],
     hp: 520, dmg: 34, attackTicks: 40, range: 2000, speed: 14, armor: 0, magicResist: 40, splash: 250,
-    passive: 'Magic damage +15%',
+    passive: `Magic damage +${ARCHMAGE_MAGIC_PCT}%`,
     ability: 'meteor', abilityName: 'Meteor', abilityText: 'Calls a meteor on the densest enemy cluster, 10 m radius.',
   },
   warden: {

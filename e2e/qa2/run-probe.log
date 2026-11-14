@@ -1,0 +1,16 @@
+fresh {"stored":null,"stats":{"tier":"high","auto":true,"cap":0},"on":"auto","note":"Auto picked high for this device."}
+after ultra on title {"stored":"ultra","stats":{"tier":"ultra","auto":false,"cap":0},"on":"ultra","note":""}
+reload after ultra {"stored":"ultra","stats":{"tier":"high","auto":true,"cap":0},"on":"auto","note":"Auto picked high for this device."}
+in battle before {"stored":"ultra","stats":{"tier":"high","auto":true,"cap":0},"on":"auto","note":"Auto picked high for this device."}
+in battle after low {"stored":"low","stats":{"tier":"low","auto":false,"cap":0},"on":"low","note":""}
+in battle after ultra {"stored":"ultra","stats":{"tier":"ultra","auto":false,"cap":0},"on":"ultra","note":""}
+results fps (1.2 s in) 10  then 10
+reload after in-battle ultra {"stored":"ultra","stats":{"tier":"high","auto":true,"cap":0},"on":"auto","note":"Auto picked high for this device."}
+deploy results (last two overlap the first) ["berserkers:undefined","wyvern:undefined","pegasus:undefined","dragon:undefined","berserkers:undefined","berserkers:undefined"]
+toasts []
+squads [{"id":1,"type":"lord","pos":[3999,2500]},{"id":14,"type":"berserkers","pos":[1500,3000]},{"id":15,"type":"wyvern","pos":[2800,3000]},{"id":16,"type":"pegasus","pos":[5400,3000]},{"id":17,"type":"dragon","pos":[6600,3000]}]
+berserkers cam {"dist":26.7,"pitch":0.69}
+wyvern cam {"dist":26.7,"pitch":0.69}
+pegasus cam {"dist":26.7,"pitch":0.69}
+dragon cam {"dist":26.7,"pitch":0.69}
+

@@ -4,13 +4,15 @@
 //   &cam=director|free  &speed=1  &paused=1  &ui=0 (hide the panel)
 //   &real=1 (a real sim battle: newMatch + botPlan for both seats, `rounds` rounds; real=big = the
 //   sim's ~250-soldier fixture)  &seed=N  &rounds=N  &art=0 (procedural stand-ins only)
+//   &skills=1 (with real=all: every squad carries the item skills its class can use; casts are listed in
+//   window.__rt.skills and logged as they fire in window.__rt.skillLog)
 import * as THREE from 'three';
 import { BattleView, defaultTerrain, sampleKeyframes, replaySource, TIER_ORDER, type BattleSource, type QualityTier } from '../render/index.ts';
 import { makeFakeBattle } from './fake-battle.ts';
 import { mountPanel } from './panel.ts';
-import { newMatch, botPlan, simulateBattle, applyBattle, nextRound, decodeReplay, sampleReplay, makeTransforms, UNIT_TYPES, mirrorPos } from '../sim/index.ts';
+import { newMatch, botPlan, simulateBattle, applyBattle, nextRound, decodeReplay, sampleReplay, makeTransforms, UNIT_TYPES, mirrorPos, SKILLS, SKILL_IDS, BASES, classesOf } from '../sim/index.ts';
 import { bigBattle } from '../sim/fixtures.ts';
-import type { DecodedReplay, KeepInfo, ReplaySoldier, Terrain, LordId, MatchState, Seat, Vec2 } from '../sim/types.ts';
+import type { DecodedReplay, KeepInfo, ReplaySoldier, Terrain, LordId, MatchState, Seat, Vec2, Item, ItemSlots, SkillId, SkillEvent, BaseId } from '../sim/types.ts';
 
 const q = new URLSearchParams(location.search);
 const tier = (q.get('tier') ?? 'auto') as QualityTier | 'auto';
@@ -27,6 +29,20 @@ interface ShowBattle {
   info: string;
 }
 
+/** Skill items for a squad of `type`: one per slot from the skills its class may use (`pick` varies which). */
+function skillItems(s: MatchState, type: string, lord: LordId | undefined, pick: number): ItemSlots {
+  const out: ItemSlots = { weapon: null, armor: null, relic: null };
+  const cls = classesOf(type as never, lord);
+  for (const slot of ['weapon', 'armor', 'relic'] as const) {
+    const ids = SKILL_IDS.filter((id: SkillId) => SKILLS[id].slot === slot && SKILLS[id].classes.some((c) => cls.includes(c)));
+    if (!ids.length) continue;
+    const base = (Object.keys(BASES) as BaseId[]).find((b) => BASES[b].slot === slot)!;
+    const item: Item = { id: s.nextId++, base, slot, rarity: 'rare', ilvl: 6, implicit: { id: BASES[base].implicit, value: BASES[base].lo }, affixes: [], legendary: null, skill: ids[pick % ids.length] };
+    out[slot] = item;
+  }
+  return out;
+}
+
 /** Every unit type (14) per side plus both Lords: the full-roster render test. */
 function allUnitsBattle(seed: number, lords: [LordId, LordId]): MatchState {
   const s = newMatch(seed, lords);
@@ -37,7 +53,8 @@ function allUnitsBattle(seed: number, lords: [LordId, LordId]): MatchState {
       const x = 800 + (k % 5) * 1600;
       const y = 3700 - Math.floor(k / 5) * 1100;
       const pos: Vec2 = seat === 0 ? [x, y] : mirrorPos([x, y]);
-      p.squads.push({ id: s.nextId++, owner: seat, type: u, level: 2, pos, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
+      const skills = q.get('skills') === '1';
+      p.squads.push({ id: s.nextId++, owner: seat, type: u, level: skills ? 5 : 2, pos, facing: seat === 0 ? 64 : 192, items: skills ? skillItems(s, u, undefined, seat + k) : { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
     });
   }
   s.round = 8;
@@ -105,13 +122,14 @@ if (q.get('insets')) {
 }
 
 const loot: { dispose(): void }[] = [];
+const skillLog: SkillEvent[] = [];
 function clearLoot(): void {
   loot.splice(0).forEach((b) => b.dispose());
 }
 
 function startBattle(atMs = 0): void {
   clearLoot();
-  const pb = view.playBattle(source, { director: (q.get('cam') ?? 'director') === 'director' });
+  const pb = view.playBattle(source, { director: (q.get('cam') ?? 'director') === 'director', onSkill: (e) => void skillLog.push(e) });
   if (atMs > 0) pb.seek(atMs);
   pb.speed = Number(q.get('speed') ?? 1);
   if (q.get('paused') === '1') pb.playing = false;
@@ -232,4 +250,4 @@ declare global {
     __rt: unknown;
   }
 }
-window.__rt = { view, startBattle, planning, lootScreen, actions, THREE, info: battle.info, ready: true };
+window.__rt = { view, startBattle, planning, lootScreen, actions, THREE, info: battle.info, skills: battle.decoded.skills ?? [], skillLog, ready: true };

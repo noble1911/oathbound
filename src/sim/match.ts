@@ -2,14 +2,14 @@
 // intent validation, the hidden-information view, and applying battle results.
 import { FIELD_H, FIELD_W, mirrorPos, mirrorFacing } from './constants.ts';
 import { SLOT_UNLOCK_LEVEL } from './data/items.ts';
+import { canEquip, classError, classesOf } from './data/skills.ts';
 import { LORDS, LORD_IDS } from './data/lords.ts';
 import { BASIC_POOL, UNITS, UNIT_TYPES } from './data/units.ts';
 import { modsOf, rollLoot } from './loot.ts';
-import { Rng, hash } from './rng.ts';
 import { genTerrain } from './terrain.ts';
 import type {
   BattleResult, Comeback, EnemyView, Intent, IntentResult, Item, LordId, MatchState, PlayerState, PlayerView, RoundOutcome, RoundSummary, Seat, Slot,
-  Squad, SquadType, UnitType, Vec2,
+  Squad, SquadType, UnitClass, UnitType, Vec2,
 } from './types.ts';
 
 export const START_GOLD = 300;
@@ -19,14 +19,20 @@ export const ARMY_CAP = 16;
 export const BASE_DEPLOY_LIMIT = 2;
 export const MAX_SQUAD_LEVEL = 5;
 export const MAX_LORD_LEVEL = 10;
-/** Catch-up gold for losing a round: CATCHUP_GOLD + CATCHUP_PER_ROUND x round + CATCHUP_PER_DEFICIT x keep-HP deficit (points). */
-export const CATCHUP_GOLD = 75;
-export const CATCHUP_PER_ROUND = 10;
-export const CATCHUP_PER_DEFICIT = 3;
-/** Keep-HP deficit (percentage points) at which the trailing player gets +1 squad deployment next round. */
-export const UNDERDOG_DEFICIT = 25;
+/**
+ * There is no catch-up: both players always get the same income, deployments and loot offers, whoever is ahead.
+ * These constants are all 0 and stay only so older UI code that reads them keeps compiling.
+ * @deprecated
+ */
+export const CATCHUP_GOLD = 0;
+/** @deprecated */
+export const CATCHUP_PER_ROUND = 0;
+/** @deprecated */
+export const CATCHUP_PER_DEFICIT = 0;
+/** @deprecated */
+export const UNDERDOG_DEFICIT = 0;
 /** Cumulative XP needed for Lord levels 1..10. */
-export const LORD_XP_LEVELS = [0, 30, 75, 135, 210, 300, 410, 540, 690, 860];
+export const LORD_XP_LEVELS = [0, 50, 120, 215, 335, 480, 655, 865, 1105, 1375];
 /** Safety valve: after this round the higher keep wins. */
 export const MAX_ROUNDS = 30;
 /** Keep damage per cost tier (cost / 100) of a surviving Lv1 squad; see squadKeepDamage. */
@@ -65,12 +71,23 @@ export function squadKeepDamage(sq: Squad): number {
   const tier = UNITS[sq.type].cost / 100;
   return Math.trunc((KEEP_DMG_PER_TIER * tier * (1 + sq.level)) / 2);
 }
-/** Total keep damage dealt by `seat`'s survivors (DESIGN §1). `won` adds 70 x round (DESIGN: 50, see BALANCE.md); timeout halves it. */
+/** Sudden death: from round SUDDEN_DEATH_ROUND on, all keep damage grows by SUDDEN_DEATH_PCT percent per round. */
+export const SUDDEN_DEATH_ROUND = 10;
+export const SUDDEN_DEATH_PCT = 25;
+export function suddenDeathPct(round: number): number {
+  return round >= SUDDEN_DEATH_ROUND ? 100 + SUDDEN_DEATH_PCT * (round - SUDDEN_DEATH_ROUND + 1) : 100;
+}
+/**
+ * Total keep damage dealt by `seat`'s survivors (DESIGN §1). `won` (a wipe or a points win) adds
+ * KEEP_DMG_BASE_PER_ROUND x round; `timeout` = a points draw, half the survivors' damage. Everything is scaled by the
+ * sudden-death multiplier of the round. The rule is the same for both seats and does not look at who is ahead.
+ */
 export function keepDamageOf(squads: Squad[], survivorIds: number[], round: number, won: boolean, timeout: boolean): number {
   let d = 0;
   for (const sq of squads) if (survivorIds.includes(sq.id)) d += squadKeepDamage(sq);
-  if (timeout) return Math.trunc(d / 2);
-  return won ? d + KEEP_DMG_BASE_PER_ROUND * round : 0;
+  const sd = suddenDeathPct(round);
+  if (timeout) return Math.trunc((Math.trunc(d / 2) * sd) / 100);
+  return won ? Math.trunc(((d + KEEP_DMG_BASE_PER_ROUND * round) * sd) / 100) : 0;
 }
 
 /** Keep HP as an integer percentage of its maximum. */
@@ -79,14 +96,12 @@ export function keepPct(p: { keepHp: number; keepMax: number }): number {
 }
 
 /**
- * The comeback bonus for `me` after a round (paid at the start of the next one). Symmetric in the seats:
- *  - lost the round: CATCHUP_GOLD + CATCHUP_PER_ROUND x round + CATCHUP_PER_DEFICIT x (keep-HP deficit in points);
- *  - keep-HP deficit >= UNDERDOG_DEFICIT points: +1 squad deployment, won or lost.
+ * There is no comeback bonus any more: this always returns zeros (see CATCHUP_GOLD). Kept, like
+ * PlayerState.comeback, so existing callers keep working.
+ * @deprecated
  */
-export function comebackFor(me: PlayerState, enemy: PlayerState, round: number, lost: boolean): Comeback {
-  const deficit = Math.max(0, keepPct(enemy) - keepPct(me));
-  const gold = lost ? CATCHUP_GOLD + CATCHUP_PER_ROUND * round + CATCHUP_PER_DEFICIT * deficit : 0;
-  return { gold, deploys: deficit >= UNDERDOG_DEFICIT ? 1 : 0, deficit };
+export function comebackFor(_me?: PlayerState, _enemy?: PlayerState, _round?: number, _lost?: boolean): Comeback {
+  return { gold: 0, deploys: 0, deficit: 0 };
 }
 
 function newPlayer(seat: Seat): PlayerState {
@@ -176,23 +191,30 @@ function startMatch(s: MatchState): void {
     const L = LORDS[p.lord!];
     p.unlocked = [...L.signature];
     p.gold = START_GOLD;
-    const pool = BASIC_POOL.filter((u) => !p.unlocked.includes(u));
-    const rng = new Rng(hash(s.seed, 'draft', 1, p.seat));
-    p.draftOptions = rng.shuffle([...pool]).slice(0, 3);
-    p.draftPicks = 2;
+    // No random draft: like every round, round 1 is a free choice of one unit, here from the whole basic pool.
+    p.draftOptions = BASIC_POOL.filter((u) => !p.unlocked.includes(u));
+    p.draftPicks = FIRST_UNLOCKS;
     p.deploysUsed = 0;
     p.deployLimit = deployLimitFor(p, 0);
   }
+}
+
+/** Unit types unlocked in round 1 (any one of the basic pool) on top of the Lord's two signature units; every later round unlocks one more. */
+export const FIRST_UNLOCKS = 1;
+
+/** The units `p` may unlock in `round`: every locked unit whose minRound has come (round 1: the basic pool). Same rule for both players. */
+export function unlockOptions(p: Pick<PlayerState, 'unlocked'>, round: number): UnitType[] {
+  const pool: readonly UnitType[] = round <= 1 ? BASIC_POOL : UNIT_TYPES;
+  return pool.filter((u) => !p.unlocked.includes(u) && UNITS[u].minRound <= round);
 }
 
 function deployLimitFor(p: PlayerState, commandBonus: number): number {
   return BASE_DEPLOY_LIMIT + (p.lord === 'marshal' ? 1 : 0) + commandBonus;
 }
 
+/** Each round a player may unlock any ONE locked unit whose minRound has come: a free choice, nothing is rolled. */
 function rollDraft(s: MatchState, p: PlayerState): void {
-  const locked = UNIT_TYPES.filter((u) => !p.unlocked.includes(u) && UNITS[u].minRound <= s.round);
-  const rng = new Rng(hash(s.seed, 'draft', s.round, p.seat));
-  p.draftOptions = rng.shuffle([...locked]).slice(0, 2);
+  p.draftOptions = unlockOptions(p, s.round);
   p.draftPicks = p.draftOptions.length ? 1 : 0;
 }
 
@@ -226,7 +248,7 @@ export function slotOpen(sq: Squad, slot: Slot): boolean {
 
 /**
  * Slots this player can fill right now: some squad (or the Lord) has the slot open and empty, more such
- * empty slots than stash items already waiting for them. Loot offers are biased toward these.
+ * empty slots than stash items already waiting for them. (Informational: offers no longer depend on it.)
  */
 export function usableSlots(p: PlayerState): Slot[] {
   const out: Slot[] = [];
@@ -237,6 +259,27 @@ export function usableSlots(p: PlayerState): Slot[] {
     if (free > 0) out.push(slot);
   }
   return out;
+}
+
+/** The unit classes in a player's army (Lord included). (Informational: offers no longer depend on it.) */
+export function armyClasses(p: PlayerState): UnitClass[] {
+  const out: UnitClass[] = [];
+  for (const q of p.squads) for (const c of classesOf(q.type, p.lord)) if (!out.includes(c)) out.push(c);
+  return out;
+}
+
+/**
+ * `seat` gives up: the match ends at once and the other seat wins (overReason 'concede'). Allowed in any phase
+ * once both Lords are picked or not; refused only when the match is already over.
+ */
+export function concede(s: MatchState, seat: Seat): IntentResult {
+  if (seat !== 0 && seat !== 1) return err('bad seat');
+  if (s.phase === 'over') return err('match is over');
+  s.phase = 'over';
+  s.winner = (1 - seat) as Seat;
+  s.overReason = 'concede';
+  for (const p of s.players) { p.ready = false; p.lootOffer = null; }
+  return OK;
 }
 
 const validFacing = (f: unknown): boolean => f === undefined || (Number.isInteger(f) && (f as number) >= 0 && (f as number) <= 255);
@@ -339,6 +382,8 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       const slot = found.item.slot;
       if (!slotOpen(sq, slot)) return err(`${slot} slot opens at level ${SLOT_UNLOCK_LEVEL[slot]}`);
       if (found.squad === sq) return OK;
+      // Skill items are class-locked: knights do not cast fireballs.
+      if (!canEquip(found.item, sq.type, p.lord)) return err(classError(found.item));
       const prev = sq.items[slot];
       // Remove from source.
       if (found.squad) found.squad.items[slot] = null;
@@ -346,7 +391,7 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       sq.items[slot] = found.item;
       // Whatever was there goes back where the item came from.
       if (prev) {
-        if (found.squad && slotOpen(found.squad, slot)) found.squad.items[slot] = prev;
+        if (found.squad && slotOpen(found.squad, slot) && canEquip(prev, found.squad.type, p.lord)) found.squad.items[slot] = prev;
         else p.stash.push(prev);
       }
       return OK;
@@ -387,7 +432,8 @@ function enemyView(s: MatchState, seat: Seat): EnemyView {
 
 /** Hidden-information view for one seat (null = spectator). Never contains the enemy's current squads, gold, stash or offers. */
 export function viewFor(s: MatchState, seat: Seat | null): PlayerView {
-  const base = { seed: s.seed, round: s.round, phase: s.phase, terrain: clone(s.terrain), winner: s.winner, history: clone(s.history) };
+  const base: Omit<PlayerView, 'seat' | 'you' | 'enemy'> = { seed: s.seed, round: s.round, phase: s.phase, terrain: clone(s.terrain), winner: s.winner, history: clone(s.history) };
+  if (s.overReason) base.overReason = s.overReason;
   if (seat === null) {
     const enemies: [EnemyView, EnemyView] = [enemyView(s, 0), enemyView(s, 1)];
     return { ...base, seat: null, you: null, enemy: enemies[1], enemies };
@@ -395,7 +441,7 @@ export function viewFor(s: MatchState, seat: Seat | null): PlayerView {
   return { ...base, seat, you: clone(s.players[seat]), enemy: enemyView(s, (1 - seat) as Seat) };
 }
 
-/** Apply a battle result: keep damage, catch-up flags, Lord XP, last-army snapshots, loot offers. Phase -> 'results' | 'over'. */
+/** Apply a battle result: keep damage, Lord XP, last-army snapshots, loot offers. Phase -> 'results' | 'over'. */
 export function applyBattle(s: MatchState, r: BattleResult): void {
   if (s.phase !== 'planning') throw new Error('applyBattle outside planning');
   const before: [number, number] = [s.players[0].keepHp, s.players[1].keepHp];
@@ -413,15 +459,17 @@ export function applyBattle(s: MatchState, r: BattleResult): void {
     // A loot offer that was never picked goes to the stash (first option).
     if (p.lootOffer) { p.stash.push(p.lootOffer[0]); p.lootOffer = null; }
   }
-  for (const seat of [0, 1] as Seat[]) s.players[seat].comeback = comebackFor(s.players[seat], s.players[1 - seat], s.round, s.players[seat].lostLast);
+  for (const seat of [0, 1] as Seat[]) s.players[seat].comeback = comebackFor();
   s.history.push({
-    round: s.round, winner: r.winner, keepDamage: [r.keepDamage[0], r.keepDamage[1]],
+    // Clamped to the life the keep had: overkill is not damage taken.
+    round: s.round, winner: r.winner, keepDamage: [Math.min(r.keepDamage[0], before[0]), Math.min(r.keepDamage[1], before[1])],
     survivors: [r.survivors[0].length, r.survivors[1].length], ticks: r.ticks,
     end: r.end ?? (r.timeout ? 'timeout' : r.winner === null ? 'mutualWipe' : 'wipe'), score: r.score ? [r.score[0], r.score[1]] : [0, 0],
   });
   const dead0 = s.players[0].keepHp <= 0, dead1 = s.players[1].keepHp <= 0;
   if (dead0 || dead1 || s.round >= MAX_ROUNDS) {
     s.phase = 'over';
+    s.overReason = dead0 || dead1 ? 'keep' : 'rounds';
     if (dead0 && dead1) s.winner = before[0] > before[1] ? 0 : before[1] > before[0] ? 1 : 'draw';
     else if (dead0) s.winner = 1;
     else if (dead1) s.winner = 0;
@@ -431,22 +479,23 @@ export function applyBattle(s: MatchState, r: BattleResult): void {
   for (const seat of [0, 1] as Seat[]) {
     const p = s.players[seat];
     const n = p.lord === 'skylady' ? 4 : 3;
-    p.lootOffer = rollLoot(s.seed, s.round, seat, p.lostLast, n, () => s.nextId++, usableSlots(p));
+    // Both players are offered the same items (seeded by the match and the round only).
+    p.lootOffer = rollLoot(s.seed, s.round, n, () => s.nextId++);
   }
   s.phase = 'results';
 }
 
-/** Results -> next round's planning: income plus the comeback bonus (gold, deploys), deploy limit, a new unlock draft. */
+/** Results -> next round's planning: the same income for both, the deploy limit, and the round's unlock choice. */
 export function nextRound(s: MatchState): void {
   if (s.phase !== 'results') throw new Error('nextRound outside results');
   s.round++;
   s.phase = 'planning';
   for (const p of s.players) {
     resolveDraft(p);
-    p.gold += income(s.round) + p.comeback.gold;
+    p.gold += income(s.round);
     let command = 0;
     for (const sq of p.squads) command += modsOf(sq.items).command;
-    p.deployLimit = deployLimitFor(p, Math.min(2, command)) + p.comeback.deploys;
+    p.deployLimit = deployLimitFor(p, Math.min(2, command));
     p.deploysUsed = 0;
     p.ready = false;
     rollDraft(s, p);
@@ -473,7 +522,7 @@ export function roundOutcomeText(r: Pick<RoundSummary, 'winner' | 'end' | 'score
   const pts = `${sc[me]}% of ${mine} still stands, ${sc[foe]}% of ${theirs}`;
   switch (r.end) {
     case 'mutualWipe':
-      return { outcome, title: 'Draw', detail: 'Both armies fell together. Neither side earns catch-up gold.' };
+      return { outcome, title: 'Draw', detail: 'Both armies fell together. Neither keep is harmed.' };
     case 'timeout':
       if (outcome === 'draw') return { outcome, title: 'Draw', detail: `Time ran out with the armies even: ${pts}.` };
       return { outcome, title: outcome === 'won' ? 'Victory on points' : 'Defeat on points', detail: `Time ran out: ${pts}.` };

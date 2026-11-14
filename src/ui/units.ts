@@ -1,11 +1,13 @@
 // Unit presentation: crest portraits (placeholders until the art agent's portraits land), role
 // icons, the unit tooltip (stats, traits, counters) and the squad tooltip for the battlefield.
-import type { LordId, Squad, SquadType, UnitType } from '../sim/types.ts';
+import type { Item, LordId, SkillInfo, Squad, SquadType, UnitType } from '../sim/types.ts';
+import type { SquadSheet, StatKey, StatLine } from '../sim/sheet.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { esc } from './dom.ts';
 import { art } from './art.ts';
 import { icon } from './icons.ts';
+import { cooldownText, skillGlyph } from './items.ts';
 import { costTier, counters, dps, soldierStats, tagsOf, TAG_LABEL, unitName, WEAPON_LABEL, RARITY_CSS, SLOTS } from './gamedata.ts';
 
 const TIER_CLASS = ['', 't1', 't2', 't3', 't4'];
@@ -22,7 +24,7 @@ const TRAIT_TEXT: Record<string, string> = {
   backline: 'Holds back behind the front line',
 };
 
-export const LORD_HUE: Record<LordId, string> = { marshal: '#d9a441', archmage: '#9a6bff', warden: '#6fae6a', skylady: '#5fb8ff' };
+export const LORD_HUE: Record<LordId, string> = { marshal: '#b98a2e', archmage: '#6a4fb0', warden: '#3f7a48', skylady: '#3f86c4' };
 
 /** A crest portrait: tier-coloured shield with the weapon glyph. */
 export function crest(t: SquadType, lord?: LordId | null, size: 'sm' | 'md' | 'lg' = 'md'): string {
@@ -60,6 +62,81 @@ export function statBlock(t: SquadType, level: number, lord?: LordId | null): st
     ${statRow('Speed', `${((s.speed * 20) / 100).toFixed(1)} m/s`, 'move')}
     ${statRow('Armor', `${s.armor}%`, 'shield')}
     ${statRow('Magic res.', `${s.magicResist}%`, 'staff')}
+  </div>`;
+}
+
+const SHEET_ROW: Record<StatKey, [label: string, icon: string]> = {
+  soldiers: ['Soldiers', 'squads'], hp: ['Life', 'heart'], damage: ['Damage', 'sword'], attackInterval: ['Attack every', 'timer'], dps: ['DPS', 'flame'],
+  heal: ['Heal', 'heart'], range: ['Range', 'bow'], armor: ['Armor', 'shield'], magicResist: ['Magic res.', 'staff'], speed: ['Speed', 'move'],
+  crit: ['Critical rate', 'star'], lifesteal: ['Lifesteal', 'heart'],
+};
+
+function sheetValue(l: StatLine, v: number): string {
+  if (l.key === 'range') return v < 4 ? 'Melee' : `${v} m`;
+  return l.unit === '%' ? `${v}%` : l.unit ? `${v} ${l.unit}` : String(v);
+}
+
+/**
+ * The stat table of a squad sheet (src/sim/sheet.ts): one number where level and items change
+ * nothing, else "base → now" with the effective value marked better (green) or worse (red).
+ * `base` is the same squad at level 1 with no items.
+ */
+const ordinalOf = (n: number): string => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th'}`;
+export function sheetStats(sheet: SquadSheet): string {
+  const rows = sheet.stats
+    .filter((l) => l.base !== 0 || l.value !== 0 || (l.key !== 'crit' && l.key !== 'lifesteal'))
+    .map((l) => {
+      const [label, ic] = SHEET_ROW[l.key];
+      const base = sheetValue(l, l.base);
+      const now = sheetValue(l, l.value);
+      // crits are counted, not rolled: say how often
+      const full = l.key === 'crit' ? `Critical rate${l.value > 0 ? `: every ${ordinalOf(Math.round(100 / l.value))} attack of each soldier is critical (×1.5)` : ''}` : l.label;
+      if (base === now) return `<div class="st" data-tip="${esc(full)}"><span>${icon(ic)}${label}</span><b>${now}</b></div>`;
+      const better = l.value > l.base === l.higherIsBetter;
+      return `<div class="st chg" data-tip="${esc(full)}${l.key === 'crit' ? '. ' : ': '}${base} at level 1 with no items, ${now} now"><span>${icon(ic)}${label}</span><b><small class="st-base">${base}</small><i class="st-to">→</i><em class="${better ? 'up' : 'down'}">${now}</em></b></div>`;
+    });
+  return `<div class="stats">${rows.join('')}</div>`;
+}
+
+const SKILL_SOURCE: Record<SkillInfo['source'], string> = { innate: 'Innate', lord: 'Lord', item: 'Item' };
+/** The glyph of an innate or Lord ability (item skills have their own, see items.ts). */
+const INNATE_ICON: Record<string, string> = {
+  heal: 'heart', brace: 'shield', charge: 'mounted', raider: 'move', lifesteal: 'heart', pierce: 'bolt', stomp: 'large', cone: 'breath', splash: 'stone',
+  magic: 'tome', crushing: 'fists', min_range: 'stone', flier: 'flier', armored: 'armored', resist: 'staff', ranged: 'bow',
+  rally: 'flag', bulwark: 'shield', meteor: 'flame', skyfall: 'flier',
+};
+function skillIcon(k: SkillInfo): string {
+  if (k.skill) return skillGlyph(k.skill);
+  const ic = INNATE_ICON[k.id] ?? (k.id.startsWith('anti_') ? 'sword' : k.source === 'lord' ? 'crown' : 'star');
+  return `<i class="sk-i">${icon(ic)}</i>`;
+}
+
+/**
+ * A squad's abilities (squadSkills: innate, Lord and item-granted) as glyph tokens: actives first,
+ * an item-granted one marked with its item's rarity. Each token carries `data-sk` = its index in
+ * `skills`, for the tooltip (skillTooltip) that names it.
+ */
+export function skillChips(skills: SkillInfo[], items: (Item | null)[] = []): string {
+  return skills
+    .map((k, i) => ({ k, i }))
+    .sort((a, b) => Number(b.k.kind === 'active') - Number(a.k.kind === 'active') || a.i - b.i)
+    .map(({ k, i }) => {
+      const it = k.item !== undefined ? items.find((x) => x?.id === k.item) : null;
+      return `<span class="sk-chip ${k.kind}${it ? ' item' : ''}" data-sk="${i}" aria-label="${esc(k.name)}"${it ? ` style="--rar:${RARITY_CSS[it.rarity]}"` : ''}>${skillIcon(k)}</span>`;
+    })
+    .join('');
+}
+
+/** Name, source, cooldown and text of one ability. */
+export function skillTooltip(k: SkillInfo, item?: Item | null): string {
+  const src = item ? `<span style="color:${RARITY_CSS[item.rarity]}">${esc(itemName(item))}</span>` : SKILL_SOURCE[k.source];
+  // item skills: "<effect>. Cast when: <trigger>."
+  const cut = k.text.indexOf('. Cast when: ');
+  const effect = cut < 0 ? k.text : k.text.slice(0, cut + 1);
+  const when = cut < 0 ? '' : k.text.slice(cut + 2);
+  return `<div class="utip sk-tip">
+    <div class="utip-h">${skillIcon(k)}<div><b>${esc(k.name)}</b><small>${k.kind === 'active' ? 'Active' : 'Passive'} · ${item ? 'from ' : ''}${src}</small></div>${k.cooldown !== undefined ? `<span class="sk-cd">${icon('timer')}${cooldownText(k.cooldown)}</span>` : ''}</div>
+    <p>${esc(effect)}</p>${when ? `<p class="sk-when">${esc(when)}</p>` : ''}
   </div>`;
 }
 

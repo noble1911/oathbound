@@ -13,7 +13,7 @@
 // RESULTS_MS, DISCONNECT_GRACE_MS.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -53,7 +53,13 @@ const TYPES: Record<string, string> = {
 // Cache policy (the gateway and Cloudflare pass these through):
 //  - index.html (any .html): no-cache, i.e. always revalidated, so a deploy is picked up at once;
 //  - /assets/*: Vite's content-hashed bundles, immutable for a year;
-//  - /models/**, /ui/**: unhashed art, a week fresh + a day stale-while-revalidate, then a cheap 304 via the ETag;
+//  - JSON metadata outside /assets (manifest.json, VAT .json, asset-versions.json): no-cache, revalidated with the ETag,
+//    so a redeployed manifest is seen at once;
+//  - art, textures and audio requested with a version (`?v=<content hash>`): immutable for a year. The hashes come
+//    from the manifest the server serves (a `hashes` map is appended to every manifest.json: file path relative to
+//    the manifest -> hash) and from /asset-versions.json (every file under /models, /textures, /audio and /ui);
+//  - the same files without `?v=`: no-cache (a cheap 304 via the ETag). They used to be fresh for a week, which
+//    left returning players running new code against week-old models after an art redeploy;
 //  - everything else: an hour, then the ETag.
 // ETags are strong: a content hash (computed once per file version and cached with its mtime/size), with a
 // -br / -gz suffix for the compressed variants. Text-like files (json, js, css, html, svg, VAT .bin, glb) are
@@ -64,15 +70,66 @@ const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '
 const brotliP = promisify(brotliCompress);
 const gzipP = promisify(gzip);
 
-export function cacheControlFor(path: string, ext: string): string {
+const VERSIONED_DIRS = ['models', 'textures', 'audio', 'ui'];
+const isArt = (path: string): boolean => VERSIONED_DIRS.some((d) => path.startsWith(`/${d}/`));
+
+/** `versioned` = the request carried `?v=<hash>` (the URL changes whenever the content does). */
+export function cacheControlFor(path: string, ext: string, versioned = false): string {
   if (ext === '.html') return 'no-cache';
   if (path.startsWith('/assets/')) return 'public, max-age=31536000, immutable';
-  if (path.startsWith('/models/') || path.startsWith('/ui/')) return 'public, max-age=604800, stale-while-revalidate=86400';
+  if (ext === '.json') return 'no-cache';
+  if (isArt(path)) return versioned ? 'public, max-age=31536000, immutable' : 'no-cache';
   return 'public, max-age=3600';
+}
+
+/** Content hash per file, kept by (mtime, size) so each file is read once per version. */
+const hashCache = new Map<string, { mtimeMs: number; size: number; hash: string }>();
+async function fileHash(file: string): Promise<string> {
+  const st = await stat(file);
+  const hit = hashCache.get(file);
+  if (hit && hit.mtimeMs === Number(st.mtimeMs) && hit.size === Number(st.size)) return hit.hash;
+  const hash = createHash('sha256').update(await readFile(file)).digest('base64url').slice(0, 12);
+  hashCache.set(file, { mtimeMs: Number(st.mtimeMs), size: Number(st.size), hash });
+  return hash;
+}
+/** path (relative to `dir`, forward slashes) -> content hash, for every file under `dir`. */
+async function hashTree(dir: string, prefix = '', out: Record<string, string> = {}): Promise<Record<string, string>> {
+  let names: import('node:fs').Dirent[];
+  try {
+    names = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  names.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (const e of names) {
+    if (e.isDirectory()) await hashTree(join(dir, e.name), `${prefix}${e.name}/`, out);
+    else if (e.isFile()) out[prefix + e.name] = await fileHash(join(dir, e.name));
+  }
+  return out;
+}
+/** A manifest.json as served: the file's JSON plus `hashes` for every other file in its folder. */
+async function manifestWithHashes(file: string, raw: Buffer): Promise<Buffer> {
+  let json: unknown;
+  try {
+    json = JSON.parse(raw.toString('utf8'));
+  } catch {
+    return raw;
+  }
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return raw;
+  const hashes = await hashTree(resolve(file, '..'));
+  delete hashes['manifest.json'];
+  return Buffer.from(JSON.stringify({ ...(json as Record<string, unknown>), hashes }));
+}
+/** /asset-versions.json: "models/v2/knight.glb" -> hash, for all art, textures and audio. */
+async function assetVersions(): Promise<Buffer> {
+  const out: Record<string, string> = {};
+  for (const d of VERSIONED_DIRS) await hashTree(join(ROOT, d), `${d}/`, out);
+  return Buffer.from(JSON.stringify(out));
 }
 
 interface StaticEntry { mtimeMs: number; size: number; body: Buffer; etag: string; br?: Promise<Buffer | null>; gzip?: Promise<Buffer | null> }
 const staticCache = new Map<string, StaticEntry>();
+const manifestCache = new Map<string, StaticEntry>();
 
 async function staticEntry(file: string, mtimeMs: number, size: number): Promise<StaticEntry> {
   const hit = staticCache.get(file);
@@ -167,6 +224,8 @@ interface Room {
   timer: NodeJS.Timeout | null;
   emptySince: number;
   nextId: number;
+  /** The seat that conceded the current match (null = nobody). */
+  concededBy: SeatNo | null;
 }
 
 interface Conn {
@@ -261,6 +320,7 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
       serverNow: now,
       seats: [seatInfo(room, room.seats[0]), seatInfo(room, room.seats[1])] as RoomView['seats'],
       spectators: room.spectators.map((s) => ({ id: s.id, name: s.name, connected: online(s) })),
+      ...(room.phase === 'over' && room.state ? { over: { reason: room.state.overReason ?? 'keep', by: room.state.overReason === 'concede' ? room.concededBy : null } } : {}),
     };
     const views = new Map<SeatNo | null, PlayerView | null>();
     const viewOf = (seat: SeatNo | null): PlayerView | null => {
@@ -343,6 +403,7 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
     const seed = randomBytes(4).readUInt32LE(0) >>> 0;
     room.state = opts.newMatch ? opts.newMatch(seed) : sim.newMatch(seed, null);
     room.battle = null;
+    room.concededBy = null;
     for (const m of room.seats) if (m) (m.rematch = false), (m.done = false);
     room.phase = 'lordPick';
     setTimer(room, lordPickMs, () => endLordPick(room));
@@ -427,6 +488,21 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
     pushRoom(room);
   }
 
+  /**
+   * A player gives up (the 'concede' message, or leaving a running match for good): the match ends now and the
+   * opponent wins. False when there is no running match to concede.
+   */
+  function concedeMatch(room: Room, m: Member, text: string): boolean {
+    const s = room.state;
+    if (!s || m.seat === null || room.phase === 'lobby' || room.phase === 'over' || s.phase === 'over') return false;
+    if (!sim.concede(s, m.seat).ok) return false;
+    room.battle = null;
+    room.concededBy = m.seat;
+    system(room, text);
+    finish(room);
+    return true;
+  }
+
   /** Something changed that may finish the current phase (ready flags, battleDone, a disconnect). */
   function advance(room: Room): void {
     const s = room.state;
@@ -501,8 +577,10 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
     } else if (!room.state) {
       if (forGood) room.seats[m.seat] = null;
     } else if (!m.botControlled) {
-      if (forGood) takeOver(room, m, `${m.name} left: the AI plays their seat.`);
-      else {
+      // Leaving a running match on purpose concedes it; after the match the AI keeps the seat for a rematch.
+      if (forGood) {
+        if (!concedeMatch(room, m, `${m.name} left the match and concedes.`)) takeOver(room, m, `${m.name} left: the AI plays their seat.`);
+      } else {
         stopGrace(m);
         m.graceEndsAt = Date.now() + graceMs;
         m.graceTimer = setTimeout(() => {
@@ -544,7 +622,7 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
         leave(c, true);
         const room: Room = {
           code: newCode(), mode, aiLevel, seats: [null, null], spectators: [], host: null, state: null,
-          phase: 'lobby', phaseEndsAt: 0, battle: null, timer: null, emptySince: 0, nextId: 1,
+          phase: 'lobby', phaseEndsAt: 0, battle: null, timer: null, emptySince: 0, nextId: 1, concededBy: null,
         };
         const me = newMember(room, cleanName(msg.name), 0);
         room.seats[0] = me;
@@ -638,6 +716,13 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
         for (const x of members(room)) rawSend(x.ws, s);
         return;
       }
+      case 'concede': {
+        const { room, m } = c;
+        if (!room || !m || !room.state) return reject('no match running');
+        if (m.seat === null) return reject('spectators cannot concede');
+        if (!concedeMatch(room, m, `${m.name} concedes.`)) return reject('the match is not running');
+        return;
+      }
       case 'leave':
         leave(c, true);
         return ws.close(1000, 'left');
@@ -687,6 +772,14 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
       res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
       return void res.end('ok');
     }
+    if (p === '/asset-versions.json') {
+      const body = await assetVersions();
+      const etag = `"${createHash('sha256').update(body).digest('base64url').slice(0, 22)}"`;
+      const h = { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', ETag: etag };
+      if (etagMatches(req.headers['if-none-match'], etag)) { res.writeHead(304, h); return void res.end(); }
+      res.writeHead(200, { ...h, 'Content-Length': body.length });
+      return void res.end(req.method === 'HEAD' ? undefined : body);
+    }
     if (p.endsWith('/')) p += 'index.html';
     const file = join(ROOT, normalize(p));
     // inside dist/ itself (a bare prefix check would also let in a sibling like dist-old/)
@@ -704,11 +797,19 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
       return void res.end('not found');
     }
     const ext = extname(file).toLowerCase();
-    const entry = await staticEntry(file, Number(st.mtimeMs), Number(st.size));
+    let entry = await staticEntry(file, Number(st.mtimeMs), Number(st.size));
+    if (p.endsWith('/manifest.json')) {
+      // The manifest as served carries the content hash of every file beside it (for `?v=` URLs).
+      const body = await manifestWithHashes(file, entry.body);
+      const etag = `"${createHash('sha256').update(body).digest('base64url').slice(0, 22)}"`;
+      const hit = manifestCache.get(file);
+      entry = hit && hit.etag === etag ? hit : { mtimeMs: entry.mtimeMs, size: body.length, body, etag };
+      manifestCache.set(file, entry);
+    }
     const head = req.method === 'HEAD';
     const headers: Record<string, string | number> = {
       'Content-Type': TYPES[ext] ?? 'application/octet-stream',
-      'Cache-Control': cacheControlFor(p, ext),
+      'Cache-Control': cacheControlFor(p, ext, url.searchParams.has('v')),
       'Accept-Ranges': 'bytes',
     };
     const compressible = COMPRESSIBLE.has(ext);

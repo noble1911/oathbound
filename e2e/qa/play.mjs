@@ -152,7 +152,7 @@ async function planRound(r) {
       const f = await p.evaluate((id) => window.__ob.app.room.view.you.squads.find((s) => s.id === id).facing, sq.id); say('r2 rotate Q facing', f);
     }
     await p.keyboard.press('Escape');
-    await p.keyboard.press('Tab'); await sleep(400); await S(`r${r}-ghosts-off`); await p.keyboard.press('Tab'); await sleep(300);
+    await p.keyboard.press('Tab'); await sleep(400); await S(`r${r}-tab-select`); await p.keyboard.press('Escape'); await sleep(300); // Tab cycles through your own squads; the ghosts are always on
     const g = await p.evaluate(() => { const { app } = window.__ob; const a = app.room.view.enemy.lastArmy?.[0]; return a ? app.scene.toScreen(a.pos, 0) : null; });
     if (g) { await p.mouse.move(g.x, g.y, { steps: 3 }); await sleep(600); await S(`r${r}-ghost-hover`); await p.mouse.click(g.x, g.y); await sleep(400); await S(`r${r}-ghost-selected`); }
   }

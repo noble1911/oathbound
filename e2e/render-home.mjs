@@ -1,6 +1,7 @@
 // Home-camera framing check (render-test.html?mode=planning): at each viewport (4:3 .. 32:9, with and
-// without HUD insets) the planning home view must show the own Keep, all four corners of the own deploy
-// zone, the river and the enemy front line inside the HUD-free area, and the camera must be clear of
+// without HUD insets) the planning home view must show the deploy zone from its front line back to 8 m
+// short of the own Keep (the last strip and the Keep are cropped by design), the river and the enemy
+// front line inside the HUD-free area (the nearest zone corners may run off the sides on narrow screens), and the camera must be clear of
 // tree crowns / props. Also checks: resetCamera() undoes rotation + zoom, the free battle camera starts
 // from the planning yaw, wheel zoom keeps the ground point under the cursor, and nothing draws when idle.
 //   npx vite --port 5180 &   node e2e/render-home.mjs        (BASE, CHROME; SHOTS=1 writes e2e/shots/veg-home-*.png)
@@ -13,7 +14,7 @@ const browser = await puppeteer.launch({ executablePath: CHROME, headless: true,
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fails = [];
 const VIEWS = [
-  [1200, 900, 0, 0], [1200, 900, 160, 130], [1920, 1080, 160, 130], [1600, 900, 0, 0], [2560, 1080, 160, 130], [3440, 1392, 160, 130], [3840, 1080, 160, 130], [3840, 1080, 0, 0],
+  [1200, 900, 0, 0], [1200, 900, 160, 130], [1600, 900, 160, 130], [1920, 1080, 160, 130], [1600, 900, 0, 0], [2560, 1080, 160, 130], [3440, 1392, 160, 130], [3840, 1080, 160, 130], [3840, 1080, 0, 0],
 ];
 
 /** Screen positions (CSS px) of the points the home view must contain, for a seat. */
@@ -21,7 +22,7 @@ const probe = (seat) => {
   const v = window.__rt.view;
   const sgn = seat === 0 ? 1 : -1;
   const cm = (wx, wz) => [(wx + 40) * 100, (60 - wz) * 100];
-  const pts = { keep: [0, 58 * sgn], zoneBackL: [-40, 56 * sgn], zoneBackR: [40, 56 * sgn], zoneFrontL: [-40, 20 * sgn], zoneFrontR: [40, 20 * sgn], river: [0, 0], enemyFrontL: [-40, -20 * sgn], enemyFrontR: [40, -20 * sgn] };
+  const pts = { zoneBack: [0, 48 * sgn], zoneBackL: [-30, 48 * sgn], zoneBackR: [30, 48 * sgn], zoneFrontL: [-40, 20 * sgn], zoneFrontR: [40, 20 * sgn], river: [0, 0], enemyFrontL: [-40, -20 * sgn], enemyFrontR: [40, -20 * sgn] };
   const out = {};
   for (const [k, [x, z]] of Object.entries(pts)) out[k] = v.fieldToScreen(...cm(x, z), 0);
   const c = v.camera;
@@ -47,6 +48,7 @@ try {
         // the HUD lays out after the mode switch: the fit must follow the insets
         v.engine.setInsets({ top, bottom });
       }, seat, top, bottom);
+      await sleep(1200); // a seat switch turns the camera half-way round: let it settle
       await sleep(1800);
       const r = await page.evaluate(probe, seat);
       for (const [k, p] of Object.entries(r.out)) {
@@ -60,7 +62,7 @@ try {
       await sleep(1200);
       const f1 = (await page.evaluate(probe, seat)).frames;
       if (f1 !== f0) fails.push(`${tag}: ${f1 - f0} frames drawn while idle`);
-      console.log(`${tag}: dist ${r.dist.toFixed(0)} m, keep y ${r.out.keep?.y.toFixed(0)}, enemy front y ${r.out.enemyFrontL?.y.toFixed(0)}`);
+      console.log(`${tag}: dist ${r.dist.toFixed(0)} m, zone back y ${r.out.zoneBack?.y.toFixed(0)}, enemy front y ${r.out.enemyFrontL?.y.toFixed(0)}`);
     }
     // rotate + zoom, then reset: back to the home rotation and distance
     const before = await page.evaluate(() => ({ yaw: window.__rt.view.camera.goal.yaw, dist: window.__rt.view.camera.goal.dist }));

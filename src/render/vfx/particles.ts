@@ -98,6 +98,8 @@ void main() {
   v.y += aTime.z * age;
   float size = mix(aSize.x, aSize.y, 1.0 - (1.0 - t) * (1.0 - t));
   vec4 mv = viewMatrix * vec4(p, 1.0);
+  // sprites right at the lens fade out (a puff must never fill the screen as one grey card)
+  float obNear = smoothstep(1.0 + size * 0.5, 3.5 + size * 1.6, -mv.z);
   // nudge big sprites toward the camera so they don't slice into soldiers standing in them
   mv.z += min(size * 0.3, -mv.z * 0.2);
   vec2 c = position.xy;
@@ -133,7 +135,7 @@ void main() {
   vEmis = aAnim.w;
   float fin = aExtra.y > 0.0 ? clamp(t / aExtra.y, 0.0, 1.0) : 1.0;
   float fout = 1.0 - smoothstep(aExtra.w, 1.0, t);
-  vCol = vec4(mix(aCol0.rgb, aCol1.rgb, t), aCol0.a * fin * fout);
+  vCol = vec4(mix(aCol0.rgb, aCol1.rgb, t), aCol0.a * fin * fout * obNear);
 }`;
 
 const FRAG = /* glsl */ `

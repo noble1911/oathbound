@@ -743,6 +743,94 @@ def check(rig, cr, lod0, lod1, flier, horse):
     print('[creature] checks passed')
 
 
+# ----------------------------------------------------------------------------------------------- team colour
+def mat_images(ob):
+    """(basecolour, normal, metal-rough) images of an object's first material."""
+    nt = ob.material_slots[0].material.node_tree
+    p = next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
+    def up(sock):
+        return L._upstream_image(sock.links[0].from_node) if sock.is_linked else None
+    return up(p.inputs['Base Color']), up(p.inputs['Normal']), up(p.inputs['Roughness'])
+
+
+def wing_team(m0, info, strength):
+    """Team-coloured wing membranes: the creature's own cloth (a chest bib, a saddle blanket) is invisible from
+    the RTS camera, the wings are most of what it shows. Texels skinned to the wing bones are neutralised to a
+    light grey that keeps the membrane's shading, and enter the team mask at `strength`."""
+    names = {g.index: g.name for g in m0.vertex_groups}
+    wing = {b for ns in info['wings'].values() for b in ns}
+    wv = np.zeros(len(m0.data.vertices), np.float32)
+    for v in m0.data.vertices:
+        wv[v.index] = sum(g.weight for g in v.groups if names[g.group] in wing)
+    base = mat_images(m0)[0]
+    px = L.img_np(base); h, w = px.shape[:2]
+    k = np.clip((L.raster_attr(m0, wv, w, h) - 0.45) / 0.3, 0, 1)
+    k = k * k * (3 - 2 * k)
+    rgb = px[..., :3]; lum = rgb.mean(2)
+    ref = float(np.percentile(lum[k > 0.5], 85)) if (k > 0.5).any() else 1.0
+    grey = np.clip(0.30 + 0.60 * lum / max(ref, 1e-3), 0, 0.95)
+    px[..., :3] = rgb * (1 - k[..., None]) + grey[..., None] * k[..., None]
+    L.np_img(base, px); base.pack()
+    print(f'[creature] team wings: {float((k > 0.5).mean()) * 100:.1f}% of the atlas')
+    return strength * k
+
+
+def unit_atlas(uid, parts, extra):
+    """One material + one team mask for the whole unit. parts = [(LOD0 object, asset id)]; rider and mount were
+    baked to separate atlases, and the renderer has a single `tintMask` per unit sampled at UV0 -- so mounted
+    heroes shipped with no team colour at all. The atlases are packed side by side, UVs remapped, and the masks
+    (cleanup's cloth mask + `extra`[id], e.g. the wings) written to art-work/clean/<uid>_unit_team.png."""
+    imgs = [mat_images(o) for o, _ in parts]
+    sizes = [tuple(i[0].size) for i in imgs]
+    masks = []
+    for (o, pid), (w, h) in zip(parts, sizes):
+        mp = L.WORK / 'clean' / f'{pid}_team.png'
+        m = L.load_gray(mp, w, h) if mp.exists() else np.zeros((h, w), np.float32)
+        if extra.get(pid) is not None:
+            m = np.maximum(m, extra[pid])
+        masks.append(m)
+    out = L.WORK / 'clean' / f'{uid}_unit_team.png'
+    if len(parts) == 1:
+        L.save_gray(masks[0], out, 256, 256)
+        parts[0][0]['team_frac'] = L.set_team_attr(parts[0][0], masks[0])
+        return
+    W = sum(w for w, _ in sizes); H = max(h for _, h in sizes)
+    def canvas(k, name, div, non_color):
+        img = bpy.data.images.new(name, W // div, H // div)
+        if non_color:
+            img.colorspace_settings.name = 'Non-Color'
+        a = np.zeros((H // div, W // div, 4), np.float32); a[..., 3] = 1
+        if k == 1:
+            a[..., :3] = (0.5, 0.5, 1.0)                       # flat tangent normal in the unused corner
+        x = 0
+        for im, (w, h) in zip(imgs, sizes):
+            src = L.img_np(im[k])
+            sh, sw = src.shape[:2]
+            a[:sh, x:x + sw] = src
+            x += w // div
+        L.np_img(img, a); img.pack()
+        return img
+    mdiv = sizes[0][0] // imgs[0][2].size[0]
+    base = canvas(0, f'{uid}_base', 1, False); nrm = canvas(1, f'{uid}_normal', 1, True); mr = canvas(2, f'{uid}_mr', mdiv, True)
+    mat = L.build_material(f'{uid}_mat', base, nrm, mr)
+    mask = np.zeros((H, W), np.float32)
+    x = 0
+    for (o, pid), (w, h), m in zip(parts, sizes, masks):
+        me = o.data
+        uv = np.empty(len(me.loops) * 2, np.float32)
+        me.uv_layers.active.data.foreach_get('uv', uv)
+        uv = uv.reshape(-1, 2)
+        uv[:, 0] = (uv[:, 0] * w + x) / W; uv[:, 1] = uv[:, 1] * h / H
+        me.uv_layers.active.data.foreach_set('uv', uv.ravel())
+        me.materials.clear(); me.materials.append(mat)
+        mask[:h, x:x + w] = m
+        x += w
+    L.save_gray(mask, out, W // 4, H // 4)
+    for o, _ in parts:
+        o['team_frac'] = L.set_team_attr(o, mask)
+    print(f'[creature] unit atlas {W}x{H}, team mask {out.name}')
+
+
 # ----------------------------------------------------------------------------------------------- build
 def append(path, names):
     with bpy.data.libraries.load(str(path), link=False) as (src, dst):
@@ -812,6 +900,8 @@ def main():
     for act in list(bpy.data.actions):
         if not act.name.startswith('lib_'):
             bpy.data.actions.remove(act)
+    wings = wing_team(m0, info, cfg['team_wings']) if cfg.get('team_wings') and info['wings'] else None
+    unit_atlas(uid, [(m0, mount_id)] + [(o, rider_id) for o in meshes0[1:]], {mount_id: wings})
     cr = Creature(rig, info, cfg, mount_id, flier)
     # ---- clips
     impact = int(round(a.get('impact', 0.42) * FPS))

@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 687,
- "width": 687,
+ "vertexCount": 741,
+ "width": 741,
  "rowsPerFrame": 1,
  "totalFrames": 128,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -1.0443,
-   -0.0079,
-   -2.1905
+   -1.0474,
+   -0.0174,
+   -2.1912
   ],
   "max": [
-   0.8291,
-   2.7339,
-   0.7875
+   0.8309,
+   2.7443,
+   1.2755
   ]
  },
  "pos": "berserker.vat.pos.bin",

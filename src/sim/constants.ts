@@ -9,7 +9,7 @@ export const KEYFRAME_TICKS = 4;
 /** 90 s of fighting. */
 export const MAX_BATTLE_TICKS = 1800;
 /** After a wipe, survivors march (at double speed) on the keep for at most this many ticks (15 s) before the remainder is settled. */
-export const MARCH_TICKS = 300;
+export const MARCH_TICKS = 400;
 
 /** Nav grid: 1 m cells. */
 export const CELL = 100;

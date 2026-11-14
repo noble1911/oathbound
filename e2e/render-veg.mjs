@@ -26,6 +26,10 @@ const LIST = [
   ['river', 'tier=high&t=3000&cam=free&paused=1', [1600, 900], { t: [-6, 0, 0], yaw: 1.0, dist: 30, pitch: 0.33 }],
   ['ground', 'tier=ultra&t=3000&cam=free&paused=1', [1600, 900], { t: [6, 0, 24], yaw: 0.3, dist: 12, pitch: 0.35 }],
   ['outskirts', 'tier=high&t=3000&cam=free&paused=1', [1600, 900], { t: [0, 0, 0], yaw: 0.35, dist: 120, pitch: 0.42 }],
+  ['bridge', 'tier=high&mode=loot', [1600, 900], { t: [-21, 0, 0], yaw: 1.25, dist: 19, pitch: 0.2 }],
+  ['bridge-top', 'tier=medium&mode=loot', [1600, 900], { t: [-21, 0, 0], yaw: 0.5, dist: 26, pitch: 0.6 }],
+  ['zoomout', 'tier=medium&t=3000&cam=free&paused=1', [1600, 900], { t: [0, 0, 0], yaw: 0, dist: 999, pitch: 1.12 }],
+  ['keep', 'tier=high&t=3000&cam=free&paused=1', [1600, 900], { t: [0, 0, 46], yaw: 2.6, dist: 36, pitch: 0.36 }],
   ['low', 'tier=low&t=14000&cam=free', [1600, 900], { t: [0, 0, 6], yaw: 0.35, dist: 70, pitch: 0.6 }],
   ['low-planning', 'tier=low&mode=planning', [1600, 900], null],
   ['medium', 'tier=medium&t=14000&cam=free', [1600, 900], { forest: true, yaw: -0.4, dist: 48, pitch: 0.55 }],
@@ -52,7 +56,7 @@ try {
         }
         v.camera.goal.target.set(t[0], t[1], t[2]);
         v.camera.goal.yaw = c.yaw;
-        v.camera.goal.dist = c.dist;
+        v.camera.goal.dist = Math.min(c.dist, 140); // the rig's zoom-out limit
         v.camera.goal.pitch = c.pitch;
         v.camera.snap();
       }, cam);

@@ -64,9 +64,11 @@ def audit(aid):
         if clip in ('walk', 'run'):
             t = np.array(toes)                         # [frames, 2, (y, z)]
             v = []
+            zmin = t[:, :, 1].min()
             for i in range(len(t) - 1):
-                k = int(np.argmin(t[i, :, 1]))         # the lower foot is the planted one
-                if abs(t[i + 1, k, 1] - t[i, k, 1]) < 0.01:
+                k = int(np.argmin(t[i, :, 1]))         # the lower foot is the planted one...
+                # ...while its ball is on the floor at both ends of the step (a run has a flight phase)
+                if t[i, k, 1] < zmin + 0.04 and t[i + 1, k, 1] < zmin + 0.04:
                     v.append((t[i + 1, k, 0] - t[i, k, 0]) * sc.render.fps)
             speed = f'{np.median(v):5.2f} m/s' if v else '  n/a'
             if floor < -12:

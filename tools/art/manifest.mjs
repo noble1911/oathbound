@@ -12,7 +12,7 @@ const CLEAN = join(root, 'art-work/clean');
 const assets = JSON.parse(readFileSync(join(root, 'tools/art/assets.json'), 'utf8')).assets;
 const size = (f) => (existsSync(join(OUT, f)) ? statSync(join(OUT, f)).size : 0);
 const read = (f) => (existsSync(join(CLEAN, f)) ? JSON.parse(readFileSync(join(CLEAN, f), 'utf8')) : null);
-const PRIMARY = { sword: 'attack_melee_a', spear: 'attack_melee_a', cast: 'cast', bow: 'attack_bow', fist: 'attack_melee_a' };
+const PRIMARY = { sword: 'attack_melee_a', spear: 'attack_melee_a', cast: 'cast', bow: 'attack_bow', fist: 'attack_melee_a', greataxe: 'attack_melee_a' };
 
 const out = {
   version: 2,
@@ -32,7 +32,9 @@ for (const a of assets) {
   const f = read(`${id}.json`);
   if (!f || !existsSync(join(OUT, `${id}.glb`))) continue;
   const e = { kind: a.kind, scale: 1, height: f.height ?? a.height };
-  const lodMask = join(CLEAN, `${id}_team.png`);
+  // creature.py writes `<id>_unit_team.png` (whole unit, one atlas); plain units keep cleanup's `<id>_team.png`
+  const unitMask = join(CLEAN, `${id}_unit_team.png`);
+  const lodMask = existsSync(unitMask) ? unitMask : join(CLEAN, `${id}_team.png`);
   if (f.team_frac > 0 && existsSync(lodMask)) copyFileSync(lodMask, join(OUT, `${id}_team.png`));
   if (f.crowd) {
     e.glb = f.crowd.glb;

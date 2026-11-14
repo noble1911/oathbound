@@ -119,6 +119,37 @@ export type LegendaryId =
   | 'gravebloom' | 'bloodthirst' | 'earthshaker' | 'frostheart' | 'lifebinder' | 'hydra_volley'
   | 'windrunner' | 'sunfire';
 
+/**
+ * Unit classes gate skill items ("knights do not cast fireballs"). Every unit type has exactly one class
+ * (UNIT_CLASS in data/skills.ts); a Lord has 'lord' plus the class of its fighting style (squadClasses).
+ */
+export type UnitClass = 'caster' | 'infantry' | 'ranged' | 'mounted' | 'flier' | 'siege' | 'giant' | 'lord';
+/** Active skills granted by items (data/skills.ts). The squad auto-casts them in battle. */
+export type SkillId =
+  | 'fireball' | 'chain_lightning' | 'frost_nova' | 'mending_light'
+  | 'shield_wall' | 'war_cry' | 'cleave'
+  | 'fire_arrows' | 'pinning_shot' | 'rain_of_arrows'
+  | 'thunderous_charge' | 'trample' | 'dive_strike' | 'incendiary_payload';
+
+/**
+ * One entry of a skill list (unitSkills / lordSkills / squadSkills): innate traits, the Lord's passive and
+ * ability, legendary powers and item-granted skills, with tooltip text that uses the real numbers.
+ */
+export interface SkillInfo {
+  /** Stable id: a trait-like key for innates ('brace', 'anti_flier', ...), the AbilityId, LegendaryId or SkillId. */
+  id: string;
+  name: string;
+  kind: 'passive' | 'active';
+  text: string;
+  /** Seconds between casts (actives only). */
+  cooldown?: number;
+  source: 'innate' | 'lord' | 'item';
+  /** For source 'item': the id of the item that grants it. */
+  item?: number;
+  /** Set for item-granted actives: the SkillId, as it appears in 'skill' replay events and SquadStats.skills. */
+  skill?: SkillId;
+}
+
 export interface Affix {
   id: AffixId;
   /** Rolled value: percent points for % affixes, cm for 'farreach', dps for 'embers', 1 for flags (phoenix, command, frost). */
@@ -139,11 +170,24 @@ export interface Item {
   implicit: Affix;
   affixes: Affix[];
   legendary: LegendaryId | null;
+  /**
+   * Active skill this item grants (absent / null = none). A skill item can only be equipped on a squad whose
+   * class is in SKILLS[skill].classes (applyIntent refuses otherwise; see canEquip).
+   */
+  skill?: SkillId | null;
 }
 export interface ItemSlots { weapon: Item | null; armor: Item | null; relic: Item | null }
 
 /** One tooltip line. `style` drives colour in the UI: name uses the rarity colour, legendary lines are orange. */
-export interface ItemLine { text: string; style: 'name' | 'base' | 'implicit' | 'affix' | 'legendary' | 'flavor' | 'meta' }
+export interface ItemLine {
+  text: string;
+  style: 'name' | 'base' | 'implicit' | 'affix' | 'legendary' | 'flavor' | 'meta';
+  /**
+   * Finer role for the skill block of a skill item (the `style` stays one of the classic seven so older UIs
+   * render it): 'skill' = "Grants Fireball (10 s cooldown)", 'skillText' = what it does, 'usable' = "Usable by: Casters".
+   */
+  kind?: 'skill' | 'skillText' | 'usable';
+}
 
 // ---------------------------------------------------------------- Terrain
 
@@ -186,10 +230,14 @@ export interface PlayerState {
   keepMax: number;
   /** Unit types this player may deploy. */
   unlocked: UnitType[];
-  /** Pending unlock choice: pick `draftPicks` of these with {t:'draft'}. Empty when nothing to pick. */
+  /**
+   * Pending unlock choice: pick `draftPicks` of these with {t:'draft'}. Empty when nothing to pick. Not random: it is
+   * the full list of units the player may unlock this round, pick 1 (round 1: the basic pool; later: every locked
+   * unit whose minRound has come), the same rule for both players.
+   */
   draftOptions: UnitType[];
   draftPicks: number;
-  /** Pending loot choice (3 items, 4 for Skylady). Null when nothing to pick. */
+  /** Pending loot choice: one item per slot (plus a fourth for Skylady). Both players are offered the same items. Null when nothing to pick. */
   lootOffer: Item[] | null;
   /** Your army. The Lord squad (type 'lord') is always squads[0] once a Lord is picked. */
   squads: Squad[];
@@ -201,15 +249,11 @@ export interface PlayerState {
   deployLimit: number;
   lordXp: number;
   ready: boolean;
-  /** Did this player lose the last battle (catch-up gold and loot tier)? */
+  /** Did this player lose the last battle? (Informational only: losing brings no gold and no better loot.) */
   lostLast: boolean;
   /** The army as it fought last battle — the only thing the opponent sees during planning. */
   lastArmy: Squad[] | null;
-  /**
-   * Comeback bonus earned by the last battle (set by applyBattle, paid by nextRound, kept for display until the
-   * next battle). `gold` = catch-up gold (only when you lost the round; grows with the round and your keep-HP
-   * deficit); `deploys` = extra squad deployments (when your keep is far behind). See comebackFor in match.ts.
-   */
+  /** Always zeros: there is no comeback bonus (both players face identical conditions). Kept so older UIs keep working. */
   comeback: Comeback;
 }
 
@@ -253,6 +297,8 @@ export interface MatchState {
   terrain: Terrain;
   /** Set when phase = 'over'. */
   winner: Seat | 'draw' | null;
+  /** Why the match ended: 'keep' (a keep fell), 'rounds' (the round limit) or 'concede' (a player gave up; see concede in match.ts). */
+  overReason?: 'keep' | 'rounds' | 'concede';
   history: RoundSummary[];
   nextId: number;
 }
@@ -265,6 +311,8 @@ export interface PlayerView {
   seat: Seat | null;
   terrain: Terrain;
   winner: Seat | 'draw' | null;
+  /** Set when phase = 'over': 'keep' (a keep fell), 'rounds' (round limit) or 'concede' (the loser gave up). */
+  overReason?: 'keep' | 'rounds' | 'concede';
   history: RoundSummary[];
   you: PlayerState | null;
   /** Spectator: both players' public info. */
@@ -331,6 +379,8 @@ export interface BattleResult {
   /** Per-seat stats (for tooltips / tournament): damage dealt, soldiers lost. */
   damageDealt: [number, number];
   soldiersLost: [number, number];
+  /** Damage dealt by each seat's Lord (attacks, ability, item skills), in HP like damageDealt. */
+  lordDamage?: [number, number];
 }
 
 export type AnimState = 'idle' | 'move' | 'attack' | 'cast' | 'dead';
@@ -351,6 +401,8 @@ export interface ReplaySoldier {
   maxHp: number;
   /** Item ids/rarities/legendary on the squad, for glow VFX. */
   items: { slot: Slot; rarity: Rarity; base: BaseId; legendary: LegendaryId | null }[];
+  /** Item-granted skills of the soldier's squad (casts appear as 'skill' events). */
+  skills?: SkillId[];
   /** Visual flags: 'flier', 'large', 'mounted', 'elite' (Lv3+), 'champion' (Lv5), 'legendary' (has a legendary), 'skeleton'. */
   flags: string[];
   /** Tick at which this soldier enters the replay (0, or the summon tick for skeletons). Before that it is not rendered. */
@@ -393,10 +445,62 @@ export type ReplayEvent =
   /** A new soldier (header row `tgt`) appears at pos. */
   | { k: 'summon'; tick: number; tgt: number; src: number; pos: Vec2 };
 
+/**
+ * Skill casts and the statistics ledger travel in the same binary event stream but are decoded into their own
+ * lists (DecodedReplay.skills / DecodedReplay.tallies), so `ReplayEvent` and DecodedReplay.events keep exactly the
+ * classic eleven kinds for existing consumers.
+ */
+export type SkillEvent =
+  /**
+   * A squad casts an item skill. `src` = the casting soldier (the squad's leader), `squad` / `tgtSquad` = rows of
+   * Replay.squads (tgtSquad -1 = none), `tgt` = the soldier aimed at (-1 = none), `pos` = the target point (cm),
+   * `radius` = area of effect in cm (0 = single target / the caster's own squad) and `dur` = how long the effect
+   * lasts in ticks (buffs, burning ground, the delay before a strike lands; 0 = instant). The damage, heals and
+   * knockbacks it causes follow as ordinary 'hit' / 'heal' / 'projectile' / 'ability' events, and are totalled per
+   * skill in the 'tally' stream.
+   */
+  { k: 'skill'; tick: number; src: number; squad: number; skill: SkillId; tgt: number; tgtSquad: number; pos: Vec2; radius: number; dur: number };
+export type TallyEvent =
+  /**
+   * The statistics ledger: everything squad row `src` did to squad row `tgt` through `cause` during the
+   * TALLY_TICKS ticks ending at `tick`, in centi-HP (100 = 1 HP). `dmg` is life actually removed (overkill is not
+   * counted), `mit` the damage the target's armour / resistance / shields absorbed, `heal` life actually restored,
+   * `n` the number of damaging hits. `src` is a row of Replay.squads, -1 (nobody) or a keep id (>= KEEP_SRC_BASE:
+   * the arrow towers). Use squadStatsAt (stats.ts) instead of reading these by hand.
+   */
+  { k: 'tally'; tick: number; src: number; tgt: number; cause: StatCause; dmg: number; mit: number; heal: number; n: number };
+
+/** What a ledger entry is attributed to: plain attacks, damage-over-time and procs, Lord abilities, heals, or an item skill. */
+export type StatCause =
+  | 'attack' | 'burn' | 'thorns' | 'tower' | 'chain' | 'ember_burst' | 'sunfire' | 'meteor' | 'skyfall'
+  | 'heal' | 'leech' | 'lifebinder' | 'bloodthirst' | 'revive' | 'rout' | SkillId;
+
+/** One squad of the battle (header row). Row index = position in Replay.squads; summoned skeleton bands get their own row. */
+export interface ReplaySquad {
+  row: number;
+  /** MatchState squad id (skeleton bands: the id of the squad that raised them). */
+  id: number;
+  side: Seat;
+  type: SoldierType;
+  lord?: LordId;
+  level: number;
+  summoned: boolean;
+  /** Indices into Replay.soldiers. */
+  soldiers: number[];
+  /** Item-granted skills. */
+  skills: SkillId[];
+  /** The Lord of the squad's owner (for the Lord's passive in replaySquadSheet). */
+  ownerLord?: LordId | null;
+  /** The squad's items in full (both armies are public once the battle starts), for the inspector. Absent on skeleton bands. */
+  items?: ItemSlots;
+}
+
 export type AbilityEventKind =
   | 'rally' | 'meteor' | 'bulwark' | 'skyfall'
   | 'chain' /* chain lightning segment src->tgt */ | 'burn' /* burn applied, dur in ticks */ | 'frost' /* slow applied */
-  | 'ember_burst' | 'reflect' | 'stomp' | 'charge' | 'brace' | 'earthshaker' | 'bloodthirst' | 'sunfire' | 'lifebinder' | 'levelup';
+  | 'ember_burst' | 'reflect' | 'stomp' | 'charge' | 'brace' | 'earthshaker' | 'bloodthirst' | 'sunfire' | 'lifebinder' | 'levelup'
+  /** Skill effects on one soldier `tgt`: thrown to `pos` (knockback), or buffed for `dur` ticks. */
+  | 'knockback' | 'shield_wall' | 'war_cry' | 'cleave';
 
 export const EVENT_KINDS = ['attack', 'projectile', 'impact', 'hit', 'heal', 'death', 'ability', 'keepHit', 'keepStage', 'revive', 'summon'] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -413,10 +517,11 @@ export interface KeepInfo { seat: Seat; pos: Vec2; hpBefore: number; hpMax: numb
  *    wrapped delta), hp (absolute varint) and anim (1 byte). Soldiers not yet spawned are skipped.
  *  - `events`: base64 of the event stream: per event a header byte (kind | tickDelta << 4, delta 15 = escape + varint),
  *    then the fields per EVENT_CODEC in replay.ts (varints, refs as v+1, positions delta-coded). decodeReplay() turns it
- *    into ReplayEvent[] — clients should never parse it by hand.
+ *    into ReplayEvent[] (plus SkillEvent[] and TallyEvent[]) — clients should never parse it by hand.
  */
 export interface Replay {
-  v: 2;
+  /** Wire version (REPLAY_VERSION). 3 added `squads` and the 'skill' and 'tally' events; decodeReplay rejects other versions. */
+  v: 3;
   seed: number;
   round: number;
   /** Total ticks in the replay (fighting + post-wipe march to the keep). */
@@ -424,10 +529,13 @@ export interface Replay {
   frameTicks: number;
   frameCount: number;
   soldiers: ReplaySoldier[];
+  /** One row per squad (and per summoned band), referenced by 'skill' and 'tally' events. */
+  squads: ReplaySquad[];
   keeps: [KeepInfo, KeepInfo];
   terrain: Terrain;
   frames: string;
   events: string;
+  /** Number of classic events (DecodedReplay.events.length); skill casts and ledger entries are not counted. */
   eventCount: number;
   result: BattleResult;
 }
@@ -444,6 +552,10 @@ export interface DecodedReplay {
   /** Index into ANIM_STATES. 255 = not spawned yet. */
   anim: Uint8Array;
   events: ReplayEvent[];
+  /** Item-skill casts, tick-ordered. (Optional only so hand-built test replays stay valid; decodeReplay always sets it.) */
+  skills?: SkillEvent[];
+  /** The statistics ledger, tick-ordered (one window every TALLY_TICKS). Read it through squadStatsAt. */
+  tallies?: TallyEvent[];
 }
 
 /** Output buffers for sampleReplay — allocate once with makeTransforms(n) and reuse every frame. */

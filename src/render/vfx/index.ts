@@ -18,7 +18,7 @@ import * as THREE from 'three';
 import type { Engine } from '../core/engine.ts';
 import { makeAtlas, makeDecalSheet, CELL, FRAMES, DECAL } from './atlas.ts';
 import { ParticlePool, type Particle } from './particles.ts';
-import { GroundDecal, Dome, Pillar, RibbonBatch, type Ribbon } from './shapes.ts';
+import { GroundDecal, Dome, Pillar, Barrier, RibbonBatch, type Ribbon } from './shapes.ts';
 import { DecalBatch, DK, type DecalSpec } from './decals.ts';
 import { DamageNumbers, type NumberStyle } from './numbers.ts';
 import { Projectiles, Debris, StuckArrows, type ProjectileKind, type ArcType, type Follow } from './bodies.ts';
@@ -417,9 +417,11 @@ export class Vfx {
       this.later(Math.min(flightSec, 0.05), () => (onImpact ? onImpact() : this.impact('lightning', dst, 0)));
       return;
     }
-    if (kind === 'fireball') {
-      this.flash(from.x, from.y, from.z, 1.1, [6, 3.2, 1], 0.12);
+    if (kind === 'fireball' || kind === 'skill_fireball' || kind === 'fire_pot') {
+      this.flash(from.x, from.y, from.z, kind === 'fireball' ? 1.1 : 1.8, [6, 3.2, 1], 0.12);
       this.embers(from.x, from.y, from.z, this.n(4), 2.5, -3);
+    } else if (kind === 'fire_arrow') {
+      this.flash(from.x, from.y, from.z, 0.5, [5, 2.4, 0.6], 0.08);
     } else if (kind === 'stone') {
       this.puff(from.x, from.y, from.z, 1.2, { vy: 1.5, life: 1.1, alpha: 0.35 });
     }
@@ -443,9 +445,33 @@ export class Vfx {
         for (let i = per(14); i > 0; i--)
           this.puff(p.x, p.y, p.z, 0.5, { vx: rnd(-0.3, 0.3), vy: rnd(-0.2, 0.3), vz: rnd(-0.3, 0.3), life: rnd(0.6, 1.0), alpha: 0.28, grow: 2.4, drag: 1 });
         break;
+      case 'fire_arrow': {
+        // a burning head: small hot core, flame licks and a thread of smoke
+        const hx = p.x + d.x * 0.55;
+        const hy = p.y + d.y * 0.55;
+        const hz = p.z + d.z * 0.55;
+        this.emitA({ x: hx, y: hy, z: hz, life: 0.05, size: 0.3, r: 7, g: 4, b: 1.4, cell: CELL.dot, fadeOut: 0.9 });
+        for (let i = per(34); i > 0; i--)
+          this.emitA({
+            x: hx + rnd(-0.04, 0.04), y: hy + rnd(-0.04, 0.04), z: hz + rnd(-0.04, 0.04), vx: d.x * 4 + rnd(-0.3, 0.3), vy: d.y * 4 + rnd(0, 0.6), vz: d.z * 4 + rnd(-0.3, 0.3),
+            life: rnd(0.18, 0.3), size: 0.34, size1: 0.07, gravity: 1.5, drag: 3, spin: rnd(-4, 4),
+            r: 2.2, g: 1.9, b: 1.5, r1: 1.4, g1: 0.5, b1: 0.25, cell: CELL.explosion + 4 + Math.floor(Math.random() * 5),
+          });
+        for (let i = per(10); i > 0; i--) this.embers(hx, hy, hz, 1, 1.2, -3);
+        for (let i = per(9); i > 0; i--) this.puff(p.x, p.y, p.z, 0.18, { vy: 0.4, life: rnd(0.6, 0.9), alpha: 0.28, color: SOOT, grow: 2.4, delay: 0.06, drag: 1 });
+        break;
+      }
+      case 'pin_shot':
+        // a heavy shaft: a cold, straight pressure streak
+        for (let i = per(50); i > 0; i--)
+          this.emitA({ x: p.x - d.x * 0.7, y: p.y - d.y * 0.7, z: p.z - d.z * 0.7, vx: d.x * 8, vy: d.y * 8, vz: d.z * 8, life: 0.2, size: 0.13, size1: 0.02, r: 2.2, g: 3.4, b: 6, alpha: 0.8, cell: CELL.spark, stretch: 0.14 });
+        this.emitA({ x: p.x + d.x * 0.8, y: p.y + d.y * 0.8, z: p.z + d.z * 0.8, life: 0.05, size: 0.26, r: 3, g: 4.5, b: 8, cell: CELL.star, fadeOut: 0.9 });
+        break;
       case 'fireball':
+      case 'skill_fireball':
+      case 'fire_pot':
       case 'firebreath': {
-        const big = kind === 'firebreath' ? 1.8 : 1;
+        const big = kind === 'firebreath' || kind === 'skill_fireball' ? 1.8 : kind === 'fire_pot' ? 1.3 : 1;
         // heat core: white-hot centre in an orange halo (re-emitted every frame, so it tracks exactly)
         this.emitA({ x: p.x, y: p.y, z: p.z, life: 0.05, size: 0.42 * big, r: 8, g: 6, b: 3.5, cell: CELL.dot, fadeOut: 0.9 });
         this.emitA({ x: p.x, y: p.y, z: p.z, life: 0.07, size: 1.1 * big, r: 1.3, g: 0.5, b: 0.1, cell: CELL.dot, fadeOut: 0.9 });
@@ -470,8 +496,30 @@ export class Vfx {
 
   /** A projectile reached the end of its flight: arrows and bolts stay where they struck. */
   private land(kind: ProjectileKind, p: THREE.Vector3, d: THREE.Vector3, follow?: Follow): void {
-    if (kind !== 'arrow' && kind !== 'tower_arrow' && kind !== 'bolt') return;
-    const scale = kind === 'bolt' ? 1.9 : 1;
+    if (kind === 'fire_arrow') {
+      // the arrow keeps burning where it struck
+      const gy0 = this.ground(p.x, p.z);
+      const y = Math.min(p.y, gy0 + 1.4);
+      this.flash(p.x, y, p.z, 0.7, [6, 3, 0.9], 0.1);
+      this.embers(p.x, y, p.z, this.n(4), 2.5, -5);
+      const fx = p.x;
+      const fz = p.z;
+      const base = follow;
+      this.emitter(1.6, 5, (k) => {
+        const b = base ? base() : null;
+        for (let i = 0; i < k; i++) this.flame((b ? b.x : fx) + rnd(-0.12, 0.12), b ? b.y + 0.5 : gy0, (b ? b.z : fz) + rnd(-0.12, 0.12), rnd(0.6, 0.9), rnd(0.4, 0.6));
+      });
+      if (!follow || !follow()) this.decal({ kind: DK.mark, cell: DECAL.scorch, x: p.x, z: p.z, radius: 0.7, life: 14, r: 6, g: 1.6, b: 0.25, alpha: 0.7, fadeIn: 0.15 });
+    } else if (kind === 'pin_shot') {
+      // the pin: a ring snapping shut on the spot and a burst of cold splinters
+      const gy0 = this.ground(p.x, p.z);
+      this.decal({ kind: DK.shock, x: p.x, z: p.z, radius: 1.1, life: 0.3, r: 0.5, g: 0.9, b: 1.8 });
+      this.decal({ kind: DK.glow, x: p.x, z: p.z, radius: 0.9, life: 1.2, r: 0.15, g: 0.3, b: 0.6 });
+      this.sparks(p.x, Math.min(p.y, gy0 + 1.2), p.z, this.n(7), 5, [3, 5, 10], [0.6, 1, 3], 0.6, 0.07);
+      this.puff(p.x, gy0 + 0.2, p.z, 0.6, { vy: 0.7, life: 0.8, alpha: 0.4, grow: 2.4 });
+    }
+    if (kind !== 'arrow' && kind !== 'tower_arrow' && kind !== 'bolt' && kind !== 'fire_arrow' && kind !== 'pin_shot') return;
+    const scale = kind === 'bolt' ? 1.9 : kind === 'pin_shot' ? 1.2 : 1;
     const gy = this.ground(p.x, p.z);
     if (follow && follow() && Math.random() < 0.7) {
       this.stuck.add(p, d, scale, kind === 'bolt' ? 4 : 7, follow);
@@ -480,7 +528,8 @@ export class Vfx {
     if (p.y - gy > 3.5) return; // struck something tall (a keep wall): no ground arrow
     // carry on to the ground along the flight line, biting in at a believable angle
     const dir = this.tmp.copy(d);
-    if (dir.y > -0.45) dir.y = -0.45 - Math.random() * 0.4;
+    if (kind === 'pin_shot') dir.set(dir.x * 0.5, -1, dir.z * 0.5); // driven in steeply
+    else if (dir.y > -0.45) dir.y = -0.45 - Math.random() * 0.4;
     dir.normalize();
     const t = Math.max(0, (p.y - gy) / -dir.y);
     const tip = this.tmp2.set(p.x + dir.x * t, 0, p.z + dir.z * t);
@@ -495,6 +544,9 @@ export class Vfx {
     const gy = this.ground(x, z);
     const onGround = pos.y - gy < 0.6;
     switch (kind) {
+      case 'fire_arrow':
+      case 'pin_shot':
+        break; // the landing itself is drawn when the shaft arrives (see `land`)
       case 'arrow':
       case 'tower_arrow':
         // arrows thud, they don't flash: a chip of dust, the odd glint off armour
@@ -529,6 +581,8 @@ export class Vfx {
         break;
       }
       case 'fireball':
+      case 'skill_fireball':
+      case 'fire_pot':
       case 'firebreath':
         this.fireBlast(x, Math.max(pos.y, gy + 0.3), z, Math.max(1.5, splashMetres || 3));
         break;
@@ -1047,6 +1101,414 @@ export class Vfx {
     const gy = this.ground(pos.x, pos.z);
     for (let i = 0; i < k; i++)
       this.puff(pos.x + rnd(-0.3, 0.3), gy + 0.15, pos.z + rnd(-0.3, 0.3), 0.42, { vx: rnd(-0.3, 0.3), vy: rnd(0.15, 0.45), vz: rnd(-0.3, 0.3), life: rnd(1.1, 1.8), alpha: 0.26, grow: 2.8, fadeIn: 0.2 });
+  }
+
+  // ------------------------------------------------------------------ item skills (DESIGN §5b)
+
+  /** The generic "a skill is being cast here" tell: a sigil flaring under the caster and a rising glint. */
+  castFlare(pos: THREE.Vector3, color: THREE.ColorRepresentation, size = 1): void {
+    const { x, z } = pos;
+    const gy = this.ground(x, z);
+    const c = new THREE.Color(color);
+    const k: RGB = [c.r * 5, c.g * 5, c.b * 5];
+    this.decal({ kind: DK.sigil, cell: DECAL.arcane, x, z, radius: 1.5 * size, life: 0.8, r: k[0] * 0.25, g: k[1] * 0.25, b: k[2] * 0.25, fadeIn: 0.15, grow: 0.3, spin: 2.5 });
+    this.flash(x, gy + 1.6 * size, z, 1.6 * size, k, 0.16);
+    for (let i = 0; i < this.n(8); i++) {
+      const a = Math.random() * TAU;
+      this.emitA({
+        x: x + Math.cos(a) * 0.7 * size, y: gy + 0.1, z: z + Math.sin(a) * 0.7 * size, vy: rnd(2, 4), life: rnd(0.4, 0.7), size: 0.12, size1: 0.03, drag: 0.8,
+        r: k[0], g: k[1], b: k[2], cell: CELL.spark, stretch: 0.2,
+      });
+    }
+  }
+
+  /** Burning ground of radius `radiusM` for `durSec` (Fireball's afterburn, Incendiary Payload). */
+  firePatch(pos: THREE.Vector3, radiusM: number, durSec: number): void {
+    const { x, z } = pos;
+    const gy = this.ground(x, z);
+    this.decal({ kind: DK.mark, cell: DECAL.scorch, x, z, radius: radiusM * 1.15, life: Math.max(22, durSec + 14), r: 6, g: 1.6, b: 0.25, alpha: 0.9, fadeIn: 0.2 });
+    this.decal({ kind: DK.glow, x, z, radius: radiusM * 1.5, life: durSec + 0.6, r: 1.0, g: 0.32, b: 0.05, fadeIn: 0.3 });
+    // a ring of rooted fires plus licks wandering inside it
+    const fires = Math.max(3, this.n(radiusM * 2.2));
+    const spots: [number, number, number][] = [];
+    for (let i = 0; i < fires; i++) {
+      const a = (i / fires) * TAU + rnd(-0.3, 0.3);
+      const r = radiusM * (i % 3 === 0 ? rnd(0.1, 0.4) : rnd(0.55, 0.9));
+      spots.push([x + Math.cos(a) * r, z + Math.sin(a) * r, rnd(0.9, 1.5)]);
+    }
+    const epoch = this.epoch;
+    this.emitter(durSec, fires * 2.6 / Math.max(this.density, 0.01), (k) => {
+      if (epoch !== this.epoch) return;
+      for (let i = 0; i < k; i++) {
+        const s = spots[Math.floor(Math.random() * spots.length)];
+        this.flame(s[0] + rnd(-0.25, 0.25), this.ground(s[0], s[1]), s[1] + rnd(-0.25, 0.25), s[2] * rnd(0.9, 1.4), rnd(0.5, 0.8));
+        if (Math.random() < 0.5) this.embers(s[0], gy + 0.5, s[1], 1, 1.8, 0.8);
+        if (Math.random() < 0.22) this.puff(s[0], gy + 1.3, s[1], 0.8, { vx: rnd(-0.2, 0.5), vy: rnd(1.2, 2), life: rnd(1.6, 2.4), alpha: 0.45, color: SOOT, grow: 2.8, drag: 0.4 });
+      }
+    });
+  }
+
+  /** Frost Nova: a ring of cold races out from the caster, the ground frosts over for `durSec`. */
+  frostNova(pos: THREE.Vector3, radiusM: number, durSec: number): void {
+    const { x, z } = pos;
+    const gy = this.ground(x, z);
+    this.flash(x, gy + 1.2, z, radiusM * 0.6, [5, 7.5, 12], 0.16);
+    this.decal({ kind: DK.shock, x, z, radius: radiusM * 1.1, life: 0.45, r: 1.6, g: 2.8, b: 5 });
+    this.decal({ kind: DK.shock, x, z, radius: radiusM * 0.7, life: 0.4, r: 1.2, g: 2.0, b: 3.6, delay: 0.1 });
+    this.decal({ kind: DK.sigil, cell: DECAL.frost, x, z, radius: radiusM * 1.05, life: Math.max(1.5, durSec), r: FROST[0] * 0.08, g: FROST[1] * 0.08, b: FROST[2] * 0.08, fadeIn: 0.25, grow: 0.15 });
+    this.decal({ kind: DK.glow, x, z, radius: radiusM * 1.2, life: Math.max(1.5, durSec), r: 0.12, g: 0.28, b: 0.55, fadeIn: 0.3 });
+    const n = this.n(22);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU + rnd(-0.1, 0.1);
+      const s = radiusM * rnd(1.6, 2.2);
+      // ground mist rolling outward, ice glints riding the front
+      this.puff(x + Math.cos(a) * 0.5, gy + 0.35, z + Math.sin(a) * 0.5, 0.9, { vx: Math.cos(a) * s, vy: 0.2, vz: Math.sin(a) * s, life: rnd(1.0, 1.5), alpha: 0.4, color: [0.8, 0.9, 1.0], grow: 2.6, drag: 2.6 });
+      this.emitA({
+        x, y: gy + rnd(0.2, 0.9), z, vx: Math.cos(a) * s * 1.1, vy: rnd(0.5, 2.5), vz: Math.sin(a) * s * 1.1, life: rnd(0.5, 0.9), size: rnd(0.14, 0.26), size1: 0.03, drag: 2.4, gravity: -2, spin: rnd(-5, 5),
+        r: FROST[0], g: FROST[1], b: FROST[2], cell: CELL.star,
+      });
+    }
+    // lingering snow-glitter over the frozen ground
+    this.emitter(Math.min(durSec, 3), 16, (k) => {
+      for (let i = 0; i < k; i++) {
+        const a = Math.random() * TAU;
+        const r = Math.sqrt(Math.random()) * radiusM;
+        this.emitA({
+          x: x + Math.cos(a) * r, y: gy + rnd(0.2, 1.6), z: z + Math.sin(a) * r, vy: rnd(-0.5, -0.1), life: rnd(0.5, 0.9), size: rnd(0.08, 0.16), size1: 0.02, spin: rnd(-3, 3),
+          r: FROST[0], g: FROST[1], b: FROST[2], cell: CELL.star, fadeIn: 0.3,
+        });
+      }
+    });
+    this.shake(0.1, x, gy, z);
+  }
+
+  /** Mending Light: a great sigil under the wounded squad, a shaft of light and a rain of rising motes. */
+  mendingLight(center: THREE.Vector3, radiusM: number): void {
+    const { x, z } = center;
+    const gy = this.ground(x, z);
+    const rad = Math.max(2.2, radiusM);
+    this.decal({ kind: DK.sigil, cell: DECAL.heal, x, z, radius: rad * 1.15, life: 2.0, r: HEAL[0] * 0.3, g: HEAL[1] * 0.3, b: HEAL[2] * 0.3, fadeIn: 0.35, grow: 0.4, spin: 0.5 });
+    this.decal({ kind: DK.shock, x, z, radius: rad * 1.4, life: 0.7, r: 0.8, g: 2.0, b: 0.8 });
+    this.decal({ kind: DK.glow, x, z, radius: rad * 1.5, life: 1.8, r: 0.25, g: 0.6, b: 0.22, fadeIn: 0.3 });
+    const beam = new Pillar([1.0, 2.2, 0.9], rad * 0.55, 13, 0.6);
+    beam.mesh.position.set(x, gy, z);
+    this.root.add(beam.mesh);
+    let t = 0;
+    this.actor({
+      update: (dt, time) => {
+        t += dt;
+        beam.material.uniforms.uAlpha.value = Math.min(1, t / 0.25) * Math.max(0, 1 - t / 1.5) * 0.7;
+        beam.material.uniforms.uTime.value = time;
+        return t < 1.5;
+      },
+      dispose: () => beam.dispose(),
+    });
+    for (let i = 0; i < this.n(30); i++) {
+      const a = Math.random() * TAU;
+      const r = Math.sqrt(Math.random()) * rad;
+      this.emitA({
+        x: x + Math.cos(a) * r, y: gy + rnd(0.05, 0.6), z: z + Math.sin(a) * r, vx: rnd(-0.2, 0.2), vy: rnd(0.9, 2.2), vz: rnd(-0.2, 0.2), life: rnd(1.1, 1.9), size: rnd(0.13, 0.28), size1: 0.04, drag: 0.5,
+        r: HEAL[0], g: HEAL[1], b: HEAL[2], r1: 3.2, g1: 3.6, b1: 1.4, cell: i % 5 === 0 ? CELL.star : CELL.dot, fadeIn: 0.25, fadeOut: 0.4, delay: rnd(0, 0.7),
+      });
+    }
+  }
+
+  /**
+   * Shield Wall: a bowed wall of kite shields of light held in front of the squad for `durSec`.
+   * `follow` gives the squad's centre and facing (yaw, forward = (sin, 0, cos)) each frame; null ends it.
+   */
+  shieldWall(follow: () => { pos: THREE.Vector3; yaw: number } | null, widthM: number, durSec: number): void {
+    const first = follow();
+    if (!first) return;
+    const wall = new Barrier([1.6, 2.6, 5.5]);
+    this.root.add(wall.mesh);
+    const w = Math.max(3, widthM);
+    const place = (f: { pos: THREE.Vector3; yaw: number }) => {
+      const fx = Math.sin(f.yaw);
+      const fz = Math.cos(f.yaw);
+      const d = 1.3;
+      const px = f.pos.x + fx * d;
+      const pz = f.pos.z + fz * d;
+      wall.mesh.position.set(px, this.ground(px, pz) - 0.05, pz);
+      wall.mesh.rotation.set(0, f.yaw, 0);
+      wall.mesh.scale.set(w, 2.5, w * 0.5);
+    };
+    place(first);
+    const { x, z } = wall.mesh.position;
+    this.flash(x, wall.mesh.position.y + 1.3, z, 3, [2.5, 4, 9], 0.16);
+    // the shields slam down: sparks along the line and a kick of dust
+    for (let i = 0; i < this.n(14); i++) {
+      const k = (i / Math.max(1, this.n(14) - 1) - 0.5) * w;
+      const px = x + Math.cos(first.yaw) * k;
+      const pz = z - Math.sin(first.yaw) * k;
+      this.sparks(px, this.ground(px, pz) + 0.2, pz, 2, 3.5, [3, 5, 10], [0.6, 1, 3], 0.8, 0.06);
+      if (i % 3 === 0) this.puff(px, this.ground(px, pz) + 0.2, pz, 0.6, { vy: 0.6, life: 0.9, alpha: 0.35, grow: 2.4 });
+    }
+    let t = 0;
+    const epoch = this.epoch;
+    this.actor({
+      update: (dt, time) => {
+        t += dt;
+        const f = follow();
+        if (!f || epoch !== this.epoch) return false;
+        place(f);
+        // rise out of the ground, hold, drop
+        const up = 1 - Math.pow(1 - Math.min(1, t / 0.22), 3);
+        wall.mesh.scale.y = 2.5 * up;
+        wall.material.uniforms.uAlpha.value = up * Math.max(0, Math.min(1, (durSec - t) / 0.4));
+        wall.material.uniforms.uTime.value = time;
+        return t < durSec;
+      },
+      dispose: () => wall.dispose(),
+    });
+  }
+
+  /** War Cry: a red-gold roar bursting out from the leader over `radiusM`. */
+  warCry(pos: THREE.Vector3, radiusM: number): void {
+    const { x, z } = pos;
+    const gy = this.ground(x, z);
+    const RED: RGB = [7, 1.6, 0.5];
+    this.flash(x, gy + 1.8, z, 3.2, [8, 3.5, 1], 0.18);
+    this.decal({ kind: DK.shock, x, z, radius: radiusM * 1.05, life: 0.6, r: 3.2, g: 0.8, b: 0.25 });
+    this.decal({ kind: DK.shock, x, z, radius: radiusM * 0.75, life: 0.55, r: 3.2, g: 1.9, b: 0.5, delay: 0.12 });
+    this.decal({ kind: DK.shock, x, z, radius: radiusM * 0.45, life: 0.5, r: 3.2, g: 0.8, b: 0.25, delay: 0.24 });
+    this.decal({ kind: DK.glow, x, z, radius: radiusM * 0.8, life: 0.9, r: 0.7, g: 0.16, b: 0.05 });
+    // the shout itself: a crown of red-gold streaks thrown up around the leader
+    for (let i = 0; i < this.n(16); i++) {
+      const a = Math.random() * TAU;
+      this.emitA({
+        x: x + Math.cos(a) * 0.5, y: gy + 1.2, z: z + Math.sin(a) * 0.5, vx: Math.cos(a) * 2.5, vy: rnd(5, 9), vz: Math.sin(a) * 2.5, life: rnd(0.4, 0.7), size: 0.2, size1: 0.04, drag: 1.5,
+        r: i % 2 ? GOLD[0] : RED[0], g: i % 2 ? GOLD[1] : RED[1], b: i % 2 ? GOLD[2] : RED[2], cell: CELL.spark, stretch: 0.16,
+      });
+    }
+    const n = this.n(28);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU;
+      const gold = i % 2 === 0;
+      this.emitA({
+        x, y: gy + 0.5, z, vx: Math.cos(a) * radiusM * 1.7, vy: rnd(0.8, 2), vz: Math.sin(a) * radiusM * 1.7, life: 0.65, size: 0.24, size1: 0.05, drag: 1.7,
+        r: gold ? GOLD[0] : RED[0], g: gold ? GOLD[1] : RED[1], b: gold ? GOLD[2] : RED[2], cell: CELL.spark, stretch: 0.13,
+      });
+    }
+    this.dustRing(x, z, this.n(10), radiusM * 0.9, 1.0, 1.1, DUST, 0.4);
+    this.shake(0.16, x, gy, z);
+  }
+
+  /** A soldier takes up the war cry / a buff lands on him: embers of the given colour rise off him. */
+  buffMote(pos: THREE.Vector3, color: THREE.ColorRepresentation, count = 3): void {
+    const c = new THREE.Color(color);
+    for (let i = 0; i < count; i++)
+      this.emitA({
+        x: pos.x + rnd(-0.3, 0.3), y: pos.y + rnd(0.2, 1.2), z: pos.z + rnd(-0.3, 0.3), vy: rnd(1.5, 3), life: rnd(0.5, 0.9), size: 0.13, size1: 0.03, drag: 0.6,
+        r: c.r * 6, g: c.g * 6, b: c.b * 6, cell: CELL.spark, stretch: 0.22, fadeIn: 0.15, delay: rnd(0, 0.25),
+      });
+  }
+
+  /**
+   * Cleave: a wide crescent of steel swept from `from` (the attacker) through `to` (his target);
+   * `reachM` is how far around the target it bites.
+   */
+  cleaveArc(from: THREE.Vector3, to: THREE.Vector3, reachM = 2.5): void {
+    const c = from.clone();
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const mid = Math.atan2(dz, dx);
+    const rad = Math.max(1.8, Math.hypot(dx, dz) + reachM * 0.45);
+    const h = Math.max(from.y, to.y) + 0.1;
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const SEG = 14;
+    const pts: THREE.Vector3[] = Array.from({ length: SEG }, () => new THREE.Vector3());
+    const edge = new THREE.Color(8, 8.5, 9.5);
+    const body = new THREE.Color(2.2, 2.6, 3.6);
+    const wEdge = pts.map((_, i) => 0.05 + 0.2 * Math.sin((Math.PI * i) / (SEG - 1)));
+    const wBody = pts.map((_, i) => 0.25 + 1.5 * Math.sin((Math.PI * i) / (SEG - 1)));
+    const life = 0.3;
+    let t = 0;
+    let sparked = false;
+    this.actor({
+      update: (dt) => {
+        t += dt;
+        const k = Math.min(1, t / life);
+        // the blade's head sweeps 210°, dragging a 100° wake that closes up at the end
+        const head = (-1.8 + 3.6 * (1 - Math.pow(1 - k, 2))) * dir;
+        const tail = head - dir * 1.75 * (1 - k * k);
+        for (let i = 0; i < SEG; i++) {
+          const a = mid + tail + ((head - tail) * i) / (SEG - 1);
+          pts[i].set(c.x + Math.cos(a) * rad, h + 0.25 * Math.sin((i / (SEG - 1)) * Math.PI), c.z + Math.sin(a) * rad);
+        }
+        const fade = 1 - k * k;
+        this.ribbonList.push({ points: pts, width: wBody, color: body, alpha: 0.7 * fade });
+        this.ribbonList.push({ points: pts, width: wEdge, color: edge, alpha: fade });
+        if (!sparked && k > 0.45) {
+          sparked = true;
+          this.sparks(to.x, to.y, to.z, this.n(7), 6, SPARK0, SPARK1, 0.5, 0.08);
+        }
+        return t < life;
+      },
+      dispose: () => {},
+    });
+    if (Math.random() < this.density) this.puff(to.x, this.ground(to.x, to.z) + 0.2, to.z, 0.6, { vx: rnd(-1, 1), vy: 0.6, vz: rnd(-1, 1), life: 0.9, alpha: 0.35, grow: 2.4 });
+  }
+
+  /** Cleave is called: steel rings out around the squad's leader. */
+  cleaveCall(pos: THREE.Vector3): void {
+    const a = pos.clone().setY(pos.y + 1.1);
+    for (let i = 0; i < 2; i++) this.later(i * 0.12, () => this.cleaveArc(a, a.clone().add(new THREE.Vector3(i ? -1.2 : 1.2, 0, 0.4)), 2.5));
+    this.flash(pos.x, pos.y + 1.4, pos.z, 1.8, [6, 6.5, 8], 0.14);
+  }
+
+  /**
+   * Rain of Arrows: a marked circle, then volleys plunging into it at `wavesSec` (seconds from now).
+   * `fromDir` is the horizontal direction the arrows come from (the archers' side).
+   */
+  arrowRain(pos: THREE.Vector3, radiusM: number, wavesSec: number[], fromDir: THREE.Vector3): void {
+    const { x, z } = pos;
+    const last = Math.max(...wavesSec);
+    this.decal({ kind: DK.warn, x, z, radius: radiusM, life: last + 0.15, r: 3.6, g: 2.0, b: 0.5, rot: 0 });
+    this.decal({ kind: DK.glow, x, z, radius: radiusM * 1.1, life: last + 0.3, r: 0.35, g: 0.2, b: 0.05, fadeIn: 0.2 });
+    const dl = Math.hypot(fromDir.x, fromDir.z) || 1;
+    const bx = fromDir.x / dl;
+    const bz = fromDir.z / dl;
+    const flight = 0.5;
+    const per = this.n(26);
+    for (const w of wavesSec) {
+      this.later(Math.max(0, w - flight), () => {
+        for (let i = 0; i < per; i++) {
+          const a = Math.random() * TAU;
+          const r = Math.sqrt(Math.random()) * radiusM * 0.95;
+          const tx = x + Math.cos(a) * r;
+          const tz = z + Math.sin(a) * r;
+          const to = new THREE.Vector3(tx, this.ground(tx, tz), tz);
+          // steep, fast, from high on the archers' side; a ragged front, not a single sheet
+          const from = new THREE.Vector3(tx + bx * 9 + rnd(-1, 1), to.y + 26 + rnd(-2, 2), tz + bz * 9 + rnd(-1, 1));
+          const delay = rnd(0, 0.22);
+          this.later(delay, () => this.projectiles.launch('arrow', from, to, flight - 0.05 + rnd(0, 0.08), 'line', () => this.impact('arrow', to, 0)));
+        }
+      });
+      // the wave lands: the whole circle kicks up
+      this.later(w, () => {
+        this.dustRing(x, z, this.n(8), radiusM * 0.8, radiusM * 0.3, 1.0, DUST, 0.4);
+        this.decal({ kind: DK.shock, x, z, radius: radiusM * 1.1, life: 0.35, r: 0.6, g: 0.5, b: 0.36 });
+      });
+    }
+    this.kick();
+  }
+
+  /** Thunderous Charge: the lance hits home; a wave of dust and turf is thrown forward from `from` through `to`. */
+  chargeImpact(from: THREE.Vector3, to: THREE.Vector3, radiusM: number): void {
+    const { x, z } = to;
+    const gy = this.ground(x, z);
+    let dx = to.x - from.x;
+    let dz = to.z - from.z;
+    const l = Math.hypot(dx, dz) || 1;
+    dx /= l;
+    dz /= l;
+    this.flash(x, gy + 1, z, 2.6, [7, 6, 4], 0.12);
+    this.sparks(x, gy + 1, z, this.n(14), 9, SPARK0, SPARK1, 0.5, 0.1);
+    // the bow wave: a fan of dust rolling on in the direction of the charge
+    const n = this.n(16);
+    for (let i = 0; i < n; i++) {
+      const a = Math.atan2(dz, dx) + ((i / (n - 1 || 1)) - 0.5) * 2.0;
+      const s = radiusM * rnd(2.2, 3.4);
+      this.puff(x + Math.cos(a) * 0.5, gy + 0.4, z + Math.sin(a) * 0.5, 1.2, { vx: Math.cos(a) * s, vy: rnd(0.6, 1.8), vz: Math.sin(a) * s, life: rnd(1.2, 1.8), alpha: 0.6, grow: 2.4, drag: 2.2 });
+    }
+    for (let i = 0; i < this.n(10); i++) {
+      const a = Math.atan2(dz, dx) + rnd(-0.8, 0.8);
+      const s = rnd(4, 9);
+      this.debris.spawn(x, gy + 0.3, z, Math.cos(a) * s, rnd(3, 7), Math.sin(a) * s, rnd(0.1, 0.24), rnd(2, 3.4), EARTH);
+    }
+    this.decal({ kind: DK.shock, x, z, radius: radiusM * 1.5, life: 0.4, r: 1.0, g: 0.85, b: 0.6 });
+    this.decal({ kind: DK.mark, cell: DECAL.cracks, x, z, radius: radiusM * 0.75, life: 20, r: 0, g: 0, b: 0, alpha: 0.75, fadeIn: 0.08 });
+    this.decal({ kind: DK.scuff, x: x - dx * 1.5, z: z - dz * 1.5, radius: 1.6, life: 20, r: 0, g: 0, b: 0, alpha: 0.5, fadeIn: 0.1 });
+    this.shake(0.28, x, gy, z);
+  }
+
+  /** A soldier is thrown from `from` to `to`: a skid of dust along the ground he ploughs. */
+  knockback(from: THREE.Vector3, to: THREE.Vector3): void {
+    const steps = 4;
+    for (let i = 0; i <= steps; i++) {
+      const k = i / steps;
+      const px = from.x + (to.x - from.x) * k;
+      const pz = from.z + (to.z - from.z) * k;
+      const gy = this.ground(px, pz);
+      this.puff(px, gy + 0.2, pz, 0.5, { vy: rnd(0.3, 0.8), life: rnd(0.8, 1.2), alpha: 0.45, grow: 2.4, delay: k * 0.22 });
+      if (i < steps) this.decal({ kind: DK.scuff, x: px, z: pz, radius: 0.55, life: 14, r: 0, g: 0, b: 0, alpha: 0.45, fadeIn: 0.1, delay: k * 0.22 });
+    }
+    this.sparks(from.x, from.y + 0.6, from.z, this.n(4), 4, SPARK0, SPARK1, 0.6, 0.06);
+  }
+
+  /** Trample: hooves / stone feet hammer the ground; it cracks and heaves under the enemy. */
+  trample(pos: THREE.Vector3, radiusM: number): void {
+    const { x, z } = pos;
+    const gy = this.ground(x, z);
+    this.decal({ kind: DK.mark, cell: DECAL.cracks, x, z, radius: radiusM * 1.05, life: 24, r: 0, g: 0, b: 0, alpha: 0.9, fadeIn: 0.06 });
+    this.decal({ kind: DK.shock, x, z, radius: radiusM * 1.3, life: 0.45, r: 0.9, g: 0.75, b: 0.55 });
+    this.dustRing(x, z, this.n(14), radiusM * 1.4, radiusM * 0.32, 1.5);
+    this.shake(0.22, x, gy, z);
+    // a drumroll of footfalls around the circle, each cracking its own patch
+    const hits = 5;
+    for (let i = 0; i < hits; i++) {
+      const a = (i / hits) * TAU + rnd(-0.4, 0.4);
+      const r = radiusM * rnd(0.35, 0.8);
+      const px = x + Math.cos(a) * r;
+      const pz = z + Math.sin(a) * r;
+      this.later(0.06 + i * 0.09, () => {
+        const py = this.ground(px, pz);
+        this.decal({ kind: DK.mark, cell: DECAL.cracks, x: px, z: pz, radius: radiusM * 0.4, life: 22, r: 0, g: 0, b: 0, alpha: 0.8, fadeIn: 0.05 });
+        this.puff(px, py + 0.3, pz, 0.9, { vy: rnd(1.5, 3), life: rnd(0.9, 1.3), alpha: 0.55, color: DIRT, grow: 2.2, drag: 2.2, gravity: -1.5 });
+        this.debrisBurst(px, py, pz, this.n(4), 4.5, 0.16, EARTH, 1.3);
+        this.debrisBurst(px, py, pz, this.n(2), 4, 0.18);
+        this.shake(0.08, px, py, pz);
+      });
+    }
+  }
+
+  /** Dive Strike: a flier stoops from `from` onto `to`; a streak of wind, then a splash of dust `radiusM` wide. */
+  diveStrike(from: THREE.Vector3, to: THREE.Vector3, radiusM: number, delaySec = 0.2): void {
+    const a = from.clone();
+    const b = to.clone();
+    const head = new THREE.Vector3();
+    const tail = new THREE.Vector3();
+    const core = new THREE.Color(7, 7.5, 8.5);
+    const glow = new THREE.Color(1.6, 2.2, 3.2);
+    const pts: THREE.Vector3[] = Array.from({ length: 8 }, () => new THREE.Vector3());
+    const widths = pts.map((_, i) => 0.02 + (i / 7) * 0.12);
+    const glowW = widths.map((w) => w * 4);
+    const dive = Math.max(0.12, delaySec);
+    let t = 0;
+    let hit = false;
+    this.actor({
+      update: (dt) => {
+        t += dt;
+        const sh = Math.min(1, Math.pow(t / dive, 1.5));
+        const st = Math.min(1, Math.pow(Math.max(0, t - 0.07) / dive, 1.5));
+        head.lerpVectors(a, b, sh);
+        tail.lerpVectors(a, b, st);
+        for (let i = 0; i < pts.length; i++) pts[i].lerpVectors(tail, head, i / (pts.length - 1));
+        const fade = hit ? Math.max(0, 1 - (t - dive) / 0.18) : 1;
+        this.ribbonList.push({ points: pts, width: glowW, color: glow, alpha: 0.35 * fade });
+        this.ribbonList.push({ points: pts, width: widths, color: core, alpha: 0.8 * fade });
+        if (!hit && sh >= 1) {
+          hit = true;
+          const { x, z } = b;
+          const gy = this.ground(x, z);
+          this.flash(x, gy + 0.8, z, 1.6, [4, 4.6, 6], 0.1);
+          this.sparks(x, gy + 0.6, z, this.n(10), 7, SPARK0, SPARK1, 0.6, 0.08);
+          this.dustRing(x, z, this.n(10), radiusM * 2.2, radiusM * 0.5, 1.2);
+          // the splash: dirt thrown straight up in a crown
+          for (let i = 0; i < this.n(8); i++) {
+            const an = (i / this.n(8)) * TAU;
+            this.puff(x + Math.cos(an) * radiusM * 0.4, gy + 0.4, z + Math.sin(an) * radiusM * 0.4, 0.8, { vx: Math.cos(an) * 2.2, vy: rnd(4, 7), vz: Math.sin(an) * 2.2, life: rnd(0.9, 1.3), alpha: 0.55, color: DIRT, grow: 2.2, drag: 2.4, gravity: -3 });
+          }
+          this.debrisBurst(x, gy, z, this.n(6), 5, 0.16, EARTH, 1.2);
+          this.decal({ kind: DK.shock, x, z, radius: radiusM * 1.6, life: 0.4, r: 0.35, g: 0.42, b: 0.55 });
+          this.decal({ kind: DK.scuff, x, z, radius: radiusM * 0.9, life: 18, r: 0, g: 0, b: 0, alpha: 0.6, fadeIn: 0.08 });
+          this.shake(0.14, x, gy, z);
+        }
+        return !hit || t < dive + 0.2;
+      },
+      dispose: () => {},
+    });
   }
 
   // ------------------------------------------------------------------ keeps

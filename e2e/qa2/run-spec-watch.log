@@ -1,0 +1,20 @@
+r2 just after players reached results: S {"phase":"results","round":2,"screen":"screen battle","battleOver":false,"word":null,"acts":[],"banner":null}
+spectator screen at the start of each planning round (players' clock): r1:planning spectating r2:battle r3:battle r4:battle r5:battle r6:battle r7:battle r8:battle
+match over true
+S +1s after match over: {"phase":"over","round":8,"screen":"screen battle","battleOver":false,"word":null,"acts":[],"banner":null} fps 165
+S +4s after match over: {"phase":"over","round":8,"screen":"screen battle","battleOver":false,"word":null,"acts":[],"banner":null} fps 167
+S +8s after match over: {"phase":"over","round":8,"screen":"screen battle","battleOver":false,"word":null,"acts":[],"banner":null} fps 164
+S +15s after match over: {"phase":"over","round":8,"screen":"screen battle","battleOver":false,"word":null,"acts":[],"banner":null} fps 159
+S +25s after match over: {"phase":"over","round":8,"screen":"screen over neutral","battleOver":false,"word":"Alda is victorious | After 8 rounds","acts":["Stop watching"],"banner":null} fps 8
+S +40s after match over: {"phase":"over","round":8,"screen":"screen over neutral","battleOver":false,"word":"Alda is victorious | After 8 rounds","acts":["Stop watching"],"banner":null} fps 10
+S +60s after match over: {"phase":"over","round":8,"screen":"screen over neutral","battleOver":false,"word":"Alda is victorious | After 8 rounds","acts":["Stop watching"],"banner":null} fps 10
+A over fps 10
+rematch lordPick A true
+S +1s after rematch began: {"phase":"lordPick","round":0,"screen":"screen lordpick spect","battleOver":false,"word":null,"acts":[],"banner":null} lcards 4
+S +4s after rematch began: {"phase":"lordPick","round":0,"screen":"screen lordpick spect","battleOver":false,"word":null,"acts":[],"banner":null} lcards 4
+S +10s after rematch began: {"phase":"lordPick","round":0,"screen":"screen lordpick spect","battleOver":false,"word":null,"acts":[],"banner":null} lcards 4
+S +20s after rematch began: {"phase":"lordPick","round":0,"screen":"screen lordpick spect","battleOver":false,"word":null,"acts":[],"banner":null} lcards 4
+LOG
+[A] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0
+[B] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0
+[S] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0

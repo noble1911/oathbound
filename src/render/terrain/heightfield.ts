@@ -41,7 +41,7 @@ export class Heightfield {
       if (c.kind !== 'bridge') continue;
       const z0 = c.z0 - 2.2;
       const z1 = c.z1 + 2.2;
-      this.decks.push({ c, z0, z1, h0: this.ground(c.cx, z0), h1: this.ground(c.cx, z1), arch: 1.05 });
+      this.decks.push({ c, z0, z1, h0: this.ground(c.cx, z0), h1: this.ground(c.cx, z1), arch: 1.4 });
     }
     this.bakeSplat();
   }

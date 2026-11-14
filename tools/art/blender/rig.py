@@ -29,11 +29,14 @@ FINAL_CLIPS = ['idle', 'walk', 'run', 'attack_melee_a', 'attack_melee_b', 'attac
 COMMON = dict(idle='idle', walk='walk', run='run', attack_bow='bow', cast='cast', hit='hit',
               death_a='death_a', death_b='death_b', victory='victory')
 CLIPSETS = {
-    'sword': dict(attack_melee_a='swing_a', attack_melee_b='swing_b'),
+    'sword': dict(attack_melee_a='swing_a', attack_melee_b='swing_b', run='run_sword'),
     'spear': dict(attack_melee_a='thrust_a', attack_melee_b='thrust_b', idle='idle_spear', walk='walk_spear', run='run_spear'),
     'bow': dict(attack_melee_a='jab', attack_melee_b='cross'),
     'cast': dict(attack_melee_a='swing_a', attack_melee_b='swing_b'),
     'fist': dict(attack_melee_a='jab', attack_melee_b='cross'),
+    # two-handed great axe: port-arms carry, overhead chop, horizontal cleave, heavier walk / jog timing
+    'greataxe': dict(attack_melee_a='chop2h', attack_melee_b='cleave2h', idle='idle_axe', walk='walk_axe', run='run_axe',
+                     victory='victory_axe', hit='hit_axe', cast='cast_axe', attack_bow='chop2h'),
 }
 LOOPS = {'idle', 'walk', 'run', 'victory'}
 # weapon holds, in the library T-pose armature space for the left side (x mirrored for the right):
@@ -45,8 +48,10 @@ HOLDS = {
     'shield': dict(bone='forearm', along=0.55, axis=(-1, 0, 0), face=(0, 0, 1), off=0.07),
     # staves run along the forearm toward the elbow, so they stand upright when the arm hangs
     'staff':  dict(bone='hand', along=0.4, axis=(-1, 0, 0), face=(0, -1, 0), off=0.04),
+    # two-handed axe: the right hand sits 0.3 m further up the shaft so the left hand has room below it
+    'greataxe': dict(bone='hand', along=0.45, axis=(0, -1, 0), face=(0, 0, 1), off=0.0, shift=-0.30),
 }
-WEAPON_HOLD = {'weapon_bow': 'bow', 'weapon_tome': 'tome', 'weapon_shield_kite': 'shield', 'weapon_shield_round': 'shield', 'weapon_staff': 'staff'}
+WEAPON_HOLD = {'weapon_axe_great': 'greataxe', 'weapon_bow': 'bow', 'weapon_tome': 'tome', 'weapon_shield_kite': 'shield', 'weapon_shield_round': 'shield', 'weapon_staff': 'staff'}
 
 
 def load_lib():
@@ -195,8 +200,11 @@ def build_rig(aid, lib, co, H):
     for n in ('hips', 'spine1', 'spine2', 'spine3', 'neck', 'head'):
         P[n].y = yc(P[n].z)
     T['head'] = Vector((0, P['head'].y, H * 0.985))
-    if 'crotch' in land:
-        hip = land['crotch'] + 0.05 * H
+    hip_frac = L.assets()[aid].get('hip')
+    if hip_frac or 'crotch' in land:
+        # `hip` (fraction of the height) overrides the detected crotch: under a long armoured skirt the detector
+        # finds the hem, which gave the Warden 22 cm thighs and a waddle
+        hip = hip_frac * H if hip_frac else land['crotch'] + 0.05 * H
         ank = P['foot.L'].z
         P['hips'].z = hip - 0.01 * H
         for sd in 'LR':
@@ -437,6 +445,8 @@ def attach(rig, lib, ob, wid, side, s, name):
     W.translation = lb.head_local + (lb.tail_local - lb.head_local) * hold['along'] + fc * hold['off']
     local = lb.matrix_local.inverted() @ W
     local.translation = local.translation * s
+    if hold.get('shift'):
+        local = local @ Matrix.Translation((0, 0, hold['shift']))        # along the weapon's own axis, in metres
     tb = rig.data.bones[bn]
     world = rig.matrix_world @ tb.matrix_local @ local
     ob.name = name
@@ -471,6 +481,7 @@ def main():
         wnodes.append(dict(id=wid, node=f'{wid}_{side}', bone=bn))
     # clips
     mapping = dict(COMMON, **CLIPSETS[a.get('clipset', 'sword')])
+    mapping.update(a.get('clips', {}))          # per-asset overrides, e.g. {"run": "jog"}
     # hips travel scales with LEG length, not body height: short-legged units (golem, skirted squads) otherwise
     # bob too far and sink below the ground in the death clips
     hs = rig.data.bones['hips'].head_local.z / lib.data.bones['hips'].head_local.z

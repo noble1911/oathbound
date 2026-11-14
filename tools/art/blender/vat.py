@@ -28,8 +28,8 @@ from cleanup import emit_restore, unwrap
 
 OCT = 45
 # canonical crowd clip name -> (source action by clipset, sample fps)
-PRIMARY = {'sword': 'attack_melee_a', 'spear': 'attack_melee_a', 'cast': 'cast', 'bow': 'attack_bow', 'fist': 'attack_melee_a'}
-SECONDARY = {'sword': 'attack_melee_b', 'spear': 'attack_melee_b', 'cast': 'attack_melee_a', 'bow': 'attack_melee_a', 'fist': 'attack_melee_b'}
+PRIMARY = {'sword': 'attack_melee_a', 'spear': 'attack_melee_a', 'cast': 'cast', 'bow': 'attack_bow', 'fist': 'attack_melee_a', 'greataxe': 'attack_melee_a'}
+SECONDARY = {'sword': 'attack_melee_b', 'spear': 'attack_melee_b', 'cast': 'attack_melee_a', 'bow': 'attack_melee_a', 'fist': 'attack_melee_b', 'greataxe': 'attack_melee_b'}
 
 
 def plan(clipset):
@@ -84,7 +84,9 @@ def emit_from(mat, what, mask_img=None):
 def source_mask(o):
     """LOD0 team mask png of a source object (body `<id>`, weapon `weapon_x_L` -> weapon_x)."""
     sid = o.name if not o.name.startswith('weapon_') else o.name.rsplit('_', 1)[0]
-    p = L.WORK / 'clean' / f'{sid}_team.png'
+    p = L.WORK / 'clean' / f'{sid}_unit_team.png'            # mounted units: rider + mount in one atlas
+    if not p.exists():
+        p = L.WORK / 'clean' / f'{sid}_team.png'
     if not p.exists():
         return None
     img = bpy.data.images.load(str(p), check_existing=True)

@@ -59,6 +59,11 @@ export interface RoomView {
   me: { seat: Seat | null; spectator: boolean; isHost: boolean };
   /** The hidden-info filtered match view for `me`; null in the lobby. */
   view: PlayerView | null;
+  /**
+   * Set in phase 'over': why the match ended. reason 'keep' = a Keep fell, 'rounds' = the round limit,
+   * 'concede' = seat `by` gave up (or left the match); `by` is null unless reason is 'concede'.
+   */
+  over?: { reason: 'keep' | 'rounds' | 'concede'; by: Seat | null };
 }
 
 export type ClientMsg =
@@ -76,8 +81,18 @@ export type ClientMsg =
   /** Players only, phase 'over': vote for a rematch; when every human player has, a new match starts with the same seats. */
   | { t: 'rematch' }
   | { t: 'chat'; text: string }
-  /** Give up my seat (lobby: freed; in a match: the bot plays it). */
+  /**
+   * Give up my seat. Lobby: the seat is freed. In a running match this is a concession: the match ends at once
+   * and the opponent wins (same as 'concede'). After the match (phase 'over') the bot takes the seat for a rematch.
+   * A lost connection is NOT a concession: the AI takes over after the grace period until the player returns.
+   */
   | { t: 'leave' }
+  /**
+   * Players only, in a running match (lordPick / planning / battle / results): give up. The room goes to phase
+   * 'over' with the opponent as the winner; RoomView.over = { reason: 'concede', by: <my seat> } and
+   * view.overReason = 'concede'. The conceding player stays in the room (and may ask for a rematch).
+   */
+  | { t: 'concede' }
   | { t: 'ping' };
 
 export type ServerMsg =

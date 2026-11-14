@@ -1,6 +1,8 @@
 """Stage 3 (cleanup): raw TRELLIS GLB -> oriented, grounded, scaled, decimated LOD0/LOD1 with baked textures.
 
 blender -b --factory-startup --python tools/art/blender/cleanup.py -- <id> [--yaw DEG]
+blender -b --factory-startup --python tools/art/blender/cleanup.py -- <id> --regrade     (re-apply assets.json `grade`
+                                                         to the saved bake, no GPU re-bake)
 
 In : art-work/mesh/<id>.glb  (TRELLIS.2 output, ~150k tris, 1024 atlas basecolor + MR)
 Out: art-work/blend/<id>_clean.blend with objects  <id> (LOD0), <id>_lod1  and, for static kinds
@@ -206,11 +208,102 @@ def orient_weapon(ob, a):
     ob.data.update()
 
 
+def solid_mesh(high, vox):
+    """A closed, SOLID stand-in for a TRELLIS mesh, as mesh data. TRELLIS surfaces are thin open shells (fur
+    tufts, kilts, hollow limbs): Blender's voxel remesh keeps them as double-walled sheets, and at crowd-LOD
+    triangle counts those collapse into shards with whole limbs missing (the berserker). Here the surface is
+    voxelised, the outside is flood-filled from the grid border and everything else is kept -- limbs and torso
+    come out filled -- then the blocky hull is re-meshed smooth."""
+    me = high.data
+    me.calc_loop_triangles()
+    nt = len(me.loop_triangles)
+    idx = np.empty(nt * 3, np.int32); me.loop_triangles.foreach_get('vertices', idx)
+    tri = L.verts_np(high)[idx.reshape(-1, 3)]
+    area = np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
+    rng = np.random.default_rng(11)
+    n = 800000
+    pick = rng.choice(nt, n, p=area / area.sum())
+    r1 = np.sqrt(rng.random(n)); r2 = rng.random(n)
+    t = tri[pick]
+    pts = (1 - r1)[:, None] * t[:, 0] + (r1 * (1 - r2))[:, None] * t[:, 1] + (r1 * r2)[:, None] * t[:, 2]
+    lo = pts.min(0) - 3 * vox
+    dim = np.ceil((pts.max(0) - lo) / vox).astype(int) + 4
+    occ = np.zeros(dim, bool)
+    ijk = ((pts - lo) / vox).astype(int)
+    occ[ijk[:, 0], ijk[:, 1], ijk[:, 2]] = True
+
+    def dil(a):
+        b = a.copy()
+        b[1:] |= a[:-1]; b[:-1] |= a[1:]
+        b[:, 1:] |= a[:, :-1]; b[:, :-1] |= a[:, 1:]
+        b[:, :, 1:] |= a[:, :, :-1]; b[:, :, :-1] |= a[:, :, 1:]
+        return b
+    wall = dil(occ)                                    # close pin-holes in the surface
+    out = np.zeros(dim, bool)
+    out[0] = out[-1] = True; out[:, 0] = out[:, -1] = True; out[:, :, 0] = out[:, :, -1] = True
+    out &= ~wall
+    while True:
+        nxt = dil(out) & ~wall
+        if nxt.sum() == out.sum():
+            break
+        out = nxt
+    solid = ~out
+    solid = ~dil(~solid) | occ                         # take the closing layer back off, never the surface itself
+    verts, faces = [], []
+    quads = {0: ((0, 0), (1, 0), (1, 1), (0, 1))}
+    for ax in range(3):
+        for sgn in (1, -1):
+            nb = np.zeros_like(solid)
+            src = [slice(None)] * 3; dst = [slice(None)] * 3
+            if sgn > 0:
+                src[ax] = slice(1, None); dst[ax] = slice(None, -1)
+            else:
+                src[ax] = slice(None, -1); dst[ax] = slice(1, None)
+            nb[tuple(dst)] = solid[tuple(src)]
+            c = np.argwhere(solid & ~nb)
+            if not len(c):
+                continue
+            o1, o2 = [a for a in range(3) if a != ax]
+            for (a, b) in quads[0]:
+                v = c.copy()
+                v[:, ax] += 1 if sgn > 0 else 0
+                v[:, o1] += a; v[:, o2] += b
+                verts.append(v)
+            faces.append(len(c))
+    # verts list is grouped per direction as 4 corner arrays; build quads with shared vertices
+    allv = []; quad_idx = []; base = 0; k = 0
+    for cnt in faces:
+        corners = verts[k:k + 4]; k += 4
+        allv.extend(corners)
+        ids = [base + i * cnt + np.arange(cnt) for i in range(4)]
+        quad_idx.append(np.stack(ids, 1)); base += 4 * cnt
+    allv = np.concatenate(allv); quad_idx = np.concatenate(quad_idx)
+    key = (allv[:, 0].astype(np.int64) * (dim[1] + 2) + allv[:, 1]) * (dim[2] + 2) + allv[:, 2]
+    uniq, first, inv = np.unique(key, return_index=True, return_inverse=True)
+    vco = allv[first] * vox + lo
+    mesh = bpy.data.meshes.new('_solid')
+    mesh.from_pydata(vco.tolist(), [], inv[quad_idx].tolist())
+    mesh.update()
+    ob = bpy.data.objects.new('_solid', mesh)
+    bpy.context.scene.collection.objects.link(ob)
+    L.select_only(ob)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.normals_make_consistent(inside=False)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    rm = ob.modifiers.new('rm', 'REMESH'); rm.mode = 'VOXEL'; rm.voxel_size = vox * 0.8; rm.use_smooth_shade = True
+    sm = ob.modifiers.new('sm', 'SMOOTH'); sm.factor = 0.6; sm.iterations = 4
+    L.apply_mods(ob)
+    out_me = ob.data
+    bpy.data.objects.remove(ob, do_unlink=True)
+    return out_me
+
+
 LIFT = False
 NO_REMESH = False      # vegetation: decimate the TRELLIS mesh directly first (voxel remesh shreds thin leaves + trunks)
 
 
-def make_lod(high, name, budget, tex, height, use_team, voxel, save_mask=False, src=None):
+def make_lod(high, name, budget, tex, height, use_team, voxel, save_mask=False, src=None, solid=False):
     """Voxel-remesh (watertight, so quadric collapse reaches any budget) -> decimate -> unwrap -> bake from
     the TRELLIS high mesh -> material. `src` = start from an existing LOD instead of the high mesh."""
     sc = bpy.context.scene
@@ -224,6 +317,9 @@ def make_lod(high, name, budget, tex, height, use_team, voxel, save_mask=False, 
     for an in ('custom_normal', 'sharp_edge', 'sharp_face', '_TEAM'):
         if an in low.data.attributes:
             low.data.attributes.remove(low.data.attributes[an])
+    if solid:
+        old_me = low.data; low.data = solid_mesh(high, voxel); bpy.data.meshes.remove(old_me)
+        src = low                                        # skip the remesh loop below: just decimate
     keep = low.data.copy()
     for attempt in range(4):
         # many tiny disconnected blobs (leaf clumps) stop quadric collapse early: coarsen the voxels and retry
@@ -291,9 +387,90 @@ def make_lod(high, name, budget, tex, height, use_team, voxel, save_mask=False, 
     return low, L.tris(low), tf
 
 
+def grade(a, low):
+    """Albedo / team-mask grading of the LOD0 bake, driven by assets.json `grade` (all optional):
+      lift [gamma, gain]   brighten a dark TRELLIS bake (wyvern, dragon read near-black in the engine)
+      sat  factor          saturation
+      fur  {to, val, sat, team, zmin, grey}  bright unsaturated non-metal texels (white fur) -> colour `to`,
+           keeping the fur's shading; above zmin (fraction of the height: the mantle, not the boot trim) the
+           pelt instead becomes a neutral grey with team mask `team`, so the unit shows its colour from behind
+      mask_open k          drop team-mask blobs narrower than ~k texels (blue-white shadow speckle on white
+           coats showed as team-coloured static on the horses)
+    Only LOD0 is graded: crowd atlases and every shipped texture are baked from LOD0."""
+    g = a.get('grade')
+    if not g:
+        return None
+    aid = a['id']; H = a['height']
+    base = bpy.data.images[f'{aid}_base']
+    px = L.img_np(base); h, w = px.shape[:2]
+    rgb = px[..., :3].copy()
+    mpath = L.WORK / 'clean' / f'{aid}_team.png'
+    mask = L.load_gray(mpath, w, h) if mpath.exists() else np.zeros((h, w), np.float32)
+    f32 = np.float32
+    if g.get('mask_open'):
+        k = int(g['mask_open'])
+        core = L.box_blur((mask > 0.5).astype(f32), k) > 0.55
+        mask = mask * (L.box_blur(core.astype(f32), k + 2) > 0.02)
+    if 'fur' in g:
+        f = g['fur']
+        mr = bpy.data.images.get(f'{aid}_mr')
+        metal = np.zeros((h, w), f32)
+        if mr is not None:
+            m = L.img_np(mr)[:, :, 2]
+            metal = np.kron(m, np.ones((h // m.shape[0], w // m.shape[1]), f32))
+        mx = rgb.max(2); mn = rgb.min(2); sat = (mx - mn) / (mx + 1e-6)
+        sel = (mx > f.get('val', 0.5)) & (sat < f.get('sat', 0.25)) & (mask < 0.3) & (metal < 0.3)
+        sel = L.box_blur(sel.astype(f32), 3) > 0.4
+        if sel.any():
+            lum = rgb.mean(2); ref = float(np.median(lum[sel]))
+            shade = np.clip(lum / ref, 0.45, 1.3)
+            soft = L.box_blur(sel.astype(f32), 3)[..., None]
+            rgb = rgb * (1 - soft) + np.array(f['to'], f32) * shade[..., None] * soft
+            if f.get('team'):
+                z = L.raster_attr(low, L.verts_np(low)[:, 2] / H, w, h)
+                hi = L.box_blur((sel & (z >= f.get('zmin', 0.5))).astype(f32), 3)
+                rgb = rgb * (1 - hi[..., None]) + np.clip(f.get('grey', 0.6) * shade, 0, 1)[..., None] * hi[..., None]
+                mask = np.maximum(mask, f['team'] * hi)
+            print(f"[cleanup] grade fur: {sel.mean() * 100:.1f}% of the atlas recoloured")
+    if 'lift' in g:
+        gamma, gain = g['lift']
+        rgb = np.clip(rgb ** gamma * gain, 0, 1)
+    if 'sat' in g:
+        l = rgb.mean(2, keepdims=True)
+        rgb = np.clip(l + (rgb - l) * g['sat'], 0, 1)
+    px[..., :3] = rgb
+    L.np_img(base, px); base.pack()
+    L.save_gray(mask, mpath, 256, 256)
+    tf = L.set_team_attr(low, mask)
+    low['team_frac'] = tf
+    print(f'[cleanup] grade {aid}: albedo mean {rgb.reshape(-1, 3).mean(0).round(3)}, team cloth {tf * 100:.1f}% of verts')
+    return tf
+
+
+def regrade(aid):
+    """Grade from the untouched bake: the first call keeps `<id>_clean.orig.blend` + `<id>_team.orig.png`."""
+    import shutil
+    a = L.assets()[aid]
+    blend = L.WORK / 'blend' / f'{aid}_clean.blend'; orig = L.WORK / 'blend' / f'{aid}_clean.orig.blend'
+    mask = L.WORK / 'clean' / f'{aid}_team.png'; morig = L.WORK / 'clean' / f'{aid}_team.orig.png'
+    if not orig.exists():
+        shutil.copyfile(blend, orig)
+        if mask.exists():
+            shutil.copyfile(mask, morig)
+    bpy.ops.wm.open_mainfile(filepath=str(orig))
+    if morig.exists():
+        shutil.copyfile(morig, mask)
+    grade(a, bpy.data.objects[aid])
+    bpy.ops.wm.save_as_mainfile(filepath=str(blend), compress=True)
+
+
 def main():
     args = L.argv()
     aid = args[0]
+    if '--regrade' in args:
+        regrade(aid)
+        print('[cleanup] regraded', aid)
+        return
     yaw_override = float(args[args.index('--yaw') + 1]) if '--yaw' in args else None
     a = L.assets()[aid]
     kind = a['kind']
@@ -372,9 +549,14 @@ def main():
     low, n0, tf = make_lod(high, aid, b0, tex, height, use_team, voxel, save_mask=True)
     # LOD1: decimate LOD0 (keeps thin walls); if that degenerates (furry meshes collapse into fans: too few
     # vertices per triangle) or misses the budget, rebuild from the high mesh via a coarser remesh
-    l1, n1, _ = make_lod(high, f'{aid}_lod1', b1, max(256, tex // 2), height, use_team, voxel, src=low)
+    if a.get('lod1_voxel_div'):
+        # furry / spiky meshes: collapsing LOD0 or a fine remesh leaves shards; a filled voxel hull stays solid
+        l1, n1, _ = make_lod(high, f'{aid}_lod1', b1, max(256, tex // 2), height, use_team,
+                             max(np.ptp(L.verts_np(high), 0)) / a['lod1_voxel_div'], solid=True)
+    else:
+        l1, n1, _ = make_lod(high, f'{aid}_lod1', b1, max(256, tex // 2), height, use_team, voxel, src=low)
     nv = len(l1.data.vertices)
-    if n1 > b1 * 1.05 or n1 > 2.3 * nv:
+    if not a.get('lod1_voxel_div') and (n1 > b1 * 1.05 or n1 > 2.3 * nv):
         print(f'[cleanup] {aid}: LOD1 from LOD0 degenerate ({n1} tris / {nv} verts) -> remesh path')
         old = l1; old.name = '_old_lod1'
         l1, n1, _ = make_lod(high, f'{aid}_lod1', b1, max(256, tex // 2), height, use_team, voxel * 2.5)
@@ -390,6 +572,13 @@ def main():
     (L.WORK / 'blend').mkdir(parents=True, exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=str(L.WORK / 'blend' / f'{aid}_clean.blend'), compress=True)
     (L.WORK / 'clean').mkdir(parents=True, exist_ok=True)
+    for stale in (L.WORK / 'blend' / f'{aid}_clean.orig.blend', L.WORK / 'clean' / f'{aid}_team.orig.png'):
+        if stale.exists():
+            stale.unlink()
+    if a.get('grade') and kind not in ('prop', 'weapon'):
+        regrade(aid)
+        print('[cleanup] done', aid)
+        return
     if kind in ('prop', 'weapon'):
         # props are final here (static, origin at base centre); weapons only feed rig.py
         dst = L.OUT if kind == 'prop' else L.WORK / 'clean'

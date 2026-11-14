@@ -13,6 +13,8 @@ export interface Backend {
   rematch(): void;
   chat(text: string): void;
   leave(): void;
+  /** PvP, in a running match: give up and stay in the room for the result (`{ t: 'concede' }`). Absent offline. */
+  concede?(): void;
 }
 
 export interface AppHandlers {

@@ -41,6 +41,20 @@ export class CanopyGrid {
     this.disc(cx, cz, r, b.max.y);
   }
 
+  /** Stamp a world-space box's own footprint (no margin beyond the cells it touches). */
+  rect(b: THREE.Box3): void {
+    const cx0 = Math.max(0, Math.floor((b.min.x - WORLD.x0) / CELL));
+    const cx1 = Math.min(this.w - 1, Math.floor((b.max.x - WORLD.x0) / CELL));
+    const cz0 = Math.max(0, Math.floor((b.min.z - WORLD.z0) / CELL));
+    const cz1 = Math.min(this.h - 1, Math.floor((b.max.z - WORLD.z0) / CELL));
+    for (let j = cz0; j <= cz1; j++) {
+      for (let i = cx0; i <= cx1; i++) {
+        const k = j * this.w + i;
+        if (b.max.y > this.top[k]) this.top[k] = b.max.y;
+      }
+    }
+  }
+
   /** Every visible instance of an instanced mesh, as a crown disc. */
   instanced(mesh: THREE.InstancedMesh, radiusK = 0.8): void {
     if (!mesh.visible || mesh.count === 0) return;

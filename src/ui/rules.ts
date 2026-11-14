@@ -5,9 +5,11 @@
 // catch-up, and the controls.
 import type { UnitType } from '../sim/types.ts';
 import { UNITS, UNIT_TYPES } from '../sim/data/units.ts';
-import { SLOT_UNLOCK_LEVEL, LEGENDARY_MIN_ROUND } from '../sim/data/items.ts';
-import { ARMY_CAP, BASE_DEPLOY_LIMIT, CATCHUP_GOLD, KEEP_HP, MAX_SQUAD_LEVEL, START_GOLD, income } from '../sim/match.ts';
-import * as match from '../sim/match.ts';
+import { SLOT_UNLOCK_LEVEL, LEGENDARY_EVERY } from '../sim/data/items.ts';
+import { lootSchedule } from '../sim/loot.ts';
+import type { Rarity } from '../sim/types.ts';
+import { ARMY_CAP, BASE_DEPLOY_LIMIT, KEEP_HP, MAX_SQUAD_LEVEL, START_GOLD, income } from '../sim/match.ts';
+import { LORDS } from '../sim/data/lords.ts';
 import { sound } from '../audio.ts';
 import { $, el, esc, store } from './dom.ts';
 import { icon } from './icons.ts';
@@ -62,15 +64,48 @@ function effectiveRows(): string {
   return rows.join('');
 }
 
-function catchUp(): string {
-  const m = match as unknown as Record<string, number | undefined>;
-  const perRound = m.CATCHUP_PER_ROUND;
-  const perDef = m.CATCHUP_PER_DEFICIT;
-  const under = m.UNDERDOG_DEFICIT;
-  let t = `<li><b>Losing a round pays +${CATCHUP_GOLD} gold</b>${perRound ? `, plus ${perRound} per round played${perDef ? ` and ${perDef} for every point your Keep trails by` : ''}` : ''}.</li>`;
-  if (under) t += `<li>Trail by <b>${under} points of Keep life</b> or more and you may deploy <b>one extra squad</b> next round.</li>`;
-  t += '<li>The loser\'s <b>spoils roll one rarity tier higher</b>.</li>';
-  return t;
+/** The viewer's deploy limit this round, when they are in a match (set by the app); null otherwise. */
+let deployLimit: () => number | null = () => null;
+export function setRulesContext(limit: () => number | null): void {
+  deployLimit = limit;
+}
+const marshalBonus = (): string => {
+  const m = Object.values(LORDS).find((l) => l.id === 'marshal');
+  return m ? `${BASE_DEPLOY_LIMIT + 1} with ${esc(m.title)} ${esc(m.name)}` : 'some Lords add one';
+};
+/** "3 new squads" for the viewer's own limit in a match, else the base rule with its exceptions. */
+function deployText(): { n: string; note: string } {
+  const mine = deployLimit();
+  if (mine && mine > 0) return { n: `${mine} new squad${mine === 1 ? '' : 's'}`, note: mine === BASE_DEPLOY_LIMIT ? ` (the base limit; ${marshalBonus()}, and some relics add more)` : ` this round (the base limit is ${BASE_DEPLOY_LIMIT}; your Lord and relics add the rest)` };
+  return { n: `${BASE_DEPLOY_LIMIT} new squads`, note: ` (${marshalBonus()}; some relics add more)` };
+}
+
+const RARITY_NAME: Record<Rarity, string> = { common: 'Common', magic: 'Magic', rare: 'Rare', legendary: 'Legendary' };
+
+/**
+ * The loot schedule as the sim rolls it (lootSchedule): the same three rarities for both commanders
+ * every round, in bands ("Rounds 3-5: 1 Rare, 2 Magic"), with every Nth round's best item Legendary.
+ */
+export function lootBands(maxRound = 12): { from: number; to: number | null; counts: [Rarity, number][] }[] {
+  const legendary = (r: number): boolean => r >= LEGENDARY_EVERY && r % LEGENDARY_EVERY === 0;
+  // a Legendary round belongs to the band of the rounds after it (its best item is swapped, the rest is the band's)
+  const sig = (r: number): string => [...lootSchedule(legendary(r) ? r + 1 : r)].sort().join(',');
+  const bands: { from: number; to: number | null; counts: [Rarity, number][] }[] = [];
+  for (let r = 1; r <= maxRound; r++) {
+    const last = bands.at(-1);
+    if (last && sig(last.from) === sig(r)) { last.to = r; continue; }
+    const counts = new Map<Rarity, number>();
+    for (const x of lootSchedule(legendary(r) ? r + 1 : r)) counts.set(x, (counts.get(x) ?? 0) + 1);
+    bands.push({ from: r, to: r, counts: (['legendary', 'rare', 'magic', 'common'] as Rarity[]).filter((x) => counts.has(x)).map((x) => [x, counts.get(x)!]) });
+  }
+  if (bands.length) bands.at(-1)!.to = null;
+  return bands;
+}
+
+function lootTable(): string {
+  const bands = lootBands();
+  return `<div class="rl-sched">${bands.map((b) => `<div><small>${b.to === null ? `Round ${b.from}+` : b.from === b.to ? `Round ${b.from}` : `Rounds ${b.from}–${b.to}`}</small><p>${b.counts.map(([x, n]) => `<span class="r-${x}">${n} ${RARITY_NAME[x]}</span>`).join('')}</p></div>`).join('')}
+    <div class="leg"><small>Every ${LEGENDARY_EVERY === 3 ? '3rd' : `${LEGENDARY_EVERY}th`} round</small><p><span class="r-legendary">1 Legendary</span></p></div></div>`;
 }
 
 function page(id: TabId): string {
@@ -81,14 +116,14 @@ function page(id: TabId): string {
       return `<h3>Break their Keep</h3>
         <p class="lead">Each commander holds a <b>Keep with ${KEEP_HP.toLocaleString('en-US')} life</b>. Bring the enemy Keep to zero and the war is yours.</p>
         <div class="rl-flow">
-          <div class="rl-step"><i>1</i><b>Plan</b><p>Both commanders plan in secret, at the same time. Deploy up to <b>${BASE_DEPLOY_LIMIT} new squads</b> on your half, level squads up, equip loot. Press <kbd>Space</kbd> when ready.</p></div>
+          <div class="rl-step"><i>1</i><b>Plan</b><p>Both commanders plan in secret, at the same time. Deploy up to <b>${deployText().n}</b> a round on your half${deployLimit() ? '' : ` (${marshalBonus()})`}, level squads up, equip loot. Press <kbd>Space</kbd> when ready.</p></div>
           <div class="rl-step"><i>2</i><b>Battle</b><p>The armies fight on their own: no orders. A battle ends when one army is wiped out, or after <b>1:30</b>.</p></div>
           <div class="rl-step"><i>3</i><b>Siege</b><p>The winner's <b>surviving squads march on the enemy Keep</b>. Costlier and higher-level survivors hit harder, and later rounds add more.</p></div>
           <div class="rl-step"><i>4</i><b>Spoils</b><p>Pick <b>1 item of 3</b> and unlock <b>a new unit type</b>. Then plan again.</p></div>
         </div>
         <ul class="rl-list">
           <li><b>Your army is permanent.</b> Every squad returns at full strength next round, where you placed it.</li>
-          <li><b>You see where the enemy stood <i>last</i> round</b> (the red ghosts, <kbd>Tab</kbd>), never what they are doing now. Counter it.</li>
+          <li><b>You see where the enemy stood <i>last</i> round</b> (the red ghosts on the far half, always shown from round 2), never what they are doing now. Counter it.</li>
           <li>If time runs out, both sides deal only <b>half</b> Keep damage from what still stands.</li>
           <li>Your <b>Lord</b> is a hero on the field with a passive, an ability that fires by itself, and three item slots. If the Lord falls, they are back next round.</li>
         </ul>`;
@@ -121,7 +156,7 @@ function page(id: TabId): string {
       return `<h3>The battlefield</h3>
         <p class="lead">The field is mirrored, so both sides get the same ground. Where you stand matters.</p>
         <div class="rl-grid">
-          <div class="rl-card t-forest"><small>Forest</small><p>Ranged attacks against units inside <b>miss 40%</b> of the time. Movement <b>−30%</b>.</p></div>
+          <div class="rl-card t-forest"><small>Forest</small><p>Units inside take <b>−40%</b> ranged damage. Movement <b>−30%</b>.</p></div>
           <div class="rl-card t-hill"><small>Hill</small><p>Ranged units standing on a hill deal <b>+15% damage</b>.</p></div>
           <div class="rl-card t-river"><small>River</small><p>Wading costs <b>half your speed</b>. Bridges are free, fords are slightly slow. Fliers ignore it.</p></div>
           <div class="rl-card t-ruins"><small>Ruins</small><p>Light cover: units inside take <b>−25%</b> ranged damage.</p></div>
@@ -132,8 +167,10 @@ function page(id: TabId): string {
         </ul>`;
     case 'loot':
       return `<h3>Loot</h3>
-        <p class="lead">After every round you choose <b>1 item of 3</b>. An item works on <b>every soldier</b> of the squad that carries it.</p>
-        <div class="rl-rar"><span class="r-common">Common</span><span class="r-magic">Magic · 1–2 affixes</span><span class="r-rare">Rare · 3–4 affixes</span><span class="r-legendary">Legendary · a unique power (round ${LEGENDARY_MIN_ROUND}+)</span></div>
+        <p class="lead">After every round you choose <b>1 item of 3</b>: a weapon, an armor and a relic. An item works on <b>every soldier</b> of the squad that carries it.</p>
+        <p>The offer follows a <b>fixed schedule</b>, and <b>your opponent is offered the same items</b>. Nothing is rolled for luck.</p>
+        ${lootTable()}
+        <div class="rl-rar"><span class="r-magic">Magic · 1–2 affixes</span><span class="r-rare">Rare · 3–4 affixes</span><span class="r-legendary">Legendary · a unique power</span></div>
         <h3>Slots and levels</h3>
         <div class="rl-slots">
           <div class="rl-slot"><i>${icon('weapon')}</i><b>Weapon</b><small>from level 1</small></div>
@@ -156,12 +193,17 @@ function page(id: TabId): string {
         </div>
         <ul class="rl-list">
           <li>Unspent gold <b>carries over</b>.</li>
-          <li><b>${BASE_DEPLOY_LIMIT} new squads per round</b> (some Lords and relics add one). Levelling up and equipping are unlimited.</li>
+          <li><b>${deployText().n} per round</b>${deployText().note}. Levelling up and equipping are unlimited.</li>
           <li>Army cap: <b>${ARMY_CAP} squads</b>, not counting your Lord.</li>
           <li>Selling refunds <b>half</b>, but only in the round the squad was deployed. Its items return to your stash.</li>
         </ul>
-        <h3>Falling behind</h3>
-        <ul class="rl-list">${catchUp()}</ul>`;
+        <h3>Equal terms</h3>
+        <ul class="rl-list">
+          <li>Both commanders get the <b>same income</b> every round, win or lose. There is no catch-up gold.</li>
+          <li>Both are offered the <b>same loot</b> and the <b>same choice of new unit types</b>.</li>
+          <li>Battles have <b>no dice</b>: no misses, and critical hits come on a count (a squad with 10% critical rate lands one every 10th attack).</li>
+          <li>Only your choices differ.</li>
+        </ul>`;
     case 'keys':
       return `<h3>Controls</h3>
         <dl class="keys big">
@@ -170,7 +212,7 @@ function page(id: TabId): string {
           <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Pan the camera (also drag; wheel zooms; right-drag turns)</dd>
           <dt><kbd>Home</kbd></dt><dd>Reset the camera</dd>
           <dt><kbd>Space</kbd></dt><dd>Ready / un-ready</dd>
-          <dt><kbd>Tab</kbd></dt><dd>Show / hide where the enemy stood last round</dd>
+          <dt><kbd>Tab</kbd></dt><dd>Select your next squad (<kbd>Shift</kbd>+<kbd>Tab</kbd>: the previous one)</dd>
           <dt><kbd>U</kbd></dt><dd>Level up the selected squad</dd>
           <dt><kbd>Del</kbd></dt><dd>Sell the selected squad (press twice)</dd>
           <dt><kbd>C</kbd></dt><dd>Battle camera: director / free</dd>

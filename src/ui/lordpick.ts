@@ -24,12 +24,16 @@ export function lordPortrait(id: LordId, cls = ''): string {
   </div>`;
 }
 
+const FOOT = 'Both players may pick the same Lord. Picks are revealed together.';
+const FOOT_TIMED = ' If the timer runs out, a Lord is chosen for you.';
+
 export class LordPickScreen {
   readonly root: HTMLElement;
   private timer: HTMLElement;
   private iv: ReturnType<typeof setInterval>;
   private picked: LordId | null = null;
   private endsAt = 0;
+  private spectator = false;
 
   constructor(ui: HTMLElement, pick: (l: LordId) => void, spectator: boolean) {
     const key = art('keyart');
@@ -37,8 +41,9 @@ export class LordPickScreen {
       <header class="lp-head"><small class="eyebrow">Choose your Lord</small><h2>Who leads your host?</h2>
         <div class="lp-timer">${icon('timer')}<b>30</b></div></header>
       <div class="lp-cards">${LORD_IDS.map((id) => this.card(id)).join('')}</div>
-      <p class="lp-foot muted">${spectator ? 'The commanders are choosing their Lords…' : 'Both players may pick the same Lord. Picks are revealed together. If the timer runs out, a Lord is chosen for you.'}</p>
+      <p class="lp-foot muted">${spectator ? 'The commanders are choosing their Lords…' : FOOT}</p>
     </div>`);
+    this.spectator = spectator;
     this.timer = $(this.root, '.lp-timer b');
     ui.appendChild(this.root);
     if (!spectator)
@@ -90,6 +95,8 @@ export class LordPickScreen {
       this.root.querySelector(`.lcard[data-lord="${me.lord}"]`)?.classList.add('chosen');
     }
     const foot = $(this.root, '.lp-foot');
+    // the timer is only mentioned when there is one (the tutorial has none)
+    if (!this.picked && !this.spectator) foot.textContent = FOOT + (this.endsAt ? FOOT_TIMED : '');
     if (this.picked) foot.textContent = room.view?.enemy.ready || room.view?.enemy.lord ? 'Your rival has chosen. Revealing…' : 'Waiting for your rival to choose…';
     this.tick();
   }

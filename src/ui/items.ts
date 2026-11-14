@@ -1,8 +1,10 @@
 // ARPG item presentation: the rarity-framed icon and the Diablo-style tooltip built from the sim's
 // `itemLines()` (name in rarity colour, base type, implicit, affixes, orange legendary power and
-// italic flavour), with an optional comparison block against the equipped item.
-import type { BaseId, Item, ItemLine, LordId, Slot, SquadType } from '../sim/types.ts';
+// italic flavour), the ability block of a skill item (icon, name, cooldown, effect, who can use it),
+// with an optional comparison block against the equipped item.
+import type { BaseId, Item, ItemLine, LordId, SkillId, Slot, SquadType } from '../sim/types.ts';
 import { itemLines } from '../sim/loot.ts';
+import { SKILLS, canEquip, skillCooldownSec, usableByText } from '../sim/data/skills.ts';
 import { esc } from './dom.ts';
 import { art } from './art.ts';
 import { icon } from './icons.ts';
@@ -28,9 +30,58 @@ export function itemIcon(item: Item | null, opts: { slot?: Slot; size?: 'sm' | '
   return `<div class="islot item ${size} r-${item.rarity}${item.legendary ? ' leg' : ''}" style="--rar:${RARITY_CSS[item.rarity]}" data-item="${item.id}" data-slot="${item.slot}" ${opts.drag ? 'data-drag="1"' : ''} ${opts.extra ?? ''}>${art(`item_${item.base}`) ? `<i class="islot-img" style="background-image:url(${art(`item_${item.base}`)})"></i>` : icon(BASE_ICON[item.base] ?? item.slot)}</div>`;
 }
 
+/** The glyph of an item skill (generated art `skill_<id>` when the manifest has it). */
+export const SKILL_ICON: Record<SkillId, string> = {
+  fireball: 'flame', chain_lightning: 'lightning', frost_nova: 'star', mending_light: 'heart',
+  shield_wall: 'shield', war_cry: 'flag', cleave: 'axe',
+  fire_arrows: 'bow', pinning_shot: 'bolt', rain_of_arrows: 'bow',
+  thunderous_charge: 'mounted', trample: 'large', dive_strike: 'flier', incendiary_payload: 'stone',
+};
+
+/** The square icon slot of an ability (item tooltips and the squad panel's ability chips). */
+export function skillGlyph(skill: SkillId | null | undefined, fallback = 'star'): string {
+  const img = skill ? art(`skill_${skill}`) : '';
+  return `<i class="sk-i"${img ? ` style="background-image:url(${img})"` : ''}>${img ? '' : icon(skill ? SKILL_ICON[skill] ?? fallback : fallback)}</i>`;
+}
+
+/** "10 s" / "7.5 s". */
+export function cooldownText(sec: number): string {
+  return `${Math.round(sec * 10) / 10} s`;
+}
+
+/**
+ * Why a squad of this type cannot wear `item`, or null when it can. Only skill items are
+ * class-locked (the sim's canEquip): "Pikemen cannot use this: only Casters can use Fireball".
+ */
+export function equipRefusal(item: Item, on: ItemTarget): string | null {
+  if (!item.skill || canEquip(item, on.type, on.lord)) return null;
+  return `${unitName(on.type, on.lord)} cannot use this: only ${usableByText(item.skill)} can use ${SKILLS[item.skill].name}`;
+}
+
+/**
+ * The ability block of a skill item: icon slot, name, the cooldown set apart on the right, what it
+ * does, when it is cast and who can use it (`refused` = the squad the tooltip is judged against cannot).
+ */
+function skillBlock(item: Item, lines: ItemLine[], refused: boolean): string {
+  const id = item.skill!;
+  const text = lines.find((l) => l.kind === 'skillText')?.text ?? '';
+  const usable = lines.find((l) => l.kind === 'usable')?.text ?? `Usable by: ${usableByText(id)}`;
+  // "<effect>. Cast when: <trigger>."
+  const cut = text.indexOf('. Cast when: ');
+  const effect = cut < 0 ? text : text.slice(0, cut + 1);
+  const when = cut < 0 ? '' : text.slice(cut + 2);
+  return `<div class="it-rule"></div><div class="it-skill">
+    <div class="it-sk-h">${skillGlyph(id)}<div><small>Grants ability</small><b>${esc(SKILLS[id].name)}</b></div><span class="sk-cd">${icon('timer')}${cooldownText(skillCooldownSec(id))}</span></div>
+    ${effect ? `<div class="it-sk-t">${esc(wording(effect))}</div>` : ''}
+    ${when ? `<div class="it-sk-w">${esc(wording(when))}</div>` : ''}
+    <div class="it-sk-u${refused ? ' bad' : ''}">${esc(usable)}</div>
+  </div>`;
+}
+
 /** One wording everywhere: the sim's affix text says "Flying units", the HUD says "Flier". */
 function wording(t: string): string {
-  return t.replace(/Flying units/g, 'Fliers').replace(/Flying/g, 'Flier');
+  // crits are counted, not rolled: a rate, never a chance
+  return t.replace(/\bFlying units\b/g, 'Fliers').replace(/\bFlying\b/g, 'Flier').replace(/critical strike chance/gi, 'critical rate').replace(/critical chance/gi, 'critical rate');
 }
 
 function line(l: ItemLine, item: Item, dead: string | null = null): string {
@@ -56,10 +107,13 @@ function line(l: ItemLine, item: Item, dead: string | null = null): string {
 export function itemTooltip(item: Item, opts: { compare?: Item | null; compareLabel?: string; hint?: string; on?: ItemTarget | null } = {}): string {
   const lines = itemLines(item);
   const dead = opts.on ? deadLines(item, opts.on.type, opts.on.lord) : null;
+  // a skill item on a squad of the wrong class: it cannot be equipped there at all
+  const refusal = opts.on ? equipRefusal(item, opts.on) : null;
   let body = '';
   // the header (name + base) goes in the banner; the rest below
   const head = lines.filter((l) => l.style === 'name' || l.style === 'base');
   const rest = lines.filter((l) => l.style !== 'name' && l.style !== 'base');
+  const skill = item.skill ? rest.filter((l) => l.kind) : [];
   let ai = 0;
   const why = (l: ItemLine): string | null => {
     if (!dead) return null;
@@ -68,16 +122,26 @@ export function itemTooltip(item: Item, opts: { compare?: Item | null; compareLa
     return null;
   };
   body += `<div class="it-head">${head.map((l) => line(l, item)).join('')}</div>`;
-  body += `<div class="it-body">${rest.map((l) => line(l, item, why(l))).join('')}`;
-  if (opts.compare !== undefined) {
+  body += '<div class="it-body">';
+  let blockDone = false;
+  for (const l of rest) {
+    if (!l.kind || !item.skill) body += line(l, item, why(l));
+    else if (!blockDone) {
+      // the three skill lines (name + cooldown, effect, who can use it) read as one ability block
+      body += skillBlock(item, skill, !!refusal);
+      blockDone = true;
+    }
+  }
+  if (opts.compare !== undefined && !refusal) {
     const deltas = compareItems(item, opts.compare);
     body += `<div class="it-cmp"><div class="it-cmp-h">${esc(opts.compareLabel ?? (opts.compare ? 'If equipped instead' : 'Slot is empty'))}</div>`;
     body += deltas.length ? deltas.map((d) => `<div class="${d.good ? 'up' : 'down'}">${d.good ? '▲' : '▼'} ${esc(wording(d.text))}</div>`).join('') : '<div class="same">No change</div>';
     body += '</div>';
   }
-  if (opts.hint) body += `<div class="it-hint">${esc(opts.hint)}</div>`;
+  if (refusal) body += `<div class="it-hint bad">${esc(refusal)}</div>`;
+  else if (opts.hint) body += `<div class="it-hint">${esc(opts.hint)}</div>`;
   body += '</div>';
-  return `<div class="itip r-${item.rarity}" style="--rar:${RARITY_CSS[item.rarity]}">${body}</div>`;
+  return `<div class="itip r-${item.rarity}${item.skill ? ' has-skill' : ''}" style="--rar:${RARITY_CSS[item.rarity]}">${body}</div>`;
 }
 
 /** "Armor slot opens at squad level 2". */
@@ -97,6 +161,6 @@ export function deadSummary(item: Item, on: ItemTarget): string | null {
 /** Two tooltips side by side: the hovered item and what it would replace. */
 export function itemTooltipPair(item: Item, equipped: Item | null, hint?: string, on?: ItemTarget | null): string {
   const main = itemTooltip(item, { compare: equipped, hint, on });
-  if (!equipped) return main;
+  if (!equipped || (on && equipRefusal(item, on))) return main;
   return `<div class="itip-pair">${main}<div class="itip-eq"><div class="itip-eq-h">Equipped</div>${itemTooltip(equipped, { on })}</div></div>`;
 }

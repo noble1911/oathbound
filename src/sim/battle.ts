@@ -1,27 +1,37 @@
-// Real-time deterministic battle (DESIGN §7). 20 Hz, integer maths, stateless hashed RNG.
+// Real-time deterministic battle (DESIGN §7). 20 Hz, integer maths, and NO random rolls at all: critical hits come
+// on a per-soldier counter (every 100 / crit% attacks), forest cover is a flat damage reduction, and the first-attack
+// stagger depends only on a soldier's place in its own army. The same two armies always fight the same battle.
 //
 // Fairness by construction (see tests/sim.mirror.test.ts):
 //  * Positions are ints whose 180-degree mirror is exact (x -> 7999 - x); all divisions truncate (sign-symmetric).
 //  * Every tick is "Jacobi": decisions read the tick-start snapshot, damage/heal/buffs/deaths accumulate and are
 //    applied at the end of the tick, so nothing depends on whether seat 0 or seat 1 is processed first.
-//  * Random rolls are hash(seed, tick, canonical soldier key, salt), where the key depends only on the squad's index
-//    in its own army and the soldier's index in the squad — never on the seat.
+//  * Per-soldier counters (crit, attack stagger) are keyed by the squad's index in its own army and the soldier's
+//    index in the squad — never by the seat or the match seed.
 //  * Seat 1's flow field is the exact mirror of seat 0's.
 import { CELL, FIELD_H, FIELD_W, GRID_W, KEYFRAME_TICKS, MARCH_TICKS, MAX_BATTLE_TICKS } from './constants.ts';
-import { LORDS, LORD_LEVEL_DMG, LORD_LEVEL_HP } from './data/lords.ts';
+import { ARCHMAGE_MAGIC_PCT, LORDS, LORD_LEVEL_DMG, LORD_LEVEL_HP, METEOR_BASE, METEOR_PER_LEVEL, RALLY_PCT } from './data/lords.ts';
+import { ABILITY_CD, SKILLS, SKILL_START_CD, canEquip, skillNum } from './data/skills.ts';
 import { UNITS } from './data/units.ts';
 import { LORD_POWER, UNIT_POWER } from './data/balance.ts';
-import { angleOf, icos, idiv, isin, isqrt, mix4 } from './fixed.ts';
+import { angleOf, icos, idiv, isin, isqrt } from './fixed.ts';
 import { modsOf, type ItemMods } from './loot.ts';
-import { KEEP_DMG_BASE_PER_ROUND, keepDamageOf } from './match.ts';
+import { keepDamageOf } from './match.ts';
 import {
-  ABILITY_CODES, ARC_CODES, EK, FrameEncoder, PROJ_CODES, REVIVE_CODES, WEAPON_CODES, encodeEvents, keepSource, toBase64,
+  ABILITY_CODES, ARC_CODES, EK, FrameEncoder, KEEP_SRC_BASE, PROJ_CODES, REPLAY_VERSION, REVIVE_CODES, SKILL_CODES, STAT_CAUSES, TALLY_TICKS, WEAPON_CODES,
+  encodeEvents, keepSource, toBase64,
 } from './replay.ts';
 import { DIRS, KIND_CODE, MOVE_PCT, RIVER_Y0, RIVER_Y1, cellOf, navFor } from './terrain.ts';
 import type {
   AbilityEventKind, ArcType, BattleEnd, BattleOutput, BattleResult, DamageType, KeepInfo, LordId, MatchState, ProjectileKind, Replay, ReplaySoldier,
-  Seat, SimulateOptions, SoldierType, Squad, Tag, Vec2, WeaponKind,
+  ReplaySquad, Seat, SimulateOptions, SkillId, SoldierType, Squad, StatCause, Tag, Vec2, WeaponKind,
 } from './types.ts';
+
+/** Ledger cause codes (index into STAT_CAUSES). */
+const cz = (c: StatCause): number => STAT_CAUSES.indexOf(c);
+const C_ATTACK = cz('attack'), C_BURN = cz('burn'), C_THORNS = cz('thorns'), C_TOWER = cz('tower'), C_CHAIN = cz('chain'), C_EMBER = cz('ember_burst'),
+  C_SUNFIRE = cz('sunfire'), C_METEOR = cz('meteor'), C_SKYFALL = cz('skyfall'), C_HEAL = cz('heal'), C_LEECH = cz('leech'), C_LIFEBINDER = cz('lifebinder'),
+  C_BLOOD = cz('bloodthirst'), C_REVIVE = cz('revive'), C_ROUT = cz('rout');
 
 // ---------------------------------------------------------------- tuning constants
 
@@ -36,16 +46,25 @@ const LEVEL_DMG = 20;
 const AGGRO = 1400;
 const BUCKET = 400;
 const BW = FIELD_W / BUCKET, BH = FIELD_H / BUCKET;
-const SKELETON = { hp: 5000, dmg: 700, atk: 22, speed: 15, radius: 45, range: 120 };
+const SKELETON = { hp: 7000, dmg: 1000, atk: 22, speed: 15, radius: 45, range: 120 };
+/** Ranged damage a flier shrugs off when shot from the ground (percent; unitSkills quotes it). */
+export const FLIER_EVADE_PCT = 15;
+/** Legendary numbers (the item texts in data/items.ts quote these). */
+const HYDRA_PCT = 40, KINGSBANE_PCT = 300, FROSTHEART_PCT = 30, STORM_PCT = 30, BLOOD_HEAL_PCT = 10, BLOOD_HASTE = 10, GRAVE_MAX = 14;
 const KEEP_Y = 150;
+/** Keep centre -> its front wall face, half the wall's width, and tower centre -> its foot (cm).
+ *  Must match the castle the renderer draws (src/render/terrain/keep.ts: the art Keep's footprint). */
+const KEEP_FRONT = 340;
+const KEEP_HALF_W = 850;
+const TOWER_FRONT = 230;
 const TOWER_RANGE = 2200, TOWER_DMG = 900, TOWER_TICKS = 30;
 /** Global damage scale (percent) — sets the overall battle pace. */
 const DMG_SCALE = 200;
 /** Stall detection: no damage for STALL_TICKS after the first contact (or no contact by NO_CONTACT_TICKS) ends the battle. */
-export const STALL_TICKS = 300;
+export const STALL_TICKS = 200;
 export const NO_CONTACT_TICKS = 1200;
 /** One side unable to target anything left on the other side for this long also ends the battle. */
-export const HELPLESS_TICKS = 300;
+export const HELPLESS_TICKS = 200;
 /** A timeout / stalemate is won on points by a lead of at least this many percentage points; closer is a draw. */
 export const POINTS_MARGIN = 5;
 /** Army value of the Lord for points: LORD_POINTS_BASE + LORD_POINTS_PER_LEVEL x level. */
@@ -98,9 +117,15 @@ interface Stats {
   L: Set<string>;
   ilvl: number;
   phoenix: boolean;
+  /** Item-granted active skills (already filtered by class). */
+  skills: { id: SkillId; ilvl: number }[];
 }
+export type BattleStats = Stats;
 
 interface BSquad {
+  /** Index in Battle.squads = row in Replay.squads. */
+  row: number;
+  skills: { id: SkillId; ilvl: number; cd: number }[];
   side: Seat;
   sideIdx: number;
   id: number;
@@ -152,10 +177,34 @@ interface Sol {
   pendingBurn: number; pendingBurnSrc: Sol | null;
   xpValue: number;
   dealt: number;
+  // Skill buffs (applied at end of tick, like Rally).
+  wallUntil: number; wallPct: number; cryUntil: number; cryPct: number; cleaveUntil: number; cleavePct: number;
+  /** Crit counter: +crit% per attack; an attack that takes it to 100 is critical (and takes 100 off). */
+  critAcc: number;
+  /** Knockback displacement to apply at the end of this tick. */
+  kx: number; ky: number;
+  /** Ledger cause of the current burn (C_BURN, or the skill that lit it). */
+  burnCause: number; pendingBurnCause: number;
+  /** Ledger scratch: effective / raw damage and healing left to attribute this tick. */
+  eD: number; rD: number; eH: number; rH: number;
+}
+
+/** Riders of a skill strike (kind 'skill'). */
+interface SkFx {
+  /** Flat damage in centi-HP; 0 = `mul` percent of the owner's attack damage. */
+  dmg: number;
+  type: DamageType;
+  /** Burn in centi-HP per second, slow percent and its duration in ticks, knockback distance in cm. */
+  burn: number; slow: number; slowTicks: number; knock: number;
+  /** Does not touch fliers. */
+  ground: boolean;
 }
 
 interface Strike {
-  kind: 'hit' | 'meteor' | 'skyfall' | 'ember' | 'keep' | 'tower';
+  kind: 'hit' | 'meteor' | 'skyfall' | 'ember' | 'keep' | 'tower' | 'skill';
+  /** Ledger cause (default: a plain attack) and, for kind 'skill' or skill volleys, the riders. */
+  cause?: number;
+  sk?: SkFx;
   owner: Sol | null;
   side: Seat;
   target: Sol | null;
@@ -171,8 +220,10 @@ interface Strike {
   reflected: boolean;
   extra: boolean; // hydra / secondary: no on-hit legend procs
   towerSrc: number;
-  /** Seat-independent roll sequence (owner's attack count based) for crit / miss rolls. */
+  /** The owner's attack count when the strike was made (kept for debugging; nothing is rolled from it). */
   seq: number;
+  /** A critical strike (decided by the attacker's crit counter when it swung): every hit of the strike is x1.5. */
+  crit?: boolean;
 }
 
 // ---------------------------------------------------------------- stats
@@ -181,7 +232,8 @@ function hasL(m: ItemMods, l: string): boolean {
   return m.legend.has(l);
 }
 
-function buildStats(sq: Squad, lordOf: LordId | null): Stats {
+/** Battle stats of a squad (per soldier; hp / dmg / heal in centi-HP). Exported for squadSheet (sheet.ts). */
+export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: LordId | null): Stats {
   const m = modsOf(sq.items);
   let base;
   let lvlHp: number, lvlDmg: number;
@@ -263,10 +315,11 @@ function buildStats(sq: Squad, lordOf: LordId | null): Stats {
     prefLarge: sq.type === 'ballista',
     prefFlier: sq.type === 'archers',
     raider: traits.includes('raider'),
-    magicBonus: lordOf === 'archmage' && base.damageType === 'magic' ? 15 : 0,
+    magicBonus: lordOf === 'archmage' && base.damageType === 'magic' ? ARCHMAGE_MAGIC_PCT : 0,
     L: m.legend,
     ilvl: m.ilvl,
     phoenix: m.phoenix,
+    skills: m.skills.filter((k) => canEquip({ skill: k.id }, sq.type, lordOf)),
   };
   if (st.healer) st.canHitAir = true;
   speedPct = 0;
@@ -279,11 +332,12 @@ function skeletonStats(): Stats {
     radius: SKELETON.radius, crit: 0, leech: 0, thorns: 0, burn: 0, frost: 0, heal: 0, tags: T_INFANTRY, weapon: 'sword', dmgType: 'physical',
     proj: 'none', eff: {}, slay: {}, ranged: false, canHitAir: false, healer: false, brace: false, charge: false, pierce: false, stomp: false,
     cone: false, slowTurn: false, ignoresArmor: false, crushing: false, backline: false, prefLarge: false, prefFlier: false, raider: false, magicBonus: 0,
-    L: new Set(), ilvl: 1, phoenix: false,
+    L: new Set(), ilvl: 1, phoenix: false, skills: [],
   };
 }
 
-function squadSize(sq: Squad): number {
+/** Soldiers in the squad at the start of a battle (Warhorn adds some). */
+export function squadSize(sq: Pick<Squad, 'type' | 'items'>): number {
   if (sq.type === 'lord') return 1;
   const n = UNITS[sq.type].squadSize;
   const m = modsOf(sq.items);
@@ -316,6 +370,7 @@ class Battle {
   pending: Strike[][] = [];
   pid = 0;
   ev: number[] = [];
+  /** Classic events only (Replay.eventCount); skill and tally events are not counted. */
   evCount = 0;
   lastEvTick = 0;
   frames = new FrameEncoder();
@@ -341,12 +396,16 @@ class Battle {
   marchChunk = 0;
   keepDamage: [number, number] = [0, 0];
   survivors: [number[], number[]] = [[], []];
-  queuedBuffs: { sol: Sol; kind: 'rally' | 'bulwark'; until: number }[] = [];
+  queuedBuffs: { sol: Sol; kind: 'rally' | 'bulwark' | 'wall' | 'cry' | 'cleave'; until: number; pct: number }[] = [];
+  // Statistics ledger (only when recording): this tick's raw contributions, and the running TALLY_TICKS window.
+  cT: Sol[] = []; cS: number[] = []; cC: number[] = []; cA: number[] = []; cM: number[] = []; cH: number[] = [];
+  tally = new Map<number, [number, number, number, number]>();
 
   constructor(st: MatchState, record: boolean) {
     this.st = st;
     this.record = record;
-    this.seed = mix4(st.seed, st.round, 0x5eed, 7);
+    // Carried in the replay header only: the battle itself rolls nothing.
+    this.seed = st.seed;
     this.nav = navFor(st.terrain);
     this.grid = this.nav.grid;
     this.flow = this.nav.flow;
@@ -380,6 +439,7 @@ class Battle {
     const stats = buildStats(sq, lord);
     const n = squadSize(sq);
     const b: BSquad = {
+      row: this.squads.length, skills: stats.skills.map((k) => ({ id: k.id, ilvl: k.ilvl, cd: SKILL_START_CD })),
       side, sideIdx: idx, id: sq.id, type: sq.type, lord: sq.type === 'lord' ? lord : null, level: sq.level, st: stats, sols: [],
       ax: sq.pos[0], ay: sq.pos[1], facing: sq.facing & 255, engaged: false, engagedNext: false, macro: null, c2x: 0, c2y: 0, alive: n,
       phoenix: stats.phoenix, grave: 0, slotErr: 0, slotErrNext: 0, abilityCd: sq.type === 'lord' ? 100 : 0, summon: false, healTarget: null,
@@ -406,13 +466,16 @@ class Battle {
     const hp = st.hp;
     const s: Sol = {
       i: this.sols.length, side: b.side, key: b.sideIdx * 256 + k, sq: b, st, ox, oy, x, y, nx: x, ny: y, hp, maxHp: hp, alive: true, spawnTick,
-      cd: (mix4(this.seed, b.sideIdx, k, 11) % (st.atk * 50)), target: null, facing: b.facing, anim: 0, animUntil: 0,
+      // First attacks are staggered over half an attack interval by the soldier's place in its army (no randomness).
+      cd: ((b.sideIdx * 7 + k * 13) % 50) * st.atk, target: null, facing: b.facing, anim: 0, animUntil: 0,
       chargeReady: st.charge, firstStrike: st.L.has('windrunner'), lastAttack: -1000, reflects: st.L.has('mirror_aegis') ? 3 : 0,
       undying: st.L.has('undying_oath'), burnDps: 0, burnUntil: 0, burnSrc: null, slowPct: 0, slowUntil: 0, rallyUntil: 0, bulwarkUntil: 0,
       dmgAcc: 0, healAcc: 0, killer: null, killerDmg: 0, killerTower: -1, attacks: 0, blood: 0, summoned, moved: false, relocate: null,
       pendingSlow: 0, pendingSlowUntil: 0, pendingBurn: 0, pendingBurnSrc: null,
       xpValue: b.type === 'lord' ? 30 : b.type === 'skeleton' ? 0 : Math.max(1, Math.round(UNITS[b.type as keyof typeof UNITS].cost / UNITS[b.type as keyof typeof UNITS].squadSize / 8)),
       dealt: 0,
+      wallUntil: 0, wallPct: 0, cryUntil: 0, cryPct: 0, cleaveUntil: 0, cleavePct: 0, kx: 0, ky: 0, burnCause: C_BURN, pendingBurnCause: C_BURN,
+      eD: 0, rD: 0, eH: 0, rH: 0, critAcc: (b.sideIdx * 29 + k * 37) % 100,
     };
     this.sols.push(s);
     b.sols.push(s);
@@ -430,14 +493,41 @@ class Battle {
     if (!this.record) return;
     this.ev.push(this.t - this.lastEvTick, kind, ...f);
     this.lastEvTick = this.t;
-    this.evCount++;
+    if (kind < EK.skill) this.evCount++;
   }
   emitAbility(src: number, tgt: number, a: AbilityEventKind, x: number, y: number, radius: number, dur: number): void {
     this.emit(EK.ability, src, tgt, ABILITY_CODES.indexOf(a), x, y, radius, dur);
   }
 
-  rnd(key: number, salt: number): number {
-    return mix4(this.seed, this.t, key, salt) % 10000;
+  /** A 'skill' event: `lead` casts `id` at (x, y) / soldier `tgt` / squad `tb`. */
+  emitSkill(lead: Sol, id: SkillId, tgt: Sol | null, tb: BSquad | null, x: number, y: number, radius: number, dur: number): void {
+    this.emit(EK.skill, lead.i, lead.sq.row, SKILL_CODES.indexOf(id), tgt ? tgt.i : -1, tb ? tb.row : -1, x, y, radius, dur);
+    lead.anim = 3; lead.animUntil = this.t + 12;
+  }
+
+  /** Ledger: note a raw contribution to soldier `d` this tick (settled against the HP it really lost / gained in endOfTick). */
+  note(d: Sol, src: number, cause: number, amt: number, mit: number, heal: number): void {
+    this.cT.push(d); this.cS.push(src); this.cC.push(cause); this.cA.push(amt); this.cM.push(mit); this.cH.push(heal);
+  }
+  tallyAdd(src: number, tgtRow: number, cause: number, dmg: number, mit: number, heal: number, n: number): void {
+    const key = ((src >= KEEP_SRC_BASE ? 3000 + (src - KEEP_SRC_BASE) : src + 1) * 4096 + tgtRow) * 64 + cause;
+    const e = this.tally.get(key);
+    if (e) { e[0] += dmg; e[1] += mit; e[2] += heal; e[3] += n; }
+    else this.tally.set(key, [dmg, mit, heal, n]);
+  }
+  flushTally(): void {
+    if (!this.tally.size) return;
+    for (const [key, e] of this.tally) {
+      if (!e[0] && !e[1] && !e[2]) continue;
+      const cause = key % 64, rest = (key - cause) / 64, tgt = rest % 4096, s = (rest - tgt) / 4096;
+      this.emit(EK.tally, s >= 3000 ? KEEP_SRC_BASE + (s - 3000) : s - 1, tgt, cause, e[0], e[1], e[2], e[3]);
+    }
+    this.tally.clear();
+  }
+  /** Queue a heal on `o` from `by` (applied at the end of the tick). */
+  heal(o: Sol, amt: number, by: Sol | null, cause: number): void {
+    o.healAcc += amt;
+    if (this.record) this.note(o, by ? by.sq.row : -1, cause, amt, 0, 1);
   }
 
   // ---------------------------------------------------------------- spatial queries
@@ -578,10 +668,10 @@ class Battle {
         if (!nearEnemy) continue;
         const r = L.ability === 'rally' ? 2000 : 1200;
         const dur = L.ability === 'rally' ? 200 : 120;
-        this.near(b.side, s.x, s.y, r, (o) => this.queuedBuffs.push({ sol: o, kind: L.ability as 'rally' | 'bulwark', until: this.t + dur }));
+        this.near(b.side, s.x, s.y, r, (o) => this.queuedBuffs.push({ sol: o, kind: L.ability as 'rally' | 'bulwark', until: this.t + dur, pct: 0 }));
         this.emitAbility(s.i, -1, L.ability, s.x, s.y, r, dur);
         s.anim = 3; s.animUntil = this.t + 12;
-        b.abilityCd = L.ability === 'rally' ? 280 : 340;
+        b.abilityCd = ABILITY_CD[L.ability];
       } else if (L.ability === 'meteor') {
         // Densest enemy cluster within 40 m.
         let best: Sol | null = null, bestN = 0;
@@ -593,11 +683,11 @@ class Battle {
         if (!best || bestN < 3) continue;
         const tg = best as Sol;
         const lvl = b.level;
-        const dmg = (50 + 10 * lvl) * 100;
+        const dmg = (METEOR_BASE + METEOR_PER_LEVEL * lvl) * 100;
         this.queueStrike({ kind: 'meteor', owner: s, side: b.side, target: null, ax: tg.x, ay: tg.y, fx: s.x, fy: s.y, mul: 100, pid: 0, proj: 'none', melee: false, hill: false, dmg, radius: 1000, reflected: false, extra: true, towerSrc: -1, seq: 0 }, 30);
         this.emitAbility(s.i, tg.i, 'meteor', tg.x, tg.y, 1000, 30);
         s.anim = 3; s.animUntil = this.t + 16;
-        b.abilityCd = 300;
+        b.abilityCd = ABILITY_CD.meteor;
       } else if (L.ability === 'skyfall') {
         // Furthest enemy ranged squad.
         let best: BSquad | null = null, bd = -1;
@@ -615,9 +705,284 @@ class Battle {
         this.queueStrike({ kind: 'skyfall', owner: s, side: b.side, target: land, ax: land.x, ay: land.y, fx: s.x, fy: s.y, mul: 100, pid: 0, proj: 'none', melee: true, hill: false, dmg, radius: 400, reflected: false, extra: true, towerSrc: -1, seq: 0 }, 14);
         this.emitAbility(s.i, land.i, 'skyfall', land.x, land.y, 400, 14);
         s.anim = 3; s.animUntil = this.t + 14;
-        b.abilityCd = 360;
+        b.abilityCd = ABILITY_CD.skyfall;
       }
     }
+  }
+
+  // ---------------------------------------------------------------- item skills
+
+  /** The squad's caster: its first living soldier. */
+  leader(b: BSquad): Sol | null {
+    for (const s of b.sols) if (s.alive && s.spawnTick <= this.t) return s;
+    return null;
+  }
+
+  /**
+   * The enemy soldier within `range` of (x, y) (and beyond `minRange`) with the most enemies within `r` of it, if
+   * that is at least `need`. `ground` skips fliers. Ties go to the lower key, so the choice is seat-independent.
+   */
+  cluster(enemy: Seat, x: number, y: number, range: number, minRange: number, r: number, need: number, ground: boolean): Sol | null {
+    let best: Sol | null = null, bestN = 0;
+    const t = this.t, min2 = minRange * minRange;
+    this.near(enemy, x, y, range, (e, d2) => {
+      if (e.spawnTick > t || d2 < min2 || (ground && e.st.tags & T_FLIER)) return;
+      let n = 0;
+      this.near(enemy, e.x, e.y, r, (o) => { if (o.spawnTick <= t && !(ground && o.st.tags & T_FLIER)) n++; });
+      if (n > bestN || (n === bestN && best && e.key < best.key)) { best = e; bestN = n; }
+    });
+    return bestN >= need ? best : null;
+  }
+
+  /** Share (0..100) of life left among the squad's living soldiers. */
+  lifeShare(b: BSquad): number {
+    let hp = 0, max = 0;
+    for (const s of b.sols) if (s.alive && s.spawnTick <= this.t) { hp += s.hp; max += s.maxHp; }
+    return max > 0 ? idiv(hp * 100, max) : 100;
+  }
+
+  /** One hit of a skill on `d`: damage through the usual armour / resistance rules, then its riders. */
+  skillHit(a: Sol, d: Sol, cause: number, fx: SkFx, mul: number, fromX: number, fromY: number): void {
+    const r = this.damage(a.st, null, d, mul, false, false, false, fx.type, fx.dmg);
+    this.credit(d, r.dmg, a, -1, cause, r.mit);
+    this.emit(EK.hit, a.i, d.i, Math.ceil(r.dmg / 100), (r.eff ? 2 : 0) | ((r.tri + 1) << 3));
+    if (fx.burn && fx.burn > d.pendingBurn) { d.pendingBurn = fx.burn; d.pendingBurnSrc = a; d.pendingBurnCause = cause; }
+    if (fx.slow && fx.slow >= d.pendingSlow) { d.pendingSlow = fx.slow; d.pendingSlowUntil = this.t + fx.slowTicks; }
+    if (fx.knock && !(d.st.tags & (T_FLIER | T_LARGE)) && !d.kx && !d.ky) {
+      const dx = d.x - fromX, dy = d.y - fromY, l = isqrt(dx * dx + dy * dy);
+      if (l > 0) { d.kx = idiv(dx * fx.knock, l); d.ky = idiv(dy * fx.knock, l); }
+      else d.ky = sideSign(a.side) * fx.knock;
+      this.emitAbility(a.i, d.i, 'knockback', clampX(d.x + d.kx), clampY(d.y + d.ky), 0, 0);
+    }
+  }
+
+  /** A skill strike lands (kind 'skill'): everything within `radius` of the impact, or the target alone. */
+  resolveSkill(k: Strike): void {
+    const a = k.owner!, fx = k.sk!, t = this.t, enemy = (1 - k.side) as Seat, cause = k.cause ?? C_ATTACK;
+    let ix = k.ax, iy = k.ay;
+    const tg = k.target;
+    if (tg && tg.alive) { ix = tg.x; iy = tg.y; }
+    if (k.pid > 0) this.emit(EK.impact, k.pid, ix, iy, PROJ_CODES.indexOf(k.proj), k.radius);
+    if (k.radius > 0) {
+      this.near(enemy, ix, iy, k.radius, (d) => {
+        if (d.spawnTick > t || (fx.ground && d.st.tags & T_FLIER)) return;
+        this.skillHit(a, d, cause, fx, k.mul, k.fx, k.fy);
+      });
+    } else if (tg && tg.alive) this.skillHit(a, tg, cause, fx, k.mul, k.fx, k.fy);
+  }
+
+  skillStrike(owner: Sol, id: SkillId, target: Sol | null, x: number, y: number, radius: number, mul: number, fx: SkFx): Strike {
+    return {
+      kind: 'skill', cause: cz(id), sk: fx, owner, side: owner.side, target, ax: x, ay: y, fx: owner.x, fy: owner.y, mul, pid: 0, proj: 'none',
+      melee: false, hill: false, dmg: 0, radius, reflected: false, extra: true, towerSrc: -1, seq: 0,
+    };
+  }
+
+  skillPass(): void {
+    for (const b of this.squads) {
+      if (!b.skills.length || !b.alive) continue;
+      for (const k of b.skills) {
+        if (k.cd > 0) { k.cd--; continue; }
+        // A failed trigger is polled again a quarter of a second later.
+        k.cd = this.castSkill(b, k.id, k.ilvl) ? SKILLS[k.id].cooldown : 5;
+      }
+    }
+  }
+
+  /** Try to cast `id`; false when its trigger does not hold. Effects obey the Jacobi rule (applied at end of tick). */
+  castSkill(b: BSquad, id: SkillId, ilvl: number): boolean {
+    const lead = this.leader(b);
+    if (!lead) return false;
+    const t = this.t, enemy = (1 - b.side) as Seat, cause = cz(id);
+    const n = skillNum(id, ilvl);
+    const FX = (dmg: number, type: DamageType, o: Partial<SkFx> = {}): SkFx => ({ dmg, type, burn: 0, slow: 0, slowTicks: 0, knock: 0, ground: false, ...o });
+    const countNear = (x: number, y: number, r: number, ground: boolean): number => {
+      let c = 0;
+      this.near(enemy, x, y, r, (o) => { if (o.spawnTick <= t && !(ground && o.st.tags & T_FLIER)) c++; });
+      return c;
+    };
+    /** Soldiers of the squad whose target is alive and in reach right now. */
+    const strikers = (): Sol[] => {
+      const out: Sol[] = [];
+      for (const s of b.sols) {
+        const e = s.target;
+        if (!s.alive || s.spawnTick > t || !e || !this.canHit(s, e)) continue;
+        const dx = e.x - s.x, dy = e.y - s.y, reach = this.reach(s, e);
+        if (dx * dx + dy * dy <= reach * reach) out.push(s);
+      }
+      return out;
+    };
+    switch (id) {
+      case 'fireball': {
+        const c = this.cluster(enemy, lead.x, lead.y, 2200, 0, 350, 3, false);
+        if (!c) return false;
+        this.emitSkill(lead, id, c, c.sq, c.x, c.y, 350, 0);
+        // Homes on the soldier at the heart of the cluster (lands where it fell if it dies on the way).
+        const k = this.skillStrike(lead, id, c, c.x, c.y, 350, 100, FX(n.a * 100, 'magic', { burn: n.b * 100 }));
+        k.proj = 'fireball';
+        const dx = c.x - lead.x, dy = c.y - lead.y;
+        this.launch(k, isqrt(dx * dx + dy * dy), 0);
+        return true;
+      }
+      case 'chain_lightning': {
+        let first: Sol | null = null, bd = 0;
+        this.near(enemy, lead.x, lead.y, 2000, (o, d2) => {
+          if (o.spawnTick > t) return;
+          if (!first || d2 < bd || (d2 === bd && o.key < first.key)) { first = o; bd = d2; }
+        });
+        if (!first) return false;
+        const f0 = first as Sol;
+        this.emitSkill(lead, id, f0, f0.sq, f0.x, f0.y, 0, 0);
+        const fx = FX(n.a * 100, 'magic');
+        const hit: Sol[] = [];
+        let prev = lead, cur: Sol | null = f0, mul = 100;
+        for (let j = 0; j < 5 && cur; j++) {
+          this.emitAbility(prev.i, cur.i, 'chain', cur.x, cur.y, 0, 0);
+          this.skillHit(lead, cur, cause, fx, mul, prev.x, prev.y);
+          hit.push(cur);
+          prev = cur;
+          mul = idiv(mul * 80, 100);
+          let best: Sol | null = null, d0 = 0;
+          this.near(enemy, prev.x, prev.y, 500, (o, d2) => {
+            if (hit.includes(o) || o.spawnTick > t) return;
+            if (!best || d2 < d0 || (d2 === d0 && o.key < best.key)) { best = o; d0 = d2; }
+          });
+          cur = best;
+        }
+        return true;
+      }
+      case 'frost_nova': {
+        if (countNear(lead.x, lead.y, 700, false) < 2) return false;
+        this.emitSkill(lead, id, null, null, lead.x, lead.y, 700, 80);
+        const fx = FX(n.a * 100, 'magic', { slow: 50, slowTicks: 80 });
+        this.near(enemy, lead.x, lead.y, 700, (o) => { if (o.spawnTick <= t) this.skillHit(lead, o, cause, fx, 100, lead.x, lead.y); });
+        return true;
+      }
+      case 'mending_light': {
+        let best: BSquad | null = null, bs = 70;
+        const l2x = 2 * lead.x - (FIELD_W - 1), l2y = 2 * lead.y - (FIELD_H - 1);
+        for (const a of this.sideSquads[b.side]) {
+          if (!a.alive) continue;
+          const dx = idiv(a.c2x - l2x, 2), dy = idiv(a.c2y - l2y, 2);
+          if (dx * dx + dy * dy > 1800 * 1800) continue;
+          const share = this.lifeShare(a);
+          if (share < bs) { best = a; bs = share; }
+        }
+        if (!best) return false;
+        const tb = best as BSquad;
+        const tl = this.leader(tb) ?? lead;
+        this.emitSkill(lead, id, tl, tb, tl.x, tl.y, 0, 0);
+        for (const o of tb.sols) {
+          if (!o.alive || o.spawnTick > t || o.hp >= o.maxHp) continue;
+          const amt = Math.min(idiv(o.maxHp * n.a, 100), o.maxHp - o.hp);
+          this.heal(o, amt, lead, cause);
+          this.emit(EK.heal, lead.i, o.i, Math.ceil(amt / 100));
+        }
+        return true;
+      }
+      case 'shield_wall': {
+        if (this.lifeShare(b) >= 85 && b.alive >= b.sols.length) return false;
+        if (countNear(lead.x, lead.y, 900, false) < 1) return false;
+        this.emitSkill(lead, id, null, b, lead.x, lead.y, 0, 100);
+        for (const o of b.sols) {
+          if (!o.alive || o.spawnTick > t) continue;
+          this.queuedBuffs.push({ sol: o, kind: 'wall', until: t + 100, pct: n.a });
+          this.emitAbility(lead.i, o.i, 'shield_wall', o.x, o.y, 0, 100);
+        }
+        return true;
+      }
+      case 'war_cry': {
+        if (countNear(lead.x, lead.y, 800, false) < 1) return false;
+        this.emitSkill(lead, id, null, b, lead.x, lead.y, 1000, 120);
+        this.near(b.side, lead.x, lead.y, 1000, (o) => {
+          if (o.spawnTick <= t) this.queuedBuffs.push({ sol: o, kind: 'cry', until: t + 120, pct: n.a });
+        });
+        return true;
+      }
+      case 'cleave': {
+        if (lead.st.ranged || countNear(lead.x, lead.y, 400, true) < 4) return false;
+        this.emitSkill(lead, id, null, b, lead.x, lead.y, 0, 80);
+        for (const o of b.sols) if (o.alive && o.spawnTick <= t) this.queuedBuffs.push({ sol: o, kind: 'cleave', until: t + 80, pct: n.a });
+        return true;
+      }
+      case 'fire_arrows':
+      case 'pinning_shot': {
+        if (!lead.st.ranged) return false;
+        const who = strikers();
+        if (!who.length) return false;
+        const e0 = who[0].target!;
+        this.emitSkill(lead, id, e0, e0.sq, e0.x, e0.y, 0, 0);
+        const fx = id === 'fire_arrows' ? FX(0, lead.st.dmgType, { burn: n.a * 100 }) : FX(0, lead.st.dmgType, { slow: 50, slowTicks: 80 });
+        const mul = id === 'fire_arrows' ? 100 : n.a;
+        for (const s of who) {
+          const e = s.target!;
+          const dx = e.x - s.x, dy = e.y - s.y;
+          const hill = this.terrainCode(s.x, s.y) === KIND_CODE.hill;
+          s.anim = 2; s.animUntil = t + 8;
+          this.launch({
+            kind: 'hit', cause, sk: fx, owner: s, side: s.side, target: e, ax: e.x, ay: e.y, fx: s.x, fy: s.y, mul, pid: 0, proj: s.st.proj === 'none' ? 'arrow' : s.st.proj,
+            melee: false, hill, dmg: 0, radius: 0, reflected: false, extra: true, towerSrc: -1, seq: s.attacks * 4 + 3,
+          }, isqrt(dx * dx + dy * dy), 0);
+        }
+        return true;
+      }
+      case 'rain_of_arrows': {
+        if (!lead.st.ranged) return false;
+        const c = this.cluster(enemy, lead.x, lead.y, lead.st.range, 0, 500, 5, false);
+        if (!c) return false;
+        this.emitSkill(lead, id, c, c.sq, c.x, c.y, 500, 40);
+        for (let w = 0; w < 3; w++) this.queueStrike(this.skillStrike(lead, id, null, c.x, c.y, 500, 100, FX(n.a * 100, 'physical')), 16 + 12 * w);
+        return true;
+      }
+      case 'thunderous_charge': {
+        const who = strikers();
+        if (!who.length) return false;
+        const s = who[0], e = s.target!;
+        this.emitSkill(s, id, e, e.sq, e.x, e.y, 300, 0);
+        this.queueStrike(this.skillStrike(s, id, null, e.x, e.y, 300, 100, FX(n.a * 100, 'physical', { knock: 200, ground: true })), 3);
+        return true;
+      }
+      case 'trample': {
+        if (countNear(lead.x, lead.y, 350, true) < 3) return false;
+        this.emitSkill(lead, id, null, null, lead.x, lead.y, 350, 0);
+        const fx = FX(n.a * 100, 'physical', { slow: 30, slowTicks: 40, ground: true });
+        this.near(enemy, lead.x, lead.y, 350, (o) => { if (o.spawnTick <= t && !(o.st.tags & T_FLIER)) this.skillHit(lead, o, cause, fx, 100, lead.x, lead.y); });
+        return true;
+      }
+      case 'dive_strike': {
+        const who = strikers();
+        if (!who.length) return false;
+        const e0 = who[0].target!;
+        this.emitSkill(lead, id, e0, e0.sq, e0.x, e0.y, 200, 0);
+        for (const s of who) {
+          const e = s.target!;
+          s.anim = 2; s.animUntil = t + 8;
+          this.queueStrike(this.skillStrike(s, id, e, e.x, e.y, 200, n.a, FX(0, s.st.dmgType)), 4);
+        }
+        return true;
+      }
+      case 'incendiary_payload': {
+        if (!lead.st.ranged) return false;
+        const c = this.cluster(enemy, lead.x, lead.y, lead.st.range, lead.st.minRange, 400, 3, true);
+        if (!c) return false;
+        this.emitSkill(lead, id, c, c.sq, c.x, c.y, 400, 80);
+        const dx = c.x - lead.x, dy = c.y - lead.y, dist = isqrt(dx * dx + dy * dy);
+        // A light pot of pitch on a flat, fast throw (at most 0.8 s in the air), so it lands where the enemy stands.
+        const proj: ProjectileKind = lead.st.proj === 'none' ? 'stone' : lead.st.proj;
+        const flight = Math.min(16, this.flight(proj, dist, 0));
+        for (let w = 0; w < 4; w++) {
+          const k = this.skillStrike(lead, id, null, c.x, c.y, 400, 100, FX(n.a * 100, 'magic', { ground: true }));
+          if (w === 0) {
+            k.proj = proj;
+            k.pid = ++this.pid;
+            this.emit(EK.projectile, k.pid, lead.i, c.i, PROJ_CODES.indexOf(proj), ARC_CODES.indexOf('arc'), lead.x, lead.y, c.x, c.y, flight);
+          }
+          this.queueStrike(k, flight + 20 * w);
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------- soldiers
@@ -654,7 +1019,8 @@ class Battle {
       const flier = (st.tags & T_FLIER) !== 0;
       const slow = s.slowUntil > t ? s.slowPct : 0;
       // Attack cooldown (centi-ticks); Rally and Bloodthirst speed it up.
-      s.cd -= 100 + (s.rallyUntil > t ? 30 : 0) + s.blood * 10;
+      const cry = s.cryUntil > t ? s.cryPct : 0;
+      s.cd -= 100 + (s.rallyUntil > t ? (cry > RALLY_PCT ? cry : RALLY_PCT) : cry) + s.blood * BLOOD_HASTE;
       if (s.cd < -100) s.cd = -100;
       if (this.marching) { this.marchSoldier(s); continue; }
       if (st.healer) { this.healerAct(s); continue; }
@@ -752,9 +1118,13 @@ class Battle {
     const windup = st.slowTurn ? 12 : 0;
     const delay = st.proj === 'none' ? (st.slowTurn ? 12 : Math.min(6, st.atk >> 1)) : this.flight(st.proj, dist, windup);
     this.emit(EK.attack, s.i, e.i, WEAPON_CODES.indexOf(st.weapon), PROJ_CODES.indexOf(st.proj), delay);
+    // Critical hits are counted, not rolled: with 20% crit every fifth attack of this soldier is critical.
+    s.critAcc += st.crit;
+    const crit = s.critAcc >= 100;
+    if (crit) s.critAcc -= 100;
     const base: Strike = {
       kind: 'hit', owner: s, side: s.side, target: e, ax: e.x, ay: e.y, fx: s.x, fy: s.y, mul: 100, pid: 0, proj: st.proj,
-      melee: !st.ranged, hill, dmg: 0, radius: st.splash, reflected: false, extra: false, towerSrc: -1, seq: s.attacks * 4,
+      melee: !st.ranged, hill, dmg: 0, radius: st.splash, reflected: false, extra: false, towerSrc: -1, seq: s.attacks * 4, crit,
     };
     if (st.proj === 'none') {
       this.queueStrike(base, delay);
@@ -772,7 +1142,7 @@ class Battle {
           if (!best) break;
           const o = best as Sol;
           picked.push(o);
-          this.launch({ ...base, target: o, ax: o.x, ay: o.y, mul: 55, extra: true, seq: base.seq + 1 + k }, isqrt(bd), 0);
+          this.launch({ ...base, target: o, ax: o.x, ay: o.y, mul: HYDRA_PCT, extra: true, seq: base.seq + 1 + k }, isqrt(bd), 0);
         }
       }
     }
@@ -807,7 +1177,7 @@ class Battle {
     if (best) {
       const o = best as Sol;
       const amt = Math.min(st.heal, o.maxHp - o.hp);
-      o.healAcc += amt;
+      this.heal(o, amt, s, C_HEAL);
       s.cd += st.atk * 100;
       s.anim = 3; s.animUntil = t + 10;
       s.facing = faceOr(s.facing, o.x - s.x, o.y - s.y);
@@ -845,7 +1215,7 @@ class Battle {
 
   // ---------------------------------------------------------------- damage
 
-  damage(a: Stats, aSol: Sol | null, d: Sol, mul: number, crit: boolean, hill: boolean, ranged: boolean, dmgType: DamageType, baseOverride: number): { dmg: number; eff: boolean; tri: number } {
+  damage(a: Stats, aSol: Sol | null, d: Sol, mul: number, crit: boolean, hill: boolean, ranged: boolean, dmgType: DamageType, baseOverride: number): { dmg: number; eff: boolean; tri: number; mit: number } {
     let dmg = baseOverride > 0 ? baseOverride : a.dmg;
     dmg = idiv(dmg * mul, 100);
     let tri = 0;
@@ -857,7 +1227,7 @@ class Battle {
     let effPct = 100;
     const tags = d.st.tags;
     for (const tag in a.eff) if (tags & TAG_BIT[tag as Tag]) effPct = Math.max(effPct, a.eff[tag as Tag]!);
-    if (a.L.has('kingsbane') && tags & (T_LORD | T_LARGE)) effPct = Math.max(effPct, 300);
+    if (a.L.has('kingsbane') && tags & (T_LORD | T_LARGE)) effPct = Math.max(effPct, KINGSBANE_PCT);
     if (a.crushing && tags & T_ARMORED) effPct = Math.max(effPct, 150);
     let slay = 0;
     for (const tag in a.slay) if (tags & TAG_BIT[tag as Tag]) slay += a.slay[tag as Tag]!;
@@ -868,23 +1238,34 @@ class Battle {
     if (aSol && aSol.chargeReady && baseOverride === 0) dmg = d.st.brace ? dmg : dmg * 2;
     if (d.st.brace && a.tags & T_MOUNTED && !ranged) dmg = idiv(dmg * 70, 100);
     if (hill) dmg = idiv(dmg * 115, 100);
-    if (a.L.has('frostheart') && d.slowUntil > this.t) dmg = idiv(dmg * 130, 100);
+    if (a.L.has('frostheart') && d.slowUntil > this.t) dmg = idiv(dmg * (100 + FROSTHEART_PCT), 100);
     if (crit) dmg = idiv(dmg * CRIT_MULT, 100);
+    if (dmgType === 'magic' && a.magicBonus) dmg = idiv(dmg * (100 + a.magicBonus), 100);
+    // Everything below is the defender's mitigation (armour, resistance, cover, Bulwark, Shield Wall).
+    const pre = dmg;
     if (dmgType === 'magic') {
-      if (a.magicBonus) dmg = idiv(dmg * (100 + a.magicBonus), 100);
       dmg = idiv(dmg * (100 - d.st.mr), 100);
     } else if (!a.ignoresArmor) {
       const armor = a.crushing ? d.st.armor >> 1 : d.st.armor;
       dmg = idiv(dmg * (100 - armor), 100);
     }
-    if (ranged && this.terrainCode(d.x, d.y) === KIND_CODE.ruins) dmg = idiv(dmg * 75, 100);
+    if (ranged) {
+      // Cover: ruins take a quarter off ranged damage, forest 40% (a flat reduction; nothing ever "misses").
+      const tc = this.terrainCode(d.x, d.y);
+      if (tc === KIND_CODE.ruins) dmg = idiv(dmg * 75, 100);
+      else if (tc === KIND_CODE.forest) dmg = idiv(dmg * 60, 100);
+      // Fliers are hard to hit from the ground: shots from non-fliers lose FLIER_EVADE_PCT percent.
+      if (d.st.tags & T_FLIER && !(a.tags & T_FLIER)) dmg = idiv(dmg * (100 - FLIER_EVADE_PCT), 100);
+    }
     if (d.bulwarkUntil > this.t) dmg = idiv(dmg * 60, 100);
+    if (d.wallUntil > this.t) dmg = idiv(dmg * (100 - d.wallPct), 100);
     if (dmg < 100) dmg = 100;
-    return { dmg, eff, tri };
+    return { dmg, eff, tri, mit: pre > dmg ? pre - dmg : 0 };
   }
 
-  credit(d: Sol, dmg: number, by: Sol | null, tower: number): void {
+  credit(d: Sol, dmg: number, by: Sol | null, tower: number, cause = C_ATTACK, mit = 0): void {
     d.dmgAcc += dmg;
+    if (this.record) this.note(d, by ? by.sq.row : tower, cause, dmg, mit, 0);
     if (by) {
       if (!d.killer || dmg > d.killerDmg || (dmg === d.killerDmg && by.key < d.killer.key)) { d.killer = by; d.killerDmg = dmg; }
       by.dealt += dmg;
@@ -895,18 +1276,19 @@ class Battle {
     const a = k.owner!;
     const st = a.st;
     const ranged = !k.melee;
-    // Forest: ranged attacks miss 40% of the time against targets inside.
-    if (ranged && this.terrainCode(d.x, d.y) === KIND_CODE.forest && this.rnd(a.key, k.seq * 4099 + d.key + 7) < 4000) {
-      this.emit(EK.hit, a.i, d.i, 0, 4 | (1 << 3));
-      return;
-    }
-    const crit = this.rnd(a.key, k.seq * 4099 + d.key + 13) < st.crit * 100;
+    const crit = !!k.crit;
     const r = this.damage(st, primary ? a : null, d, mul, crit, k.hill, ranged, st.dmgType, 0);
-    this.credit(d, r.dmg, a, -1);
-    if (st.leech && a.alive) a.healAcc += idiv(r.dmg * st.leech, 100);
-    if (k.melee && d.st.thorns && a.alive) this.credit(a, idiv(r.dmg * d.st.thorns, 100), d, -1);
-    if (st.burn) { if (st.burn * 100 > d.pendingBurn) { d.pendingBurn = st.burn * 100; d.pendingBurnSrc = a; } }
+    this.credit(d, r.dmg, a, -1, k.cause ?? C_ATTACK, r.mit);
+    if (st.leech && a.alive) this.heal(a, idiv(r.dmg * st.leech, 100), a, C_LEECH);
+    if (k.melee && d.st.thorns && a.alive) this.credit(a, idiv(r.dmg * d.st.thorns, 100), d, -1, C_THORNS);
+    if (st.burn) { if (st.burn * 100 > d.pendingBurn) { d.pendingBurn = st.burn * 100; d.pendingBurnSrc = a; d.pendingBurnCause = C_BURN; } }
     if (st.frost && st.frost > d.pendingSlow) { d.pendingSlow = st.frost; d.pendingSlowUntil = this.t + 40; }
+    // Skill volleys (Fire Arrows, Pinning Shot) carry their own burn / slow.
+    const fx = k.sk;
+    if (fx) {
+      if (fx.burn && fx.burn > d.pendingBurn) { d.pendingBurn = fx.burn; d.pendingBurnSrc = a; d.pendingBurnCause = k.cause ?? C_BURN; }
+      if (fx.slow && fx.slow >= d.pendingSlow) { d.pendingSlow = fx.slow; d.pendingSlowUntil = this.t + fx.slowTicks; }
+    }
     this.emit(EK.hit, a.i, d.i, Math.ceil(r.dmg / 100), (crit ? 1 : 0) | (r.eff ? 2 : 0) | ((r.tri + 1) << 3));
   }
 
@@ -921,13 +1303,14 @@ class Battle {
     const t = this.t;
     const enemy = (1 - k.side) as Seat;
     if (k.kind === 'keep') { this.keepHitStrike(k); return; }
+    if (k.kind === 'skill') { this.resolveSkill(k); return; }
     if (k.kind === 'tower') {
       const d = k.target!;
       this.emit(EK.impact, k.pid, d.x, d.y, PROJ_CODES.indexOf('tower_arrow'), 0);
       if (!d.alive) return;
       let dmg = idiv(k.dmg * (100 - d.st.armor), 100);
       if (dmg < 100) dmg = 100;
-      this.credit(d, dmg, null, k.towerSrc);
+      this.credit(d, dmg, null, k.towerSrc, C_TOWER, k.dmg > dmg ? k.dmg - dmg : 0);
       this.emit(EK.hit, k.towerSrc, d.i, Math.ceil(dmg / 100), 1 << 3);
       return;
     }
@@ -939,7 +1322,7 @@ class Battle {
         if (d.spawnTick > t) return;
         if (k.kind === 'ember' && d.st.tags & T_FLIER) return;
         const r = this.damage(a.st, null, d, 100, false, false, false, magic ? 'magic' : 'physical', k.dmg);
-        this.credit(d, r.dmg, a, -1);
+        this.credit(d, r.dmg, a, -1, k.kind === 'meteor' ? C_METEOR : k.kind === 'ember' ? C_EMBER : C_SKYFALL, r.mit);
         this.emit(EK.hit, a.i, d.i, Math.ceil(r.dmg / 100), 1 << 3);
       });
       if (k.kind === 'ember') this.emitAbility(a.i, -1, 'ember_burst', k.ax, k.ay, k.radius, 0);
@@ -1007,6 +1390,15 @@ class Battle {
         this.applyHit(k, d, idiv(k.mul * 60, 100), false);
       });
     }
+    // Cleave (skill): while it lasts, melee blows also strike the enemies around their target.
+    if (!k.extra && primaryHit && k.melee && a.cleaveUntil > t) {
+      this.emitAbility(a.i, tg.i, 'cleave', tg.x, tg.y, 250, 0);
+      const ck: Strike = { ...k, extra: true, cause: cz('cleave') };
+      this.near(enemy, tg.x, tg.y, 250, (d) => {
+        if (d === tg || d.spawnTick > t || !this.canHit(a, d)) return;
+        this.applyHit(ck, d, a.cleavePct, false);
+      });
+    }
     if (!k.extra && primaryHit) {
       // On-hit legendary procs.
       if (st.L.has('stormcaller')) {
@@ -1021,8 +1413,8 @@ class Battle {
           if (!best) break;
           const o = best as Sol;
           this.emitAbility(prev.i, o.i, 'chain', o.x, o.y, 0, 0);
-          const r = this.damage(st, null, o, 30, false, false, false, 'magic', 0);
-          this.credit(o, r.dmg, a, -1);
+          const r = this.damage(st, null, o, STORM_PCT, false, false, false, 'magic', 0);
+          this.credit(o, r.dmg, a, -1, C_CHAIN, r.mit);
           this.emit(EK.hit, a.i, o.i, Math.ceil(r.dmg / 100), 1 << 3);
           hit.push(o);
           prev = o;
@@ -1045,7 +1437,7 @@ class Battle {
           });
           if (!best) break;
           picked.push(best);
-          this.applyHit({ ...k, extra: true }, best, 55, false);
+          this.applyHit({ ...k, extra: true }, best, HYDRA_PCT, false);
         }
       }
     }
@@ -1067,14 +1459,14 @@ class Battle {
       if (!s.alive || s.spawnTick > t) continue;
       if (s.burnUntil > t && s.burnDps) {
         const dmg = idiv(s.burnDps * (100 - (s.st.mr >> 1)), 200);
-        this.credit(s, Math.max(50, dmg), s.burnSrc, -1);
+        this.credit(s, Math.max(50, dmg), s.burnSrc, -1, s.burnCause);
       }
-      if (s.st.L.has('lifebinder') && s.hp < s.maxHp) s.healAcc += idiv(s.maxHp * 3, 400);
+      if (s.st.L.has('lifebinder') && s.hp < s.maxHp) this.heal(s, idiv(s.maxHp * 3, 400), s, C_LIFEBINDER);
       if (s.st.L.has('sunfire')) {
         const dmg = (20 + 2 * s.st.ilvl) * 50;
         this.near((1 - s.side) as Seat, s.x, s.y, 400, (o) => {
           if (o.spawnTick > t || o.st.tags & T_FLIER) return;
-          this.credit(o, idiv(dmg * (100 - o.st.mr), 100), s, -1);
+          this.credit(o, idiv(dmg * (100 - o.st.mr), 100), s, -1, C_SUNFIRE, dmg - idiv(dmg * (100 - o.st.mr), 100));
         });
       }
       // Re-arm charges after 5 s out of combat.
@@ -1106,8 +1498,12 @@ class Battle {
   endOfTick(): void {
     const t = this.t;
     for (const b of this.queuedBuffs) {
-      if (b.kind === 'rally') b.sol.rallyUntil = Math.max(b.sol.rallyUntil, b.until);
-      else b.sol.bulwarkUntil = Math.max(b.sol.bulwarkUntil, b.until);
+      const o = b.sol;
+      if (b.kind === 'rally') o.rallyUntil = Math.max(o.rallyUntil, b.until);
+      else if (b.kind === 'bulwark') o.bulwarkUntil = Math.max(o.bulwarkUntil, b.until);
+      else if (b.kind === 'wall') { if (o.wallUntil <= t || b.pct >= o.wallPct) o.wallPct = b.pct; o.wallUntil = Math.max(o.wallUntil, b.until); }
+      else if (b.kind === 'cry') { if (o.cryUntil <= t || b.pct >= o.cryPct) o.cryPct = b.pct; o.cryUntil = Math.max(o.cryUntil, b.until); }
+      else { if (o.cleaveUntil <= t || b.pct >= o.cleavePct) o.cleavePct = b.pct; o.cleaveUntil = Math.max(o.cleaveUntil, b.until); }
     }
     this.queuedBuffs.length = 0;
     const deaths: Sol[] = [];
@@ -1115,15 +1511,23 @@ class Battle {
       if (s.spawnTick > t) continue;
       s.x = s.nx; s.y = s.ny;
       if (s.relocate) { s.x = s.relocate[0]; s.y = s.relocate[1]; s.relocate = null; }
+      if (s.kx || s.ky) { if (s.alive) { s.x = clampX(s.x + s.kx); s.y = clampY(s.y + s.ky); } s.kx = 0; s.ky = 0; }
       if (!s.alive) continue;
       if (s.pendingSlow) { s.slowPct = s.pendingSlow; s.slowUntil = s.pendingSlowUntil; s.pendingSlow = 0; }
       if (s.pendingBurn) {
-        if (s.burnUntil <= t || s.pendingBurn >= s.burnDps) { s.burnDps = s.pendingBurn; s.burnSrc = s.pendingBurnSrc; }
-        s.burnUntil = t + 60; s.pendingBurn = 0; s.pendingBurnSrc = null;
+        if (s.burnUntil <= t || s.pendingBurn >= s.burnDps) { s.burnDps = s.pendingBurn; s.burnSrc = s.pendingBurnSrc; s.burnCause = s.pendingBurnCause; }
+        s.burnUntil = t + 60; s.pendingBurn = 0; s.pendingBurnSrc = null; s.pendingBurnCause = C_BURN;
       }
       if (s.dmgAcc || s.healAcc) {
         this.dealt[(1 - s.side) as Seat] += s.dmgAcc;
         if (s.dmgAcc > 0) this.lastDamageTick = t;
+        if (this.record) {
+          // Ledger: what this soldier really lost and regained (no overkill, no overheal).
+          const net = s.hp - s.dmgAcc + s.healAcc;
+          s.rD = s.dmgAcc; s.rH = s.healAcc;
+          if (net <= 0) { s.eD = s.hp; s.eH = 0; }
+          else { s.eD = s.dmgAcc; s.eH = net > s.maxHp ? s.healAcc - (net - s.maxHp) : s.healAcc; }
+        }
         s.hp = Math.min(s.maxHp, s.hp - s.dmgAcc + s.healAcc);
         s.dmgAcc = 0; s.healAcc = 0;
         if (s.hp <= 0) deaths.push(s);
@@ -1138,12 +1542,14 @@ class Battle {
       if (s.undying) {
         s.undying = false;
         s.hp = idiv(s.maxHp * 50, 100);
+        if (this.record) this.tallyAdd(s.sq.row, s.sq.row, C_REVIVE, 0, 0, s.hp, 0);
         this.emit(EK.revive, s.i, Math.ceil(s.hp / 100), REVIVE_CODES.indexOf('undying_oath'));
         continue;
       }
       if (s.sq.phoenix) {
         s.sq.phoenix = false;
         s.hp = idiv(s.maxHp, 2);
+        if (this.record) this.tallyAdd(s.sq.row, s.sq.row, C_REVIVE, 0, 0, s.hp, 0);
         this.emit(EK.revive, s.i, Math.ceil(s.hp / 100), REVIVE_CODES.indexOf('phoenix'));
         continue;
       }
@@ -1157,20 +1563,51 @@ class Battle {
         this.lordXp[killer.side] += s.xpValue;
         const kst = killer.st;
         if (kst.L.has('bloodthirst') && killer.alive) {
-          killer.healAcc += idiv(killer.maxHp * 12, 100);
+          this.heal(killer, idiv(killer.maxHp * BLOOD_HEAL_PCT, 100), killer, C_BLOOD);
           if (killer.blood < 3) killer.blood++;
           this.emitAbility(killer.i, s.i, 'bloodthirst', killer.x, killer.y, 0, 0);
         }
         const kb = killer.sq;
-        if (kst.L.has('gravebloom') && kb.grave < 10 && !s.summoned && !(s.st.tags & (T_LARGE | T_LORD))) {
+        if (kst.L.has('gravebloom') && kb.grave < GRAVE_MAX && !s.summoned && !(s.st.tags & (T_LARGE | T_LORD))) {
           kb.grave++;
           this.raiseSkeleton(kb, s);
         }
       }
       if (s.st.L.has('ember_crown')) {
-        this.queueStrike({ kind: 'ember', owner: s, side: s.side, target: null, ax: s.x, ay: s.y, fx: s.x, fy: s.y, mul: 100, pid: 0, proj: 'none', melee: false, hill: false, dmg: (40 + 5 * s.st.ilvl) * 100, radius: 350, reflected: false, extra: true, towerSrc: -1, seq: 0 }, 1);
+        this.queueStrike({ kind: 'ember', owner: s, side: s.side, target: null, ax: s.x, ay: s.y, fx: s.x, fy: s.y, mul: 100, pid: 0, proj: 'none', melee: false, hill: false, dmg: (90 + 12 * s.st.ilvl) * 100, radius: 450, reflected: false, extra: true, towerSrc: -1, seq: 0 }, 1);
       }
     }
+    if (this.record) this.settleLedger();
+  }
+
+  /**
+   * Ledger: share out the life each soldier really lost / regained this tick among the sources that caused it,
+   * in proportion to their raw amounts (the last source takes the rounding), then flush the window every TALLY_TICKS.
+   * Bloodthirst heals queued during the death loop above land in the next tick's settlement.
+   */
+  settleLedger(): void {
+    const n = this.cT.length;
+    let keep = 0;
+    for (let i = 0; i < n; i++) {
+      const s = this.cT[i], amt = this.cA[i];
+      if (this.cH[i]) {
+        if (s.healAcc > 0 && s.rH === 0) {
+          // Queued after this soldier was settled (Bloodthirst on a kill): carry it over to the next tick.
+          this.cT[keep] = s; this.cS[keep] = this.cS[i]; this.cC[keep] = this.cC[i]; this.cA[keep] = amt; this.cM[keep] = 0; this.cH[keep] = 1;
+          keep++;
+          continue;
+        }
+        const e = s.rH > 0 ? idiv(amt * s.eH, s.rH) : 0;
+        s.eH -= e; s.rH -= amt;
+        if (e) this.tallyAdd(this.cS[i], s.sq.row, this.cC[i], 0, 0, e, 0);
+      } else {
+        const e = s.rD > 0 ? idiv(amt * s.eD, s.rD) : 0;
+        s.eD -= e; s.rD -= amt;
+        if (e || this.cM[i]) this.tallyAdd(this.cS[i], s.sq.row, this.cC[i], e, this.cM[i], 0, 1);
+      }
+    }
+    this.cT.length = keep; this.cS.length = keep; this.cC.length = keep; this.cA.length = keep; this.cM.length = keep; this.cH.length = keep;
+    if ((this.t + 1) % TALLY_TICKS === 0) this.flushTally();
   }
 
   raiseSkeleton(kb: BSquad, victim: Sol): void {
@@ -1178,6 +1615,7 @@ class Battle {
     let sk = this.squads.find((q) => q.summon && q.side === side && q.id === kb.id);
     if (!sk) {
       sk = {
+        row: this.squads.length, skills: [],
         side, sideIdx: 100 + kb.sideIdx, id: kb.id, type: 'skeleton', lord: null, level: 1, st: skeletonStats(), sols: [], ax: victim.x, ay: victim.y,
         facing: side === 0 ? 64 : 192, engaged: true, engagedNext: true, macro: null, c2x: 0, c2y: 0, alive: 0, phoenix: false, grave: 0,
         slotErr: 0, slotErrNext: 0, abilityCd: 0, summon: true, healTarget: null, sourceSquad: null,
@@ -1255,8 +1693,10 @@ class Battle {
     for (const side of [0, 1] as Seat[]) this.survivors[side] = this.survivorIds(side);
     for (const side of [0, 1] as Seat[]) {
       if (this.winner !== null && this.winner !== side) continue;
-      const full = keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, true, false) - KEEP_DMG_BASE_PER_ROUND * this.st.round;
-      const dmg = this.winner === side ? full : keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, false, true);
+      // A points win counts in full (survivors + the round bonus); a draw: both sides' survivors deal half.
+      const dmg = this.winner === side
+        ? keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, true, false)
+        : keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, false, true);
       this.keepDamage[(1 - side) as Seat] = dmg;
       if (dmg > 0) this.hitKeep((1 - side) as Seat, keepSource((1 - side) as Seat, 2), dmg, true);
     }
@@ -1282,39 +1722,66 @@ class Battle {
     this.marchLeft = dmg;
     let n = 0;
     for (const s of this.sols) {
-      if (s.alive && s.side === loserSide) { s.alive = false; s.anim = 4; this.emit(EK.death, s.i, -1); }
+      if (s.alive && s.side === loserSide) {
+        // What is left of the routed side (summoned skeletons) falls with it.
+        if (this.record && s.spawnTick <= this.t) this.tallyAdd(-1, s.sq.row, C_ROUT, s.hp, 0, 0, 0);
+        s.alive = false; s.anim = 4; this.emit(EK.death, s.i, -1);
+      }
       if (s.alive && s.side === w) n++;
     }
     this.marchChunk = Math.max(1, Math.ceil(dmg / Math.max(1, n * 3)));
   }
 
+  /**
+   * The winners march on the loser's Keep and strike it. Each soldier owns a spot on the Keep's
+   * front wall (one in five takes the foot of an arrow tower instead): melee walk right up to it
+   * (their body radius + ~0.5 m off the stone; ranks jammed behind the first still strike from
+   * within ~2 m of the wall), ranged stop at 4/5 of their range from it, fliers hold above it.
+   * Only where and when the blows land changes: the total is `marchLeft` (see run()).
+   */
   marchSoldier(s: Sol): void {
     const loser = (1 - s.side) as Seat;
     const k = this.keeps[loser];
     const sg = sideSign(s.side);
-    const off = ((s.key * 37) % 2000) - 1000;
-    const gx = k.pos[0] + sg * off;
-    const gy = k.pos[1] - sg * (600 + ((s.key * 13) % 300));
+    // the spot struck: on the front wall, or at a tower's foot
+    let ax: number, ay: number;
+    if ((s.key * 7) % 5 === 0) {
+      const tw = k.towers[s.key & 1];
+      ax = tw[0] + sg * (((s.key * 37) % 300) - 150);
+      ay = tw[1] - sg * TOWER_FRONT;
+    } else {
+      ax = k.pos[0] + sg * (((s.key * 37) % (2 * KEEP_HALF_W)) - KEEP_HALF_W);
+      ay = k.pos[1] - sg * KEEP_FRONT;
+    }
+    const ranged = s.st.ranged;
+    const reach = Math.min(s.st.range, 1800);
+    const stand = ranged ? idiv(reach * 4, 5) : s.st.radius + 40 + ((s.key * 13) % 50);
+    const gx = ax, gy = ay - sg * stand;
     const dx = gx - s.x, dy = gy - s.y, d2 = dx * dx + dy * dy;
+    const wx = ax - s.x, wy = ay - s.y, wd2 = wx * wx + wy * wy;
     const flier = (s.st.tags & T_FLIER) !== 0;
     const sp = this.groundSpeed(s.st.speed * 2, s.x, s.y, flier, 0);
-    const reach = s.st.ranged ? Math.min(s.st.range, 1800) : 250;
-    if (d2 <= reach * reach || (dy * sg >= 0 && d2 <= 1200 * 1200)) {
-      s.facing = faceOr(s.facing, k.pos[0] - s.x, k.pos[1] - s.y);
+    // distance still to go to the stone, along the march
+    const gap = wy * sg;
+    const inPlace = ranged
+      ? wd2 <= reach * reach
+      : d2 <= 90 * 90 || (gap >= 0 && gap <= s.st.radius + 220 && Math.abs(wx) <= 400);
+    if (inPlace) {
+      s.facing = faceOr(s.facing, wx, wy);
       if (s.cd <= 0 && this.marchLeft > 0 && !s.st.healer) {
         s.cd += s.st.atk * 100;
         s.anim = 2; s.animUntil = this.t + Math.min(s.st.atk, 10);
         const tgt = keepSource(loser, 2);
-        this.emit(EK.attack, s.i, tgt, WEAPON_CODES.indexOf(s.st.weapon), PROJ_CODES.indexOf(s.st.proj), s.st.proj !== 'none' ? this.flight(s.st.proj, isqrt(d2), 0) : 6);
-        const strike: Strike = { kind: 'keep', owner: s, side: s.side, target: null, ax: k.pos[0], ay: k.pos[1], fx: s.x, fy: s.y, mul: 100, pid: 0, proj: s.st.proj, melee: !s.st.ranged, hill: false, dmg: 0, radius: 0, reflected: false, extra: true, towerSrc: -1, seq: 0 };
-        if (s.st.proj !== 'none') this.launch(strike, isqrt(d2), 0); else this.queueStrike(strike, 6);
+        this.emit(EK.attack, s.i, tgt, WEAPON_CODES.indexOf(s.st.weapon), PROJ_CODES.indexOf(s.st.proj), s.st.proj !== 'none' ? this.flight(s.st.proj, isqrt(wd2), 0) : 6);
+        const strike: Strike = { kind: 'keep', owner: s, side: s.side, target: null, ax, ay, fx: s.x, fy: s.y, mul: 100, pid: 0, proj: s.st.proj, melee: !s.st.ranged, hill: false, dmg: 0, radius: 0, reflected: false, extra: true, towerSrc: -1, seq: 0 };
+        if (s.st.proj !== 'none') this.launch(strike, isqrt(wd2), 0); else this.queueStrike(strike, 6);
       }
-      this.separate(s, 0, 0, sp);
-      return;
+      // melee that are not on their spot yet keep pressing in; the rest hold
+      if (ranged || d2 <= 90 * 90) { this.separate(s, 0, 0, sp); return; }
     }
     let vx: number, vy: number;
     if (!flier && this.acrossRiver2(2 * s.y - (FIELD_H - 1), 2 * gy - (FIELD_H - 1))) { const f = this.flowDir(s.side, s.x, s.y); vx = idiv(f[0] * sp, 1000); vy = idiv(f[1] * sp, 1000); }
-    else { const d = isqrt(d2); vx = idiv(dx * sp, d); vy = idiv(dy * sp, d); }
+    else { const d = Math.max(1, isqrt(d2)); vx = idiv(dx * sp, d); vy = idiv(dy * sp, d); }
     this.separate(s, vx, vy, sp);
   }
 
@@ -1328,6 +1795,8 @@ class Battle {
   }
 
   hitKeep(seat: Seat, src: number, dmg: number, final: boolean): void {
+    // Never more than the keep has left: overkill is not damage.
+    if (dmg > this.keepHp[seat]) dmg = this.keepHp[seat];
     this.keepHp[seat] = Math.max(0, this.keepHp[seat] - dmg);
     this.emit(EK.keepHit, seat, src, dmg, this.keepHp[seat], final ? 1 : 0);
     const stg = this.stageOf(seat, this.keepHp[seat]);
@@ -1382,7 +1851,7 @@ class Battle {
       }
       this.rebuildBuckets();
       this.squadPass();
-      if (!this.marching) this.lordPass();
+      if (!this.marching) { this.lordPass(); this.skillPass(); }
       this.soldierPass();
       this.resolveStrikes();
       if (!this.marching) this.periodic();
@@ -1403,24 +1872,29 @@ class Battle {
       for (const k of list) if (k.pid > 0) this.emit(EK.impact, k.pid, k.target && k.proj !== 'stone' ? k.target.x : k.ax, k.target && k.proj !== 'stone' ? k.target.y : k.ay, PROJ_CODES.indexOf(k.proj), k.radius);
       this.pending[i] = [];
     }
+    if (this.record) this.flushTally();
     this.endTick = this.t;
     if (!this.fightTicks) this.fightTicks = this.t;
     if (this.record && this.t % KEYFRAME_TICKS !== 0) this.recordFrame();
   }
 
   output(): BattleOutput {
+    const lordDamage: [number, number] = [0, 0];
+    for (const b of this.squads) if (b.type === 'lord') for (const s of b.sols) lordDamage[b.side] += s.dealt;
     const result: BattleResult = {
       round: this.st.round,
       winner: this.winner,
       timeout: this.timeout,
       end: this.end,
       score: [this.score[0], this.score[1]],
-      keepDamage: [this.keepDamage[0], this.keepDamage[1]],
+      // Clamped to the keep's life: overkill on a falling keep is not damage taken.
+      keepDamage: [Math.min(this.keepDamage[0], this.keeps[0].hpBefore), Math.min(this.keepDamage[1], this.keeps[1].hpBefore)],
       survivors: [this.survivors[0], this.survivors[1]],
       lordXp: [this.lordXp[0] + (this.winner === 0 ? 20 : 8), this.lordXp[1] + (this.winner === 1 ? 20 : 8)],
       ticks: this.fightTicks,
       damageDealt: [Math.round(this.dealt[0] / 100), Math.round(this.dealt[1] / 100)],
       soldiersLost: [this.lost[0], this.lost[1]],
+      lordDamage: [Math.round(lordDamage[0] / 100), Math.round(lordDamage[1] / 100)],
     };
     const soldiers: ReplaySoldier[] = this.sols.map((s) => {
       const src = s.sq.sourceSquad;
@@ -1442,6 +1916,13 @@ class Battle {
         level: s.sq.level, maxHp: Math.ceil(s.maxHp / 100), items, flags, spawnTick: s.spawnTick, summoned: s.summoned,
       };
       if (s.sq.lord) row.lord = s.sq.lord;
+      if (s.sq.skills.length) row.skills = s.sq.skills.map((k) => k.id);
+      return row;
+    });
+    const squads: ReplaySquad[] = this.squads.map((b) => {
+      const row: ReplaySquad = { row: b.row, id: b.id, side: b.side, type: b.type, level: b.level, summoned: b.summon, soldiers: b.sols.map((s) => s.i), skills: b.skills.map((k) => k.id) };
+      if (b.lord) row.lord = b.lord;
+      if (b.sourceSquad) { row.items = b.sourceSquad.items; row.ownerLord = this.st.players[b.side].lord; }
       return row;
     });
     let frames = '', events = '';
@@ -1450,8 +1931,8 @@ class Battle {
       events = toBase64(encodeEvents(this.ev));
     }
     const replay: Replay = {
-      v: 2, seed: this.seed, round: this.st.round, ticks: this.endTick, frameTicks: KEYFRAME_TICKS,
-      frameCount: this.record ? this.frames.frames : 0, soldiers, keeps: this.keeps, terrain: this.st.terrain, frames, events,
+      v: REPLAY_VERSION, seed: this.seed, round: this.st.round, ticks: this.endTick, frameTicks: KEYFRAME_TICKS,
+      frameCount: this.record ? this.frames.frames : 0, soldiers, squads, keeps: this.keeps, terrain: this.st.terrain, frames, events,
       eventCount: this.record ? this.evCount : 0, result,
     };
     return { replay, result };

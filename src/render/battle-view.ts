@@ -13,6 +13,7 @@ import { Vfx } from './vfx/index.ts';
 import { SquadPlates, type PlateState } from './plates.ts';
 import { BattlePlayback, type PlaybackHooks } from './battle-playback.ts';
 import { RangeRing, type RangeRingHandle } from './range-ring.ts';
+import { GhostMarks, type GhostMark } from './ghost-marks.ts';
 import { TEAM_COLORS } from './crowd/archetypes.ts';
 import { makeTransforms, type BattleSource, type KeepInfo, type ReplaySoldier, type SoldierTransforms, type Terrain } from './battle-source.ts';
 
@@ -81,7 +82,7 @@ export class BattleView {
     this.field = new Battlefield(this.engine, opts.terrain ?? defaultTerrain(), opts.keeps);
     this.camera = new CameraRig(this.engine);
     this.camera.setGround((x, z) => this.field.heightAt(x, z));
-    this.camera.setObstacles((x, z) => this.field.canopyAt(x, z));
+    this.camera.setObstacles((x, z) => this.field.canopyAt(x, z), (x, z) => Math.max(this.field.solidAt(x, z), this.unitTop(x, z)));
     this.units = new UnitRenderer(this.engine, (x, z) => this.field.heightAt(x, z), (surf, src, tintMap) => {
       const sm = src as THREE.MeshStandardMaterial;
       const { material, uniforms } = createHeroMaterial(this.engine, 'hero', { surf, map: sm.map ?? null, tintMap, vertexColors: surf || !!sm.vertexColors });
@@ -98,6 +99,7 @@ export class BattleView {
     this.syncKeeps();
     this.vfx = new Vfx(this.engine, (x, z) => this.field.heightAt(x, z));
     this.plates = new SquadPlates(this.engine);
+    this.engine.scene.add(this.ghostMarks.mesh);
     this.camera.home(this.seat);
     this.camera.snap();
     if (opts.artManifest) {
@@ -144,6 +146,21 @@ export class BattleView {
     this.director.setKeeps(this.field.keep(0).position, this.field.keep(1).position);
   }
 
+  /** The seat being planned (deploy zone shown), and points along each zone's back rows that must stay visible. */
+  private planning: { seat: 0 | 1 } | null = null;
+  private zoneBack: [THREE.Vector3[], THREE.Vector3[]] = [1, -1].map((sg) => [-30, -15, 0, 15, 30].flatMap((x) => [new THREE.Vector3(x, 0.5, 54 * sg), new THREE.Vector3(x, 0.5, 46 * sg)])) as [THREE.Vector3[], THREE.Vector3[]];
+
+  private ghostMarks = new GhostMarks();
+
+  /**
+   * Extend the planning home view to a far edge (field y in cm, e.g. the enemy ghosts' front line or
+   * their rearmost squad), or null for the default (the enemy deploy-zone front edge). The home pitch
+   * stays; the view re-fits now if the camera is at home, and on every later home / resetCamera.
+   */
+  setHomeFarEdge(yCm: number | null): void {
+    this.camera.setHomeFar(yCm === null ? null : worldZ(yCm));
+  }
+
   /** Whose side the camera defaults to. */
   setSeat(seat: 0 | 1): void {
     this.seat = seat;
@@ -154,6 +171,7 @@ export class BattleView {
 
   /** Deploy-zone overlay (glow + optional grid). Switches the camera to RTS control. */
   setPlanning(p: { visible: boolean; seat?: 0 | 1; grid?: boolean; bothSides?: boolean }): void {
+    this.planning = p.visible ? { seat: p.seat ?? this.seat } : null;
     this.field.setPlanning({ seat: this.seat, ...p });
     if (p.visible && !this.playback) this.camera.setMode('rts');
     this.engine.wake();
@@ -166,6 +184,7 @@ export class BattleView {
     const places: { x: number; y: number; f: number }[] = [];
     const squadOf: number[] = [];
     const ghosts = new Set<number>();
+    const marks: GhostMark[] = [];
     for (const sq of squads) {
       const type = sq.type;
       const n = sq.size ?? SQUAD_SIZE[type] ?? 1;
@@ -181,6 +200,12 @@ export class BattleView {
       const fy = Math.sin(rad);
       const rx = fy;
       const ry = -fx;
+      if (o.ghostOwners?.includes(sq.owner)) {
+        // intel footprint under a ghost squad: its formation box, facing its facing
+        const w = fieldToWorld(sq.pos[0], sq.pos[1]);
+        const big = Math.max(0, arch.chest - 1.3) * 1.6;
+        marks.push({ x: w.x, y: this.field.heightAt(w.x, w.z), z: w.z, w: ((cols - 1) * sp) / 100 + big, d: ((rows - 1) * sp * 0.9) / 100 + big, yaw: Math.atan2(fx, -fy), color: new THREE.Color(TEAM_COLORS[sq.owner]).multiplyScalar(1.5) });
+      }
       for (let k = 0; k < n; k++) {
         const c = k % cols;
         const r = Math.floor(k / cols);
@@ -207,9 +232,11 @@ export class BattleView {
       tf.anim[i] = 0;
       tf.visible[i] = 1;
     });
+    this.ghostMarks.set(marks);
     this.army = { tf, squads: squadOf, ghosts };
     this.units.slots.forEach((s, i) => {
-      s.ghost = ghosts.has(i) ? 0.35 : 1;
+      // < 1 marks a ghost: drawn solid in a team-coloured intel look (see vat.ts), never dithered
+      s.ghost = ghosts.has(i) ? 0.6 : 1;
       const h = o.highlight?.[squadOf[i]];
       s.glow = h === 'selected' ? 0.16 : h === 'hover' ? 0.08 : h === 'invalid' ? 0.2 : 0;
       s.glowColor = h === 'invalid' ? 1 : 0;
@@ -358,7 +385,9 @@ export class BattleView {
   playBattle(src: BattleSource, hooks: PlaybackHooks & { director?: boolean } = {}): BattlePlayback {
     this.stopBattle();
     this.army = null;
+    this.ghostMarks.set([]);
     this.field.setPlanning({ visible: false });
+    this.planning = null;
     this.units.showGhosts = true;
     this.playback = new BattlePlayback(src, this.units, this.director, this.vfx, this.field, hooks);
     for (const seat of [0, 1] as const) this.field.keep(seat).setStage(0);
@@ -422,6 +451,26 @@ export class BattleView {
 
   // ------------------------------------------------------------------ frame
 
+  /**
+   * Top of a flier / large unit the lens would sit inside at (x, z), else -1e9: part of the camera's
+   * smoothed floor (cursor-zooming onto a dragon ends above it, not in it).
+   */
+  private unitTop(x: number, z: number): number {
+    let top = -1e9;
+    if (!this.units) return top;
+    for (const s of this.units.slots) {
+      if (!s.visible || s.deadAt >= 0) continue;
+      const big = !!s.hero && s.arch.chest > 2;
+      if (s.arch.flyHeight <= 0 && !big) continue;
+      const r = big ? 4.5 : 2.5;
+      const dx = s.pos.x - x;
+      const dz = s.pos.z - z;
+      if (dx * dx + dz * dz > r * r) continue;
+      top = Math.max(top, s.pos.y + s.lift + s.arch.chest * 1.5 + 0.5);
+    }
+    return top;
+  }
+
   private frame(dt: number): void {
     const now = this.engine.time;
     // far zoom: soldiers grow a little so formations stay readable
@@ -434,17 +483,23 @@ export class BattleView {
     else this.plates.hide();
     if (pb && pb.playing && !pb.ended) this.engine.markShadows(); // units move: shadow maps redraw
     for (const e of this.rings) if (e.squad !== null) this.placeRing(e);
+    // a finished battle is a backdrop (results screen): lingering fires / smoke draw at <= 30 fps
+    this.engine.backdrop = this.camera.mode === 'orbit' || (!!pb && pb.ended && !this.camera.busy);
     const speed = pb ? (pb.playing ? pb.speed : 0) : 1;
     if (this.vfx.update(dt * speed)) this.engine.wake();
     if (this.field.update(dt)) {
       this.engine.markShadows();
       this.engine.wake();
     }
+    // castles / towers between the lens and the focus fade (the camera itself never lifts for them)
+    if (this.field.fadeOccluders(this.engine.camera.position, this.camera.lookPoint, dt, this.planning ? this.zoneBack[this.planning.seat] : [])) this.engine.wake();
   }
 
   dispose(): void {
     this.stopBattle();
     this.plates.dispose();
+    this.ghostMarks.mesh.removeFromParent();
+    this.ghostMarks.dispose();
     this.camera.dispose();
     this.field.dispose();
     this.engine.dispose();

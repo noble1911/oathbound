@@ -19,7 +19,8 @@ const QUALITIES: QualityChoice[] = ['auto', 'low', 'medium', 'high', 'ultra'];
 const LEAVE: Record<Exclude<MatchKind, null>, { label: string; title: string; body: string; yes: string }> = {
   lobby: { label: 'Leave room', title: 'Leave this room?', body: 'Your seat is freed for someone else.', yes: 'Leave room' },
   vsAI: { label: 'Leave match', title: 'Leave this match?', body: 'The match against the AI ends here. There is no way back in.', yes: 'Leave match' },
-  pvp: { label: 'Concede', title: 'Concede the match?', body: 'You give up your seat: the AI plays out your side and you cannot return.', yes: 'Concede' },
+  // leaving a running PvP match is a concession (protocol: 'leave' and 'concede' both end it at once)
+  pvp: { label: 'Concede', title: 'Concede the match?', body: 'Leaving a match in progress concedes it: the match ends at once and your opponent wins.', yes: 'Concede' },
   spectator: { label: 'Stop watching', title: 'Stop watching?', body: 'You return to the title screen. The duel goes on without you.', yes: 'Stop watching' },
   over: { label: 'Leave', title: 'Leave the room?', body: 'You return to the title screen.', yes: 'Leave' },
 };
@@ -38,8 +39,8 @@ export class Shell {
   onQuality: ((q: QualityChoice) => void) | null = null;
   /** Reads the renderer's current graphics settings (null until the renderer is up). */
   graphics: (() => Graphics | null) | null = null;
-  /** Leave / concede / stop watching, already confirmed. */
-  onLeave: (() => void) | null = null;
+  /** Leave / concede / stop watching, already confirmed. `kind` = what was left ('pvp' = a concession). */
+  onLeave: ((kind: Exclude<MatchKind, null>) => void) | null = null;
 
   constructor(ui: HTMLElement) {
     this.root = el(`<div class="shell">
@@ -238,7 +239,7 @@ export class Shell {
       const t = LEAVE[kind];
       if (!(await confirmDialog({ title: t.title, body: t.body, yes: t.yes, no: 'Keep playing', danger: true }))) return;
     }
-    this.onLeave?.();
+    this.onLeave?.(kind);
   }
 
   chatEnabled = false;

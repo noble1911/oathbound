@@ -12,7 +12,7 @@ const W = Number(process.env.W || 1600);
 const H = Number(process.env.H || 900);
 const TIER = process.env.TIER || 'high';
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
-const want = (n) => !ONLY || ONLY.includes(n);
+const want = (n) => !ONLY || ONLY.includes(n) || (ONLY.includes('skills') && n.startsWith('skill-'));
 fs.mkdirSync('e2e/shots', { recursive: true });
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -75,6 +75,29 @@ const FX = [
   }],
   ['levelup', { dist: 10, pitch: 0.3, yaw: 0.3 }, 350, (v, T, P) => v.vfx.levelUp(P)],
   ['loot', { dist: 22, pitch: 0.2, yaw: 0.25 }, 1500, (v, T, P) => { ['common', 'magic', 'rare', 'legendary'].forEach((r, i) => v.vfx.lootBeam(P.clone().add(new T.Vector3((i - 1.5) * 4.5, 0, 0)), r)); }],
+  // item skills (DESIGN 5b), files e2e/shots/skill-*.png
+  ['skill-fireball-cast', { dist: 13, pitch: 0.3, yaw: 0.3 }, 350, (v, T, P) => { const c = P.clone().add(new T.Vector3(-9, 0, 4)); v.vfx.castFlare(c, '#ff7a2a', 1.1); v.vfx.projectile('skill_fireball', c.clone().setY(c.y + 1.8), P.clone().setY(P.y + 0.6), 0.9, 'line', () => { v.vfx.impact('skill_fireball', P, 3); v.vfx.firePatch(P, 3.5, 3); }); }],
+  ['skill-fireball', { dist: 13, pitch: 0.3, yaw: 0.3 }, 1150, (v, T, P) => { const c = P.clone().add(new T.Vector3(-9, 0, 4)); v.vfx.castFlare(c, '#ff7a2a', 1.1); v.vfx.projectile('skill_fireball', c.clone().setY(c.y + 1.8), P.clone().setY(P.y + 0.6), 0.9, 'line', () => { v.vfx.impact('skill_fireball', P, 3); v.vfx.firePatch(P, 3.5, 3); }); }],
+  ['skill-fireball-burn', { dist: 13, pitch: 0.3, yaw: 0.3 }, 2600, (v, T, P) => { v.vfx.impact('skill_fireball', P, 3); v.vfx.firePatch(P, 3.5, 3); }],
+  ['skill-chain_lightning', { dist: 13, pitch: 0.32, yaw: 0.3 }, 110, (v, T, P) => { const pts = [[-7, 1.4, 2], [-2, 1.2, 0], [1, 1.2, 2.5], [4, 1.2, -1], [6.5, 1.2, 1.5]].map((a) => P.clone().add(new T.Vector3(a[0], a[1], a[2]))); v.vfx.castFlare(pts[0].clone().setY(P.y), '#6fb0ff', 1.2); for (let i = 0; i < 4; i++) v.vfx.lightning(pts[i], pts[i + 1]); }],
+  ['skill-frost_nova', { dist: 20, pitch: 0.45, yaw: 0.3 }, 380, (v, T, P) => v.vfx.frostNova(P, 7, 4)],
+  ['skill-frost_nova-hold', { dist: 20, pitch: 0.45, yaw: 0.3 }, 1700, (v, T, P) => v.vfx.frostNova(P, 7, 4)],
+  ['skill-mending_light', { dist: 14, pitch: 0.4, yaw: 0.3 }, 650, (v, T, P) => v.vfx.mendingLight(P, 3)],
+  ['skill-shield_wall', { dist: 13, pitch: 0.3, yaw: 0.5 }, 900, (v, T, P) => { const f = { pos: P.clone(), yaw: 0.2 }; v.vfx.shieldWall(() => f, 7, 5); }],
+  ['skill-war_cry', { dist: 24, pitch: 0.45, yaw: 0.3 }, 280, (v, T, P) => v.vfx.warCry(P, 10)],
+  ['skill-cleave', { dist: 9, pitch: 0.4, yaw: 0.3 }, 190, (v, T, P) => { const a = P.clone().setY(P.y + 1.1); v.vfx.cleaveArc(a, a.clone().add(new T.Vector3(1.4, 0, 0.3)), 2.5); }],
+  ['skill-fire_arrows', { dist: 18, pitch: 0.38, yaw: 0.5 }, 900, (v, T, P) => { for (let i = 0; i < 12; i++) { const from = P.clone().add(new T.Vector3(-24 + Math.random() * 4, 1.5, -10 + Math.random() * 5)); const to = P.clone().add(new T.Vector3((Math.random() - 0.5) * 7, 0, (Math.random() - 0.5) * 5)); v.vfx.projectile('fire_arrow', from, to, 1.0 + Math.random() * 0.5, 'arc'); } }],
+  ['skill-fire_arrows-land', { dist: 12, pitch: 0.35, yaw: 0.5 }, 1900, (v, T, P) => { for (let i = 0; i < 12; i++) { const from = P.clone().add(new T.Vector3(-24 + Math.random() * 4, 1.5, -10 + Math.random() * 5)); const to = P.clone().add(new T.Vector3((Math.random() - 0.5) * 7, 0, (Math.random() - 0.5) * 5)); v.vfx.projectile('fire_arrow', from, to, 1.0 + Math.random() * 0.5, 'arc'); } }],
+  ['skill-pinning_shot', { dist: 18, pitch: 0.38, yaw: 0.5 }, 800, (v, T, P) => { for (let i = 0; i < 10; i++) { const from = P.clone().add(new T.Vector3(-24 + Math.random() * 4, 1.5, -10 + Math.random() * 5)); const to = P.clone().add(new T.Vector3((Math.random() - 0.5) * 7, 0, (Math.random() - 0.5) * 5)); v.vfx.projectile('pin_shot', from, to, 0.9 + Math.random() * 0.4, 'arc'); } }],
+  ['skill-pinning_shot-land', { dist: 11, pitch: 0.35, yaw: 0.5 }, 1450, (v, T, P) => { for (let i = 0; i < 10; i++) { const from = P.clone().add(new T.Vector3(-24 + Math.random() * 4, 1.5, -10 + Math.random() * 5)); const to = P.clone().add(new T.Vector3((Math.random() - 0.5) * 7, 0, (Math.random() - 0.5) * 5)); v.vfx.projectile('pin_shot', from, to, 0.9 + Math.random() * 0.4, 'arc'); } }],
+  ['skill-rain_of_arrows', { dist: 20, pitch: 0.42, yaw: 0.4 }, 700, (v, T, P) => v.vfx.arrowRain(P, 5, [0.8, 1.4, 2.0], new T.Vector3(-1, 0, -0.4))],
+  ['skill-rain_of_arrows-after', { dist: 15, pitch: 0.4, yaw: 0.4 }, 2300, (v, T, P) => v.vfx.arrowRain(P, 5, [0.8, 1.4, 2.0], new T.Vector3(-1, 0, -0.4))],
+  ['skill-thunderous_charge', { dist: 13, pitch: 0.35, yaw: 0.3 }, 260, (v, T, P) => { v.vfx.chargeImpact(P.clone().add(new T.Vector3(-5, 0, 1)), P, 3); for (let i = 0; i < 4; i++) { const a = P.clone().add(new T.Vector3(0.5, 0, i - 1.5)); v.vfx.knockback(a, a.clone().add(new T.Vector3(2.5, 0, 0))); } }],
+  ['skill-trample', { dist: 13, pitch: 0.42, yaw: 0.3 }, 520, (v, T, P) => v.vfx.trample(P, 3.5)],
+  ['skill-dive_strike', { dist: 16, pitch: 0.35, yaw: 0.3 }, 150, (v, T, P) => { for (let i = 0; i < 3; i++) v.vfx.diveStrike(P.clone().add(new T.Vector3(-7 + i * 2, 7, -5)), P.clone().add(new T.Vector3(i * 1.4 - 1.4, 0, 0)), 2, 0.2); }],
+  ['skill-dive_strike-hit', { dist: 16, pitch: 0.35, yaw: 0.3 }, 330, (v, T, P) => { for (let i = 0; i < 3; i++) v.vfx.diveStrike(P.clone().add(new T.Vector3(-7 + i * 2, 7, -5)), P.clone().add(new T.Vector3(i * 1.4 - 1.4, 0, 0)), 2, 0.2); }],
+  ['skill-incendiary_payload-flight', { dist: 22, pitch: 0.36, yaw: 0.4 }, 600, (v, T, P) => v.vfx.projectile('fire_pot', P.clone().add(new T.Vector3(-26, 3, -12)), P.clone(), 0.8, 'arc', () => { v.vfx.impact('fire_pot', P, 3.4); v.vfx.firePatch(P, 4, 4); })],
+  ['skill-incendiary_payload', { dist: 16, pitch: 0.38, yaw: 0.4 }, 2600, (v, T, P) => v.vfx.projectile('fire_pot', P.clone().add(new T.Vector3(-26, 3, -12)), P.clone(), 0.8, 'arc', () => { v.vfx.impact('fire_pot', P, 3.4); v.vfx.firePatch(P, 4, 4); })],
   ['keep-hit', { keep: true, dist: 34, pitch: 0.25, yaw: 3.6 }, 300, (v) => { for (let i = 0; i < 3; i++) v.vfx.keepHit(v.field.keep(0).hitPoint(), i === 0); }],
   ['keep-collapse', { keep: true, dist: 46, pitch: 0.3, yaw: 3.6 }, 900, (v) => { const k = v.field.keep(0); k.setStage(2); v.vfx.keepCollapse(k.position.clone()); }],
   ['keep-fire', { keep: true, dist: 40, pitch: 0.25, yaw: 3.6 }, 5200, (v) => { const k = v.field.keep(0); k.setStage(3); v.vfx.keepFire([0, 1, 2, 3].map(() => k.hitPoint()), 45, 1.2); }],
@@ -103,7 +126,7 @@ try {
       await sleep(350);
       await page.evaluate(`(() => { const v = window.__rt.view, T = window.__rt.THREE; const P = new T.Vector3(${C.x}, v.field.heightAt(${C.x}, ${C.z}), ${C.z}); (${fn.toString()})(v, T, P); })()`);
       await sleep(ms);
-      await page.screenshot({ path: `e2e/shots/vfx-${name}.png` });
+      await page.screenshot({ path: name.startsWith('skill-') ? `e2e/shots/${name}.png` : `e2e/shots/vfx-${name}.png` });
     };
     for (const [name, cam, ms, fn] of FX) {
       if (!want(name)) continue;

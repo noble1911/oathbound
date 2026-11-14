@@ -6,6 +6,7 @@
 // Everything starts as a flat-colour placeholder and swaps in when the files arrive (the caller's
 // `onReady` wakes the render loop); a failed download just keeps the placeholder.
 import * as THREE from 'three';
+import { assetUrl, assetUrlReady, loadAssetVersions } from '../../assets.ts';
 
 export const GROUND_LAYERS = ['grass', 'forest', 'dirt', 'mud', 'rock'] as const;
 const BASE = 'textures/env/';
@@ -44,7 +45,7 @@ function placeholders(): void {
 placeholders();
 
 async function pixels(url: string, size: number): Promise<Uint8ClampedArray> {
-  const res = await fetch(url);
+  const res = await fetch(await assetUrlReady(url));
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   const bmp = await createImageBitmap(await res.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
   const c = document.createElement('canvas');
@@ -164,8 +165,8 @@ export function vegAtlas(onReady?: () => void): THREE.Texture {
   t.image = new ImageData(new Uint8ClampedArray([70, 104, 44, 0]), 1, 1);
   t.needsUpdate = true;
   atlas = t;
-  new THREE.ImageLoader().load(
-    `${BASE}veg_atlas.webp`,
+  void loadAssetVersions().then(() => new THREE.ImageLoader().load(
+    assetUrl(`${BASE}veg_atlas.webp`),
     (img) => {
       // the placeholder's 1x1 storage is immutable: drop it so the atlas gets its own
       t.dispose();
@@ -178,7 +179,7 @@ export function vegAtlas(onReady?: () => void): THREE.Texture {
     },
     undefined,
     () => console.warn('vegetation atlas failed to load'),
-  );
+  ));
   return t;
 }
 export function forgetAtlasWaiter(f: () => void): void {

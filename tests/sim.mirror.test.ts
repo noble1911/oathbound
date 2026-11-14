@@ -6,6 +6,10 @@ import { applyBattle, botPlan, decodeReplay, newMatch, nextRound, simulateBattle
 import { mirrorSquads } from '../src/sim/match.ts';
 import type { BotStrategy, DecodedReplay, LordId, MatchState, Seat } from '../src/sim/types.ts';
 import { FIELD_H, FIELD_W } from '../src/sim/constants.ts';
+import { SKILLS, SKILL_IDS, canEquip } from '../src/sim/data/skills.ts';
+import { SLOT_UNLOCK_LEVEL } from '../src/sim/data/items.ts';
+import { UNIT_TYPES } from '../src/sim/data/units.ts';
+import type { Item, UnitType } from '../src/sim/types.ts';
 
 function swapped(s: MatchState): MatchState {
   const m = structuredClone(s);
@@ -90,6 +94,44 @@ describe('mirror symmetry (seat fairness)', () => {
       expect(rounds).toBeGreaterThan(2);
     }, 60_000);
   }
+
+  it('item skills mirror exactly: every skill in play on both sides, asymmetric armies', () => {
+    // Seat 0 and seat 1 field different armies; every squad wears every skill item its class and level allow.
+    const armies: [UnitType[], UnitType[]] = [
+      ['militia', 'knights', 'mages', 'clerics', 'archers', 'cavaliers', 'trebuchet', 'pegasus', 'golem', 'berserkers'],
+      ['pikemen', 'berserkers', 'archers', 'mages', 'wyvern', 'ballista', 'cavaliers', 'militia', 'dragon', 'clerics'],
+    ];
+    expect(new Set([...armies[0], ...armies[1]]).size).toBe(UNIT_TYPES.length);
+    for (const [seed, lords] of [[11, ['archmage', 'marshal']], [12, ['skylady', 'warden']]] as const) {
+      const s = newMatch(seed, [...lords] as [LordId, LordId]);
+      s.round = 7;
+      let id = 9000;
+      const worn = new Set<string>();
+      for (const seat of [0, 1] as Seat[]) {
+        const p = s.players[seat];
+        armies[seat].forEach((u, k) => {
+          const x = 900 + (k % 5) * 1500, y = 3500 - Math.floor(k / 5) * 1300;
+          p.squads.push({ id: s.nextId++, owner: seat, type: u, level: 4, pos: seat === 0 ? [x, y] : [FIELD_W - 1 - x, FIELD_H - 1 - y], facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 400 });
+        });
+        for (const q of p.squads) {
+          for (const k of SKILL_IDS) {
+            const slot = SKILLS[k].slot;
+            if (q.items[slot] || !canEquip({ skill: k }, q.type, p.lord) || (q.type !== 'lord' && q.level < SLOT_UNLOCK_LEVEL[slot])) continue;
+            // spread the skills of one slot over the squads of a class
+            if (worn.has(`${seat}:${k}`) && SKILL_IDS.some((o) => o !== k && SKILLS[o].slot === slot && canEquip({ skill: o }, q.type, p.lord) && !worn.has(`${seat}:${o}`))) continue;
+            const it: Item = { id: id++, base: slot === 'weapon' ? 'steel_blade' : slot === 'armor' ? 'mail_hauberk' : 'oath_ring', slot, rarity: 'rare', ilvl: 7, implicit: { id: slot === 'armor' ? 'stalwart' : 'vicious', value: 6 }, affixes: [], legendary: null, skill: k };
+            q.items[slot] = it;
+            worn.add(`${seat}:${k}`);
+          }
+        }
+      }
+      const r = checkMirror(s);
+      expect(r.soldiers).toBeGreaterThan(80);
+      const d = decodeReplay(simulateBattle(s).replay);
+      const cast = new Set(d.skills!.map((e) => e.skill));
+      expect(cast.size).toBeGreaterThanOrEqual(11);
+    }
+  }, 60_000);
 
   it('identical armies on both sides draw or split evenly', () => {
     // Seat 1 gets the exact mirror of seat 0's army: the outcome must be symmetric (no winner, equal losses).

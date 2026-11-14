@@ -260,6 +260,68 @@ export class Dome {
   }
 }
 
+// ------------------------------------------------------------------ barrier (shield wall)
+
+const BARRIER_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+const BARRIER_FRAG = /* glsl */ `
+uniform vec3 uColor;
+uniform float uAlpha;
+uniform float uTime;
+varying vec2 vUv;
+void main() {
+  // a row of tall kite shields of light: bright rims, faint faces, a shimmer sweeping along the line
+  float n = 7.0;
+  float x = fract(vUv.x * n) * 2.0 - 1.0;
+  float y = vUv.y;
+  // kite outline: straight sides up top, tapering to a point at the foot
+  float hw = mix(0.0, 0.86, smoothstep(0.0, 0.55, y)) * (1.0 - 0.25 * smoothstep(0.85, 1.0, y));
+  float d = hw - abs(x);
+  float inside = smoothstep(0.0, 0.06, d);
+  float rim = inside * (1.0 - smoothstep(0.06, 0.2, d));
+  float boss = exp(-(x * x * 6.0 + (y - 0.62) * (y - 0.62) * 40.0));
+  float sweep = exp(-pow((vUv.x - fract(uTime * 0.45)) * 5.0, 2.0));
+  float a = rim * 0.9 + inside * (0.1 + 0.3 * sweep) + boss * 0.5;
+  a += exp(-y * 14.0) * 0.6; // seam of light on the ground
+  a *= smoothstep(0.0, 0.04, vUv.x) * smoothstep(1.0, 0.96, vUv.x) * smoothstep(1.0, 0.9, y);
+  a *= uAlpha * (0.85 + 0.15 * sin(uTime * 6.0 + vUv.x * 20.0));
+  gl_FragColor = vec4(uColor * (a * 0.34), 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+/** A slightly bowed wall of light (1 wide, 1 tall, bottom at y = 0, facing +Z); scale it to size. */
+export class Barrier {
+  readonly mesh: THREE.Mesh;
+  readonly material: THREE.ShaderMaterial;
+  constructor(color: [number, number, number]) {
+    this.material = new THREE.ShaderMaterial({
+      vertexShader: BARRIER_VERT,
+      fragmentShader: BARRIER_FRAG,
+      uniforms: { uColor: { value: new THREE.Color(color[0], color[1], color[2]) }, uAlpha: { value: 0 }, uTime: { value: 0 } },
+      ...additive,
+      side: THREE.DoubleSide,
+    });
+    const g = new THREE.PlaneGeometry(1, 1, 14, 1);
+    g.translate(0, 0.5, 0);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) p.setZ(i, -0.5 * p.getX(i) * p.getX(i)); // bow the ends back around the squad
+    this.mesh = new THREE.Mesh(g, this.material);
+    this.mesh.layers.set(LAYER_VFX);
+    this.mesh.renderOrder = 15;
+  }
+  dispose(): void {
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.material.dispose();
+  }
+}
+
 // ------------------------------------------------------------------ light pillar
 
 const BEAM_VERT = /* glsl */ `

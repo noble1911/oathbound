@@ -14,6 +14,7 @@
 import { mirrorPos } from './constants.ts';
 import { LORDS, LORD_IDS } from './data/lords.ts';
 import { AFFIXES, SLOT_UNLOCK_LEVEL } from './data/items.ts';
+import { SKILLS, canEquip } from './data/skills.ts';
 import { UNITS } from './data/units.ts';
 import { itemPower } from './loot.ts';
 import { ARMY_CAP, applyIntent, deployZone, freeSpotNear, levelUpCost, slotOpen, squadFootprint, viewFor } from './match.ts';
@@ -154,10 +155,12 @@ function deployNear(s: MatchState, seat: Seat, u: UnitType, want: Vec2): boolean
   return !!spot && applyIntent(s, seat, { t: 'deploy', unit: u, pos: spot }).ok;
 }
 
-function bestSquadFor(item: Item, squads: Squad[]): Squad | null {
+function bestSquadFor(item: Item, squads: Squad[], lord: LordId | null): Squad | null {
   let best: Squad | null = null, bestV = -1;
   for (const q of squads) {
     if (q.type !== 'lord' && q.level < SLOT_UNLOCK_LEVEL[item.slot]) continue;
+    // Skill items only go on a squad of the right class.
+    if (!canEquip(item, q.type, lord)) continue;
     const cur = q.items[item.slot];
     if (cur && itemPower(cur) >= itemPower(item)) continue;
     const value = valueOf(q);
@@ -222,7 +225,8 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
   // 2. Loot: take the strongest item.
   if (p.lootOffer) {
     let bi = 0, bp = -1;
-    p.lootOffer.forEach((it, i) => { const pw = itemPower(it); if (pw > bp) { bp = pw; bi = i; } });
+    // A skill item nobody in the army could ever use is worth nothing.
+    p.lootOffer.forEach((it, i) => { const pw = p.squads.some((q) => canEquip(it, q.type, p.lord)) ? itemPower(it) : 0; if (pw > bp) { bp = pw; bi = i; } });
     applyIntent(s, seat, { t: 'pickLoot', index: bi });
   }
   const reserve = Math.floor(p.gold * reserveFrac);
@@ -252,7 +256,7 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
   }
   // 4. Equip everything in the stash where it helps most.
   for (const it of [...p.stash]) {
-    const q = bestSquadFor(it, p.squads);
+    const q = bestSquadFor(it, p.squads, p.lord);
     if (q) applyIntent(s, seat, { t: 'equip', item: it.id, squad: q.id });
   }
   // 5. Lord placement.
@@ -431,6 +435,7 @@ const MANY = (t: SquadType): number => (t === 'lord' ? 1 : UNITS[t].squadSize);
  */
 function itemFit(item: Item, q: Squad, threats: Threat[], lord: LordId | null): number {
   const t = q.type;
+  if (!canEquip(item, t, lord)) return -1;
   const role = roleOf(t, lord);
   const ranged = t === 'lord' ? LORDS[lord ?? 'marshal'].range > 400 : UNITS[t].range > 400;
   const healer = t === 'clerics';
@@ -480,6 +485,27 @@ function itemFit(item: Item, q: Squad, threats: Threat[], lord: LordId | null): 
     }
     fit += 14 * m * 1.5;
   }
+  if (item.skill) {
+    // Active skills: worth more where their trigger will hold often and their effect scales with the squad.
+    const n = MANY(t);
+    const fast = share((tagShare.mounted ?? 0) + (tagShare.flier ?? 0));
+    const foot = share(tagShare.infantry ?? 0);
+    let m = 1;
+    switch (item.skill) {
+      case 'fireball': case 'rain_of_arrows': case 'incendiary_payload': m = 0.7 + 0.9 * foot; break;
+      case 'chain_lightning': m = 1.1; break;
+      case 'frost_nova': m = 0.5 + 2 * fast; break;
+      case 'mending_light': m = t === 'clerics' ? 1.3 : 1; break;
+      case 'shield_wall': m = tough ? 1.3 : 0.8; break;
+      case 'war_cry': m = role === 'front' || t === 'lord' ? 1.2 : 0.7; break;
+      case 'cleave': m = n >= 4 ? 1.4 : 0.9; break;
+      case 'fire_arrows': m = 1.2; break;
+      case 'pinning_shot': m = 0.7 + 1.5 * fast; break;
+      case 'thunderous_charge': case 'dive_strike': m = 1.3; break;
+      case 'trample': m = 0.8 + 0.8 * foot; break;
+    }
+    fit += SKILLS[item.skill].power * m * 1.5;
+  }
   // Squads that matter more get the better gear.
   return fit * (valueOf(q) / 200);
 }
@@ -490,7 +516,7 @@ function hardEquip(s: MatchState, seat: Seat, threats: Threat[]): void {
   const items: Item[] = [...p.stash];
   for (const q of p.squads) for (const sl of ['weapon', 'armor', 'relic'] as Slot[]) if (q.items[sl]) items.push(q.items[sl]!);
   const cands: { it: Item; q: Squad; fit: number }[] = [];
-  for (const it of items) for (const q of p.squads) if (slotOpen(q, it.slot)) cands.push({ it, q, fit: itemFit(it, q, threats, p.lord) });
+  for (const it of items) for (const q of p.squads) if (slotOpen(q, it.slot) && canEquip(it, q.type, p.lord)) cands.push({ it, q, fit: itemFit(it, q, threats, p.lord) });
   cands.sort((a, b) => b.fit - a.fit || a.it.id - b.it.id || a.q.id - b.q.id);
   const used = new Set<number>(), taken = new Set<string>();
   const want = new Map<number, Squad>();
@@ -531,7 +557,7 @@ function planHard(s: MatchState, seat: Seat, salt: number): void {
       let f = 0;
       for (const q of p.squads) {
         const open = slotOpen(q, it.slot) || (q.type !== 'lord' && q.level + 1 >= SLOT_UNLOCK_LEVEL[it.slot]);
-        if (!open) continue;
+        if (!open || !canEquip(it, q.type, p.lord)) continue;
         const cur = q.items[it.slot];
         f = Math.max(f, itemFit(it, q, threats, p.lord) - (cur ? itemFit(cur, q, threats, p.lord) * 0.8 : 0));
       }

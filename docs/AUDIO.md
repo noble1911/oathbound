@@ -1,8 +1,9 @@
 # Oathbound audio
 
 All game audio is recorded samples with clean licences: CC0, CC-BY (credited below), public
-domain, or the Sonniss GDC Game Audio Bundle licence. Nothing is synthesised at runtime except a
-reverb impulse response, which is generated noise.
+domain, or the Sonniss GDC Game Audio Bundle licence. The exception is the Lord voice lines, which are
+offline text-to-speech renders under a non-commercial licence (see [Voices](#voices)). Nothing is
+synthesised at runtime except a reverb impulse response, which is generated noise.
 
 - **Sources:** download by hand into `art-work/audio-src/` (git-ignored), using the layout below.
 - **Build:** `python -I tools/audio/build.py [id-prefix…]` trims the sources, slices multi-take
@@ -148,6 +149,70 @@ archive.org mirrors `sonniss-gdc-<year>-game-audio-bundle-normalized`. The exact
 | 2024 | BluezoneCorp: Stone Impact | Siege stone impacts, keep hits, stomp |
 | 2024 | Justsoundeffects: Forest Ambiences | Planning ambience (birds, wind in leaves) |
 | 2026 | Epic Stock Media: Fantasy Game 2 | Modal open, magic and heal chimes |
+
+## Voices
+
+The four Lords speak: about 17 short lines each (picked, the VS taunt, deploy, ready, the charge,
+their ability, round won and lost, the keep under attack, legendary loot, match victory and defeat).
+
+- **Licence.** The Lord voices are outputs of **Breeze-TTS-2** (BreezeBlue, self-hosted in WSL), and fall
+  under the **BreezeBlue Research and Non-Commercial License**. The inference code is Apache-2.0,
+  but the weights and their outputs are for research and non-commercial use only. Oathbound is a free
+  hobby game on a home server, which is non-commercial hobbyist use. **The game must not be monetised
+  (sold, ad-funded, paywalled or sponsored) while it ships these clips.** To go commercial, re-voice
+  the Lords first.
+- **Provenance.** Every voice was designed from a text description (below). No real person's voice
+  was cloned, and no reference audio we do not own was used. Each Lord's lines are cloned from that
+  Lord's own designed reference clip.
+- **Pipeline.** `tools/voice/` (see its README): `manifest.json` (descriptions and lines) →
+  `render.py` in WSL (design, then render each line with 3 seeds, auto-checked by Whisper ASR, pitch,
+  rate and clipping) → `build.py` (trim, 70 Hz high-pass, normalise to −16 dB short-term, 48 kHz
+  mono Opus at 40 kbps). Raw takes and reference voices stay in `art-work/voice/` (git-ignored).
+- **Runtime.** `src/audio/voice.ts` (the player) and `src/audio/voice-lines.ts` (the line table,
+  cooldowns, priorities and variant rotation). The lines play on their own `voice` bus into the
+  master, persisted as `oathbound.voicevol`. While a line plays, the music ducks by 4–9 dB (the
+  ambience by half that) and the battle effects by 60 % of it. One line plays at a time: a higher
+  priority cuts a lower one short, and anything else is dropped. Each (Lord, event) has a cooldown
+  (deploy 4 s, keep 20 s, ability 6 s), and variants rotate without repeating. A Lord's lines are
+  fetched only once that Lord is in the match (about 90 KB per Lord), and a line that has not
+  arrived within 1.2 s is dropped.
+- **Test.** `tests/voice.test.ts` checks that every manifest line is shipped and the set stays under
+  1.5 MB.
+
+| Lord | Voice description (abridged; full text in the manifest) | Seed |
+| --- | --- | --- |
+| Marshal Aldric | A seasoned commander in his fifties: a warm, commanding baritone with a refined southern English accent. Steady, measured and noble | SEED_MARSHAL |
+| Archmage Sefa | A composed woman in her forties: a cool, smooth alto with crisp English diction. Wry, quietly menacing and unhurried | SEED_ARCHMAGE |
+| Warden Hrolf | A huge old Nordic chieftain: a very deep, gravelly bass with a Scandinavian accent. Slow, deliberate and booming | SEED_WARDEN |
+| Skylady Ione | A young sky-rider captain: a bright, clear, energetic voice with a lively Irish accent. Fierce, quick and exhilarated | SEED_SKYLADY |
+
+### Where the UI triggers each line
+
+`playLordLine(lord, event)` and `voice.setMatchLords(lords)` come from `src/audio/voice.ts`. Calls
+are fire-and-forget and safe to repeat, because the gate drops what it should.
+
+| Event | Screen | File and function | Call |
+| --- | --- | --- | --- |
+| (load) | Lord reveal | `src/main.ts` `reveal(room)` | `voice.setMatchLords([mine, theirs])` |
+| `pick` | Lord pick | `src/ui/lordpick.ts` constructor, the `.lcard` click handler, after `sound.deploy()` | `playLordLine(this.picked, 'pick')` |
+| `taunt` | VS reveal | `src/main.ts` `reveal(room)`, after `sound.horn()` | `playLordLine(mine, 'taunt', { delay: 0.9 })` |
+| `deploy` | Planning | `src/ui/planning.ts` `deploy(u, pos, facing)`, after `sound.deploy()` | `playLordLine(this.me?.lord, 'deploy')` |
+| `ready` | Planning | `src/ui/planning.ts` `toggleReady()`, the ready branch after `sound.ready()` | `playLordLine(this.me?.lord, 'ready')` |
+| `charge` | Battle | `src/ui/battle.ts` constructor, the `offsetMs < 500` branch after `sound.battleStart(...)` | `playLordLine(this.info.lords[this.info.seat ?? 0], 'charge', { delay: 1.6 })` |
+| `ability` | Battle | `src/ui/battle.ts` `apply(e, quiet)`, `case 'ability'`, after `sound.ability(...)` | `playLordLine(lord, 'ability', { pan: mine ? 0 : 0.25 })` (both Lords speak; the enemy is a little off-centre) |
+| `keep` | Battle | `src/ui/battle.ts` `apply`, `case 'keepHit'`, inside `if (!this.breached[e.seat])` when `mine` | `playLordLine(this.info.lords[e.seat], 'keep')` |
+| `roundWon` / `roundLost` | Battle end | `src/ui/battle.ts` `finish(skipped)`, after `sound.battleEnd(won)` | `if (won !== null) playLordLine(this.info.lords[this.info.seat ?? 0], won ? 'roundWon' : 'roundLost', { delay: 0.8 })` |
+| `legendary` | Loot pick | `src/ui/loot.ts` constructor, the reveal timer, `if (it.rarity === 'legendary')` | `playLordLine(me.lord, 'legendary', { delay: 0.9 })` |
+| `victory` / `defeat` | Match over | `src/ui/results.ts` `MatchOverScreen` constructor, beside `sound.fanfare(...)` | `if (!spect && outcome !== 'draw') playLordLine(v.you?.lord, outcome, { delay: 2.2 })` |
+
+Spectators (`seat === null`) should hear only the shared moments: the abilities and the match end.
+
+**Settings slider.** The audio sliders in `src/ui/shell.ts` are hard-coded: the `.sl input` handler
+switches on `data-k`. A Voices slider needs two changes:
+
+1. a row in the settings markup with `data-k="voice"`, value `voice.level`;
+2. `else if (k === 'voice') voice.setVolume(v);` in the handler before the `else sound.setUi(v)`
+   fallback.
 
 ## Source layout (`art-work/audio-src/`)
 

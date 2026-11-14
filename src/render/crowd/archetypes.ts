@@ -79,13 +79,15 @@ export const ARCHETYPES: Record<string, Archetype> = {
     build: () => buildHorse('pegasus', { coat: '#f3f1ec', mane: '#d8d4cc', barding: '#e4e1da', wings: true, rider: riderLook({ weapon: 'lance', helmet: 'greathelm', metal: '#dfe3e8' }) }),
     walkSpeed: 3, runSpeed: 6, runAbove: 4, flyHeight: 6.5, muzzle: 2.0, chest: 1.6, scale: 1, attackImpact: 0.4, dust: 0,
   },
-  lord_marshal: human('lord_marshal', 'hero', { dust: 0.3 }, 1.22),
-  lord_archmage: human('lord_archmage', 'hero', { attackImpact: 0.45, muzzle: 2.4 }, 1.22),
-  lord_warden: human('lord_warden', 'hero', { dust: 0.3 }, 1.25),
-  lord_skylady: human('lord_skylady', 'hero', {}, 1.22),
+  // Lords: walkSpeed / runSpeed are the ground speeds their clips actually cover at rate 1 (measured with
+  // tools/art/blender/anim_audit.py), so planted feet do not slide at their sim speeds (3.2 / 2.8 / 2.6 / 5.2 m/s)
+  lord_marshal: human('lord_marshal', 'hero', { dust: 0.3, walkSpeed: 1.15, runSpeed: 3.95, runAbove: 2.3 }, 1.22),
+  lord_archmage: human('lord_archmage', 'hero', { attackImpact: 0.45, muzzle: 2.4, walkSpeed: 1.1, runSpeed: 3.65, runAbove: 2.2 }, 1.22),
+  lord_warden: human('lord_warden', 'hero', { dust: 0.3, walkSpeed: 0.9, runSpeed: 2.45, runAbove: 1.65 }, 1.25),
+  lord_skylady: human('lord_skylady', 'hero', { walkSpeed: 0.8, runSpeed: 4.7, runAbove: 2.2 }, 1.22),
   golem: {
     key: 'golem', render: 'hero', build: () => buildGolem('golem'),
-    walkSpeed: 1.6, runSpeed: 3, runAbove: 99, flyHeight: 0, muzzle: 3.0, chest: 2.6, scale: 1, attackImpact: 0.5, dust: 1.5,
+    walkSpeed: 1.2, runSpeed: 3, runAbove: 99, flyHeight: 0, muzzle: 3.0, chest: 2.6, scale: 1, attackImpact: 0.5, dust: 1.5,
   },
   wyvern: {
     key: 'wyvern', render: 'hero',

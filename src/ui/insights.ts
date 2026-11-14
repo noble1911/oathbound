@@ -1,11 +1,12 @@
-// What happened in a battle, read from the replay (pure: no DOM; tested in tests/client.test.ts):
-// per-squad damage dealt / taken / kills / losses for both sides, and a few plain-language lines
+// What happened in a battle, read from the replay (pure: no DOM; tested in tests/client.ux.test.ts):
+// per-squad damage dealt / taken / healing / kills / losses for both sides (the sim's ledger,
+// src/sim/stats.ts), and a few plain-language lines
 // that say why the round went the way it did and what to change ("Your melee couldn't reach 3
 // fliers: deploy Archers", "Their Archers out-ranged you", "Your Pikemen countered their Cavaliers").
-import type { DecodedReplay, LordId, Seat, SquadType, UnitType } from '../sim/types.ts';
+import type { BattleEnd, DecodedReplay, LordId, Seat, SquadType, UnitType } from '../sim/types.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { LORDS } from '../sim/data/lords.ts';
-import { KEEP_SRC_BASE } from '../sim/replay.ts';
+import { replaySquads, squadDamagePairs, squadStatsAt } from '../sim/stats.ts';
 import { counters, unitName } from './gamedata.ts';
 
 export interface SquadStat {
@@ -20,8 +21,9 @@ export interface SquadStat {
   dealt: number;
   taken: number;
   kills: number;
+  /** Life it restored on allies and itself (heals, lifesteal, regeneration, revives). */
   healed: number;
-  /** Total life of the squad at the start. */
+  /** Total life of the squad at full strength. */
   life: number;
   /** Sim tick the last soldier fell (-1 = survived). */
   wipedAt: number;
@@ -31,67 +33,64 @@ export interface BattleStats {
   squads: SquadStat[];
   /** Damage from squad A to squad B: `pair.get(a)?.get(b)`. */
   pair: Map<number, Map<number, number>>;
-  /** Ticks of fighting and whether the clock ran out. */
+  /** Ticks of fighting, and whether both armies still stood at the end (the clock ran out, or a stalemate was called). */
   ticks: number;
   timeout: boolean;
+  /** How the battle ended ('timeout' = the full 1:30; 'stalemate' = called early). */
+  end: BattleEnd;
   winner: Seat | null;
 }
 
 export function battleStats(d: DecodedReplay): BattleStats {
-  const sol = d.replay.soldiers;
+  // the sim's ledger (src/sim/stats.ts): every point of life removed or restored, by source squad,
+  // with burns, thorns, lifesteal and skills included and no overkill
+  const at = squadStatsAt(d, d.replay.ticks);
+  const rows = replaySquads(d);
   const by = new Map<number, SquadStat>();
-  for (const s of sol) {
-    if (s.summoned || s.type === 'skeleton') continue;
-    let q = by.get(s.squad);
-    if (!q) by.set(s.squad, (q = { id: s.squad, side: s.side, type: s.type as SquadType, lord: s.lord ?? null, level: s.level, size: 0, lost: 0, dealt: 0, taken: 0, kills: 0, healed: 0, life: 0, wipedAt: -1 }));
-    q.size++;
-    q.life += s.maxHp;
+  for (const q of at.squads) {
+    if (q.summoned || q.type === 'skeleton') continue;
+    const size = rows[q.row]?.soldiers.length ?? q.soldiers;
+    by.set(q.squad, { id: q.squad, side: q.side, type: q.type as SquadType, lord: q.lord, level: q.level, size, lost: q.losses, dealt: q.dealt, taken: q.taken, kills: q.kills, healed: q.healingDone, life: q.hpMax, wipedAt: q.wipedAt });
   }
-  const pair = new Map<number, Map<number, number>>();
-  const squadOf = (i: number) => (i >= 0 && i < KEEP_SRC_BASE ? sol[i] : undefined);
+  // a raised band (skeletons) fights for the squad that raised it: its damage, kills and healing are that squad's
+  const idOf = (row: number): number | undefined => {
+    const q = at.squads[row];
+    return q && by.has(q.squad) && by.get(q.squad)!.side === q.side ? q.squad : undefined;
+  };
+  for (const q of at.squads) {
+    if (!q.summoned && q.type !== 'skeleton') continue;
+    const owner = by.get(idOf(q.row) ?? -1);
+    if (!owner) continue;
+    owner.dealt += q.dealt;
+    owner.kills += q.kills;
+    owner.healed += q.healingDone;
+  }
+  // the ledger counts every death; a soldier brought back (Undying Oath, Phoenix) is not lost
+  const sol = d.replay.soldiers;
   for (const e of d.events) {
-    if (e.k === 'hit') {
-      if (e.miss) continue;
-      const a = squadOf(e.src);
-      const b = squadOf(e.tgt);
-      const qa = a ? by.get(a.squad) : undefined;
-      const qb = b && !b.summoned ? by.get(b.squad) : undefined;
-      if (qa) qa.dealt += e.dmg;
-      if (qb) qb.taken += e.dmg;
-      if (qa && qb) {
-        let m = pair.get(qa.id);
-        if (!m) pair.set(qa.id, (m = new Map()));
-        m.set(qb.id, (m.get(qb.id) ?? 0) + e.dmg);
-      }
-    } else if (e.k === 'death') {
-      const b = squadOf(e.tgt);
-      const a = squadOf(e.src);
-      if (a) {
-        const qa = by.get(a.squad);
-        if (qa) qa.kills++;
-      }
-      if (b && !b.summoned) {
-        const qb = by.get(b.squad);
-        if (qb) {
-          qb.lost++;
-          if (qb.lost >= qb.size) qb.wipedAt = e.tick;
-        }
-      }
-    } else if (e.k === 'revive') {
-      const b = squadOf(e.tgt);
-      const qb = b && !b.summoned ? by.get(b.squad) : undefined;
-      if (qb) {
-        qb.lost = Math.max(0, qb.lost - 1);
-        qb.wipedAt = -1;
-      }
-    } else if (e.k === 'heal') {
-      const a = squadOf(e.src);
-      const qa = a ? by.get(a.squad) : undefined;
-      if (qa) qa.healed += e.amount;
+    if (e.k !== 'revive') continue;
+    const s = sol[e.tgt];
+    const q = s && !s.summoned ? by.get(s.squad) : undefined;
+    if (!q || q.side !== s!.side) continue;
+    q.lost = Math.max(0, q.lost - 1);
+  }
+  for (const q of by.values()) if (q.lost < q.size) q.wipedAt = -1;
+  const pair = new Map<number, Map<number, number>>();
+  for (const [ra, m] of squadDamagePairs(d, d.replay.ticks)) {
+    const a = idOf(ra);
+    if (a === undefined) continue;
+    for (const [rb, dmg] of m) {
+      const tgt = at.squads[rb];
+      if (!tgt || tgt.summoned || tgt.type === 'skeleton' || !by.has(tgt.squad) || !dmg) continue;
+      let out = pair.get(a);
+      if (!out) pair.set(a, (out = new Map()));
+      out.set(tgt.squad, (out.get(tgt.squad) ?? 0) + dmg);
     }
   }
   const r = d.replay.result;
-  return { squads: [...by.values()], pair, ticks: r.ticks, timeout: r.timeout, winner: r.winner };
+  // older replays carry no `end`: both armies standing means the clock, unless it stopped short of 1:30
+  const end: BattleEnd = r.end ?? (r.timeout ? (r.ticks >= TIME_LIMIT_TICKS ? 'timeout' : 'stalemate') : r.winner === null ? 'mutualWipe' : 'wipe');
+  return { squads: [...by.values()], pair, ticks: r.ticks, timeout: r.timeout, end, winner: r.winner };
 }
 
 // ---------------------------------------------------------------- hints
@@ -117,12 +116,16 @@ function traits(t: SquadType, lord: LordId | null): Traits {
   };
 }
 
-const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`;
-const pct = (f: number) => `${Math.round(f * 100)}%`;
-const clock = (ticks: number) => {
+/** The battle clock: 1:30 at 20 ticks a second. */
+export const TIME_LIMIT_TICKS = 1800;
+/** "1:23" for a tick count. */
+export const battleClock = (ticks: number): string => {
   const s = Math.floor(ticks / 20);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
+const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+const pct = (f: number) => `${Math.round(f * 100)}%`;
+const clock = battleClock;
 function nameOf(q: SquadStat): string {
   return q.type === 'lord' ? unitName('lord', q.lord) : UNITS[q.type as UnitType].name;
 }
@@ -214,7 +217,10 @@ export function battleHints(st: BattleStats, me: Seat, ctx: { gold?: number; max
   if (lord && lord.wipedAt >= 0 && lord.wipedAt < Math.min(st.ticks * 0.5, 500))
     add(4.5, 'bad', `Your Lord fell at ${clock(lord.wipedAt)}. Keep them behind the front line so the ability gets used.`);
 
-  if (st.timeout) add(6.5, 'info', 'Time ran out at 1:30 with both armies standing, so each side dealt only half Keep damage. Bring more damage to finish the fight.');
+  // both armies still standing: say which of the two endings it was, with the real time
+  if (st.end === 'timeout') add(6.5, 'info', 'Time ran out at 1:30 with both armies standing, so each side dealt only half Keep damage. Bring more damage to finish the fight.');
+  else if (st.end === 'stalemate')
+    add(6.5, 'info', `The battle was called at ${clock(st.ticks)}: neither army could still harm the other, so each side dealt only half Keep damage. Bring something that can reach what they had left (bows, magic and fliers hit the air).`);
   if (won === false && (ctx.gold ?? 0) >= 200) add(5.5, 'info', `You went into battle with ${ctx.gold} gold unspent. Level up squads (+25% life, +20% damage) when you have no deploys left.`);
   if (!out.length) {
     if (won === true) add(1, 'good', 'A clean win: your army out-fought theirs across the line.');

@@ -111,10 +111,19 @@ export function buildCurtain(r: THREE.Vector4, h: (x: number, z: number) => numb
   const idx: number[] = [];
   let run = 0;
   const H = 1.5;
+  // the ribbon rides a smoothed terrain profile (a +-4 m moving average, never below the ground):
+  // every bump of the heightfield used to kink the border
+  const raw = pts.map(([x, z]) => h(x, z));
+  const n = pts.length - 1;
+  const ys = raw.map((_, i) => {
+    let s = 0;
+    for (let k = -4; k <= 4; k++) s += raw[(((i + k) % n) + n) % n];
+    return Math.max(s / 9, raw[i]) + 0.04;
+  });
   for (let i = 0; i < pts.length; i++) {
     const [x, z] = pts[i];
     if (i > 0) run += Math.hypot(x - pts[i - 1][0], z - pts[i - 1][1]);
-    const y = h(x, z) + 0.02;
+    const y = ys[i];
     const f = Math.abs(z - frontZ) < 0.6 ? 1 : 0.25;
     pos.push(x, y, z, x, y + H, z);
     uv.push(run, 0, run, 1);

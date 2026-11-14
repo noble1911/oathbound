@@ -18,7 +18,7 @@ p.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m
 p.on('response', (r) => r.status() >= 400 && !/favicon/.test(r.url()) && errors.push(`${r.status()} ${r.url()}`));
 let fails = 0;
 const check = (ok, what) => { console.log(`${ok ? 'ok  ' : 'FAIL'} [${TAG}] ${what}`); if (!ok) fails++; };
-const shot = (name) => p.screenshot({ path: path.join('e2e/shots', `ux-${TAG}-${name}.png`) });
+const shot = (name) => p.screenshot({ path: path.join('e2e/shots', `${process.env.SHOT_PREFIX || 'ux'}-${TAG}-${name}.png`) });
 const rect = (sel) => p.evaluate((sel) => { const n = document.querySelector(sel); if (!n) return null; const r = n.getBoundingClientRect(); return { x: r.left, y: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; }, sel);
 const inView = (r) => !!r && r.x >= -1 && r.y >= -1 && r.r <= W + 1 && r.b <= H + 1;
 const frames = async (ms) => {
@@ -104,12 +104,14 @@ try {
   const bad = audit.filter((x) => !/OVERLAP \.shell \.corner x \.coach/.test(x));
   check(bad.length === 0, `planning layout clean ${JSON.stringify(bad.slice(0, 6))}`);
   check((await p.$$('.r-deploy')).length === 0 && (await p.$$('.deploy-badge')).length === 1, '"Deploys left" shown once');
-  const zone = await p.evaluate(() => { const s = window.__ob.app.scene; const pts = { fl: [300, 3900], fr: [7700, 3900], bl: [300, 500], br: [7700, 500], lord: window.__ob.app.room.view.you.squads[0].pos }; const o = {}; for (const k in pts) o[k] = s.toScreen(pts[k], 0); return o; });
+  const zone = await p.evaluate(() => { const s = window.__ob.app.scene; const pts = { fl: [300, 3900], fr: [7700, 3900], ml: [300, 2200], mr: [7700, 2200], bc: [4000, 1300], lord: window.__ob.app.room.view.you.squads[0].pos }; const o = {}; for (const k in pts) o[k] = s.toScreen(pts[k], 0); return o; });
   const hud = { top: (await rect('.res')).b, bottom: (await rect('.bottom')).y };
   const vis = (q) => q && q.x >= 0 && q.x <= W && q.y >= hud.top - 2 && q.y <= hud.bottom + 2;
   console.log(`     zone corners ${JSON.stringify(Object.fromEntries(Object.entries(zone).map(([k, v]) => [k, v && [Math.round(v.x), Math.round(v.y)]])))} hud ${JSON.stringify(hud)}`);
   check(vis(zone.lord) && vis(zone.fl) && vis(zone.fr), 'default framing: Lord and the zone front inside the HUD insets');
-  check(vis(zone.bl) && vis(zone.br), 'default framing: zone back corners inside the HUD insets');
+  // the home view is a low battlefield shot: the last strip in front of the own Keep is cropped by design
+  // (reached by scrolling back), so the check is the zone's side edges at mid depth and its back rows at the centre
+  check(vis(zone.ml) && vis(zone.mr) && vis(zone.bc), 'default framing: zone side edges (mid depth) and back rows (centre) inside the HUD insets');
   check((await frames(2000)) === 0, 'planning idle 0 fps');
   // ---- deploy with the hotkey, rotate while placing
   const spot = async (pos) => p.evaluate((pos) => window.__ob.app.scene.toScreen(pos, 0), pos);
@@ -133,7 +135,7 @@ try {
   check(!!(await p.$('.planning.has-sel')), 'clicking the squad selects it');
   await shot('selected');
   const sp = await rect('.sqpanel'), gh = await rect('.r-ghost');
-  check(!(sp.x < gh.r && sp.r > gh.x && sp.y < gh.b && sp.b > gh.y), 'squad panel clear of the ghost toggle');
+  check(!(sp.x < gh.r && sp.r > gh.x && sp.y < gh.b && sp.b > gh.y), 'squad panel clear of the enemy-intel label');
   const yaw0 = await p.evaluate(() => window.__ob.app.scene.view.camera.goal.yaw);
   await p.keyboard.down('q'); await sleep(300); await p.keyboard.up('q');
   await sleep(300);

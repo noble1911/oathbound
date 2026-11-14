@@ -1,5 +1,5 @@
 {
- "_doc": "Joint layout per mount mesh for tools/art/blender/creature.py, in metres in the rig frame: the cleaned mesh rotated by `yaw` degrees about Z and shifted by -dx so it faces -Y and is centred on x=0 (TRELLIS returns some creatures in a 3/4 pose). Chains are joint lists (N points -> N-1 bones). `legs`/`wings` with only an l-side entry are mirrored. Author with creature_view.py + creature_grid.py. `flight` (fliers): hover / cruise posture as rotations in radians about the rig X axis (+ lowers the front / tips a neck forward / raises a tail), wing beat `amp` and `mid` elevation about the body axis, `wing_pron` = roll of the wing about its span that lays a 'displayed' (vertical) membrane flat for flight, `wing_pose` = static per-bone unfold [axis, angle, mirrored], `tuck` = leg joint angles in flight, `tail_uncurl` = how much of a curled rest tail is straightened. `lie_lift` raises the corpse so it rests on its flank.",
+ "_doc": "Joint layout per mount mesh for tools/art/blender/creature.py, in metres in the rig frame: the cleaned mesh rotated by `yaw` degrees about Z and shifted by -dx so it faces -Y and is centred on x=0 (TRELLIS returns some creatures in a 3/4 pose). Chains are joint lists (N points -> N-1 bones). `legs`/`wings` with only an l-side entry are mirrored. Author with creature_view.py + creature_grid.py. `flight` (fliers): hover / cruise posture as rotations in radians about the rig X axis (+ lowers the front / tips a neck forward / raises a tail), wing beat `amp` and `mid` elevation about the body axis, `wing_pron` = roll of the wing about its span that lays a 'displayed' (vertical) membrane flat for flight, `wing_pose` = static per-bone unfold [axis, angle, mirrored], `tuck` = leg joint angles in flight, `tail_uncurl` = how much of a curled rest tail is straightened. `team_wings` = team-mask strength painted on the wing membranes. `lie_lift` raises the corpse so it rests on its flank.",
  "horse": {
   "yaw": 0,
   "dx": 0,
@@ -145,6 +145,7 @@
   }
  },
  "wyvern_mount": {
+  "team_wings": 0.75,
   "yaw": 30,
   "dx": 0.34,
   "seat": [0, -0.6, 1.5],
@@ -217,6 +218,7 @@
   }
  },
  "dragon": {
+  "team_wings": 0.8,
   "yaw": -60,
   "dx": -0.33,
   "spine": [

@@ -1,17 +1,15 @@
-// Art-pipeline props (manifest `props`) replacing the procedural rocks, ruins, bridges and arrow
-// towers. Everything is instanced (one InstancedMesh per prop per LOD) and placed deterministically
+// Art-pipeline props (manifest `props`) replacing the procedural rocks (boulders only), ruins and arrow
+// towers; bridges stay procedural (props.ts). Everything is instanced (one InstancedMesh per prop per LOD) and placed deterministically
 // from the terrain layout:
 //   * rocks keep their placement; small rocks use LOD1;
 //   * ruins: per ruins feature a seeded arrangement of arch / wall / column pieces (mirrored pairs match);
-//   * bridges: one bridge per deck, fitted non-uniformly to the crossing and to the deck height curve.
 // Vegetation (trees, bushes, reeds) is procedural: see foliage.ts / trees.ts.
 import * as THREE from 'three';
 import type { Engine } from '../core/engine.ts';
 import { after } from '../core/glsl.ts';
 import type { Feature } from './layout.ts';
 import type { PropAsset, PropMesh } from '../crowd/assets.ts';
-import type { Heightfield, Deck } from './heightfield.ts';
-import { deckCurve } from './heightfield.ts';
+import type { Heightfield } from './heightfield.ts';
 import { mulberry32 } from './noise.ts';
 
 /** Team-tinted prop material: albedo *= mix(1, team, tintMask.r at UV0). */
@@ -69,6 +67,8 @@ export class ArtProps {
   readonly group = new THREE.Group();
   private geos: THREE.BufferGeometry[] = [];
   private rocks: { mesh: THREE.InstancedMesh; total: number }[] = [];
+  /** Triangle budget for art boulders per rock mesh (the rest stay procedural). */
+  static readonly ART_ROCK_TRIS = 150_000;
   private readonly t: ArtPropTargets;
 
   constructor(t: ArtPropTargets, art: Map<string, PropAsset>) {
@@ -85,11 +85,9 @@ export class ArtProps {
         const g = fitted(pm, 1.1);
         g.translate(0, -0.15, 0);
         this.geos.push(g);
-        m.geometry = g;
         const rm = propMat(t.engine, pm.material, mats);
         // the TRELLIS rock bake is near black: lift it to a mid grey stone
         rm.color.setRGB(1.75, 1.7, 1.6);
-        m.material = rm;
         // biggest first, so tier thinning (a count prefix) drops pebbles before boulders
         const list: { m: THREE.Matrix4; c: THREE.Color; s: number }[] = [];
         for (let i = 0; i < m.count; i++) {
@@ -100,13 +98,27 @@ export class ArtProps {
           list.push({ m: mm, c, s: new THREE.Vector3().setFromMatrixScale(mm).length() });
         }
         list.sort((x, y) => y.s - x.s);
-        list.forEach((it, i) => {
+        // only the boulders get the art mesh (thousands of triangles each); the hundreds of pebbles
+        // keep the cheap procedural rock, which reads the same at their size
+        const nArt = Math.min(list.length, Math.ceil(ArtProps.ART_ROCK_TRIS / Math.max(1, (g.index ? g.index.count : g.getAttribute('position').count) / 3)));
+        const art = new THREE.InstancedMesh(g, rm, Math.max(1, nArt));
+        list.slice(0, nArt).forEach((it, i) => {
+          art.setMatrixAt(i, it.m);
+          art.setColorAt(i, it.c);
+        });
+        art.count = nArt;
+        art.name = `${m.name}-art`;
+        art.computeBoundingSphere();
+        this.group.add(art);
+        list.slice(nArt).forEach((it, i) => {
           m.setMatrixAt(i, it.m);
           if (m.instanceColor) m.setColorAt(i, it.c);
         });
+        m.count = list.length - nArt;
         m.instanceMatrix.needsUpdate = true;
         if (m.instanceColor) m.instanceColor.needsUpdate = true;
-        this.rocks.push({ mesh: m, total: m.count });
+        m.computeBoundingSphere();
+        this.rocks.push({ mesh: art, total: nArt }, { mesh: m, total: m.count });
       });
     }
     // --- ruins and bridges replace the procedural meshes
@@ -115,10 +127,8 @@ export class ArtProps {
       hide('ruin');
       this.placeRuins(art, mats);
     }
-    if (art.has('bridge')) {
-      hide('bridge');
-      this.placeBridges(art.get('bridge')!, mats);
-    }
+    // bridges stay procedural (a three-span stone arch with cutwaters, parapets and coping, fitted
+    // exactly to each crossing): the image-to-3D bridge was a blurry box stretched over the deck
     for (const o of this.group.children) {
       const m = o as THREE.Mesh;
       m.castShadow = true;
@@ -176,39 +186,6 @@ export class ArtProps {
       const a = art.get(id);
       if (a) this.instanced(a.lod0, null, mats, list, id);
     }
-  }
-
-  private placeBridges(a: PropAsset, mats: Map<THREE.Material, THREE.MeshStandardMaterial>): void {
-    const pm = a.lod0;
-    const b = pm.box;
-    // measure the art deck: top surface at the centre and near the ends
-    const probe = new THREE.Mesh(pm.geometry);
-    const ray = new THREE.Raycaster();
-    const top = (z: number) => {
-      ray.set(new THREE.Vector3((b.min.x + b.max.x) / 2, b.max.y + 5, z), new THREE.Vector3(0, -1, 0));
-      const hits = ray.intersectObject(probe);
-      return hits.length ? hits[0].point.y : b.max.y;
-    };
-    const zc = (b.min.z + b.max.z) / 2;
-    const half = (b.max.z - b.min.z) / 2;
-    const topC = top(zc);
-    const topE = (top(zc - half * 0.88) + top(zc + half * 0.88)) / 2;
-    const list: THREE.Matrix4[] = [];
-    for (const d of this.t.hf.decks as Deck[]) {
-      const c = d.c;
-      const len = d.z1 - d.z0;
-      const wid = c.x1 - c.x0;
-      const sx = wid / Math.max(0.1, b.max.x - b.min.x);
-      const sz = len / Math.max(0.1, b.max.z - b.min.z);
-      const endH = (d.h0 + d.h1) / 2 + 0.08;
-      const midH = deckCurve(d, 0.5);
-      const sy = topC - topE > 0.2 ? Math.min(2, Math.max(0.5, (midH - endH) / (topC - topE))) : 1;
-      const y = endH - sy * topE;
-      const m = new THREE.Matrix4().makeScale(sx, sy, sz);
-      m.setPosition(c.cx - ((b.min.x + b.max.x) / 2) * sx, y, (d.z0 + d.z1) / 2 - zc * sz);
-      list.push(m);
-    }
-    this.instanced(pm, null, mats, list, 'art-bridge');
   }
 
   /** Tier budget: rock counts. */

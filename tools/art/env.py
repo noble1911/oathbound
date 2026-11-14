@@ -1,7 +1,7 @@
 """Environment textures: CC0 Poly Haven scans -> packed runtime textures in public/textures/env/.
 
     python tools/art/env.py            # download (cached in art-work/env/src) + pack everything
-    python tools/art/env.py --only veg # just the vegetation atlas  (ground | veg)
+    python tools/art/env.py --only veg # just the vegetation atlas  (ground | stone | veg)
 
 Outputs (see docs/ART.md section 6):
   ground_<layer>_a.webp   RGB = albedo, A = 128 + height * 127       (1024 and _512)
@@ -29,6 +29,11 @@ GROUND = {
     'mud': ('brown_mud_03', (1.0, 0.96, 0.9), 0.9, 1.0),
     'rock': ('mossy_rock', (1.0, 1.0, 0.98), 0.85, 0.95),
 }
+# masonry for the bridges: name -> (Poly Haven id, albedo gain, saturation)
+STONE = {
+    'wall': ('medieval_blocks_05', (0.9, 0.9, 0.9), 0.55),
+    'deck': ('cobblestone_floor_08', (0.82, 0.8, 0.76), 0.7),
+}
 BARK = ['bark_brown_02', 'pine_bark', 'tree_bark_03']
 # model id -> maps to fetch (leaf / twig atlases with a separate alpha map)
 MODELS = {
@@ -50,6 +55,11 @@ def fetch():
         d = json.loads(http('https://api.polyhaven.com/files/' + tid))
         maps = {'diff': 'Diffuse', 'nor': 'nor_gl', 'disp': 'Displacement'} if tid not in BARK else {'diff': 'Diffuse'}
         for short, key in maps.items():
+            f = d[key]['1k'].get('jpg') or d[key]['1k']['png']
+            jobs.append((f['url'], os.path.join(SRC, f'{tid}_{short}.{f["url"].rsplit(".", 1)[1]}')))
+    for tid, _, _ in STONE.values():
+        d = json.loads(http('https://api.polyhaven.com/files/' + tid))
+        for short, key in {'diff': 'Diffuse', 'nor': 'nor_gl', 'ao': 'AO'}.items():
             f = d[key]['1k'].get('jpg') or d[key]['1k']['png']
             jobs.append((f['url'], os.path.join(SRC, f'{tid}_{short}.{f["url"].rsplit(".", 1)[1]}')))
     for mid, keys in MODELS.items():
@@ -112,6 +122,19 @@ def pack_ground():
         total += os.path.getsize(pn)
         print(f'{name}: n {os.path.getsize(pn) // 1024} KB')
     print('ground total', total // 1024, 'KB')
+
+
+def pack_stone():
+    """Bridge masonry: stone_<name>_a.webp (albedo x AO, sRGB) and stone_<name>_n.webp (GL normal map), 512²."""
+    for name, (tid, gain, sat) in STONE.items():
+        diff = np.asarray(grade(Image.open(find(f'{tid}_diff')), gain, sat, 1.0)).astype(np.float32)
+        ao = np.asarray(Image.open(find(f'{tid}_ao')).convert('L')).astype(np.float32) / 255
+        a = Image.fromarray(np.clip(diff * (0.45 + 0.55 * ao[:, :, None]), 0, 255).astype(np.uint8)).resize((512, 512), Image.LANCZOS)
+        pa = os.path.join(OUT, f'stone_{name}_a.webp')
+        a.save(pa, 'WEBP', quality=80, method=6)
+        pn = os.path.join(OUT, f'stone_{name}_n.webp')
+        Image.open(find(f'{tid}_nor')).convert('RGB').resize((512, 512), Image.LANCZOS).save(pn, 'WEBP', quality=82, method=6)
+        print(f'stone {name}: a {os.path.getsize(pa) // 1024} KB, n {os.path.getsize(pn) // 1024} KB')
 
 
 # ----------------------------------------------------------------------------------- vegetation atlas
@@ -343,5 +366,7 @@ if __name__ == '__main__':
     fetch()
     if only in (None, 'ground'):
         pack_ground()
+    if only in (None, 'stone'):
+        pack_stone()
     if only in (None, 'veg'):
         pack_veg()

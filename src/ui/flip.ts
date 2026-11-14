@@ -3,7 +3,7 @@
 // the whole match rotated half a turn with the owners swapped: their army is then blue, at the near
 // end, exactly like a seat-0 viewer's. These are the pure maps for that rotation (no DOM, no three);
 // src/ui/engine-scene.ts applies them at the adapter seam, so screens keep talking sim coordinates.
-import type { DecodedReplay, KeepInfo, ReplayEvent, ReplaySoldier, Seat, SoldierTransforms, Terrain, Vec2 } from '../sim/types.ts';
+import type { DecodedReplay, KeepInfo, ReplayEvent, ReplaySoldier, Seat, SkillEvent, SoldierTransforms, Terrain, Vec2 } from '../sim/types.ts';
 import { KEEP_SRC_BASE } from '../sim/replay.ts';
 
 export const FIELD_W = 8000;
@@ -45,6 +45,15 @@ export function flipEvent(e: ReplayEvent): ReplayEvent {
   }
 }
 
+/**
+ * An item-skill cast (DecodedReplay.skills) rotated: only the target point is a field position.
+ * `src` / `tgt` are soldier indices and `squad` / `tgtSquad` are rows of Replay.squads, and none of
+ * those change with the viewer (the side of a soldier or a row is flipped where it is read).
+ */
+export function flipSkill(e: SkillEvent): SkillEvent {
+  return { ...e, pos: flipPos(e.pos) };
+}
+
 function flipKeep(k: KeepInfo): KeepInfo {
   return { ...k, seat: flipSeat(k.seat), pos: flipPos(k.pos), towers: [flipPos(k.towers[0]), flipPos(k.towers[1])] };
 }
@@ -56,6 +65,8 @@ export interface FlippedSource {
   terrain: Terrain;
   durationMs: number;
   events: ReplayEvent[];
+  /** Item-skill casts (DecodedReplay.skills), rotated like the events. */
+  skills: SkillEvent[];
   sample(ms: number, out: SoldierTransforms): void;
   makeTransforms(): SoldierTransforms;
   /** The sim's own event for a rotated one (the screens and the audio work in sim coordinates). */
@@ -82,6 +93,7 @@ export function flippedSource(
     terrain: r.terrain,
     durationMs: r.ticks * 50,
     events,
+    skills: (d.skills ?? []).map(flipSkill),
     sample: (ms, out) => {
       sample(d, ms, out);
       const n = out.count;

@@ -21,7 +21,7 @@ async function page(tag, w, h, url = '') {
   await p.waitForFunction(() => document.body.classList.contains('booted'), { timeout: 30000 });
   return p;
 }
-const shot = (p, name) => p.screenshot({ path: path.join('e2e/shots', `ux-pvp-${name}.png`) });
+const shot = (p, name) => p.screenshot({ path: path.join('e2e/shots', `${process.env.SHOT_PREFIX || 'ux'}-pvp-${name}.png`) });
 const rect = (p, sel) => p.evaluate((sel) => { const n = document.querySelector(sel); if (!n) return null; const r = n.getBoundingClientRect(); const cs = getComputedStyle(n); return { x: r.left, y: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height, shown: cs.display !== 'none' && r.width > 0 }; }, sel);
 const inView = (p, r) => !!r && r.x >= -1 && r.y >= -1 && r.r <= p.__w + 1 && r.b <= p.__h + 1;
 // names and chat arrive raw from the server: they must render as text on every screen
@@ -166,19 +166,25 @@ try {
   await sleep(300);
   await shot(b, 'B-concede-confirm-1024');
   await b.click('.dialog .yes');
-  check(await waitFor(b, () => !!document.querySelector('.title-menu') && !window.__ob.app.room), 'conceding returns to the title');
+  // conceding ends the match: the conceder stays for the result, the opponent wins
+  check(await waitFor(b, () => !!document.querySelector('.screen.over.defeat.conceded'), null, 15000), 'the conceder sees Defeat (conceded)');
+  check(await waitFor(a, () => !!document.querySelector('.screen.over.victory.conceded'), null, 15000), 'the opponent sees Victory (conceded)');
+  check(await waitFor(s, () => !!document.querySelector('.screen.over.conceded'), null, 15000), 'the spectator sees the conceded match end');
+  await sleep(2600);
+  await shot(b, 'B-conceded-1024');
+  await shot(a, 'A-opponent-conceded');
+  await shot(s, 'S-conceded');
+  const quit = async (p) => { await p.click('.over .leave'); await sleep(400); if (await p.$('.dialog .yes')) await p.click('.dialog .yes'); };
+  await quit(b);
+  check(await waitFor(b, () => !!document.querySelector('.title-menu') && !window.__ob.app.room), 'leaving the result returns to the title');
   const saved = await b.evaluate(() => sessionStorage.getItem('oathbound.v2.seat'));
   check(saved === null && !new URL(b.url()).search, 'the saved seat and ?room are cleared');
   await b.reload({ waitUntil: 'domcontentloaded' });
   await b.waitForFunction(() => document.body.classList.contains('booted'));
   await sleep(1500);
   check(await b.evaluate(() => !window.__ob.app.room && !!document.querySelector('.title-menu')), 'a reload after conceding does not rejoin');
-  check(await waitFor(a, () => { const s1 = window.__ob.app.room?.seats[1]; return !!s1 && (s1.botControlled || !s1.connected || s1.isBot); }, null, 15000), 'A sees seat 1 handed over');
   // ---- spectator stops watching
-  await s.click('.stop-watch');
-  await sleep(300);
-  check(!!(await s.$('.dialog-veil')), 'Stop watching asks first');
-  await s.click('.dialog .yes');
+  await quit(s);
   check(await waitFor(s, () => !!document.querySelector('.title-menu') && !window.__ob.app.room), 'spectator back at the title');
 } catch (e) {
   console.log('EXCEPTION', e);

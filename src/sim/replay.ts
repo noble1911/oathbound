@@ -2,8 +2,13 @@
 // See the `Replay` doc comment in types.ts for the layout. Everything is varint/zigzag binary, base64 on the wire.
 import { KEYFRAME_TICKS, TICK_MS } from './constants.ts';
 import type {
-  AbilityEventKind, ArcType, DecodedReplay, ProjectileKind, Replay, ReplayEvent, Seat, SoldierTransforms, WeaponKind,
+  AbilityEventKind, ArcType, DecodedReplay, ProjectileKind, Replay, ReplayEvent, Seat, SkillEvent, SkillId, SoldierTransforms, StatCause, TallyEvent, WeaponKind,
 } from './types.ts';
+
+/** Wire version of the replay; decodeReplay refuses any other. */
+export const REPLAY_VERSION = 3 as const;
+/** Length (ticks) of one window of the statistics ledger ('tally' events). */
+export const TALLY_TICKS = 10;
 import { ANIM_STATES, EVENT_KINDS } from './types.ts';
 
 /** `src` id for keep towers (n = 0, 1) and the keep itself (n = 2) of `seat`. */
@@ -17,10 +22,22 @@ export const PROJ_CODES: readonly ProjectileKind[] = ['none', 'arrow', 'bolt', '
 export const ARC_CODES: readonly ArcType[] = ['line', 'arc', 'high_arc'];
 export const ABILITY_CODES: readonly AbilityEventKind[] = [
   'rally', 'meteor', 'bulwark', 'skyfall', 'chain', 'burn', 'frost', 'ember_burst', 'reflect', 'stomp', 'charge', 'brace',
-  'earthshaker', 'bloodthirst', 'sunfire', 'lifebinder', 'levelup',
+  'earthshaker', 'bloodthirst', 'sunfire', 'lifebinder', 'levelup', 'knockback', 'shield_wall', 'war_cry', 'cleave',
+];
+/** Wire order of the skills (append only). */
+export const SKILL_CODES: readonly SkillId[] = [
+  'fireball', 'chain_lightning', 'frost_nova', 'mending_light', 'shield_wall', 'war_cry', 'cleave', 'fire_arrows', 'pinning_shot', 'rain_of_arrows',
+  'thunderous_charge', 'trample', 'dive_strike', 'incendiary_payload',
+];
+/** Wire order of the ledger causes (append only; fewer than 64). */
+export const STAT_CAUSES: readonly StatCause[] = [
+  'attack', 'burn', 'thorns', 'tower', 'chain', 'ember_burst', 'sunfire', 'meteor', 'skyfall', 'heal', 'leech', 'lifebinder', 'bloodthirst', 'revive', 'rout',
+  ...SKILL_CODES,
 ];
 export const REVIVE_CODES = ['undying_oath', 'phoenix'] as const;
-export const EK: Record<(typeof EVENT_KINDS)[number], number> = Object.fromEntries(EVENT_KINDS.map((k, i) => [k, i])) as never;
+/** Kinds in the binary event stream: the classic eleven, then skill casts and ledger entries (decoded into their own lists). */
+export const WIRE_KINDS = [...EVENT_KINDS, 'skill', 'tally'] as const;
+export const EK: Record<(typeof WIRE_KINDS)[number], number> = Object.fromEntries(WIRE_KINDS.map((k, i) => [k, i])) as never;
 
 // ---------------------------------------------------------------- bytes
 
@@ -168,6 +185,7 @@ export class FrameEncoder {
 
 /** Decode a wire replay into typed arrays + event objects (client side, once per battle). */
 export function decodeReplay(r: Replay): DecodedReplay {
+  if (r.v !== REPLAY_VERSION) throw new Error(`unsupported replay version ${String(r.v)} (this build reads ${REPLAY_VERSION})`);
   const n = r.soldiers.length, F = r.frameCount;
   const x = new Int16Array(n * F), y = new Int16Array(n * F), facing = new Uint8Array(n * F), hp = new Uint16Array(n * F), anim = new Uint8Array(n * F).fill(255);
   const rd = new ByteReader(fromBase64(r.frames));
@@ -192,7 +210,8 @@ export function decodeReplay(r: Replay): DecodedReplay {
       x[k] = cx[i]; y[k] = cy[i]; facing[k] = cf[i]; hp[k] = ch[i]; anim[k] = ca[i];
     }
   }
-  return { replay: r, soldierCount: n, frameCount: F, x, y, facing, hp, anim, events: decodeEvents(r) };
+  const ev = decodeAllEvents(r);
+  return { replay: r, soldierCount: n, frameCount: F, x, y, facing, hp, anim, events: ev.events, skills: ev.skills, tallies: ev.tallies };
 }
 
 /**
@@ -202,7 +221,7 @@ export function decodeReplay(r: Replay): DecodedReplay {
  *  projectile id, J = impact id as zigzag delta from the latest projectile id, P/Q = impact point relative to that
  *  projectile's target point.
  */
-export const EVENT_CODEC: readonly string[] = ['rruuu', 'IrruuXYxyu', 'JPQuu', 'rruu', 'rru', 'rr', 'rruXYuu', 'uruuu', 'uu', 'ruu', 'rrXY'];
+export const EVENT_CODEC: readonly string[] = ['rruuu', 'IrruuXYxyu', 'JPQuu', 'rruu', 'rru', 'rr', 'rruXYuu', 'uruuu', 'uu', 'ruu', 'rrXY', 'ruurrXYuu', 'rruuuuu'];
 
 /** Encode the flat event list [tickDelta, kind, ...fields] (see battle.ts) into bytes. */
 export function encodeEvents(ev: readonly number[]): Uint8Array {
@@ -239,12 +258,17 @@ export function encodeEvents(ev: readonly number[]): Uint8Array {
 }
 
 export function decodeEvents(r: Replay): ReplayEvent[] {
+  return decodeAllEvents(r).events;
+}
+
+export function decodeAllEvents(r: Replay): { events: ReplayEvent[]; skills: SkillEvent[]; tallies: TallyEvent[] } {
   const rd = new ByteReader(fromBase64(r.events));
   const out: ReplayEvent[] = [];
+  const skills: SkillEvent[] = [], tallies: TallyEvent[] = [];
   const projTo = new Map<number, [number, number]>();
   let tick = 0, lastPid = 0;
   const f: number[] = [];
-  while (!rd.done && out.length < r.eventCount) {
+  while (!rd.done) {
     const hb = rd.byte();
     const kind = hb & 15;
     tick += hb >> 4 === 15 ? rd.uv() : hb >> 4;
@@ -268,7 +292,7 @@ export function decodeEvents(r: Replay): ReplayEvent[] {
       }
       f.push(v);
     }
-    const k = EVENT_KINDS[kind];
+    const k = WIRE_KINDS[kind];
     switch (k) {
       case 'attack': out.push({ k, tick, src: f[0], tgt: f[1], weapon: WEAPON_CODES[f[2]], projectile: PROJ_CODES[f[3]], hitTick: tick + f[4] }); break;
       case 'projectile': out.push({ k, tick, id: f[0], src: f[1], tgt: f[2], kind: PROJ_CODES[f[3]], arc: ARC_CODES[f[4]], from: [f[5], f[6]], to: [f[7], f[8]], flight: f[9] }); break;
@@ -281,10 +305,12 @@ export function decodeEvents(r: Replay): ReplayEvent[] {
       case 'keepStage': out.push({ k, tick, seat: f[0] as Seat, stage: f[1] }); break;
       case 'revive': out.push({ k, tick, tgt: f[0], hp: f[1], cause: REVIVE_CODES[f[2]] }); break;
       case 'summon': out.push({ k, tick, tgt: f[0], src: f[1], pos: [f[2], f[3]] }); break;
+      case 'skill': skills.push({ k, tick, src: f[0], squad: f[1], skill: SKILL_CODES[f[2]], tgt: f[3], tgtSquad: f[4], pos: [f[5], f[6]], radius: f[7], dur: f[8] }); break;
+      case 'tally': tallies.push({ k, tick, src: f[0], tgt: f[1], cause: STAT_CAUSES[f[2]], dmg: f[3], mit: f[4], heal: f[5], n: f[6] }); break;
       default: throw new Error('bad replay event');
     }
   }
-  return out;
+  return { events: out, skills, tallies };
 }
 
 // ---------------------------------------------------------------- playback sampling
@@ -331,7 +357,7 @@ export function sampleReplay(d: DecodedReplay, timeMs: number, out: SoldierTrans
 
 /** FNV-1a hash of the wire replay (frames + events + result), for determinism tests. */
 export function replayHash(r: Replay): number {
-  const s = r.frames + '|' + r.events + '|' + JSON.stringify(r.result) + '|' + JSON.stringify(r.soldiers);
+  const s = r.frames + '|' + r.events + '|' + JSON.stringify(r.result) + '|' + JSON.stringify(r.soldiers) + '|' + JSON.stringify(r.squads);
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return h >>> 0;
