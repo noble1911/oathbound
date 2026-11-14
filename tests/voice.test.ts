@@ -3,17 +3,17 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { LORD_IDS } from '../src/sim/data/lords.ts';
 import { VOICE_LINES, VOICE_LORDS, VoiceGate, allVoiceFiles, type VoiceEvent } from '../src/audio/voice-lines.ts';
 
-const manifest = JSON.parse(readFileSync('tools/voice/manifest.json', 'utf8')) as {
-  events: Record<string, string>;
-  lords: Record<string, { lines: Record<string, string[]> }>;
-};
+type Manifest = { events: Record<string, string>; lords: Record<string, { lines: Record<string, string[]> }> };
+// read lazily: the Docker build image has no tools/ folder
+const loadManifest = (): Manifest => JSON.parse(readFileSync('tools/voice/manifest.json', 'utf8')) as Manifest;
 
 // The rendered clips ship once tools/voice has run (needs the GPU); until public/audio/voice exists
 // the file checks are skipped and the game simply plays no Lord lines.
-const rendered = existsSync('public/audio/voice');
+const rendered = existsSync('public/audio/voice') && existsSync('tools/voice/manifest.json');
 
 describe('Lord voice lines', () => {
   it.skipIf(!rendered)('the manifest, the runtime table and the shipped files agree', () => {
+    const manifest = loadManifest();
     expect([...VOICE_LORDS].sort()).toEqual([...LORD_IDS].sort());
     expect(Object.keys(manifest.lords).sort()).toEqual([...LORD_IDS].sort());
     expect(Object.keys(manifest.events).sort()).toEqual(Object.keys(VOICE_LINES).sort());
