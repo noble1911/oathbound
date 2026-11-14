@@ -104,7 +104,7 @@ export const MAX_SPECTATORS = 6;
 
 // Default timings (ms). The server owns the timers (env-overridable); clients only display phaseEndsAt.
 export const LORD_PICK_MS = 30_000;
-export const PLANNING_MS = 60_000;
+export const PLANNING_MS = 120_000;
 /** Added to planning when a loot pick is pending. */
 export const LOOT_BONUS_MS = 15_000;
 /** The battle phase ends when every player sent battleDone, or after the replay's duration + this. */

@@ -23,7 +23,7 @@ the gateway).
 - Rooms (v2): 2 player seats (`pvp`, or `vsAI` with the bot in seat 1) plus up to 6 spectators.
   Every snapshot is filtered per socket with the sim's `viewFor` (hidden information is enforced
   server-side).
-- Phase timers (ms, env-overridable): `LORD_PICK_MS` 30000, `PLANNING_MS` 60000, `LOOT_BONUS_MS`
+- Phase timers (ms, env-overridable): `LORD_PICK_MS` 30000, `PLANNING_MS` 120000, `LOOT_BONUS_MS`
   15000 (added when a loot pick is pending), `BATTLE_SLACK_MS` 10000 (battle = replay length + this,
   or earlier when both players sent `battleDone`), `BATTLE_CAP_MS` (no default; a hard cap, for tests),
   `RESULTS_MS` 6000, `DISCONNECT_GRACE_MS` 60000 (then the AI plays the seat until the player rejoins).

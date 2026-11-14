@@ -14,7 +14,7 @@ The v1 co-op FE-grid design is archived in `../oathbound-v1-snapshot.tar`.
 ## 1. Match flow
 
 - Each player has a **Keep** with **4000 HP**. You win when the enemy Keep reaches 0. If both reach 0 in the same round, the player with more HP left before the round wins; if that's equal, it's a draw.
-- **Round** = Planning (simultaneous, 60 s, +15 s on rounds with a loot pick) → Battle (real-time playback, typically 30–60 s) → Results (5 s).
+- **Round** = Planning (simultaneous, 120 s, +15 s on rounds with a loot pick) → Battle (real-time playback, typically 30–60 s) → Results (5 s).
 - **Hidden information (Mechabellum-style):**
   - During planning you see where the enemy's army stood *last* round.
   - You don't see what they buy, move or equip this round until the battle starts.
