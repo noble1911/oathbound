@@ -1,0 +1,419 @@
+// BattleView: the renderer facade the UI talks to. See src/render/index.ts for the API overview.
+import * as THREE from 'three';
+import { Engine, type EngineOptions } from './core/engine.ts';
+import type { QualityTier } from './core/quality.ts';
+import { fieldToWorld, worldToField, worldX, worldZ, yawToFacing } from './core/coords.ts';
+import { CameraRig, type CameraMode } from './camera/rig.ts';
+import { Director } from './camera/director.ts';
+import { UnitRenderer } from './crowd/units.ts';
+import { createHeroMaterial } from './crowd/vat.ts';
+import { archetypeFor } from './crowd/archetypes.ts';
+import { Battlefield, defaultTerrain } from './terrain/index.ts';
+import { Vfx } from './vfx/index.ts';
+import { BattlePlayback, type PlaybackHooks } from './battle-playback.ts';
+import { RangeRing, type RangeRingHandle } from './range-ring.ts';
+import { TEAM_COLORS } from './crowd/archetypes.ts';
+import { makeTransforms, type BattleSource, type KeepInfo, type ReplaySoldier, type SoldierTransforms, type Terrain } from './battle-source.ts';
+
+export interface BattleViewOptions extends EngineOptions {
+  /** Art manifest URL (relative), e.g. 'models/v2/manifest.json'. Missing → procedural stand-ins. */
+  artManifest?: string;
+  /** Whose perspective (seat 1 looks from the other end). */
+  seat?: 0 | 1;
+  terrain?: Terrain;
+  keeps?: KeepInfo[];
+}
+
+/** A squad as the planning screen knows it (sim `Squad` is compatible). */
+export interface ArmySquad {
+  id: number;
+  owner: 0 | 1;
+  type: string;
+  lord?: string | null;
+  /** cm */
+  pos: [number, number];
+  /** 0..255 binary angle (sim convention). */
+  facing?: number;
+  level?: number;
+  /** Soldier count (defaults to the unit's squad size). */
+  size?: number;
+  modelId?: string;
+}
+
+export interface ArmyOptions {
+  /** Draw these owners' squads as faded ghosts (the enemy's last-round army). */
+  ghostOwners?: (0 | 1)[];
+  /** Highlight state per squad id. */
+  highlight?: Record<number, 'hover' | 'selected' | 'invalid'>;
+}
+
+const SQUAD_SIZE: Record<string, number> = {
+  militia: 12, pikemen: 8, berserkers: 6, archers: 10, knights: 4, cavaliers: 4, mages: 4, clerics: 3, pegasus: 3,
+  ballista: 1, trebuchet: 1, golem: 1, wyvern: 2, dragon: 1, lord: 1, skeleton: 1,
+};
+const SPACING: Record<string, number> = { cavaliers: 3, pegasus: 4, wyvern: 5, knights: 1.9, berserkers: 1.6 };
+
+export class BattleView {
+  readonly engine: Engine;
+  readonly camera: CameraRig;
+  readonly director: Director;
+  readonly units: UnitRenderer;
+  field: Battlefield;
+  readonly vfx: Vfx;
+  seat: 0 | 1;
+  private playback: BattlePlayback | null = null;
+  private army: { tf: SoldierTransforms; squads: number[]; ghosts: Set<number> } | null = null;
+  private marchTick = 0;
+  private keepModel: THREE.Object3D | null = null;
+  private artPropSet: Map<string, import('./crowd/assets.ts').PropAsset> | null = null;
+  /** Art downloads so far: [{ model, ms, bytes }]. */
+  get artLoads(): { model: string; ms: number; bytes: number }[] {
+    return this.units.assets.loads;
+  }
+  private lastFrame = 0;
+
+  constructor(container: HTMLElement, opts: BattleViewOptions = {}) {
+    this.engine = new Engine(container, opts);
+    this.seat = opts.seat ?? 0;
+    this.field = new Battlefield(this.engine, opts.terrain ?? defaultTerrain(), opts.keeps);
+    this.camera = new CameraRig(this.engine);
+    this.camera.setGround((x, z) => this.field.heightAt(x, z));
+    this.camera.setObstacles((x, z) => this.field.canopyAt(x, z));
+    this.units = new UnitRenderer(this.engine, (x, z) => this.field.heightAt(x, z), (surf, src, tintMap) => {
+      const sm = src as THREE.MeshStandardMaterial;
+      const { material, uniforms } = createHeroMaterial(this.engine, 'hero', { surf, map: sm.map ?? null, tintMap, vertexColors: surf || !!sm.vertexColors });
+      if (!surf) {
+        material.roughness = sm.roughness ?? 0.7;
+        material.metalness = sm.metalness ?? 0;
+        material.roughnessMap = sm.roughnessMap ?? null;
+        material.metalnessMap = sm.metalnessMap ?? null;
+        material.normalMap = sm.normalMap ?? null;
+      }
+      return { material, uniforms };
+    });
+    this.director = new Director(this.camera, this.units);
+    this.syncKeeps();
+    this.vfx = new Vfx(this.engine, (x, z) => this.field.heightAt(x, z));
+    this.camera.home(this.seat);
+    this.camera.snap();
+    if (opts.artManifest) {
+      void this.units.assets.loadManifest(opts.artManifest);
+      // the keep is always on the field: fetch it right away (units load lazily per type present)
+      void this.units.assets.structure('keep').then((m) => {
+        this.keepModel = m;
+        if (m) this.field.setKeepModel(m);
+      });
+      // props (trees, rocks, ruins, bridge, towers, bushes, reeds) are always on the field
+      void this.units.assets.props().then((p) => {
+        this.artPropSet = p;
+        this.field.setArtProps(p);
+      });
+    }
+
+    this.units.onAssetsChanged = () => {
+      // re-pose the new instances immediately (a paused battle / planning view doesn't tick)
+      if (this.playback) this.playback.refresh();
+      else if (this.army) this.units.update(this.army.tf, this.engine.time, 0);
+    };
+    this.units.onMarch = (s) => {
+      if ((this.marchTick++ & 7) !== 0) return;
+      if (Math.random() < 0.35 * s.arch.dust) this.vfx.marchDust(s.pos.clone(), s.arch.dust);
+    };
+    this.engine.beforeRender.add((dt) => this.frame(dt));
+  }
+
+  // ------------------------------------------------------------------ terrain
+
+  setTerrain(t: Terrain, keeps?: KeepInfo[]): void {
+    if (keeps) {
+      const km = this.keepModel;
+      this.field.dispose();
+      this.field = new Battlefield(this.engine, t, keeps);
+      if (km) this.field.setKeepModel(km);
+      if (this.artPropSet) this.field.setArtProps(this.artPropSet);
+    } else this.field.setTerrain(t);
+    this.syncKeeps();
+    this.engine.wake();
+  }
+
+  private syncKeeps(): void {
+    this.director.setKeeps(this.field.keep(0).position, this.field.keep(1).position);
+  }
+
+  /** Whose side the camera defaults to. */
+  setSeat(seat: 0 | 1): void {
+    this.seat = seat;
+    this.camera.home(seat);
+  }
+
+  // ------------------------------------------------------------------ planning
+
+  /** Deploy-zone overlay (glow + optional grid). Switches the camera to RTS control. */
+  setPlanning(p: { visible: boolean; seat?: 0 | 1; grid?: boolean; bothSides?: boolean }): void {
+    this.field.setPlanning({ seat: this.seat, ...p });
+    if (p.visible && !this.playback) this.camera.setMode('rts');
+    this.engine.wake();
+  }
+
+  /** Show squads standing in formation (planning). Replaces any battle playback. */
+  showArmy(squads: ArmySquad[], o: ArmyOptions = {}): void {
+    this.stopBattle();
+    const headers: ReplaySoldier[] = [];
+    const places: { x: number; y: number; f: number }[] = [];
+    const squadOf: number[] = [];
+    const ghosts = new Set<number>();
+    for (const sq of squads) {
+      const type = sq.type;
+      const n = sq.size ?? SQUAD_SIZE[type] ?? 1;
+      const facing = sq.facing ?? (sq.owner === 0 ? 64 : 192);
+      const rad = (facing / 256) * Math.PI * 2;
+      const modelId = sq.modelId ?? (type === 'lord' && sq.lord ? `lord_${sq.lord}` : type);
+      const arch = archetypeFor({ modelId, type, lord: sq.lord ?? undefined });
+      const sp = (SPACING[type] ?? 1.5) * 100;
+      const cols = n <= 1 ? 1 : Math.ceil(Math.sqrt(n * 2));
+      const rows = Math.ceil(n / cols);
+      // formation axes: "right" and "forward" in field space
+      const fx = Math.cos(rad);
+      const fy = Math.sin(rad);
+      const rx = fy;
+      const ry = -fx;
+      for (let k = 0; k < n; k++) {
+        const c = k % cols;
+        const r = Math.floor(k / cols);
+        const a = (c - (cols - 1) / 2) * sp + ((r % 2) * sp) / 4;
+        const b = -(r - (rows - 1) / 2) * sp * 0.9;
+        const id = headers.length;
+        headers.push({
+          id, squad: sq.id, side: sq.owner, type: type as ReplaySoldier['type'], modelId, lord: (sq.lord ?? undefined) as ReplaySoldier['lord'],
+          level: sq.level ?? 1, maxHp: 100, items: [], flags: arch.flyHeight > 0 ? ['flier'] : [], spawnTick: 0, summoned: false,
+        });
+        places.push({ x: sq.pos[0] + rx * a + fx * b, y: sq.pos[1] + ry * a + fy * b, f: rad });
+        squadOf.push(sq.id);
+        if (o.ghostOwners?.includes(sq.owner)) ghosts.add(id);
+      }
+    }
+    this.units.showGhosts = false;
+    this.units.setRoster(headers);
+    const tf = makeTransforms(headers.length);
+    places.forEach((p, i) => {
+      tf.x[i] = p.x;
+      tf.y[i] = p.y;
+      tf.facing[i] = p.f;
+      tf.hp[i] = 100;
+      tf.anim[i] = 0;
+      tf.visible[i] = 1;
+    });
+    this.army = { tf, squads: squadOf, ghosts };
+    this.units.slots.forEach((s, i) => {
+      s.ghost = ghosts.has(i) ? 0.35 : 1;
+      const h = o.highlight?.[squadOf[i]];
+      s.glow = h === 'selected' ? 0.16 : h === 'hover' ? 0.08 : h === 'invalid' ? 0.2 : 0;
+      s.glowColor = h === 'invalid' ? 1 : 0;
+    });
+    this.units.update(tf, this.engine.time, 0);
+    this.engine.markShadows();
+    this.engine.wake();
+  }
+
+  /** Update highlight states without rebuilding the army. */
+  highlightSquads(h: Record<number, 'hover' | 'selected' | 'invalid'>): void {
+    if (!this.army) return;
+    const sq = this.army.squads;
+    this.units.slots.forEach((s, i) => {
+      const st = h[sq[i]];
+      s.glow = st === 'selected' ? 0.16 : st === 'hover' ? 0.08 : st === 'invalid' ? 0.2 : 0;
+      s.glowColor = st === 'invalid' ? 1 : 0;
+    });
+    this.engine.wake();
+  }
+
+  private rings = new Set<{ ring: RangeRing; squad: number | null }>();
+
+  /**
+   * Show an attack-range ring around a squad (follows its soldiers' centre) or a field point [x, y] cm.
+   * `radiusCm` is the sim range; colour defaults to the squad owner's team colour (gold for points).
+   */
+  showRangeRing(target: number | [number, number], radiusCm: number, opts: { color?: THREE.ColorRepresentation } = {}): RangeRingHandle {
+    const squad = typeof target === 'number' ? target : null;
+    let color = opts.color;
+    if (color === undefined && squad !== null) {
+      const s = this.units.slots.find((x) => x.header.squad === squad);
+      color = s ? TEAM_COLORS[s.header.side] : '#e8c66f';
+    }
+    const ring = new RangeRing((x, z) => this.field.heightAt(x, z), radiusCm / 100, color ?? '#e8c66f');
+    this.engine.scene.add(ring.group);
+    const entry = { ring, squad };
+    this.rings.add(entry);
+    if (squad === null) {
+      const p = target as [number, number];
+      ring.place(worldX(p[0]), worldZ(p[1]));
+    } else this.placeRing(entry);
+    this.engine.wake();
+    return {
+      setCenter: (x, y) => {
+        entry.squad = null;
+        ring.place(worldX(x), worldZ(y));
+        this.engine.wake();
+      },
+      setRadius: (r) => {
+        ring.setRadius(r / 100);
+        this.engine.wake();
+      },
+      dispose: () => {
+        ring.dispose();
+        this.rings.delete(entry);
+        this.engine.wake();
+      },
+    };
+  }
+  /** Remove every range ring. */
+  clearRangeRings(): void {
+    for (const e of this.rings) e.ring.dispose();
+    this.rings.clear();
+    this.engine.wake();
+  }
+  private placeRing(e: { ring: RangeRing; squad: number | null }): void {
+    if (e.squad === null) return;
+    let x = 0;
+    let z = 0;
+    let n = 0;
+    for (const s of this.units.slots) if (s.visible && s.deadAt < 0 && s.header.squad === e.squad) {
+      x += s.pos.x;
+      z += s.pos.z;
+      n++;
+    }
+    if (n) e.ring.place(x / n, z / n);
+  }
+
+  /** Ground point (field cm) under a client position, or null. */
+  pickGround(clientX: number, clientY: number): [number, number] | null {
+    const p = this.field.raycast(this.engine.rayAt(clientX, clientY));
+    return p ? worldToField(p) : null;
+  }
+
+  /** The squad id under a client position (nearest soldier within ~1 m of the ray). */
+  pickSquad(clientX: number, clientY: number): number | null {
+    const ray = this.engine.rayAt(clientX, clientY);
+    let best = -1;
+    let bd = Infinity;
+    const p = new THREE.Vector3();
+    for (const s of this.units.slots) {
+      if (!s.visible || s.deadAt >= 0) continue;
+      p.copy(s.pos).setY(s.pos.y + s.arch.chest);
+      const d = ray.distanceSqToPoint(p);
+      const r = s.arch.render === 'hero' ? 2.2 : 0.9;
+      if (d < r * r) {
+        const along = p.sub(ray.origin).dot(ray.direction);
+        if (along < bd) {
+          bd = along;
+          best = s.header.squad;
+        }
+      }
+    }
+    return best >= 0 ? best : null;
+  }
+
+  /** Screen position (CSS px) of a field point at height `h` metres above the ground. */
+  fieldToScreen(xcm: number, ycm: number, h = 0): { x: number; y: number } | null {
+    const wx = worldX(xcm);
+    const wz = worldZ(ycm);
+    return this.engine.toScreen(new THREE.Vector3(wx, this.field.heightAt(wx, wz) + h, wz));
+  }
+
+  /** Squad centre on screen (for UI labels / health bars). */
+  squadScreen(squadId: number, h = 2.4): { x: number; y: number } | null {
+    const c = new THREE.Vector3();
+    let n = 0;
+    for (const s of this.units.slots) if (s.visible && s.deadAt < 0 && s.header.squad === squadId) {
+      c.add(s.pos);
+      n++;
+    }
+    if (!n) return null;
+    c.divideScalar(n);
+    c.y += h;
+    return this.engine.toScreen(c);
+  }
+
+  // ------------------------------------------------------------------ battle
+
+  /** Play a battle (sim replay via `replaySource`, or any BattleSource). Camera → director. */
+  playBattle(src: BattleSource, hooks: PlaybackHooks & { director?: boolean } = {}): BattlePlayback {
+    this.stopBattle();
+    this.army = null;
+    this.field.setPlanning({ visible: false });
+    this.units.showGhosts = true;
+    this.playback = new BattlePlayback(src, this.units, this.director, this.vfx, this.field, hooks);
+    for (const seat of [0, 1] as const) this.field.keep(seat).setStage(0);
+    this.director.reset(this.seat === 0 ? 0 : Math.PI);
+    this.camera.setMode(hooks.director === false ? 'free' : 'director');
+    this.engine.animate(this.playbackAnimator);
+    return this.playback;
+  }
+
+  get battle(): BattlePlayback | null {
+    return this.playback;
+  }
+
+  stopBattle(): void {
+    if (!this.playback) return;
+    this.engine.cancel(this.playbackAnimator);
+    this.playback = null;
+    this.vfx.clear();
+    this.units.clear();
+  }
+
+  private playbackAnimator = (dt: number): boolean => {
+    const pb = this.playback;
+    if (!pb) return false;
+    pb.tick(dt);
+    // paused or finished: let the loop sleep (camera moves / VFX wake it on their own)
+    return pb.playing && !pb.ended;
+  };
+
+  // ------------------------------------------------------------------ camera / quality
+
+  setCameraMode(m: CameraMode): void {
+    this.camera.setMode(m);
+  }
+  setQuality(t: QualityTier | 'auto'): void {
+    this.engine.setQuality(t);
+  }
+  /** Battery saver: low tier, DPR 1, 30 fps cap (stored). */
+  setBatterySaver(on: boolean): void {
+    this.engine.setBatterySaver(on);
+  }
+  /** Frame cap during battle: 0 = display refresh, 30 or 60 (stored). */
+  setFpsCap(fps: 0 | 30 | 60): void {
+    this.engine.setFpsCap(fps);
+  }
+  get stats(): Engine['stats'] & { soldiers: number; heroes: number } {
+    const c = this.units.counts;
+    return { ...this.engine.stats, soldiers: c.crowd, heroes: c.heroes };
+  }
+
+  // ------------------------------------------------------------------ frame
+
+  private frame(dt: number): void {
+    const now = this.engine.time;
+    if (this.army) this.units.update(this.army.tf, now, now - this.lastFrame);
+    this.lastFrame = now;
+    const pb = this.playback;
+    if (pb && pb.playing && !pb.ended) this.engine.markShadows(); // units move: shadow maps redraw
+    for (const e of this.rings) if (e.squad !== null) this.placeRing(e);
+    const speed = pb ? (pb.playing ? pb.speed : 0) : 1;
+    if (this.vfx.update(dt * speed)) this.engine.wake();
+    if (this.field.update(dt)) {
+      this.engine.markShadows();
+      this.engine.wake();
+    }
+  }
+
+  dispose(): void {
+    this.stopBattle();
+    this.camera.dispose();
+    this.field.dispose();
+    this.engine.dispose();
+  }
+}
+
+export { fieldToWorld, worldToField, yawToFacing };

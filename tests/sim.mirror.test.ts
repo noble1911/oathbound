@@ -1,0 +1,109 @@
+// The key fairness property: swap the seats and mirror both armies through the field centre, and the battle must
+// play out as the exact mirror image — same winner (swapped), same keep damage, and every soldier's position (mirrored)
+// and HP identical on every keyframe.
+import { describe, expect, it } from 'vitest';
+import { applyBattle, botPlan, decodeReplay, newMatch, nextRound, simulateBattle } from '../src/sim/index.ts';
+import { mirrorSquads } from '../src/sim/match.ts';
+import type { BotStrategy, DecodedReplay, LordId, MatchState, Seat } from '../src/sim/types.ts';
+import { FIELD_H, FIELD_W } from '../src/sim/constants.ts';
+
+function swapped(s: MatchState): MatchState {
+  const m = structuredClone(s);
+  const [a, b] = [structuredClone(s.players[0]), structuredClone(s.players[1])];
+  m.players = [
+    { ...b, seat: 0, squads: mirrorSquads(b.squads, 0), lastArmy: b.lastArmy ? mirrorSquads(b.lastArmy, 0) : null },
+    { ...a, seat: 1, squads: mirrorSquads(a.squads, 1), lastArmy: a.lastArmy ? mirrorSquads(a.lastArmy, 1) : null },
+  ];
+  return m;
+}
+
+/** Map soldier index -> (side, squad index, soldier index) so the two replays can be matched up. */
+function keys(d: DecodedReplay, s: MatchState): string[] {
+  return d.replay.soldiers.map((so) => {
+    const squads = s.players[so.side].squads;
+    const qi = squads.findIndex((q) => q.id === so.squad);
+    const nth = d.replay.soldiers.filter((o) => o.squad === so.squad && o.side === so.side && o.summoned === so.summoned && o.id < so.id).length;
+    return `${so.side}:${so.summoned ? 'S' : ''}${qi}:${nth}`;
+  });
+}
+
+function checkMirror(s: MatchState): { winner: Seat | null; ticks: number; soldiers: number } {
+  const m = swapped(s);
+  const A = simulateBattle(s), B = simulateBattle(m);
+  const ra = A.result, rb = B.result;
+  const flip = (w: Seat | null): Seat | null => (w === null ? null : ((1 - w) as Seat));
+  expect(rb.winner).toBe(flip(ra.winner));
+  expect(rb.timeout).toBe(ra.timeout);
+  expect(rb.ticks).toBe(ra.ticks);
+  expect(rb.keepDamage).toEqual([ra.keepDamage[1], ra.keepDamage[0]]);
+  expect(rb.survivors).toEqual([ra.survivors[1], ra.survivors[0]]);
+  expect(rb.lordXp).toEqual([ra.lordXp[1], ra.lordXp[0]]);
+  expect(rb.damageDealt).toEqual([ra.damageDealt[1], ra.damageDealt[0]]);
+  expect(rb.soldiersLost).toEqual([ra.soldiersLost[1], ra.soldiersLost[0]]);
+  expect(B.replay.ticks).toBe(A.replay.ticks);
+  // Frame-by-frame mirror.
+  const da = decodeReplay(A.replay), db = decodeReplay(B.replay);
+  expect(db.soldierCount).toBe(da.soldierCount);
+  expect(db.frameCount).toBe(da.frameCount);
+  const ka = keys(da, s), kb = keys(db, m);
+  const idxB = new Map(kb.map((k, i) => [k, i]));
+  const n = da.soldierCount;
+  let mismatches = 0;
+  for (let i = 0; i < n; i++) {
+    const [side, rest] = [Number(ka[i][0]), ka[i].slice(1)];
+    const j = idxB.get(`${1 - side}${rest}`);
+    expect(j, ka[i]).toBeDefined();
+    for (let f = 0; f < da.frameCount; f++) {
+      const a = f * n + i, b = f * n + j!;
+      if (da.anim[a] === 255 && db.anim[b] === 255) continue;
+      const bad = db.x[b] !== FIELD_W - 1 - da.x[a] || db.y[b] !== FIELD_H - 1 - da.y[a] || db.hp[b] !== da.hp[a] || db.anim[b] !== da.anim[a] || db.facing[b] !== ((da.facing[a] + 128) & 255);
+      if (bad) {
+        if (process.env.MIRROR_DEBUG && mismatches < 5) console.log('mismatch', ka[i], A.replay.soldiers[i].type, 'frame', f, [da.x[a], da.y[a], da.facing[a], da.hp[a], da.anim[a]], [FIELD_W - 1 - db.x[b], FIELD_H - 1 - db.y[b], (db.facing[b] + 128) & 255, db.hp[b], db.anim[b]]);
+        mismatches++;
+      }
+    }
+  }
+  expect(mismatches).toBe(0);
+  return { winner: ra.winner, ticks: ra.ticks, soldiers: n };
+}
+
+describe('mirror symmetry (seat fairness)', () => {
+  const cases: [number, [LordId, LordId], [BotStrategy, BotStrategy]][] = [
+    [1, ['marshal', 'archmage'], ['rush', 'ranged']],
+    [2, ['warden', 'skylady'], ['armor', 'air']],
+    [3, ['skylady', 'archmage'], ['counter', 'random']],
+    [4, ['archmage', 'warden'], ['best', 'air']],
+  ];
+  for (const [seed, lords, strats] of cases) {
+    it(`seed ${seed}: ${lords.join(' vs ')} (${strats.join(' vs ')}) mirrors exactly every round`, () => {
+      const s = newMatch(seed, lords);
+      let rounds = 0;
+      while (s.phase === 'planning' && rounds < 8) {
+        botPlan(s, 0, strats[0], 1);
+        botPlan(s, 1, strats[1], 2);
+        checkMirror(s);
+        applyBattle(s, simulateBattle(s, { record: false }).result);
+        rounds++;
+        if ((s.phase as string) !== 'results') break;
+        nextRound(s);
+      }
+      expect(rounds).toBeGreaterThan(2);
+    }, 60_000);
+  }
+
+  it('identical armies on both sides draw or split evenly', () => {
+    // Seat 1 gets the exact mirror of seat 0's army: the outcome must be symmetric (no winner, equal losses).
+    const s = newMatch(9, ['marshal', 'marshal']);
+    for (let r = 0; r < 4; r++) {
+      botPlan(s, 0, 'random', 3);
+      s.players[1] = { ...structuredClone(s.players[0]), seat: 1, squads: mirrorSquads(s.players[0].squads, 1) };
+      const { result } = simulateBattle(s);
+      expect(result.winner).toBe(null);
+      expect(result.soldiersLost[0]).toBe(result.soldiersLost[1]);
+      expect(result.keepDamage[0]).toBe(result.keepDamage[1]);
+      applyBattle(s, result);
+      if ((s.phase as string) !== 'results') break;
+      nextRound(s);
+    }
+  }, 60_000);
+});

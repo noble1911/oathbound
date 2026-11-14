@@ -1,0 +1,100 @@
+{
+ "version": 1,
+ "vertexCount": 706,
+ "width": 706,
+ "rowsPerFrame": 1,
+ "totalFrames": 128,
+ "format": "f16",
+ "clips": [
+  {
+   "name": "idle",
+   "start": 0,
+   "frames": 25,
+   "fps": 10,
+   "loop": true,
+   "duration": 2.5,
+   "source": "idle"
+  },
+  {
+   "name": "move",
+   "start": 25,
+   "frames": 16,
+   "fps": 12,
+   "loop": true,
+   "duration": 1.3333,
+   "source": "walk"
+  },
+  {
+   "name": "run",
+   "start": 41,
+   "frames": 11,
+   "fps": 12,
+   "loop": true,
+   "duration": 0.9167,
+   "source": "run"
+  },
+  {
+   "name": "attack",
+   "start": 52,
+   "frames": 15,
+   "fps": 12,
+   "loop": false,
+   "duration": 1.125,
+   "source": "attack_melee_a"
+  },
+  {
+   "name": "attack2",
+   "start": 67,
+   "frames": 15,
+   "fps": 12,
+   "loop": false,
+   "duration": 1.2083,
+   "source": "attack_melee_b"
+  },
+  {
+   "name": "hit",
+   "start": 82,
+   "frames": 5,
+   "fps": 12,
+   "loop": false,
+   "duration": 0.3333,
+   "source": "hit"
+  },
+  {
+   "name": "death",
+   "start": 87,
+   "frames": 25,
+   "fps": 10,
+   "loop": false,
+   "duration": 2.375,
+   "source": "death_a"
+  },
+  {
+   "name": "victory",
+   "start": 112,
+   "frames": 16,
+   "fps": 8,
+   "loop": true,
+   "duration": 1.9583,
+   "source": "victory"
+  }
+ ],
+ "bounds": {
+  "min": [
+   -1.4204,
+   -0.4178,
+   -3.5648
+  ],
+  "max": [
+   1.8495,
+   4.4293,
+   2.7818
+  ]
+ },
+ "pos": "pikeman.vat.pos.bin",
+ "nrm": null,
+ "normalEncoding": "octPosW45",
+ "vertexIndexAttribute": "_vid",
+ "mesh": "pikeman_lod1.glb",
+ "tintMask": "pikeman_lod1_tint.png"
+}

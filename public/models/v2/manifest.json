@@ -1,0 +1,1802 @@
+{
+ "version": 2,
+ "conventions": {
+  "units": "metres; scale 1 (infantry 1.8 m)",
+  "up": "+Y",
+  "facing": "+Z",
+  "origin": "feet / base centre at (0,0,0)",
+  "skeleton": "oathbound_humanoid_v1 (root, hips, spine1-3, neck, head, shoulder/upper_arm/forearm/hand/thigh/shin/foot/toe .L/.R)",
+  "tint": "albedo.rgb *= mix(vec3(1), team, mask); mask = tintMask.r at UV0 (flipY=false); team cloth is pre-neutralised grey",
+  "crowd": "squad entries: glb = single-primitive skinned crowd mesh (LOD1 + weapons), vat = compact VatMeta (docs/ART.md)",
+  "docs": "docs/ART.md"
+ },
+ "models": {
+  "militia": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.8,
+   "glb": "militia_lod1.glb",
+   "vat": "militia.vat.json",
+   "tintMask": "militia_lod1_tint.png",
+   "detail": {
+    "glb": "militia.glb",
+    "tintMask": "militia_team.png"
+   },
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_sword_R",
+     "bone": "hand.R"
+    },
+    {
+     "node": "weapon_shield_round_L",
+     "bone": "forearm.L"
+    }
+   ],
+   "tris": {
+    "lod0": 5906,
+    "lod1": 1474
+   },
+   "bytes": {
+    "militia.glb": 425108,
+    "militia.vat.json": 1626,
+    "militia.vat.pos.bin": 744448,
+    "militia_lod1.glb": 381300,
+    "militia_lod1_tint.png": 36158,
+    "militia_team.png": 29374
+   },
+   "totalBytes": 1618014
+  },
+  "pikeman": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.8,
+   "glb": "pikeman_lod1.glb",
+   "vat": "pikeman.vat.json",
+   "tintMask": "pikeman_lod1_tint.png",
+   "detail": {
+    "glb": "pikeman.glb",
+    "tintMask": "pikeman_team.png"
+   },
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.125,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_pike_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 5506,
+    "lod1": 1412
+   },
+   "bytes": {
+    "pikeman.glb": 333792,
+    "pikeman.vat.json": 1626,
+    "pikeman.vat.pos.bin": 722944,
+    "pikeman_lod1.glb": 367772,
+    "pikeman_lod1_tint.png": 24585,
+    "pikeman_team.png": 19274
+   },
+   "totalBytes": 1469993
+  },
+  "berserker": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.85,
+   "glb": "berserker_lod1.glb",
+   "vat": "berserker.vat.json",
+   "tintMask": "berserker_lod1_tint.png",
+   "detail": {
+    "glb": "berserker.glb",
+    "tintMask": "berserker_team.png"
+   },
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_axe_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 5908,
+    "lod1": 1474
+   },
+   "bytes": {
+    "berserker.glb": 519888,
+    "berserker.vat.json": 1632,
+    "berserker.vat.pos.bin": 703488,
+    "berserker_lod1.glb": 425432,
+    "berserker_lod1_tint.png": 15744,
+    "berserker_team.png": 14676
+   },
+   "totalBytes": 1680860
+  },
+  "archer": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.8,
+   "glb": "archer_lod1.glb",
+   "vat": "archer.vat.json",
+   "tintMask": "archer_lod1_tint.png",
+   "detail": {
+    "glb": "archer.glb",
+    "tintMask": "archer_team.png"
+   },
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_bow",
+    "attack2": "attack_melee_a",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 0.8333,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_bow_L",
+     "bone": "hand.L"
+    }
+   ],
+   "tris": {
+    "lod0": 5908,
+    "lod1": 1474
+   },
+   "bytes": {
+    "archer.glb": 381924,
+    "archer.vat.json": 1620,
+    "archer.vat.pos.bin": 746496,
+    "archer_lod1.glb": 339764,
+    "archer_lod1_tint.png": 27406,
+    "archer_team.png": 26416
+   },
+   "totalBytes": 1523626
+  },
+  "knight": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.9,
+   "glb": "knight_lod1.glb",
+   "vat": "knight.vat.json",
+   "tintMask": "knight_lod1_tint.png",
+   "detail": {
+    "glb": "knight.glb",
+    "tintMask": "knight_team.png"
+   },
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.125,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_lance_R",
+     "bone": "hand.R"
+    },
+    {
+     "node": "weapon_shield_kite_L",
+     "bone": "forearm.L"
+    }
+   ],
+   "tris": {
+    "lod0": 5908,
+    "lod1": 1474
+   },
+   "bytes": {
+    "knight.glb": 451124,
+    "knight.vat.json": 1623,
+    "knight.vat.pos.bin": 805888,
+    "knight_lod1.glb": 384600,
+    "knight_lod1_tint.png": 24313,
+    "knight_team.png": 17432
+   },
+   "totalBytes": 1684980
+  },
+  "mage": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.8,
+   "glb": "mage_lod1.glb",
+   "vat": "mage.vat.json",
+   "tintMask": "mage_lod1_tint.png",
+   "detail": {
+    "glb": "mage.glb",
+    "tintMask": "mage_team.png"
+   },
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "cast",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_tome_L",
+     "bone": "hand.L"
+    }
+   ],
+   "tris": {
+    "lod0": 5908,
+    "lod1": 1476
+   },
+   "bytes": {
+    "mage.glb": 416604,
+    "mage.vat.json": 1748,
+    "mage.vat.pos.bin": 903584,
+    "mage_lod1.glb": 378796,
+    "mage_lod1_tint.png": 46909,
+    "mage_team.png": 33832
+   },
+   "totalBytes": 1781473
+  },
+  "cleric": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.8,
+   "glb": "cleric_lod1.glb",
+   "vat": "cleric.vat.json",
+   "tintMask": "cleric_lod1_tint.png",
+   "detail": {
+    "glb": "cleric.glb",
+    "tintMask": "cleric_team.png"
+   },
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "cast",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_staff_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 5908,
+    "lod1": 1474
+   },
+   "bytes": {
+    "cleric.glb": 457400,
+    "cleric.vat.json": 1752,
+    "cleric.vat.pos.bin": 817816,
+    "cleric_lod1.glb": 407136,
+    "cleric_lod1_tint.png": 38796,
+    "cleric_team.png": 27886
+   },
+   "totalBytes": 1750786
+  },
+  "cavalier": {
+   "kind": "mounted",
+   "scale": 1,
+   "height": 2.6,
+   "glb": "cavalier_lod1.glb",
+   "vat": "cavalier.vat.json",
+   "tintMask": "cavalier_lod1_tint.png",
+   "detail": {
+    "glb": "cavalier.glb"
+   },
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 0.9583,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.625,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.375,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_sword_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 8370,
+    "lod1": 1474
+   },
+   "bytes": {
+    "cavalier.glb": 1385876,
+    "cavalier.vat.json": 1627,
+    "cavalier.vat.pos.bin": 709544,
+    "cavalier_lod1.glb": 453780,
+    "cavalier_lod1_tint.png": 36981
+   },
+   "totalBytes": 2587808
+  },
+  "pegasus": {
+   "kind": "flier",
+   "scale": 1,
+   "height": 2.6,
+   "glb": "pegasus_lod1.glb",
+   "vat": "pegasus.vat.json",
+   "tintMask": "pegasus_lod1_tint.png",
+   "detail": {
+    "glb": "pegasus.glb"
+   },
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 0.9583,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.625,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.125,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.375,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_lance_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 8370,
+    "lod1": 1442
+   },
+   "bytes": {
+    "pegasus.glb": 1468112,
+    "pegasus.vat.json": 1623,
+    "pegasus.vat.pos.bin": 771496,
+    "pegasus_lod1.glb": 468796,
+    "pegasus_lod1_tint.png": 17860
+   },
+   "totalBytes": 2727887
+  },
+  "wyvern": {
+   "kind": "flier",
+   "scale": 1,
+   "height": 3.6,
+   "glb": "wyvern.glb",
+   "lod1": "wyvern_lod1.glb",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 0.9583,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.625,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.375,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_axe_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 14280,
+    "lod1": 3239
+   },
+   "bytes": {
+    "wyvern.glb": 1382740,
+    "wyvern_lod1.glb": 533052
+   },
+   "totalBytes": 1915792
+  },
+  "ballista": {
+   "kind": "siege",
+   "scale": 1,
+   "height": 1.7,
+   "glb": "ballista.glb",
+   "lod1": "ballista_lod1.glb",
+   "tintMask": "ballista_team.png",
+   "clips": {
+    "idle": "idle",
+    "attack": "fire",
+    "reload": "reload",
+    "hit": "hit",
+    "death": "death"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 1.958,
+     "loop": true
+    },
+    "fire": {
+     "duration": 1.208,
+     "loop": false
+    },
+    "reload": {
+     "duration": 1.958,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.375,
+     "loop": false
+    },
+    "death": {
+     "duration": 1.458,
+     "loop": false
+    }
+   },
+   "nodes": [
+    "body",
+    "bolt"
+   ],
+   "tris": {
+    "lod0": 14816,
+    "lod1": 2978
+   },
+   "bytes": {
+    "ballista.glb": 891620,
+    "ballista_lod1.glb": 257604,
+    "ballista_team.png": 4303
+   },
+   "totalBytes": 1153527
+  },
+  "trebuchet": {
+   "kind": "siege",
+   "scale": 1,
+   "height": 6,
+   "glb": "trebuchet.glb",
+   "lod1": "trebuchet_lod1.glb",
+   "tintMask": "trebuchet_team.png",
+   "clips": {
+    "idle": "idle",
+    "attack": "fire",
+    "reload": "reload",
+    "hit": "hit",
+    "death": "death"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 1.958,
+     "loop": true
+    },
+    "fire": {
+     "duration": 1.625,
+     "loop": false
+    },
+    "reload": {
+     "duration": 2.958,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.375,
+     "loop": false
+    },
+    "death": {
+     "duration": 1.458,
+     "loop": false
+    }
+   },
+   "nodes": [
+    "frame",
+    "arm",
+    "rope",
+    "stone"
+   ],
+   "tris": {
+    "lod0": 14806,
+    "lod1": 2986
+   },
+   "bytes": {
+    "trebuchet.glb": 723176,
+    "trebuchet_lod1.glb": 243612,
+    "trebuchet_team.png": 6195
+   },
+   "totalBytes": 972983
+  },
+  "golem": {
+   "kind": "large",
+   "scale": 1,
+   "height": 4.5,
+   "glb": "golem.glb",
+   "lod1": "golem_lod1.glb",
+   "tintMask": "golem_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 0.8333,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [],
+   "tris": {
+    "lod0": 14774,
+    "lod1": 2954
+   },
+   "bytes": {
+    "golem.glb": 820180,
+    "golem_lod1.glb": 309312,
+    "golem_team.png": 11360
+   },
+   "totalBytes": 1140852
+  },
+  "dragon": {
+   "kind": "flier",
+   "scale": 1,
+   "height": 4,
+   "glb": "dragon.glb",
+   "lod1": "dragon_lod1.glb",
+   "tintMask": "dragon_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 1.9583,
+     "loop": true
+    },
+    "walk": {
+     "duration": 0.9583,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.625,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 0.9583,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 0.9583,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 0.9583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 0.9583,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.375,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [],
+   "tris": {
+    "lod0": 14774,
+    "lod1": 2954
+   },
+   "bytes": {
+    "dragon.glb": 922040,
+    "dragon_lod1.glb": 302600,
+    "dragon_team.png": 6696
+   },
+   "totalBytes": 1231336
+  },
+  "lord_marshal": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 2,
+   "glb": "lord_marshal.glb",
+   "lod1": "lord_marshal_lod1.glb",
+   "tintMask": "lord_marshal_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_sword_lord_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 14774,
+    "lod1": 2953
+   },
+   "bytes": {
+    "lord_marshal.glb": 822444,
+    "lord_marshal_lod1.glb": 364004,
+    "lord_marshal_team.png": 41639
+   },
+   "totalBytes": 1228087
+  },
+  "lord_archmage": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.95,
+   "glb": "lord_archmage.glb",
+   "lod1": "lord_archmage_lod1.glb",
+   "tintMask": "lord_archmage_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "cast",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_tome_L",
+     "bone": "hand.L"
+    }
+   ],
+   "tris": {
+    "lod0": 14774,
+    "lod1": 2942
+   },
+   "bytes": {
+    "lord_archmage.glb": 979908,
+    "lord_archmage_lod1.glb": 471752,
+    "lord_archmage_team.png": 36040
+   },
+   "totalBytes": 1487700
+  },
+  "lord_warden": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 2.1,
+   "glb": "lord_warden.glb",
+   "lod1": "lord_warden_lod1.glb",
+   "tintMask": "lord_warden_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_axe_great_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 14774,
+    "lod1": 2954
+   },
+   "bytes": {
+    "lord_warden.glb": 987924,
+    "lord_warden_lod1.glb": 357360,
+    "lord_warden_team.png": 12368
+   },
+   "totalBytes": 1357652
+  },
+  "lord_skylady": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.95,
+   "glb": "lord_skylady.glb",
+   "lod1": "lord_skylady_lod1.glb",
+   "tintMask": "lord_skylady_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.125,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_lance_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 14774,
+    "lod1": 2920
+   },
+   "bytes": {
+    "lord_skylady.glb": 951352,
+    "lord_skylady_lod1.glb": 379612,
+    "lord_skylady_team.png": 14371
+   },
+   "totalBytes": 1345335
+  },
+  "skeleton": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.75,
+   "glb": "skeleton_lod1.glb",
+   "vat": "skeleton.vat.json",
+   "tintMask": "skeleton_lod1_tint.png",
+   "detail": {
+    "glb": "skeleton.glb",
+    "tintMask": "skeleton_team.png"
+   },
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_sword_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 5908,
+    "lod1": 1474
+   },
+   "bytes": {
+    "skeleton.glb": 451964,
+    "skeleton.vat.json": 1629,
+    "skeleton.vat.pos.bin": 652288,
+    "skeleton_lod1.glb": 412060,
+    "skeleton_lod1_tint.png": 28877,
+    "skeleton_team.png": 17531
+   },
+   "totalBytes": 1564349
+  },
+  "keep": {
+   "kind": "structure",
+   "scale": 1,
+   "height": 16,
+   "glb": "keep.glb",
+   "nodes": [
+    "stage0",
+    "stage1",
+    "stage2",
+    "stage3"
+   ],
+   "stages": "show exactly one child: stage0 intact .. stage3 ruin (HP thresholds are the client's call)",
+   "tris": {
+    "lod0": [
+     14774,
+     13911,
+     8417,
+     4438
+    ],
+    "lod1": null
+   },
+   "bytes": {
+    "keep.glb": 1269484
+   },
+   "totalBytes": 1269484
+  }
+ },
+ "props": {
+  "tree_oak": {
+   "kind": "prop",
+   "height": 8,
+   "glb": "tree_oak.glb",
+   "lod1": "tree_oak_lod1.glb",
+   "tris": {
+    "lod0": 2954,
+    "lod1": 590
+   },
+   "bytes": {
+    "tree_oak.glb": 306060,
+    "tree_oak_b.glb": 299024,
+    "tree_oak_b_lod1.glb": 71020,
+    "tree_oak_lod1.glb": 75112
+   },
+   "totalBytes": 751216
+  },
+  "tree_birch": {
+   "kind": "prop",
+   "height": 7.5,
+   "glb": "tree_birch.glb",
+   "lod1": "tree_birch_lod1.glb",
+   "tris": {
+    "lod0": 2954,
+    "lod1": 590
+   },
+   "bytes": {
+    "tree_birch.glb": 341908,
+    "tree_birch_lod1.glb": 71712
+   },
+   "totalBytes": 413620
+  },
+  "tree_oak_b": {
+   "kind": "prop",
+   "height": 7.5,
+   "glb": "tree_oak_b.glb",
+   "lod1": "tree_oak_b_lod1.glb",
+   "tris": {
+    "lod0": 2954,
+    "lod1": 590
+   },
+   "bytes": {
+    "tree_oak_b.glb": 299024,
+    "tree_oak_b_lod1.glb": 71020
+   },
+   "totalBytes": 370044
+  },
+  "tree_pine": {
+   "kind": "prop",
+   "height": 10,
+   "glb": "tree_pine.glb",
+   "lod1": "tree_pine_lod1.glb",
+   "tris": {
+    "lod0": 2954,
+    "lod1": 590
+   },
+   "bytes": {
+    "tree_pine.glb": 263304,
+    "tree_pine_lod1.glb": 72096
+   },
+   "totalBytes": 335400
+  },
+  "tree_fir": {
+   "kind": "prop",
+   "height": 8.5,
+   "glb": "tree_fir.glb",
+   "lod1": "tree_fir_lod1.glb",
+   "tris": {
+    "lod0": 2954,
+    "lod1": 590
+   },
+   "bytes": {
+    "tree_fir.glb": 304924,
+    "tree_fir_lod1.glb": 72036
+   },
+   "totalBytes": 376960
+  },
+  "bush": {
+   "kind": "prop",
+   "height": 1.4,
+   "glb": "bush.glb",
+   "lod1": "bush_lod1.glb",
+   "tris": {
+    "lod0": 1476,
+    "lod1": 394
+   },
+   "bytes": {
+    "bush.glb": 279296,
+    "bush_lod1.glb": 69488
+   },
+   "totalBytes": 348784
+  },
+  "rocks": {
+   "kind": "prop",
+   "height": 2.2,
+   "glb": "rocks.glb",
+   "lod1": "rocks_lod1.glb",
+   "tris": {
+    "lod0": 2462,
+    "lod1": 616
+   },
+   "bytes": {
+    "rocks.glb": 185740,
+    "rocks_lod1.glb": 68640
+   },
+   "totalBytes": 254380
+  },
+  "ruins_arch": {
+   "kind": "prop",
+   "height": 4.5,
+   "glb": "ruins_arch.glb",
+   "lod1": "ruins_arch_lod1.glb",
+   "tris": {
+    "lod0": 3940,
+    "lod1": 984
+   },
+   "bytes": {
+    "ruins_arch.glb": 215580,
+    "ruins_arch_lod1.glb": 54708
+   },
+   "totalBytes": 270288
+  },
+  "ruins_wall": {
+   "kind": "prop",
+   "height": 3.5,
+   "glb": "ruins_wall.glb",
+   "lod1": "ruins_wall_lod1.glb",
+   "tris": {
+    "lod0": 3940,
+    "lod1": 984
+   },
+   "bytes": {
+    "ruins_wall.glb": 261696,
+    "ruins_wall_lod1.glb": 55592
+   },
+   "totalBytes": 317288
+  },
+  "ruins_column": {
+   "kind": "prop",
+   "height": 3,
+   "glb": "ruins_column.glb",
+   "lod1": "ruins_column_lod1.glb",
+   "tris": {
+    "lod0": 2462,
+    "lod1": 688
+   },
+   "bytes": {
+    "ruins_column.glb": 207344,
+    "ruins_column_lod1.glb": 53716
+   },
+   "totalBytes": 261060
+  },
+  "bridge": {
+   "kind": "prop",
+   "height": 3,
+   "glb": "bridge.glb",
+   "lod1": "bridge_lod1.glb",
+   "tris": {
+    "lod0": 3940,
+    "lod1": 984
+   },
+   "bytes": {
+    "bridge.glb": 193984,
+    "bridge_lod1.glb": 44516
+   },
+   "totalBytes": 238500
+  },
+  "arrow_tower": {
+   "kind": "prop",
+   "height": 7,
+   "glb": "arrow_tower.glb",
+   "lod1": "arrow_tower_lod1.glb",
+   "tintMask": "arrow_tower_team.png",
+   "tris": {
+    "lod0": 3940,
+    "lod1": 1182
+   },
+   "bytes": {
+    "arrow_tower.glb": 260344,
+    "arrow_tower_lod1.glb": 75088,
+    "arrow_tower_team.png": 2111
+   },
+   "totalBytes": 337543
+  },
+  "reeds": {
+   "kind": "prop",
+   "height": 1.3,
+   "glb": "reeds.glb",
+   "lod1": "reeds_lod1.glb",
+   "tris": {
+    "lod0": 1476,
+    "lod1": 394
+   },
+   "bytes": {
+    "reeds.glb": 282572,
+    "reeds_lod1.glb": 76540
+   },
+   "totalBytes": 359112
+  }
+ }
+}

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+e2e/shots/
+.env
+*.blend1
+
+# 3D art pipeline intermediates (large; see docs/ART.md)
+art-work/
+__pycache__/
+*.pyc

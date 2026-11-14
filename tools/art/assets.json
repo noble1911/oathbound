@@ -1,0 +1,571 @@
+{
+ "_doc": "Roster for the AI art pipeline (docs/ART.md). kind: humanoid | mounted | flier | large | siege | structure | prop | weapon. height in metres (feet to top of head/structure, weapons excluded). lod0/lod1 = triangle budgets. squad=true -> VAT bake. weapons: [weaponId, bone] attached rigidly. prompt defaults to the id; style picks prompts/_style_<style>.txt.",
+ "assets": [
+  {
+   "id": "militia",
+   "kind": "humanoid",
+   "height": 1.8,
+   "lod0": 6000,
+   "lod1": 1500,
+   "squad": true,
+   "weapons": [
+    [
+     "weapon_sword",
+     "R"
+    ],
+    [
+     "weapon_shield_round",
+     "L"
+    ]
+   ],
+   "clipset": "sword"
+  },
+  {
+   "id": "pikeman",
+   "kind": "humanoid",
+   "height": 1.8,
+   "lod0": 6000,
+   "lod1": 1500,
+   "squad": true,
+   "weapons": [
+    [
+     "weapon_pike",
+     "R"
+    ]
+   ],
+   "clipset": "spear"
+  },
+  {
+   "id": "berserker",
+   "kind": "humanoid",
+   "height": 1.85,
+   "lod0": 6000,
+   "lod1": 1500,
+   "squad": true,
+   "weapons": [
+    [
+     "weapon_axe",
+     "R"
+    ]
+   ],
+   "clipset": "sword"
+  },
+  {
+   "id": "archer",
+   "kind": "humanoid",
+   "height": 1.8,
+   "lod0": 6000,
+   "lod1": 1500,
+   "squad": true,
+   "weapons": [
+    [
+     "weapon_bow",
+     "L"
+    ]
+   ],
+   "clipset": "bow"
+  },
+  {
+   "id": "knight",
+   "kind": "humanoid",
+   "height": 1.9,
+   "lod0": 6000,
+   "lod1": 1500,
+   "squad": true,
+   "weapons": [
+    [
+     "weapon_lance",
+     "R"
+    ],
+    [
+     "weapon_shield_kite",
+     "L"
+    ]
+   ],
+   "clipset": "spear"
+  },
+  {
+   "id": "mage",
+   "kind": "humanoid",
+   "height": 1.8,
+   "lod0": 6000,
+   "lod1": 1500,
+   "squad": true,
+   "weapons": [
+    [
+     "weapon_tome",
+     "L"
+    ]
+   ],
+   "clipset": "cast"
+  },
+  {
+   "id": "cleric",
+   "kind": "humanoid",
+   "height": 1.8,
+   "lod0": 6000,
+   "lod1": 1500,
+   "squad": true,
+   "weapons": [
+    [
+     "weapon_staff",
+     "R"
+    ]
+   ],
+   "clipset": "cast"
+  },
+  {
+   "id": "cavalier",
+   "kind": "mounted",
+   "height": 2.6,
+   "lod0": 9000,
+   "lod1": 2500,
+   "squad": true,
+   "rider": "cavalier_rider",
+   "mount": "horse",
+   "weapons": [
+    [
+     "weapon_sword",
+     "R"
+    ]
+   ],
+   "clipset": "sword"
+  },
+  {
+   "id": "pegasus",
+   "kind": "flier",
+   "height": 2.6,
+   "lod0": 9000,
+   "lod1": 2500,
+   "squad": true,
+   "rider": "pegasus_rider",
+   "mount": "pegasus_mount",
+   "weapons": [
+    [
+     "weapon_lance",
+     "R"
+    ]
+   ],
+   "clipset": "spear"
+  },
+  {
+   "id": "wyvern",
+   "kind": "flier",
+   "height": 3.6,
+   "lod0": 15000,
+   "lod1": 3000,
+   "squad": false,
+   "rider": "wyvern_rider",
+   "mount": "wyvern_mount",
+   "weapons": [
+    [
+     "weapon_axe",
+     "R"
+    ]
+   ],
+   "clipset": "sword"
+  },
+  {
+   "id": "ballista",
+   "kind": "siege",
+   "height": 1.7,
+   "lod0": 15000,
+   "lod1": 3000,
+   "squad": false,
+   "style": "object"
+  },
+  {
+   "id": "trebuchet",
+   "kind": "siege",
+   "height": 6,
+   "lod0": 15000,
+   "lod1": 3000,
+   "squad": false,
+   "style": "object"
+  },
+  {
+   "id": "golem",
+   "kind": "large",
+   "height": 4.5,
+   "lod0": 15000,
+   "lod1": 3000,
+   "squad": false,
+   "clipset": "fist"
+  },
+  {
+   "id": "dragon",
+   "kind": "flier",
+   "height": 4,
+   "lod0": 15000,
+   "lod1": 3000,
+   "squad": false,
+   "style": "object"
+  },
+  {
+   "id": "lord_marshal",
+   "kind": "humanoid",
+   "height": 2,
+   "lod0": 15000,
+   "lod1": 3000,
+   "squad": false,
+   "weapons": [
+    [
+     "weapon_sword_lord",
+     "R"
+    ]
+   ],
+   "clipset": "sword"
+  },
+  {
+   "id": "lord_archmage",
+   "kind": "humanoid",
+   "height": 1.95,
+   "lod0": 15000,
+   "lod1": 3000,
+   "squad": false,
+   "weapons": [
+    [
+     "weapon_tome",
+     "L"
+    ]
+   ],
+   "clipset": "cast"
+  },
+  {
+   "id": "lord_warden",
+   "kind": "humanoid",
+   "height": 2.1,
+   "lod0": 15000,
+   "lod1": 3000,
+   "squad": false,
+   "weapons": [
+    [
+     "weapon_axe_great",
+     "R"
+    ]
+   ],
+   "clipset": "sword"
+  },
+  {
+   "id": "lord_skylady",
+   "kind": "humanoid",
+   "height": 1.95,
+   "lod0": 15000,
+   "lod1": 3000,
+   "squad": false,
+   "weapons": [
+    [
+     "weapon_lance",
+     "R"
+    ]
+   ],
+   "clipset": "spear"
+  },
+  {
+   "id": "skeleton",
+   "kind": "humanoid",
+   "height": 1.75,
+   "lod0": 6000,
+   "lod1": 1500,
+   "squad": true,
+   "weapons": [
+    [
+     "weapon_sword",
+     "R"
+    ]
+   ],
+   "clipset": "sword"
+  },
+  {
+   "id": "keep",
+   "kind": "structure",
+   "height": 16,
+   "lod0": 15000,
+   "lod1": 4000,
+   "squad": false,
+   "style": "object"
+  },
+  {
+   "id": "cavalier_rider",
+   "kind": "humanoid",
+   "height": 1.8,
+   "lod0": 4500,
+   "lod1": 750,
+   "part": true,
+   "weapons": [
+    [
+     "weapon_sword",
+     "R"
+    ]
+   ],
+   "clipset": "sword"
+  },
+  {
+   "id": "pegasus_rider",
+   "kind": "humanoid",
+   "height": 1.75,
+   "lod0": 4500,
+   "lod1": 750,
+   "part": true,
+   "weapons": [
+    [
+     "weapon_lance",
+     "R"
+    ]
+   ],
+   "clipset": "spear"
+  },
+  {
+   "id": "wyvern_rider",
+   "kind": "humanoid",
+   "height": 1.8,
+   "lod0": 5500,
+   "lod1": 1300,
+   "part": true,
+   "weapons": [
+    [
+     "weapon_axe",
+     "R"
+    ]
+   ],
+   "clipset": "sword"
+  },
+  {
+   "id": "horse",
+   "kind": "quadruped",
+   "height": 1.75,
+   "lod0": 4000,
+   "lod1": 750,
+   "part": true,
+   "style": "object"
+  },
+  {
+   "id": "pegasus_mount",
+   "kind": "quadruped",
+   "height": 1.75,
+   "lod0": 4000,
+   "lod1": 750,
+   "part": true,
+   "style": "object"
+  },
+  {
+   "id": "wyvern_mount",
+   "kind": "quadruped",
+   "height": 2.6,
+   "lod0": 9000,
+   "lod1": 2000,
+   "part": true,
+   "style": "object"
+  },
+  {
+   "id": "weapon_sword",
+   "kind": "weapon",
+   "grip": "guard",
+   "length": 0.95,
+   "lod0": 600,
+   "lod1": 150,
+   "style": "object"
+  },
+  {
+   "id": "weapon_sword_lord",
+   "kind": "weapon",
+   "grip": "guard",
+   "length": 1.1,
+   "lod0": 900,
+   "lod1": 200,
+   "style": "object"
+  },
+  {
+   "id": "weapon_lance",
+   "kind": "weapon",
+   "grip": "guard",
+   "length": 3,
+   "lod0": 600,
+   "lod1": 150,
+   "style": "object"
+  },
+  {
+   "id": "weapon_pike",
+   "kind": "weapon",
+   "grip": "low",
+   "procedural": true,
+   "length": 3.6,
+   "lod0": 500,
+   "lod1": 120,
+   "style": "object"
+  },
+  {
+   "id": "weapon_axe",
+   "kind": "weapon",
+   "grip": "low",
+   "length": 0.9,
+   "lod0": 600,
+   "lod1": 150,
+   "style": "object"
+  },
+  {
+   "id": "weapon_axe_great",
+   "kind": "weapon",
+   "grip": "low",
+   "length": 1.5,
+   "lod0": 900,
+   "lod1": 200,
+   "style": "object"
+  },
+  {
+   "id": "weapon_bow",
+   "kind": "weapon",
+   "grip": "center",
+   "length": 1.4,
+   "lod0": 600,
+   "lod1": 150,
+   "style": "object"
+  },
+  {
+   "id": "weapon_staff",
+   "kind": "weapon",
+   "grip": "low",
+   "grip_at": 0.42,
+   "length": 1.8,
+   "lod0": 700,
+   "lod1": 160,
+   "style": "object"
+  },
+  {
+   "id": "weapon_tome",
+   "kind": "weapon",
+   "grip": "center",
+   "length": 0.35,
+   "lod0": 500,
+   "lod1": 120,
+   "style": "object"
+  },
+  {
+   "id": "weapon_shield_round",
+   "kind": "weapon",
+   "grip": "center",
+   "length": 0.7,
+   "lod0": 400,
+   "lod1": 100,
+   "style": "object"
+  },
+  {
+   "id": "weapon_shield_kite",
+   "kind": "weapon",
+   "grip": "center",
+   "length": 0.95,
+   "lod0": 600,
+   "lod1": 150,
+   "style": "object"
+  },
+  {
+   "id": "tree_oak",
+   "kind": "prop",
+   "height": 8,
+   "lod0": 3000,
+   "lod1": 600,
+   "style": "object"
+  },
+  {
+   "id": "tree_birch",
+   "kind": "prop",
+   "height": 7.5,
+   "lod0": 3000,
+   "lod1": 600,
+   "style": "object"
+  },
+  {
+   "id": "tree_oak_b",
+   "kind": "prop",
+   "height": 7.5,
+   "lod0": 3000,
+   "lod1": 600,
+   "style": "object"
+  },
+  {
+   "id": "tree_pine",
+   "kind": "prop",
+   "height": 10,
+   "lod0": 3000,
+   "lod1": 600,
+   "style": "object"
+  },
+  {
+   "id": "tree_fir",
+   "kind": "prop",
+   "height": 8.5,
+   "lod0": 3000,
+   "lod1": 600,
+   "style": "object"
+  },
+  {
+   "id": "bush",
+   "kind": "prop",
+   "height": 1.4,
+   "lod0": 1500,
+   "lod1": 400,
+   "style": "object"
+  },
+  {
+   "id": "rocks",
+   "kind": "prop",
+   "height": 2.2,
+   "lod0": 2500,
+   "lod1": 600,
+   "style": "object"
+  },
+  {
+   "id": "ruins_arch",
+   "kind": "prop",
+   "height": 4.5,
+   "lod0": 4000,
+   "lod1": 1000,
+   "style": "object"
+  },
+  {
+   "id": "ruins_wall",
+   "kind": "prop",
+   "height": 3.5,
+   "lod0": 4000,
+   "lod1": 1000,
+   "style": "object"
+  },
+  {
+   "id": "ruins_column",
+   "kind": "prop",
+   "height": 3,
+   "lod0": 2500,
+   "lod1": 700,
+   "style": "object"
+  },
+  {
+   "id": "bridge",
+   "kind": "prop",
+   "height": 3,
+   "lod0": 4000,
+   "lod1": 1000,
+   "style": "object",
+   "fit_xy": [
+    4,
+    8
+   ]
+  },
+  {
+   "id": "arrow_tower",
+   "kind": "prop",
+   "height": 7,
+   "lod0": 4000,
+   "lod1": 1200,
+   "style": "object",
+   "team": true
+  },
+  {
+   "id": "reeds",
+   "kind": "prop",
+   "height": 1.3,
+   "lod0": 1500,
+   "lod1": 400,
+   "style": "object"
+  }
+ ]
+}
