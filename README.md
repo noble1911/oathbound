@@ -15,7 +15,7 @@ invite link, or spectate a match (up to 6 spectators). New players can start wit
 1. **Pick a Lord.** Marshal Aldric (infantry), Archmage Sefa (magic), Warden Hrolf (armour) or
    Skylady Ione (fliers). Each has a passive and a battle ability.
 2. **Plan (60 s).** Spend gold on squads. You get at most **2 new deploys a round** and an army cap of
-   16. You can also level squads (Lv1–5; item slots open at Lv1, Lv3 and Lv5), move them, or sell
+   16. You can also level squads (Lv1–5; item slots open at Lv1, Lv2 and Lv4), move them, or sell
    them. You see only the enemy army as it stood *last* round.
 3. **Battle (up to 90 s).** Everything advances. The weapon triangle, terrain (forests, hills, a
    river with fords and bridges) and items decide the fight. Survivors hit the enemy Keep.
