@@ -57,8 +57,8 @@ function uiRoot(): HTMLElement {
 }
 
 let toastHost: HTMLElement | null = null;
-/** A short message at the top of the screen. */
-export function toast(text: string, kind: 'info' | 'bad' | 'good' | 'loot' = 'info'): void {
+/** A short message at the top of the screen. `ms` = how long it stays (auto-picks stay longer). */
+export function toast(text: string, kind: 'info' | 'bad' | 'good' | 'loot' | 'auto' = 'info', ms = 2600): void {
   if (!toastHost || !toastHost.isConnected) {
     toastHost = el('<div class="toasts"></div>');
     uiRoot().appendChild(toastHost);
@@ -66,8 +66,35 @@ export function toast(text: string, kind: 'info' | 'bad' | 'good' | 'loot' = 'in
   const t = el(`<div class="toast ${kind}">${esc(text)}</div>`);
   toastHost.appendChild(t);
   while (toastHost.children.length > 4) toastHost.firstElementChild!.remove();
-  setTimeout(() => t.classList.add('out'), 2600);
-  setTimeout(() => t.remove(), 3100);
+  setTimeout(() => t.classList.add('out'), ms);
+  setTimeout(() => t.remove(), ms + 500);
+}
+
+/** A small in-style yes/no dialog (leave / concede). Esc and the backdrop cancel; Enter confirms. */
+export function confirmDialog(o: { title: string; body: string; yes: string; no?: string; danger?: boolean }): Promise<boolean> {
+  return new Promise((resolve) => {
+    const d = el(`<div class="dialog-veil" role="dialog" aria-modal="true"><div class="dialog panel">
+      <h3>${esc(o.title)}</h3><p>${esc(o.body)}</p>
+      <div class="dialog-acts"><button class="btn no">${esc(o.no ?? 'Cancel')}</button><button class="btn ${o.danger ? 'danger' : 'primary'} yes">${esc(o.yes)}</button></div>
+    </div></div>`);
+    uiRoot().appendChild(d);
+    const done = (v: boolean) => {
+      window.removeEventListener('keydown', key, true);
+      d.remove();
+      resolve(v);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' && e.key !== 'Enter') return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      done(e.key === 'Enter');
+    };
+    window.addEventListener('keydown', key, true);
+    d.addEventListener('pointerdown', (e) => e.target === d && done(false));
+    $(d, '.no').addEventListener('click', () => done(false));
+    $(d, '.yes').addEventListener('click', () => done(true));
+    $<HTMLButtonElement>(d, '.yes').focus();
+  });
 }
 
 // ---------------------------------------------------------------- tooltips
@@ -105,15 +132,39 @@ function findTip(t: EventTarget | null): [Element, TipSource] | null {
   return null;
 }
 
+/**
+ * A tooltip never covers what it describes. One owned by an element sits beside that element
+ * (above it if there is room: shop cards, slots; else below, right, left). One for something on the
+ * battlefield sits off to the side of the pointer, above it, clear of the squad underneath.
+ */
 function place(): void {
   if (!tipLayer) return;
   const r = tipLayer.getBoundingClientRect();
-  const pad = 12;
-  let x = lastXY.x + 18;
-  let y = lastXY.y + 16;
-  if (x + r.width > innerWidth - pad) x = lastXY.x - r.width - 14;
-  if (y + r.height > innerHeight - pad) y = innerHeight - pad - r.height;
-  tipLayer.style.transform = `translate(${Math.max(pad, x)}px, ${Math.max(pad, y)}px)`;
+  const pad = 10;
+  const gap = 10;
+  const W = innerWidth;
+  const H = innerHeight;
+  const clampX = (x: number) => Math.max(pad, Math.min(W - pad - r.width, x));
+  const clampY = (y: number) => Math.max(pad, Math.min(H - pad - r.height, y));
+  let x: number;
+  let y: number;
+  if (tipOwner) {
+    const o = tipOwner.getBoundingClientRect();
+    const cx = o.left + o.width / 2;
+    const cy = o.top + o.height / 2;
+    if (o.top - gap - r.height >= pad) (x = clampX(cx - r.width / 2)), (y = o.top - gap - r.height);
+    else if (o.bottom + gap + r.height <= H - pad) (x = clampX(cx - r.width / 2)), (y = o.bottom + gap);
+    else if (o.right + gap + r.width <= W - pad) (x = o.right + gap), (y = clampY(cy - r.height / 2));
+    else if (o.left - gap - r.width >= pad) (x = o.left - gap - r.width), (y = clampY(cy - r.height / 2));
+    else (x = clampX(lastXY.x + 18)), (y = clampY(lastXY.y + 16));
+  } else {
+    // beside the pointer and raised, so the squad under the cursor stays in view
+    x = lastXY.x + 34;
+    if (x + r.width > W - pad) x = lastXY.x - r.width - 34;
+    x = Math.max(pad, x);
+    y = clampY(lastXY.y - r.height - 12);
+  }
+  tipLayer.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
 }
 
 /** Re-render the current tooltip (e.g. the hovered thing changed under the pointer). */

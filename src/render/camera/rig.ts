@@ -5,8 +5,9 @@
 //   'rts'      — planning: WASD/arrows/edge pan, wheel zoom (tilt curve), Q/E or right-drag rotate,
 //                middle-drag pan, touch pan/pinch/twist; clamped to the battlefield.
 //   'director' — battle: the Director drives `shot()`s; any manual input switches to 'free'.
-//   'free'     — battle under user control (same controls as rts); `returnToDirector()` (key C or
-//                Home by default) hands back.
+//   'free'     — battle under user control (same controls as rts); `setMode('director')` /
+//                `returnToDirector()` hands back. The rig binds no mode keys: the UI owns C / Home
+//                and calls `setMode` / `BattleView.resetCamera()`.
 //   'orbit'    — slow automatic orbit around the target (title / loot screen backdrops).
 import * as THREE from 'three';
 import type { Engine } from '../core/engine.ts';
@@ -33,7 +34,7 @@ export interface Shot {
 }
 
 const MIN_DIST = 9;
-const MAX_DIST = 170;
+const MAX_DIST = 200;
 
 export class CameraRig {
   mode: CameraMode = 'rts';
@@ -49,6 +50,14 @@ export class CameraRig {
   bounds = { minX: -48, maxX: 48, minZ: -72, maxZ: 72 };
   /** The player's home yaw (0 = seat 0's side; π = seat 1's). */
   homeYaw = 0;
+  /** The yaw the player last used in planning: the free battle camera starts from it. */
+  planYaw = 0;
+  /** The current view is the fitted home framing (re-fitted when the viewport / HUD insets change). */
+  private atHome: { seat: 0 | 1; overview: boolean } | null = null;
+  /** Edge pan arms only after the pointer has really moved since the last home / mode change. */
+  private edgeArmed = false;
+  private edgeTravel = 0;
+  private edgeDwell = 0;
   edgePan = true;
   dofAmount = 0;
   dofGoal = 0;
@@ -81,6 +90,9 @@ export class CameraRig {
     this.engine = engine;
     this.bindInput();
     engine.beforeRender.add((dt) => this.update(dt));
+    engine.onResize.add(() => {
+      if (this.atHome && this.mode === 'rts') this.fitHome(this.atHome.seat, this.atHome.overview);
+    });
   }
 
   setGround(fn: (x: number, z: number) => number): void {
@@ -108,10 +120,14 @@ export class CameraRig {
     let hits = 0;
     let total = 0;
     const p = this.tmpA;
+    // a shot aimed at an obstacle (a keep, a ruin) is not blocked by its own subject: samples in
+    // the subject's footprint don't count (otherwise the rig lifts to a top-down view and ends on the roof)
+    const subject = this.obstacle(look.x, look.z) > look.y ? 15 : 0;
     for (let i = 0; i <= n; i++) {
       const t = (i / n) * (nearOnly ? Math.min(1, 12 / Math.max(1, len)) : 0.85);
       p.lerpVectors(cam, look, t);
       total++;
+      if (i > 0 && subject && Math.hypot(p.x - look.x, p.z - look.z) < subject) continue;
       const margin = i === 0 ? this.clearance : 0.6;
       if (this.obstacle(p.x, p.z) > p.y - margin) hits++;
     }
@@ -144,30 +160,109 @@ export class CameraRig {
     return THREE.MathUtils.lerp(0.5, 1.12, Math.sqrt(k));
   }
 
+  /**
+   * The one place the mode changes (the UI cycles director <-> free through this; the rig binds no
+   * mode keys itself). Leaving planning remembers its yaw; entering 'free' starts from that yaw
+   * (not from wherever the director's last shot pointed).
+   */
   setMode(m: CameraMode): void {
+    const was = this.mode;
+    if (was === 'rts' && m !== 'rts') this.planYaw = this.goal.yaw;
     this.mode = m;
     this.engine.backdrop = m === 'orbit'; // title / loot backdrops render at <= 30 fps
     if (m !== 'director') this.shot = null;
     if (m === 'rts' || m === 'free') this.dofGoal = 0;
+    if (m === 'free' && was !== 'free') this.inheritPlanYaw();
+    if (m !== 'rts') this.atHome = null;
+    if (m !== was) this.disarmEdge();
+    if (m === 'director' && was === 'free') this.onReturnToDirector?.();
     this.engine.wake();
   }
 
   returnToDirector(): void {
-    if (this.mode !== 'free') return;
-    this.setMode('director');
-    this.onReturnToDirector?.();
+    if (this.mode === 'free') this.setMode('director');
   }
 
-  /** Frame a home view for planning (seat 0 looks from +Z, seat 1 from −Z). */
+  /** Point the goal yaw at the planning yaw (the equivalent angle nearest the current one: no spin). */
+  private inheritPlanYaw(): void {
+    const d = Math.atan2(Math.sin(this.planYaw - this.yaw), Math.cos(this.planYaw - this.yaw));
+    this.goal.yaw = this.yaw + d;
+    this.goal.pitch = NaN;
+  }
+
+  private disarmEdge(): void {
+    this.edgeArmed = false;
+    this.edgeTravel = 0;
+    this.edgeDwell = 0;
+  }
+
+  /**
+   * Frame the home view for planning (seat 0 looks from +Z, seat 1 from -Z) and restore the home
+   * rotation: the own Keep, the whole deploy zone, the river and the enemy front line fit between
+   * the HUD insets at any aspect (4:3 .. 32:9). Re-fitted when the viewport or the insets change,
+   * until the player moves the camera. `overview` frames the whole field instead.
+   */
   home(seat: 0 | 1 = 0, overview = false): void {
     this.homeYaw = seat === 0 ? 0 : Math.PI;
-    // home: the own deploy zone fills most of the view, the river and a strip of the enemy half show
-    // beyond it (16:9 with the HUD insets)
-    const z = overview ? 0 : seat === 0 ? 17 : -17;
-    this.goal.target.set(0, 0, z);
+    this.planYaw = this.homeYaw;
+    // unwind any accumulated rotation (orbit backdrops, Q/E) so the glide home takes the short way
+    this.yaw = this.homeYaw + Math.atan2(Math.sin(this.yaw - this.homeYaw), Math.cos(this.yaw - this.homeYaw));
+    this.fitHome(seat, overview);
+    this.atHome = { seat, overview };
+    this.disarmEdge();
+  }
+
+  /** Solve target + distance so the home rectangle (on the ground plane) fills the free viewport. */
+  private fitHome(seat: 0 | 1, overview: boolean): void {
+    const sgn = seat === 0 ? 1 : -1;
+    // near edge: just behind the own Keep; far edge: the enemy front line (their deploy-zone edge)
+    const zNear = 63 * sgn;
+    const zFar = (overview ? -63 : -21) * sgn;
+    const halfX = 41;
+    const pitch = 0.86;
+    const tanV = Math.tan(THREE.MathUtils.degToRad(34 / 2));
+    const tanH = tanV * Math.max(0.2, this.engine.camera.aspect);
+    const margin = 0.04;
+    const sp = Math.sin(pitch);
+    const cp = Math.cos(pitch);
+    // NDC of a ground point for the home yaw: the camera sits at target + (0, sp, sgn * cp) * dist
+    const ndc = (tz: number, dist: number, x: number, z: number): [number, number] => {
+      const vy = -(sp * dist + 1.2);
+      const vz = z - (tz + sgn * cp * dist);
+      const depth = Math.max(1e-3, vy * -sp + vz * -sgn * cp);
+      const up = vy * cp + vz * -sgn * sp;
+      return [x / (depth * tanH), up / (depth * tanV)];
+    };
+    const fit = (dist: number): { tz: number; ok: boolean } => {
+      // centre the rectangle vertically: bisect the target between the two edges until top and bottom balance
+      let a = zNear;
+      let b = zFar;
+      let top = 0;
+      let bot = 0;
+      let tz = 0;
+      for (let i = 0; i < 24; i++) {
+        tz = (a + b) / 2;
+        top = ndc(tz, dist, 0, zFar)[1];
+        bot = ndc(tz, dist, 0, zNear)[1];
+        // the rectangle sits too high on screen: aim further away (towards the far edge)
+        if (top + bot > 0) a = tz;
+        else b = tz;
+      }
+      const wide = Math.max(Math.abs(ndc(tz, dist, halfX, zNear)[0]), Math.abs(ndc(tz, dist, halfX, zFar)[0]));
+      return { tz, ok: top <= 1 - margin && bot >= -(1 - margin) && wide <= 1 - margin };
+    };
+    let lo = 30;
+    let hi = MAX_DIST;
+    for (let i = 0; i < 18; i++) {
+      const mid = (lo + hi) / 2;
+      if (fit(mid).ok) hi = mid;
+      else lo = mid;
+    }
+    this.goal.target.set(0, 0, fit(hi).tz);
     this.goal.yaw = this.homeYaw;
-    this.goal.dist = overview ? 130 : 92;
-    this.goal.pitch = overview ? NaN : 0.86;
+    this.goal.dist = hi;
+    this.goal.pitch = pitch;
+    this.goal.fov = 34;
     this.engine.wake();
   }
 
@@ -214,11 +309,12 @@ export class CameraRig {
   // ------------------------------------------------------------------ manual control
 
   private userInput(): void {
+    this.atHome = null;
     if (this.mode === 'director') {
       this.mode = 'free';
       this.shot = null;
       this.dofGoal = 0;
-      this.goal.pitch = NaN;
+      this.inheritPlanYaw();
       this.onUserControl?.();
     }
   }
@@ -239,10 +335,37 @@ export class CameraRig {
     this.goal.yaw += da;
     this.engine.wake();
   }
-  zoomBy(f: number): void {
-    this.goal.dist = THREE.MathUtils.clamp(this.goal.dist * f, MIN_DIST, MAX_DIST);
+  /** Zoom by factor `f`; with a cursor position (client px) the ground point under it stays put. */
+  zoomBy(f: number, clientX?: number, clientY?: number): void {
+    const d0 = this.goal.dist;
+    const d1 = THREE.MathUtils.clamp(d0 * f, MIN_DIST, MAX_DIST);
+    if (clientX !== undefined && clientY !== undefined && d1 !== d0) {
+      const p = this.groundUnder(clientX, clientY);
+      if (p) {
+        // an orbit camera scales about its target: scaling the target about P keeps P under the cursor
+        const k = d1 / d0;
+        this.goal.target.x = p.x + (this.goal.target.x - p.x) * k;
+        this.goal.target.z = p.z + (this.goal.target.z - p.z) * k;
+        this.clampGoal();
+      }
+    }
+    this.goal.dist = d1;
     this.goal.pitch = NaN;
     this.engine.wake();
+  }
+
+  /** The point on the look plane (target height) under a client position, or null above the horizon. */
+  private groundUnder(clientX: number, clientY: number): THREE.Vector3 | null {
+    const r = this.engine.canvas.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return null;
+    const cam = this.engine.camera;
+    const o = cam.position;
+    const d = this.tmpA.set(((clientX - r.left) / r.width) * 2 - 1, -(((clientY - r.top) / r.height) * 2 - 1), 0.5).unproject(cam).sub(o).normalize();
+    const y = this.ground(this.target.x, this.target.z) + 1.2 + this.target.y;
+    if (d.y > -0.05) return null;
+    const t = (y - o.y) / d.y;
+    if (t <= 0 || t > 600) return null;
+    return new THREE.Vector3(o.x + d.x * t, y, o.z + d.z * t);
   }
   private clampGoal(): void {
     const b = this.bounds;
@@ -254,9 +377,11 @@ export class CameraRig {
   private look = new THREE.Vector3();
   private edgeVector(): THREE.Vector2 {
     const v = this.edge.set(0, 0);
-    if (!this.mouse.inside || this.drag || this.mode === 'director' || this.mode === 'orbit') return v;
+    // only once the pointer has really moved since the last home / mode change, and only at the
+    // very edge of the canvas (a pointer parked under a HUD bar must not drag the view away)
+    if (!this.mouse.inside || !this.edgeArmed || this.drag || this.mode === 'director' || this.mode === 'orbit') return v;
     const r = this.engine.canvas.getBoundingClientRect();
-    const m = 10;
+    const m = 4;
     if (this.mouse.x - r.left < m) v.x = -1;
     else if (r.right - this.mouse.x < m) v.x = 1;
     if (this.mouse.y - r.top < m) v.y = 1;
@@ -279,7 +404,7 @@ export class CameraRig {
         this.keys.add(k);
         this.userInput();
         this.engine.wake();
-      } else if ((k === 'c' || k === 'home') && this.mode === 'free') this.returnToDirector();
+      }
     }, sig);
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()), sig);
     window.addEventListener('blur', () => this.keys.clear(), sig);
@@ -304,6 +429,8 @@ export class CameraRig {
       }
     }, sig);
     c.addEventListener('pointermove', (e) => {
+      if (this.mouse.inside) this.edgeTravel += Math.abs(e.clientX - this.mouse.x) + Math.abs(e.clientY - this.mouse.y);
+      if (this.edgeTravel > 40) this.edgeArmed = true;
       this.mouse = { x: e.clientX, y: e.clientY, inside: true };
       if (this.edgePan && this.edgeVector().lengthSq() > 0) this.engine.wake();
       if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) {
@@ -344,11 +471,14 @@ export class CameraRig {
     c.addEventListener('pointerup', up, sig);
     c.addEventListener('pointercancel', up, sig);
     c.addEventListener('pointerleave', () => (this.mouse.inside = false), sig);
+    // the pointer left the window (the canvas gets no pointerleave when a HUD element was in between)
+    document.addEventListener('mouseleave', () => (this.mouse.inside = false), sig);
+    window.addEventListener('blur', () => (this.mouse.inside = false), sig);
     c.addEventListener('wheel', (e) => {
       if (!this.manual) return;
       e.preventDefault();
       this.userInput();
-      this.zoomBy(Math.exp(e.deltaY * 0.0011));
+      this.zoomBy(Math.exp(e.deltaY * 0.0011), e.clientX, e.clientY);
     }, { passive: false, signal: this.abort.signal });
   }
 
@@ -366,11 +496,19 @@ export class CameraRig {
       if (this.keys.has('a') || this.keys.has('arrowleft')) px -= 1;
       if (this.keys.has('d') || this.keys.has('arrowright')) px += 1;
       const ev = this.edgeVector();
-      px += ev.x;
-      pz += ev.y;
-      if (px || pz) this.panBy(px * sp, pz * sp);
+      // edge pan starts after a short dwell (crossing the edge on the way to a HUD button doesn't pan)
+      this.edgeDwell = ev.lengthSq() > 0 ? this.edgeDwell + dt : 0;
+      if (this.edgeDwell > 0.3) {
+        px += ev.x;
+        pz += ev.y;
+      }
+      if (px || pz) {
+        this.atHome = null;
+        this.panBy(px * sp, pz * sp);
+      }
       if (this.keys.has('q')) this.rotateBy(dt * 1.4);
       if (this.keys.has('e')) this.rotateBy(-dt * 1.4);
+      if (this.mode === 'rts') this.planYaw = g.yaw;
       if (this.keys.has('+') || this.keys.has('=')) this.zoomBy(Math.exp(-dt * 1.5));
       if (this.keys.has('-')) this.zoomBy(Math.exp(dt * 1.5));
     }

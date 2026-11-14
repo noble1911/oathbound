@@ -5,6 +5,8 @@
 // and the crowd needs `_VID`. Custom attributes (`_TEAM`) are dropped from packed files: tint them with the
 // manifest `tintMask` texture. three.js: `gltfLoader.setMeshoptDecoder(MeshoptDecoder)` from
 // 'three/examples/jsm/libs/meshopt_decoder.module.js'.
+// `-vtf` keeps texture coordinates as floats: quantised UVs come with a KHR_texture_transform on the material's own
+// maps, which the separate `tintMask` texture does not get, so team cloth on packed heroes rendered untinted.
 // Unpacked originals are kept in art-work/unpacked/ (render_review.py reads those for review renders).
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -23,13 +25,17 @@ const isPacked = (f) => {
   return b.slice(20, 20 + n).toString().includes('EXT_meshopt_compression');
 };
 let before = 0, after = 0;
+// `--only a,b,c`: pack just those ids (run.mjs passes the ids it rebuilt)
+const onlyArg = process.argv.indexOf('--only');
+const only = onlyArg > 0 ? new Set(process.argv[onlyArg + 1].split(',')) : null;
 for (const f of readdirSync(OUT).filter((x) => x.endsWith('.glb'))) {
   const id = f.replace(/_lod1\.glb$|\.glb$/, '');
+  if (only && !only.has(id)) continue;
   if (f.endsWith('_lod1.glb') && existsSync(join(OUT, `${id}.vat.json`))) continue;   // crowd mesh: keep _VID
   const out = join(OUT, f), raw = join(RAW, f);
   if (isPacked(out)) continue;                             // already packed (rebuilds write unpacked files)
   copyFileSync(out, raw);
-  const r = spawnSync('npx', ['-y', GLTFPACK, '-i', raw, '-o', out, '-cc', '-kn', '-km', '-ke'],
+  const r = spawnSync('npx', ['-y', GLTFPACK, '-i', raw, '-o', out, '-cc', '-kn', '-km', '-ke', '-vtf'],
     { shell: process.platform === 'win32', encoding: 'utf8' });
   if (r.status !== 0) { console.error(`${f}: gltfpack failed\n${r.stderr}`); copyFileSync(raw, out); continue; }
   before += statSync(raw).size; after += statSync(out).size;

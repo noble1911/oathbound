@@ -22,7 +22,13 @@
 //   view.fieldToScreen(xcm, ycm, h) / view.squadScreen(squadId) → { x, y } CSS px (labels, HP bars)
 //   view.camera.claimPointer = (e) => boolean   // return true to keep a left-press for the UI (dragging squads)
 //   view.showRangeRing(squadId | [xcm, ycm], radiusCm, { color? }) → { setCenter, setRadius, dispose }; view.clearRangeRings()
-//   Planning: canopies over the planning seat's half dither out (units + deploy grid read through forests).
+//   SQUAD PLATES (in-world, one instanced draw; planning + battle): a crest with the unit portrait ringed in
+//   the team colour (gold for Lords), the squad's total HP bar and level pips, constant screen size, hidden
+//   when the camera is close. highlightSquads / showArmy's `highlight` drive their hover / selected look;
+//   or set it directly: view.setSquadPlate(squadId, { selected?, hovered? })   ({} clears)
+//   view.setSquadPlates(false) hides them all. Soldiers also scale up to 1.3× at far zoom.
+//   Planning: trees standing in a visible deploy zone shrink to saplings (no dither / transparency), so units
+//   and the grid read; the forest floor still marks the forest.
 //   Battle: soldiers hidden behind canopies / walls / hills show a team-coloured silhouette.
 //   Cameras never enter tree crowns / props: the rig lifts its pitch until the view clears (field.canopyAt).
 //
@@ -38,14 +44,20 @@
 //   view.vfx.projectile(kind, from, to, flightSec, arc) · impact(kind, pos, splashM) · hitSpark(pos, {crit, magic})
 //   heal · lightning(from, to) · burn · frost · meteor(pos, r) · rally(pos, r, dur, follow?) · bulwark(...)
 //   skyfall(from, to) · breath(origin, dir, len, halfAngle, dur) · stomp · marchDust · keepHit · keepCollapse
-//   levelUp · lootBeam(pos, rarity) → { setPosition, dispose } · damageNumber(pos, value, style)
+//   death(pos, size) · keepFire(points, dur) · levelUp · lootBeam(pos, rarity) → { setPosition, dispose }
+//   damageNumber(pos, value, style, key?)  (key = squad id: hits within 0.75 s merge into one total; crits pop alone)
+//   settle() ends ambient emitters (called when a battle ends) · clear()
 //   view.field.keep(seat).setStage(0..4) · view.engine.addShake(m) · view.engine.addFlash(k)
 //
 // CAMERA
 //   view.camera.mode: 'rts' (planning) | 'director' (battle auto) | 'free' (user grabbed it during battle) | 'orbit'
-//   view.setCameraMode(m); view.camera.home(seat, overview?); view.camera.returnToDirector() (key C / Home)
+//   view.setCameraMode(m) is the only way the mode changes (the rig binds no C / Home key: the UI does, and calls
+//   setCameraMode('director' | 'free') or view.resetCamera()). view.resetCamera(): planning = fitted home view
+//   (own Keep .. enemy front line between the HUD insets, any aspect; undoes rotation / zoom), battle = director.
+//   view.camera.home(seat, overview?) re-fits when the viewport / insets change until the player moves the camera.
 //   view.camera.onUserControl / onReturnToDirector callbacks (show a "Press C for director" hint)
-//   Controls: WASD/arrows/edge pan, wheel zoom (tilt curve), Q/E or right-drag rotate, drag pan, touch pan/pinch/twist.
+//   Controls: WASD/arrows/edge pan, wheel zoom towards the cursor (tilt curve), Q/E or right-drag rotate, drag pan,
+//   touch pan/pinch/twist. The free battle camera starts from the planning yaw.
 //
 // POWER (hard requirement: no hot laptops)
 //   Renders on demand: planning idle = 0 frames (nothing drawn until the camera / UI / an animation
@@ -70,10 +82,12 @@
 //   Packed GLBs (meshopt + quantization + webp) decode via MeshoptDecoder; tint = manifest tintMask only.
 //   Heroes / large / mounted fliers: skinned GLBs on the shared skeleton (mixer, 11 clips). Siege: node-animated
 //   GLBs (idle/fire/reload/hit/death); fire → reload chains, and the projectile spawns at the clip's fireTime.
-//   Props (manifest `props`): trees, rocks, ruins, bridge (fitted to each crossing), arrow towers (team banner),
-//   bushes, reeds - InstancedMesh per prop per LOD, placed deterministically from the terrain; prop shadows only
+//   Props (manifest `props`): rocks, ruins, bridge (fitted to each crossing), arrow towers (team banner) -
+//   InstancedMesh per prop per LOD, placed deterministically from the terrain; prop shadows only
 //   on high/ultra (outskirts always use the baked ground shadow). Loaded at startup with the keep; units load
 //   lazily per type present (planning: the squads shown; battle: the replay's roster).
+//   Environment (docs/ART.md section 7): scanned PBR ground layers + a vegetation atlas in public/textures/env/
+//   (flat placeholders until they arrive); trees / bushes / reeds are procedural branch geometry + leaf cards.
 //
 // COORDINATES: field cm (sim) → world metres: X = x/100 − 40, Z = 60 − y/100 (seat 0's keep at +Z). See core/coords.ts.
 

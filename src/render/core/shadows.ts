@@ -15,8 +15,9 @@ interface Entry {
 
 export class Sun {
   csm: CSM | null = null;
-  readonly direction = new THREE.Vector3(-0.55, -0.62, -0.56).normalize();
-  readonly color = new THREE.Color('#fff0dc');
+  // late afternoon: a lowish warm sun (elevation ~32 deg) for long shadows and a golden key light
+  readonly direction = new THREE.Vector3(-0.6, -0.52, -0.56).normalize();
+  readonly color = new THREE.Color('#ffe6c2');
   intensity = 3.4;
   private materials = new Map<THREE.Material, Entry>();
   private cfg = { cascades: 3, mapSize: 2048, maxFar: 220, fade: true };
@@ -59,8 +60,18 @@ export class Sun {
       l.shadow.radius = 2;
     }
     this.csm = csm;
-    for (const [m, e] of this.materials) this.apply(m, e);
+    // breaks must exist before any material compiles: CSM sizes the CSM_cascades vec2[] from them
     csm.updateFrustums();
+    // Re-configuring (quality change): three keeps one compiled program per variant on each
+    // material, and when a variant compiled earlier is picked again it reuses that program but
+    // NOT the uniforms of that compile, so a 3-cascade program would read the 1-cascade
+    // CSM_cascades array and throw in the uniform upload. Dropping the material's program cache
+    // (dispose) forces a clean compile with fresh uniforms; textures are untouched.
+    const rebuilding = this.materials.size > 0;
+    for (const [m, e] of this.materials) {
+      if (rebuilding) m.dispose();
+      this.apply(m, e);
+    }
   }
 
   /** Register a material for CSM; `hook` is the material's own shader patch (if any). */
@@ -94,6 +105,11 @@ export class Sun {
     const own = e.hook;
     mat.onBeforeCompile = (shader, renderer) => {
       csmHook.call(mat, shader, renderer);
+      // The shader declares vec2 CSM_cascades[CSM_CASCADES]; if the breaks array is shorter (CSM
+      // rebuilt on a quality change mid-frame), three's uniform upload throws reading .toArray.
+      const arr = shader.uniforms.CSM_cascades?.value as THREE.Vector2[] | undefined;
+      const want = Number((mat.defines ?? {}).CSM_CASCADES) || 0;
+      if (arr) while (arr.length < want) arr.push(new THREE.Vector2());
       own?.(shader, renderer);
     };
     const n = this.cfg.cascades;

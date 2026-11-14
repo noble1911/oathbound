@@ -18,19 +18,19 @@
   {
    "name": "move",
    "start": 25,
-   "frames": 12,
-   "fps": 12,
+   "frames": 10,
+   "fps": 15,
    "loop": true,
-   "duration": 0.9583,
+   "duration": 0.6667,
    "source": "walk"
   },
   {
    "name": "run",
-   "start": 37,
-   "frames": 8,
-   "fps": 12,
+   "start": 35,
+   "frames": 10,
+   "fps": 20,
    "loop": true,
-   "duration": 0.625,
+   "duration": 0.5,
    "source": "run"
   },
   {
@@ -57,7 +57,7 @@
    "frames": 5,
    "fps": 12,
    "loop": false,
-   "duration": 0.375,
+   "duration": 0.3333,
    "source": "hit"
   },
   {
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -1.2566,
-   -1.6182,
-   -2.5382
+   -1.1505,
+   -1.5536,
+   -2.4165
   ],
   "max": [
-   3.5012,
-   4.5587,
-   2.9603
+   3.83,
+   4.5503,
+   3.2927
   ]
  },
  "pos": "pegasus.vat.pos.bin",

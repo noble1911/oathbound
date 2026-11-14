@@ -1,61 +1,153 @@
-// Sound, synthesised with WebAudio (no audio files): noise bursts and tones for battle events
-// (clash, bow volleys, spells, impacts, keep hits), HUD feedback (clicks, deploys, errors, timer
-// ticks) and the loot reveal (one sting per rarity, a choir-and-bell flourish for legendaries).
-// The context is created on the first user gesture (`unlock`) and suspended after a few seconds of
-// silence to save battery. A limiter and a voice cap keep big fights clean. Volume and mute persist.
+// Game audio: recorded samples (public/audio/, built by tools/audio/build.py, credits in
+// docs/AUDIO.md) through a small RTS-style mixer.
+//
+//   voices ─┬─ ui ───────────────────────────┐
+//           ├─ sfx ─┐                        ├─ master ─ glue compressor ─ limiter ─ out
+//           │       └─ (send) ─ hall reverb ─┤
+//           ├─ amb ─ duck ───────────────────┤
+//   <audio> music ─ crossfade ─ music ─ duck ┘
+//
+// - Buses: master, music, sfx (battle), ambience, interface. Levels persist (oathbound.* keys).
+// - Battles never machine-gun: every sound has variants, random pitch/volume, a voice limit and
+//   a cooldown; melee contacts drive two layered "clash bed" loops (skirmish → full melee) while
+//   only a few individual clashes play on top as accents; a volley is one layered whoosh; arrow
+//   impacts are pooled per 150 ms; everything is attenuated / filtered / panned by its distance
+//   to the camera focus. Big moments (Lord abilities, keep hits and collapses, dragon roars) duck
+//   the music.
+// - Power: only interface sounds load at boot; planning loads ambience and the battle set in the
+//   background; the context is suspended while the tab is hidden or everything is muted. The
+//   mixer's timers run only while their phase is active. Nothing here touches the renderer.
 import { store } from './ui/dom.ts';
-import type { Rarity } from './sim/types.ts';
+import type { Rarity, Terrain, Vec2 } from './sim/types.ts';
+import { BANK, MUSIC, attenuate, dbToGain, distanceCutoff, smooth, type Bus, type LoadGroup, type MusicId, type SoundDef, type SoundId } from './audio/bank.ts';
 
-type ToneOpts = { type?: OscillatorType; gain?: number; at?: number; slide?: number; attack?: number; pan?: number; detune?: number };
-type HissOpts = { freq?: number; q?: number; gain?: number; at?: number; type?: BiquadFilterType; sweep?: number; pan?: number; attack?: number };
+export type AudioPhase = 'menu' | 'planning' | 'battle' | 'results' | 'over';
+
+/** Where the camera looks (field cm) and how far away it is (m); screen pan of a field point. */
+export interface AudioListener {
+  focus(): { pos: Vec2; dist: number } | null;
+  pan(p: Vec2): number | null;
+}
+
+interface PlayOpts {
+  /** Field position (cm): attenuated, filtered and panned against the listener. */
+  pos?: Vec2;
+  pan?: number;
+  /** Linear gain multiplier. */
+  gain?: number;
+  /** Seconds from now. */
+  delay?: number;
+  /** Playback-rate multiplier (on top of the random pitch). */
+  rate?: number;
+}
+
+interface Voice {
+  id: string;
+  group: string;
+  src: AudioBufferSourceNode;
+}
+
+interface Loop {
+  src: AudioBufferSourceNode;
+  gain: GainNode;
+}
+
+const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
+const rand = (a: number): number => (Math.random() * 2 - 1) * a;
+/** Distance (m) from a point to a terrain feature (cm geometry). */
+function featureDist(p: Vec2, f: Terrain['features'][number]): number {
+  if (f.shape === 'circle') return Math.max(0, Math.hypot(p[0] - f.x, p[1] - f.y) - f.r) / 100;
+  const dx = Math.max(f.x - p[0], 0, p[0] - (f.x + f.w));
+  const dy = Math.max(f.y - p[1], 0, p[1] - (f.y + f.h));
+  return Math.hypot(dx, dy) / 100;
+}
+
+const MAX_VOICES = 40;
+const PHASE_LOADS: Record<AudioPhase, LoadGroup[]> = {
+  menu: ['boot'],
+  planning: ['boot', 'planning', 'battle'],
+  battle: ['boot', 'planning', 'battle', 'end'],
+  results: ['boot', 'planning', 'battle', 'end'],
+  over: ['boot', 'end'],
+};
 
 class Sound {
   private ctx: AudioContext | null = null;
-  private out: GainNode | null = null;
-  private verb: ConvolverNode | null = null;
+  private master: GainNode | null = null;
+  private bus: Record<Bus | 'music', GainNode> | null = null;
+  private musicDuck: GainNode | null = null;
+  private ambDuck: GainNode | null = null;
   private verbIn: GainNode | null = null;
-  private noise: AudioBuffer | null = null;
-  private idleTimer = 0;
-  private voices = 0;
-  private lastPlay = new Map<string, number>();
-  muted = store.get('muted') === '1';
-  volume = Number(store.get('volume') ?? '0.7');
-  sfx = Number(store.get('sfx') ?? '1');
-  ui = Number(store.get('uivol') ?? '1');
+  private buffers = new Map<string, AudioBuffer>();
+  private raw = new Map<string, Promise<ArrayBuffer | null>>();
+  private decoding = new Map<string, Promise<AudioBuffer | null>>();
+  private requested = new Set<LoadGroup>();
+  private voices: Voice[] = [];
+  private lastStart = new Map<string, number>();
+  private lastFile = new Map<string, number>();
+  private loops = new Map<string, Loop>();
+  private tracks = new Map<MusicId, { el: HTMLAudioElement; gain: GainNode }>();
+  private track: MusicId | null = null;
+  private phase: AudioPhase = 'menu';
+  private listener: AudioListener | null = null;
+  private terrain: Terrain | null = null;
+  private ambTimer = 0;
+  private battleTimer = 0;
+  private contacts = 0;
+  private arrowPool: { n: number; x: number; y: number; t: number } | null = null;
+  private volleyPool: { n: number; x: number; y: number; t: number } | null = null;
+  private battleRound = 0;
 
+  muted = store.get('muted') === '1';
+  volume = Number(store.get('volume') ?? '0.8');
+  musicVol = Number(store.get('musicvol') ?? '0.6');
+  sfx = Number(store.get('sfx') ?? '0.9');
+  amb = Number(store.get('ambvol') ?? '0.7');
+  ui = Number(store.get('uivol') ?? '0.8');
+
+  /** Telemetry for tests and tuning: plays per sound, drops by reason, peak voices. */
+  readonly stats = { plays: {} as Record<string, number>, dropped: {} as Record<string, number>, pooled: {} as Record<string, number>, peakVoices: 0, loaded: 0, failed: [] as string[], decodeMs: 0 };
+
+  // ---------------------------------------------------------------- setup
+  /** Create / resume the context (needs a user gesture). Safe to call often. */
   unlock(): void {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') void this.ctx.resume();
+      if (this.ctx.state === 'suspended' && !document.hidden && !this.muted) void this.ctx.resume();
       return;
     }
     try {
-      this.ctx = new AudioContext();
+      this.ctx = new AudioContext({ latencyHint: 'interactive' });
     } catch {
       return;
     }
     const ctx = this.ctx;
-    const limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = -14;
-    limiter.ratio.value = 12;
-    limiter.attack.value = 0.003;
-    limiter.release.value = 0.15;
-    this.out = ctx.createGain();
-    this.applyGain();
-    this.out.connect(limiter).connect(ctx.destination);
-    // deterministic white noise
-    const n = ctx.sampleRate;
-    this.noise = ctx.createBuffer(1, n, n);
-    const d = this.noise.getChannelData(0);
-    let s = 1234567;
-    for (let i = 0; i < n; i++) {
-      s ^= s << 13;
-      s ^= s >>> 17;
-      s ^= s << 5;
-      d[i] = ((s >>> 0) / 4294967296) * 2 - 1;
-    }
-    // a short dark hall for stings and spells: decaying noise that darkens as it fades
-    const len = Math.floor(ctx.sampleRate * 2.2);
+    // master chain: gentle glue compression, then a brick-wall-ish limiter
+    const glue = ctx.createDynamicsCompressor();
+    glue.threshold.value = -20;
+    glue.knee.value = 10;
+    glue.ratio.value = 3;
+    glue.attack.value = 0.012;
+    glue.release.value = 0.25;
+    const lim = ctx.createDynamicsCompressor();
+    lim.threshold.value = -3;
+    lim.knee.value = 0;
+    lim.ratio.value = 20;
+    lim.attack.value = 0.002;
+    lim.release.value = 0.12;
+    this.master = ctx.createGain();
+    this.master.connect(glue).connect(lim).connect(ctx.destination);
+    const g = (to: AudioNode): GainNode => {
+      const n = ctx.createGain();
+      n.connect(to);
+      return n;
+    };
+    this.musicDuck = g(this.master);
+    this.ambDuck = g(this.master);
+    this.bus = { ui: g(this.master), sfx: g(this.master), amb: g(this.ambDuck), music: g(this.musicDuck) };
+    // a short stereo hall (decaying filtered noise) as a shared send
+    const len = Math.floor(ctx.sampleRate * 2.0);
     const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    let s = 1234567;
     for (let c = 0; c < 2; c++) {
       const ch = ir.getChannelData(c);
       let lp = 0;
@@ -65,306 +157,649 @@ class Sound {
         s ^= s << 5;
         const w = ((s >>> 0) / 4294967296) * 2 - 1;
         const t = i / len;
-        lp += (w - lp) * (0.5 - 0.42 * t);
-        ch[i] = lp * Math.pow(1 - t, 3);
+        lp += (w - lp) * (0.55 - 0.45 * t);
+        ch[i] = lp * Math.pow(1 - t, 2.6) * (i < ctx.sampleRate * 0.012 ? i / (ctx.sampleRate * 0.012) : 1);
       }
     }
-    this.verb = ctx.createConvolver();
-    this.verb.buffer = ir;
+    const verb = ctx.createConvolver();
+    verb.buffer = ir;
     this.verbIn = ctx.createGain();
-    this.verbIn.gain.value = 0.35;
-    this.verbIn.connect(this.verb).connect(this.out);
+    this.verbIn.gain.value = 0.55;
+    this.verbIn.connect(verb).connect(this.master);
+    this.applyLevels();
+    document.addEventListener('visibilitychange', () => this.onVisibility());
+    // decode whatever was fetched before the gesture, then follow the phase
+    for (const gname of this.requested) this.decodeGroup(gname);
+    this.setPhase(this.phase, true);
   }
 
-  private applyGain(): void {
-    if (this.out) this.out.gain.value = this.muted ? 0 : 0.75 * this.volume;
+  private onVisibility(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (document.hidden) {
+      for (const t of this.tracks.values()) t.el.pause();
+      void ctx.suspend();
+    } else if (!this.muted) {
+      void ctx.resume();
+      if (this.track) void this.tracks.get(this.track)?.el.play().catch(() => {});
+    }
+  }
+
+  private applyLevels(): void {
+    const b = this.bus;
+    if (!b || !this.master || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const set = (n: GainNode, v: number) => n.gain.setTargetAtTime(v, t, 0.03);
+    set(this.master, this.muted ? 0 : this.volume);
+    set(b.music, 0.42 * this.musicVol * this.musicVol);
+    set(b.sfx, this.sfx * this.sfx);
+    set(b.amb, 0.85 * this.amb * this.amb);
+    set(b.ui, 0.9 * this.ui * this.ui);
+    // nothing audible: let the audio thread sleep
+    if (this.muted || this.volume <= 0) void this.ctx.suspend();
+    else if (!document.hidden && this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
   setMuted(m: boolean): void {
     this.muted = m;
     store.set('muted', m ? '1' : '0');
-    this.applyGain();
+    this.applyLevels();
+    if (!m && this.track) void this.tracks.get(this.track)?.el.play().catch(() => {});
   }
   setVolume(v: number): void {
-    this.volume = Math.max(0, Math.min(1, v));
+    this.volume = clamp(v, 0, 1);
     store.set('volume', String(this.volume));
-    this.applyGain();
+    this.applyLevels();
+  }
+  setMusic(v: number): void {
+    this.musicVol = clamp(v, 0, 1);
+    store.set('musicvol', String(this.musicVol));
+    this.applyLevels();
   }
   setSfx(v: number): void {
-    this.sfx = Math.max(0, Math.min(1, v));
+    this.sfx = clamp(v, 0, 1);
     store.set('sfx', String(this.sfx));
+    this.applyLevels();
+  }
+  setAmb(v: number): void {
+    this.amb = clamp(v, 0, 1);
+    store.set('ambvol', String(this.amb));
+    this.applyLevels();
   }
   setUi(v: number): void {
-    this.ui = Math.max(0, Math.min(1, v));
+    this.ui = clamp(v, 0, 1);
     store.set('uivol', String(this.ui));
+    this.applyLevels();
   }
 
-  /** A context ready to play into, or null (locked, muted, too many voices). */
-  private live(): AudioContext | null {
+  /** A snapshot for tests / tuning (e2e/audio.mjs). */
+  debug(): { state: string; phase: AudioPhase; track: MusicId | null; trackTime: number; trackPaused: boolean; loops: Record<string, number>; voices: number; buffers: number } {
+    const tr = this.track ? this.tracks.get(this.track) : null;
+    const loops: Record<string, number> = {};
+    for (const [k, l] of this.loops) loops[k] = Math.round(l.gain.gain.value * 1000) / 1000;
+    return { state: this.ctx?.state ?? 'none', phase: this.phase, track: this.track, trackTime: tr?.el.currentTime ?? 0, trackPaused: tr?.el.paused ?? true, loops, voices: this.voices.length, buffers: this.buffers.size };
+  }
+
+  setListener(l: AudioListener | null): void {
+    this.listener = l;
+  }
+  setTerrain(t: Terrain | null): void {
+    this.terrain = t;
+  }
+
+  // ---------------------------------------------------------------- loading
+  /** Fetch a load group (and decode it once the context exists). */
+  preload(group: LoadGroup): void {
+    if (this.requested.has(group)) return;
+    this.requested.add(group);
+    if (this.ctx) this.decodeGroup(group);
+    else for (const f of this.groupFiles(group)) this.fetchRaw(f);
+  }
+
+  private groupFiles(group: LoadGroup): string[] {
+    const out: string[] = [];
+    for (const d of Object.values(BANK) as SoundDef[]) if (d.load === group) out.push(...d.files);
+    return out;
+  }
+
+  private fetchRaw(f: string): Promise<ArrayBuffer | null> {
+    let p = this.raw.get(f);
+    if (!p) {
+      p = fetch(`audio/${f}.webm`)
+        .then((r) => (r.ok ? r.arrayBuffer() : null))
+        .catch(() => null);
+      this.raw.set(f, p);
+    }
+    return p;
+  }
+
+  private decode(f: string): Promise<AudioBuffer | null> {
+    let p = this.decoding.get(f);
+    if (p) return p;
     const ctx = this.ctx;
-    if (!ctx || this.muted || this.voices > 30) return null;
-    if (ctx.state === 'suspended') void ctx.resume();
-    clearTimeout(this.idleTimer);
-    this.idleTimer = window.setTimeout(() => void ctx.suspend(), 5000);
-    return ctx;
+    if (!ctx) return Promise.resolve(null);
+    p = this.fetchRaw(f).then(async (ab) => {
+      if (!ab) {
+        this.stats.failed.push(f);
+        return null;
+      }
+      const t0 = performance.now();
+      try {
+        const buf = await ctx.decodeAudioData(ab.slice(0));
+        this.buffers.set(f, buf);
+        this.stats.loaded++;
+        this.stats.decodeMs += performance.now() - t0;
+        this.raw.delete(f); // the compressed bytes are no longer needed
+        return buf;
+      } catch {
+        this.stats.failed.push(f);
+        return null;
+      }
+    });
+    this.decoding.set(f, p);
+    return p;
   }
 
-  /** Rate-limit a named sound (battle events come in bursts). */
-  private gate(name: string, ms: number): boolean {
+  /** Decode a group a few files at a time (keeps the main thread smooth). */
+  private decodeGroup(group: LoadGroup): void {
+    const files = this.groupFiles(group).filter((f) => !this.decoding.has(f));
+    let i = 0;
+    const next = (): void => {
+      if (i >= files.length) return;
+      const f = files[i++]!;
+      void this.decode(f).then(next);
+    };
+    for (let k = 0; k < 3; k++) next();
+  }
+
+  // ---------------------------------------------------------------- voices
+  private count(pred: (v: Voice) => boolean): number {
+    let n = 0;
+    for (const v of this.voices) if (pred(v)) n++;
+    return n;
+  }
+
+  private reject(id: string, why: string): null {
+    const k = `${id}:${why}`;
+    this.stats.dropped[k] = (this.stats.dropped[k] ?? 0) + 1;
+    return null;
+  }
+
+  /** Play one sound from the bank. Returns the source (or null when gated / not loaded). */
+  play(id: SoundId, o: PlayOpts = {}): AudioBufferSourceNode | null {
+    const ctx = this.ctx;
+    const b = this.bus;
+    if (!ctx || !b || this.muted || ctx.state === 'closed') return null;
+    const d = BANK[id] as SoundDef;
     const now = performance.now();
-    if (now - (this.lastPlay.get(name) ?? -1e9) < ms) return false;
-    this.lastPlay.set(name, now);
-    return true;
-  }
-
-  private dest(ctx: AudioContext, pan: number, wet: number): AudioNode {
-    let node: AudioNode = this.out!;
+    if (d.cooldown && now - (this.lastStart.get(id) ?? -1e9) < d.cooldown) return this.reject(id, 'cooldown');
+    if (d.limit && this.count((v) => v.id === id) >= d.limit) return this.reject(id, 'limit');
+    if (d.group && d.limit && this.count((v) => v.group === d.group) >= d.limit + 1) return this.reject(id, 'group');
+    if (d.bus === 'sfx' && this.voices.length >= MAX_VOICES) return this.reject(id, 'voices');
+    // pick a variant, never the same one twice running
+    let fi = Math.floor(Math.random() * d.files.length);
+    if (d.files.length > 1 && fi === this.lastFile.get(id)) fi = (fi + 1) % d.files.length;
+    const file = d.files[fi]!;
+    const buf = this.buffers.get(file);
+    if (!buf) {
+      void this.decode(file);
+      return this.reject(id, 'loading');
+    }
+    let gain = dbToGain(d.db + rand(d.vary ?? 0)) * (o.gain ?? 1);
+    let pan = o.pan ?? 0;
+    let cutoff = 20000;
+    let wet = d.wet ?? 0;
+    if (o.pos && this.listener) {
+      const f = this.listener.focus();
+      if (f) {
+        const dist = Math.hypot(o.pos[0] - f.pos[0], o.pos[1] - f.pos[1]) / 100;
+        const att = attenuate(dist, f.dist);
+        gain *= att;
+        cutoff = distanceCutoff(att);
+        wet = Math.min(0.6, wet + (1 - att) * 0.35);
+      }
+      const p = this.listener.pan(o.pos);
+      if (p !== null) pan = p;
+    }
+    if (gain < 0.004) return this.reject(id, 'inaudible');
+    const t = ctx.currentTime + (o.delay ?? 0);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = Math.pow(2, rand(d.pitch ?? 0) / 12) * (o.rate ?? 1);
+    let node: AudioNode = src;
+    if (cutoff < 19000) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = cutoff;
+      lp.Q.value = 0.5;
+      node = node.connect(lp);
+    }
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    node = node.connect(g);
     if (pan) {
       const p = ctx.createStereoPanner();
-      p.pan.value = Math.max(-1, Math.min(1, pan));
-      p.connect(this.out!);
-      if (wet && this.verbIn) p.connect(this.verbIn);
-      return p;
+      p.pan.value = clamp(pan, -1, 1);
+      node = node.connect(p);
     }
-    if (wet && this.verbIn) {
-      const g = ctx.createGain();
-      g.connect(this.out!);
+    node.connect(b[d.bus]);
+    if (wet > 0 && this.verbIn) {
       const w = ctx.createGain();
       w.gain.value = wet;
-      g.connect(w).connect(this.verbIn);
-      node = g;
+      node.connect(w).connect(this.verbIn);
     }
-    return node;
+    src.start(t);
+    const v: Voice = { id, group: d.group ?? id, src };
+    this.voices.push(v);
+    src.onended = () => {
+      const i = this.voices.indexOf(v);
+      if (i >= 0) this.voices.splice(i, 1);
+      src.disconnect();
+    };
+    this.lastStart.set(id, now);
+    this.lastFile.set(id, fi);
+    this.stats.plays[id] = (this.stats.plays[id] ?? 0) + 1;
+    this.stats.peakVoices = Math.max(this.stats.peakVoices, this.voices.length);
+    return src;
   }
 
-  private tone(freq: number, dur: number, opts: ToneOpts & { wet?: number; bus?: 'sfx' | 'ui' } = {}): void {
-    const ctx = this.live();
-    if (!ctx) return;
-    const { type = 'sine', gain = 0.3, at = 0, slide = 1, attack = 0.005, pan = 0, detune = 0, wet = 0, bus = 'sfx' } = opts;
-    const vol = gain * (bus === 'ui' ? this.ui : this.sfx);
-    if (vol <= 0.0002) return;
-    const t = ctx.currentTime + at;
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = type;
-    o.frequency.setValueAtTime(freq, t);
-    o.detune.value = detune;
-    if (slide !== 1) o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(this.dest(ctx, pan, wet));
-    o.start(t);
-    o.stop(t + dur + 0.02);
-    this.voices++;
-    o.onended = () => this.voices--;
+  /** Start (or retarget) a looping sound. Gain 0 keeps it running silently (cheap; beds stay in sync). */
+  private loop(id: SoundId, gain: number, tc = 0.6): void {
+    const ctx = this.ctx;
+    const b = this.bus;
+    if (!ctx || !b) return;
+    let l = this.loops.get(id);
+    if (!l) {
+      if (gain <= 0) return;
+      const d = BANK[id] as SoundDef;
+      const buf = this.buffers.get(d.files[0]!);
+      if (!buf) {
+        void this.decode(d.files[0]!);
+        return;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      src.connect(g).connect(b[d.bus]);
+      src.start(ctx.currentTime, Math.random() * buf.duration);
+      l = { src, gain: g };
+      this.loops.set(id, l);
+      this.stats.plays[id] = (this.stats.plays[id] ?? 0) + 1;
+    }
+    l.gain.gain.setTargetAtTime(gain * dbToGain((BANK[id] as SoundDef).db), ctx.currentTime, tc);
   }
 
-  private hiss(dur: number, opts: HissOpts & { wet?: number; bus?: 'sfx' | 'ui' } = {}): void {
-    const ctx = this.live();
-    if (!ctx || !this.noise) return;
-    const { freq = 2000, q = 1, gain = 0.3, at = 0, type = 'bandpass', sweep = 1, pan = 0, attack = 0, wet = 0, bus = 'sfx' } = opts;
-    const vol = gain * (bus === 'ui' ? this.ui : this.sfx);
-    if (vol <= 0.0002) return;
-    const t = ctx.currentTime + at;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    const f = ctx.createBiquadFilter();
-    f.type = type;
-    f.frequency.setValueAtTime(freq, t);
-    if (sweep !== 1) f.frequency.exponentialRampToValueAtTime(freq * sweep, t + dur);
-    f.Q.value = q;
-    const g = ctx.createGain();
-    if (attack) {
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol, t + attack);
-    } else g.gain.setValueAtTime(vol, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f).connect(g).connect(this.dest(ctx, pan, wet));
-    src.start(t, Math.random() * 0.5);
-    src.stop(t + dur + 0.02);
-    this.voices++;
-    src.onended = () => this.voices--;
+  private stopLoop(id: SoundId, fade = 1.0): void {
+    const l = this.loops.get(id);
+    if (!l || !this.ctx) return;
+    this.loops.delete(id);
+    const t = this.ctx.currentTime;
+    l.gain.gain.cancelScheduledValues(t);
+    l.gain.gain.setTargetAtTime(0, t, fade / 3);
+    l.src.stop(t + fade + 0.1);
+    l.src.onended = () => l.src.disconnect();
   }
 
-  // ---------------------------------------------------------------- HUD
+  /** Pull the music (and a little ambience) down under a big moment. */
+  duck(db = 9, hold = 1.5): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.musicDuck || !this.ambDuck) return;
+    const t = ctx.currentTime;
+    for (const [n, k] of [[this.musicDuck, 1], [this.ambDuck, 0.5]] as const) {
+      n.gain.cancelScheduledValues(t);
+      n.gain.setTargetAtTime(dbToGain(-db * k), t, 0.05);
+      n.gain.setTargetAtTime(1, t + hold, 0.6);
+    }
+  }
+
+  // ---------------------------------------------------------------- music & phases
+  private music(id: MusicId | null, fade = 2.5): void {
+    const ctx = this.ctx;
+    const b = this.bus;
+    if (!ctx || !b || id === this.track) return;
+    const t = ctx.currentTime;
+    if (this.track) {
+      const old = this.tracks.get(this.track);
+      if (old) {
+        old.gain.gain.cancelScheduledValues(t);
+        old.gain.gain.setTargetAtTime(0, t, fade / 3);
+        const el = old.el;
+        const was = this.track;
+        setTimeout(() => this.track !== was && el.pause(), fade * 1000 + 200);
+      }
+    }
+    this.track = id;
+    if (!id) return;
+    let tr = this.tracks.get(id);
+    if (!tr) {
+      const el = new Audio(MUSIC[id]);
+      el.loop = true;
+      el.preload = 'auto';
+      const src = ctx.createMediaElementSource(el);
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(gain).connect(b.music);
+      tr = { el, gain };
+      this.tracks.set(id, tr);
+    }
+    tr.gain.gain.cancelScheduledValues(t);
+    tr.gain.gain.setTargetAtTime(1, t, fade / 3);
+    if (!document.hidden && !this.muted) void tr.el.play().catch(() => {});
+    this.stats.plays[`music:${id}`] = (this.stats.plays[`music:${id}`] ?? 0) + 1;
+  }
+
+  /** The game phase: picks the music, the ambience beds and what to load next. */
+  setPhase(p: AudioPhase, force = false): void {
+    if (p === this.phase && !force) return;
+    const prev = this.phase;
+    this.phase = p;
+    for (const gname of PHASE_LOADS[p]) this.preload(gname);
+    if (!this.ctx) return;
+    clearInterval(this.ambTimer);
+    this.ambTimer = 0;
+    if (p !== 'battle') this.endBattleBeds();
+    if (p === 'menu') {
+      this.music('menu');
+      this.loop('ambWind', 0.5);
+      this.stopLoop('ambForest');
+      this.stopLoop('ambRiver');
+      this.stopLoop('ambBattle');
+    } else if (p === 'planning' || p === 'results') {
+      if (p === 'planning' || prev === 'battle') this.music('planning');
+      this.stopLoop('ambBattle', 2);
+      this.ambTick();
+      this.ambTimer = window.setInterval(() => this.ambTick(), 500);
+    } else if (p === 'battle') {
+      this.music(this.battleRound % 2 ? 'battle_b' : 'battle_a', 1.5);
+      this.stopLoop('ambForest', 2);
+      if (!this.battleTimer) this.battleTimer = window.setInterval(() => this.battleTick(), 150);
+      this.ambTick();
+      this.ambTimer = window.setInterval(() => this.ambTick(), 500);
+    } else if (p === 'over') {
+      this.music(null, 1.2);
+      this.stopLoop('ambBattle', 2);
+      this.stopLoop('ambRiver', 2);
+    }
+  }
+
+  /** Ambience follows the camera: birds and wind in planning, the river louder near it. */
+  private ambTick(): void {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const f = this.listener?.focus() ?? null;
+    let river = 0;
+    if (f && this.terrain) {
+      let d = 1e9;
+      for (const ft of this.terrain.features) if (ft.kind === 'river' || ft.kind === 'ford' || ft.kind === 'bridge') d = Math.min(d, featureDist(f.pos, ft));
+      // full at the bank, gone ~70 m away; zoomed out, it blends into the general bed
+      river = (1 - smooth(4, 70, d)) * (1 - 0.6 * smooth(60, 140, f.dist));
+    }
+    const zoom = f ? smooth(40, 140, f.dist) : 0.5;
+    if (this.phase === 'battle') {
+      this.loop('ambWind', 0.55 + 0.3 * zoom, 1.5);
+      this.loop('ambBattle', 0.7, 2);
+      this.loop('ambRiver', river * 0.7, 1);
+    } else {
+      this.loop('ambForest', 0.75 + 0.25 * (1 - zoom), 1.5);
+      this.loop('ambWind', 0.35 + 0.45 * zoom, 1.5);
+      this.loop('ambRiver', river, 1);
+    }
+  }
+
+  // ---------------------------------------------------------------- battle soundscape
+  /** Battle begins: battle music, the horn and the charge, beds armed. */
+  battleStart(round: number): void {
+    this.battleRound = round;
+    this.contacts = 0;
+    this.endBattleBeds();
+    this.setPhase('battle', true);
+    this.play('horn');
+    this.play('charge', { delay: 1.1 });
+    this.duck(5, 2.5);
+  }
+
+  /** Battle over (or skipped): beds fade, the round sting plays. */
+  battleEnd(won: boolean | null): void {
+    this.endBattleBeds();
+    if (won === true) this.play('roundWon');
+    else if (won === false) this.play('roundLost');
+  }
+
+  private endBattleBeds(): void {
+    clearInterval(this.battleTimer);
+    this.battleTimer = 0;
+    this.flushArrows();
+    this.volleyPool = null;
+    this.stopLoop('bedSkirmish', 1.5);
+    this.stopLoop('bedMelee', 1.5);
+  }
+
+  /** Melee contacts per second (decayed, distance-weighted) → the two clash beds. */
+  private battleTick(): void {
+    this.contacts *= Math.exp(-0.15 / 0.9);
+    const cps = this.contacts / 0.9;
+    this.loop('bedSkirmish', smooth(0.4, 6, cps) * (1 - 0.45 * smooth(14, 40, cps)), 0.35);
+    this.loop('bedMelee', smooth(5, 32, cps), 0.45);
+    const now = performance.now();
+    if (this.arrowPool && now - this.arrowPool.t > 150) this.flushArrows();
+    if (this.volleyPool && now - this.volleyPool.t > 250) this.flushVolley();
+  }
+
+  private weight(pos: Vec2 | undefined): number {
+    const f = pos && this.listener?.focus();
+    if (!f || !pos) return 0.6;
+    return Math.max(0.25, attenuate(Math.hypot(pos[0] - f.pos[0], pos[1] - f.pos[1]) / 100, f.dist));
+  }
+
+  private pool(id: string): null {
+    this.stats.pooled[id] = (this.stats.pooled[id] ?? 0) + 1;
+    return null;
+  }
+
+  /** A melee swing landing. Feeds the beds; only some become individual accents. */
+  melee(pos: Vec2 | undefined, heavy: boolean): void {
+    this.contacts += this.weight(pos);
+    const cps = this.contacts / 0.9;
+    // a handful of distinct clashes per second sit on top of the bed, favouring the ones in view
+    const p = Math.min(1, 6 / Math.max(1, cps)) * (0.4 + 0.6 * this.weight(pos));
+    if (Math.random() > p) return void this.pool('clash');
+    this.play(heavy ? 'clashHeavy' : 'clash', { pos });
+  }
+
+  fist(pos?: Vec2): void {
+    this.contacts += this.weight(pos);
+    this.play('fist', { pos });
+  }
+
+  /** Arrows loosed within 250 ms are one volley: one layered whoosh at their centroid, sized by count. */
+  volley(n: number, pos?: Vec2): void {
+    const v = this.volleyPool;
+    const p = pos ?? [4000, 6000];
+    if (!v) this.volleyPool = { n, x: p[0] * n, y: p[1] * n, t: performance.now() };
+    else {
+      v.n += n;
+      v.x += p[0] * n;
+      v.y += p[1] * n;
+      this.pool('volley');
+    }
+    if (!this.battleTimer) this.flushVolley();
+  }
+
+  private flushVolley(): void {
+    const v = this.volleyPool;
+    this.volleyPool = null;
+    if (v) this.play(v.n >= 6 ? 'volleyLarge' : 'volleySmall', { pos: [v.x / v.n, v.y / v.n], gain: Math.min(1.25, 0.7 + v.n / 20) });
+  }
+
+  /** Arrow impacts pool into one scatter per 150 ms. */
+  arrowImpact(pos: Vec2): void {
+    const a = this.arrowPool;
+    if (!a) this.arrowPool = { n: 1, x: pos[0], y: pos[1], t: performance.now() };
+    else {
+      a.n++;
+      a.x += pos[0];
+      a.y += pos[1];
+      this.pool('arrowHit');
+    }
+    if (!this.battleTimer) this.flushArrows();
+  }
+
+  private flushArrows(): void {
+    const a = this.arrowPool;
+    this.arrowPool = null;
+    if (a) this.play('arrowHit', { pos: [a.x / a.n, a.y / a.n], gain: Math.min(1.3, 0.6 + a.n / 12) });
+  }
+
+  death(pos?: Vec2): void {
+    if (Math.random() < 0.3) this.play('grunt', { pos });
+    if (Math.random() < 0.7) this.play('death', { pos });
+    else this.pool('death');
+  }
+
+  /** A whole squad wiped out. */
+  wipe(pos?: Vec2, lord = false): void {
+    this.play('wipe', { pos, gain: lord ? 1.3 : 1 });
+    if (lord) {
+      this.play('boomBig', { gain: 0.6 });
+      this.duck(8, 2);
+    }
+  }
+
+  ballista(pos?: Vec2): void {
+    this.play('ballista', { pos });
+  }
+  trebuchet(pos?: Vec2): void {
+    this.play('treb', { pos });
+  }
+  stoneImpact(pos?: Vec2, splash = 1): void {
+    this.play('stone', { pos, gain: Math.min(1.3, 0.8 + splash / 6) });
+  }
+  spell(pos?: Vec2): void {
+    this.play('fireball', { pos });
+  }
+  boom(size: number, pos?: Vec2): void {
+    if (size >= 6) this.play('boomBig', { pos });
+    else this.play('boom', { pos, gain: Math.min(1.3, 0.7 + size / 8) });
+  }
+  breath(pos?: Vec2, dragon = true): void {
+    this.play('breath', { pos });
+    this.play(dragon ? 'roar' : 'screech', { pos, delay: 0.05 });
+    if (dragon) this.duck(4, 1.2);
+  }
+  lightning(pos?: Vec2): void {
+    this.play('zap', { pos });
+  }
+  heal(pos?: Vec2): void {
+    this.play('heal', { pos });
+  }
+  stomp(pos?: Vec2): void {
+    this.play('stomp', { pos });
+  }
+  summon(pos?: Vec2): void {
+    this.play('summon', { pos });
+  }
+
+  keepHit(big: boolean, pos?: Vec2): void {
+    this.play('keepHit', { pos, gain: big ? 1.25 : 0.9 });
+    if (big) {
+      this.play('boomBig', { pos, gain: 0.7 });
+      this.duck(7, 1.5);
+    }
+  }
+
+  /** The keep visibly crumbles a stage (1..4). */
+  keepStage(stage: number, pos?: Vec2): void {
+    if (stage <= 0) return;
+    this.play('collapse', { pos, gain: stage >= 4 ? 1.3 : 1 });
+    if (stage >= 4) this.play('boomBig', { pos });
+    this.duck(stage >= 4 ? 12 : 8, stage >= 4 ? 3 : 2);
+  }
+
+  /** Lord abilities: always heard (they're the headline), music ducks. */
+  ability(kind: string, pos?: Vec2): void {
+    const big = { meteor: 'meteor', rally: 'rally', bulwark: 'bulwark', skyfall: 'skyfall' } as const;
+    const id = big[kind as keyof typeof big];
+    if (id) {
+      this.play(id, { pos, gain: 1.2 });
+      this.duck(10, kind === 'meteor' ? 2.5 : 2);
+    } else this.play('cast', { pos });
+  }
+
+  // ---------------------------------------------------------------- interface
   click(): void {
-    this.tone(1400, 0.05, { type: 'triangle', gain: 0.1, bus: 'ui' });
+    this.play('click');
   }
   hover(): void {
-    if (this.gate('hover', 60)) this.tone(2400, 0.025, { type: 'sine', gain: 0.03, bus: 'ui' });
+    this.play('hover');
   }
   pick(): void {
-    this.tone(660, 0.07, { type: 'triangle', gain: 0.12, bus: 'ui' });
-    this.tone(990, 0.08, { type: 'triangle', gain: 0.09, at: 0.04, bus: 'ui' });
+    this.play('pick');
   }
   error(): void {
-    this.tone(180, 0.16, { type: 'square', gain: 0.07, bus: 'ui' });
-    this.tone(150, 0.2, { type: 'square', gain: 0.07, at: 0.08, bus: 'ui' });
+    this.play('error');
   }
   deploy(): void {
-    this.tone(110, 0.3, { type: 'sine', gain: 0.35, slide: 0.6, bus: 'ui' });
-    this.hiss(0.25, { freq: 500, q: 0.6, gain: 0.18, type: 'lowpass', bus: 'ui' });
-    this.tone(880, 0.12, { type: 'triangle', gain: 0.05, at: 0.05, bus: 'ui' });
+    this.play('deploy');
   }
   drop(): void {
-    this.tone(220, 0.09, { type: 'sine', gain: 0.22, slide: 0.7, bus: 'ui' });
-    this.hiss(0.06, { freq: 900, gain: 0.08, bus: 'ui' });
+    this.play('drop');
   }
   coin(): void {
-    this.tone(1976, 0.08, { type: 'square', gain: 0.04, bus: 'ui' });
-    this.tone(2637, 0.22, { type: 'square', gain: 0.04, at: 0.06, bus: 'ui' });
+    this.play('coin');
   }
   levelUp(): void {
-    [523, 659, 784, 1047].forEach((f, i) => this.tone(f, i === 3 ? 0.5 : 0.14, { type: 'triangle', gain: 0.1, at: i * 0.07, wet: 0.4, bus: 'ui' }));
+    this.play('levelUp');
   }
   equip(): void {
-    this.hiss(0.08, { freq: 4000, q: 2, gain: 0.12, bus: 'ui' });
-    this.tone(320, 0.12, { type: 'square', gain: 0.05, slide: 0.8, bus: 'ui' });
+    this.play('equip');
   }
   tick(urgent: boolean): void {
-    this.tone(urgent ? 1200 : 800, 0.04, { type: 'square', gain: urgent ? 0.06 : 0.03, bus: 'ui' });
+    this.play(urgent ? 'tickUrgent' : 'tick');
   }
   ready(): void {
-    this.tone(392, 0.18, { type: 'triangle', gain: 0.12, bus: 'ui' });
-    this.tone(587, 0.35, { type: 'triangle', gain: 0.12, at: 0.1, wet: 0.3, bus: 'ui' });
+    this.play('ready');
   }
+  /** A call to arms (the Lord reveal, battle start). */
   horn(): void {
-    // battle start: a low brass call
-    for (const [f, at] of [[147, 0], [196, 0.35], [147, 0.7]] as const) {
-      this.tone(f, 0.6, { type: 'sawtooth', gain: 0.07, at, attack: 0.06, wet: 0.6 });
-      this.tone(f * 2, 0.6, { type: 'sawtooth', gain: 0.03, at, attack: 0.08, wet: 0.6, detune: 8 });
-    }
-    this.hiss(1.4, { freq: 200, gain: 0.08, type: 'lowpass', attack: 0.2 });
+    this.play('reveal');
+    this.duck(6, 2.5);
   }
   whoosh(): void {
-    this.hiss(0.4, { freq: 600, q: 1.5, gain: 0.12, sweep: 4, attack: 0.08, bus: 'ui' });
+    this.play('whoosh');
+  }
+  open(): void {
+    this.play('open');
+  }
+  /** New recruits: the unit-unlock draft appears. */
+  draft(): void {
+    this.play('draft');
+    this.duck(8, 3);
   }
 
-  // ---------------------------------------------------------------- loot
   /** The drop landing, then a sting by rarity. */
   lootReveal(r: Rarity): void {
-    this.hiss(0.18, { freq: 300, gain: 0.25, type: 'lowpass', bus: 'ui' });
-    this.tone(90, 0.25, { type: 'sine', gain: 0.3, slide: 0.6, bus: 'ui' });
-    if (r === 'common') return void this.tone(660, 0.18, { type: 'triangle', gain: 0.06, at: 0.05, bus: 'ui' });
-    if (r === 'magic') {
-      [880, 1320].forEach((f, i) => this.tone(f, 0.4, { type: 'sine', gain: 0.08, at: 0.05 + i * 0.06, wet: 0.5, bus: 'ui' }));
-      return;
-    }
-    if (r === 'rare') {
-      [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.55, { type: 'triangle', gain: 0.08, at: 0.05 + i * 0.05, wet: 0.6, bus: 'ui' }));
-      this.hiss(0.6, { freq: 7000, q: 4, gain: 0.04, at: 0.05, bus: 'ui' });
-      return;
-    }
-    this.legendary();
+    if (r === 'common') return void this.play('lootCommon');
+    this.play('lootLand');
+    if (r === 'magic') this.play('lootMagic', { delay: 0.05 });
+    else if (r === 'rare') this.play('lootRare', { delay: 0.05 });
+    else this.legendary();
   }
-  /** Big flourish: a rising swell, a low boom, a choir chord and a bell. */
   legendary(): void {
-    this.hiss(0.9, { freq: 400, q: 0.8, gain: 0.18, sweep: 8, attack: 0.7, bus: 'ui' });
-    this.tone(55, 1.4, { type: 'sine', gain: 0.45, at: 0.75, slide: 0.7, bus: 'ui' });
-    this.hiss(0.6, { freq: 180, gain: 0.3, type: 'lowpass', at: 0.75, bus: 'ui' });
-    const chord = [220, 277.2, 329.6, 440, 554.4];
-    chord.forEach((f, i) => {
-      this.tone(f, 2.4, { type: 'sawtooth', gain: 0.025, at: 0.78, attack: 0.25, wet: 0.9, detune: -6, bus: 'ui' });
-      this.tone(f, 2.4, { type: 'sawtooth', gain: 0.025, at: 0.78 + i * 0.01, attack: 0.25, wet: 0.9, detune: 6, bus: 'ui' });
-    });
-    [1760, 2637, 3520].forEach((f, i) => this.tone(f, 1.6, { type: 'sine', gain: 0.06 - i * 0.015, at: 0.8, wet: 0.8, bus: 'ui' }));
+    this.play('lootLegendary', { delay: 0.05 });
+    this.duck(12, 4);
   }
 
-  // ---------------------------------------------------------------- battle
-  clash(pan = 0, heavy = false): void {
-    if (!this.gate('clash', heavy ? 40 : 55)) return;
-    const f = 2500 + Math.random() * 1800;
-    this.hiss(0.07, { freq: f, q: 6, gain: heavy ? 0.16 : 0.1, pan });
-    this.tone(f * 0.71, 0.18, { type: 'square', gain: 0.025, pan, slide: 0.98 });
-    this.tone(f * 1.13, 0.14, { type: 'triangle', gain: 0.02, pan });
-    if (heavy) this.tone(90, 0.2, { type: 'sine', gain: 0.22, slide: 0.6, pan });
-  }
-  thud(pan = 0): void {
-    if (!this.gate('thud', 70)) return;
-    this.hiss(0.1, { freq: 500, q: 0.8, gain: 0.14, type: 'lowpass', pan });
-  }
-  volley(n: number, pan = 0): void {
-    if (!this.gate('volley', 160)) return;
-    const k = Math.min(5, 1 + Math.floor(n / 3));
-    for (let i = 0; i < k; i++) {
-      const at = i * 0.03 + Math.random() * 0.03;
-      this.tone(220 + Math.random() * 60, 0.09, { type: 'triangle', gain: 0.08, slide: 1.7, at, pan });
-      this.hiss(0.35, { freq: 2600, q: 2.5, gain: 0.05, sweep: 0.45, at: at + 0.02, pan });
-    }
-  }
-  ballista(pan = 0): void {
-    if (!this.gate('ballista', 120)) return;
-    this.tone(70, 0.25, { type: 'square', gain: 0.12, slide: 0.5, pan });
-    this.hiss(0.3, { freq: 1500, q: 1.5, gain: 0.12, sweep: 0.4, pan });
-  }
-  trebuchet(pan = 0): void {
-    if (!this.gate('treb', 200)) return;
-    this.hiss(0.6, { freq: 300, q: 0.7, gain: 0.14, sweep: 3, attack: 0.15, pan });
-    this.tone(60, 0.4, { type: 'sine', gain: 0.18, pan });
-  }
-  spell(pan = 0): void {
-    if (!this.gate('spell', 110)) return;
-    this.tone(320, 0.35, { type: 'sawtooth', gain: 0.04, slide: 2.4, pan, wet: 0.4 });
-    this.hiss(0.4, { freq: 1200, q: 1.2, gain: 0.1, sweep: 3, attack: 0.08, pan, wet: 0.3 });
-  }
-  boom(size: number, pan = 0): void {
-    if (!this.gate('boom', 90)) return;
-    const g = Math.min(0.45, 0.15 + size * 0.04);
-    this.tone(70, 0.5, { type: 'sine', gain: g, slide: 0.45, pan });
-    this.hiss(0.5 + size * 0.05, { freq: 700, q: 0.6, gain: g * 0.8, type: 'lowpass', sweep: 0.3, pan, wet: 0.3 });
-  }
-  breath(pan = 0): void {
-    if (!this.gate('breath', 300)) return;
-    this.hiss(1.0, { freq: 900, q: 0.5, gain: 0.2, sweep: 0.5, attack: 0.1, pan, wet: 0.3 });
-    this.tone(80, 0.8, { type: 'sawtooth', gain: 0.05, pan });
-  }
-  lightning(pan = 0): void {
-    if (!this.gate('zap', 120)) return;
-    this.hiss(0.25, { freq: 5000, q: 0.5, gain: 0.18, type: 'highpass', pan });
-    this.tone(2200, 0.1, { type: 'square', gain: 0.03, slide: 0.3, pan });
-  }
-  heal(pan = 0): void {
-    if (!this.gate('heal', 400)) return;
-    [784, 988, 1175].forEach((f, i) => this.tone(f, 0.3, { type: 'sine', gain: 0.04, at: i * 0.05, pan, wet: 0.5 }));
-  }
-  death(pan = 0): void {
-    if (!this.gate('death', 90)) return;
-    this.hiss(0.16, { freq: 350, q: 1, gain: 0.08, type: 'lowpass', pan });
-  }
-  keepHit(big: boolean): void {
-    if (!this.gate('keep', big ? 0 : 140)) return;
-    this.tone(48, big ? 1.4 : 0.6, { type: 'sine', gain: big ? 0.6 : 0.35, slide: 0.6 });
-    this.hiss(big ? 1.2 : 0.4, { freq: 400, q: 0.6, gain: big ? 0.35 : 0.18, type: 'lowpass', sweep: 0.4, wet: 0.5 });
-    if (big) this.hiss(1.8, { freq: 1800, q: 0.5, gain: 0.08, at: 0.1, sweep: 0.3, wet: 0.6 });
-  }
-  ability(kind: string): void {
-    if (kind === 'meteor') {
-      this.hiss(1.0, { freq: 300, q: 0.7, gain: 0.2, sweep: 6, attack: 0.8 });
-      this.boom(10);
-    } else if (kind === 'rally') {
-      this.horn();
-    } else if (kind === 'bulwark') {
-      [196, 294, 392].forEach((f, i) => this.tone(f, 1.2, { type: 'triangle', gain: 0.08, at: i * 0.04, wet: 0.7, attack: 0.05 }));
-    } else if (kind === 'skyfall') {
-      this.hiss(0.7, { freq: 3000, q: 1, gain: 0.15, sweep: 0.2, attack: 0.3 });
-      this.boom(6);
-    } else {
-      this.tone(660, 0.5, { type: 'triangle', gain: 0.06, wet: 0.6 });
-      this.tone(990, 0.6, { type: 'triangle', gain: 0.05, at: 0.06, wet: 0.6 });
-    }
-  }
+  /** Match over: the victory / defeat sting, then the menu theme returns. */
   fanfare(win: boolean): void {
-    const notes = win ? [392, 523, 659, 784, 1047] : [392, 349, 311, 262, 196];
-    notes.forEach((f, i) => {
-      this.tone(f, i === 4 ? 1.6 : 0.42, { type: 'sawtooth', gain: 0.05, at: i * 0.2, attack: 0.03, wet: 0.6 });
-      this.tone(f / 2, i === 4 ? 1.6 : 0.42, { type: 'triangle', gain: 0.08, at: i * 0.2, wet: 0.6 });
-    });
-    this.tone(win ? 65 : 49, 2.4, { type: 'sine', gain: 0.3, at: 0.8 });
+    this.setPhase('over');
+    this.play(win ? 'victory' : 'defeat');
+    setTimeout(() => this.phase === 'over' && this.music('menu', 4), win ? 7000 : 10000);
   }
+
+  /** Back-compat: the battle screen reports the round result through battleEnd(). */
   roundEnd(won: boolean | null): void {
-    const base = won === false ? 220 : 330;
-    [1, 1.26, 1.5].forEach((m, i) => this.tone(base * m, 0.6, { type: 'triangle', gain: 0.08, at: i * 0.09, wet: 0.5 }));
+    this.battleEnd(won);
   }
 }
 

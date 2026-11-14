@@ -82,6 +82,7 @@ for (const id of ids) {
     if (crowd) blender('vat_check.py', [id, join(root, 'docs/art-review', `${id}_vat.png`)], `vat check ${id}`);
   }
 }
-run(process.execPath, [join(here, 'pack.mjs')], 'pack');
-run(process.execPath, [join(here, 'manifest.mjs')], 'manifest');
+// only the ids of this run are packed and written to the manifest; other entries are left exactly as they are
+run(process.execPath, [join(here, 'pack.mjs'), '--only', ids.join(',')], 'pack');
+run(process.execPath, [join(here, 'manifest.mjs'), '--only', ids.join(',')], 'manifest');
 if (failed) { console.error(`${failed} step(s) failed`); process.exitCode = 1; }

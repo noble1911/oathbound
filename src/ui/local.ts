@@ -13,7 +13,7 @@ import type { BattleResult, BotStrategy, Intent, LordId, MatchState, Seat } from
 import * as sim from '../sim/index.ts';
 import { Rng } from '../sim/rng.ts';
 import { rollItem } from '../sim/loot.ts';
-import type { RoomView, RoomPhase } from '../net/protocol.ts';
+import type { AiLevel, RoomView, RoomPhase } from '../net/protocol.ts';
 import { LORD_PICK_MS, PLANNING_MS, LOOT_BONUS_MS, RESULTS_MS } from '../net/protocol.ts';
 import type { AppHandlers, Backend } from './backend.ts';
 
@@ -27,6 +27,10 @@ export interface LocalOptions {
   enemyLord?: LordId;
   strategy?: BotStrategy;
   timers?: boolean;
+  /** No countdown at all (the tutorial): phases only end when the player acts. */
+  untimed?: boolean;
+  /** The difficulty shown for the bot seat. */
+  level?: AiLevel;
   name?: string;
 }
 
@@ -44,7 +48,7 @@ export class LocalMatch implements Backend {
   constructor(h: AppHandlers, opts: LocalOptions) {
     this.h = h;
     this.o = {
-      seed: 20261114, round: 3, lord: 'marshal', enemyLord: 'warden', strategy: 'best', timers: true, name: 'You',
+      seed: 20261114, round: 3, lord: 'marshal', enemyLord: 'warden', strategy: 'best', timers: true, untimed: false, level: 'hard', name: 'You',
       ...opts,
     } as Required<LocalOptions>;
     const o = this.o;
@@ -112,7 +116,7 @@ export class LocalMatch implements Backend {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     if (ms > 0 && (this.o.timers || ph === 'results')) this.timer = setTimeout(() => this.timeout(ph), ms);
-    if (!this.o.timers && ph !== 'results') this.phaseEndsAt = Date.now() + ms;
+    if (!this.o.timers && ph !== 'results') this.phaseEndsAt = this.o.untimed ? 0 : Date.now() + ms;
   }
 
   private timeout(ph: RoomPhase): void {
@@ -155,7 +159,7 @@ export class LocalMatch implements Backend {
       rematch: bot || (i === 0 && this.rematchVote),
     });
     return {
-      code: 'LOCAL', mode: 'vsAI', aiLevel: 'hard', phase: this.phase, phaseEndsAt: this.phaseEndsAt, serverNow: Date.now(),
+      code: 'LOCAL', mode: 'vsAI', aiLevel: this.o.level, phase: this.phase, phaseEndsAt: this.phaseEndsAt, serverNow: Date.now(),
       seats: [seat(this.o.name, false, 0), seat('The Iron Duke', true, 1)],
       spectators: [],
       me: { seat: 0, spectator: false, isHost: true },

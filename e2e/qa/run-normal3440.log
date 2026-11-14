@@ -1,0 +1,142 @@
+boot 3411ms
+to lordPick 3798ms
+AUDIT lordpick: ["OVERLAP .shell .corner x .lp-head by 167x26"]
+lordpick fps 16.5
+lordPick->planning 594ms {"phase":"planning","round":1,"left":60000,"gold":300,"keep":4800,"keepMax":4800,"ekeep":4000,"ekeepMax":4000,"deploys":2,"unlocked":["berserkers","knights"],"squads":[{"id":2,"type":"lord","level":1,"pos":[3999,1200],"items":0}],"stash":0,"draft":["cavaliers","militia","archers"],"draftPicks":2,"screen":"bt","winner":null}
+first planning: MB downloaded so far 20.94
+--- round 1 plan {"gold":300,"keep":4800,"ekeep":4000,"left":60000,"unlocked":["berserkers","knights"],"draft":["cavaliers","militia","archers"]}
+AUDIT draft r1: ["OVERLAP .topbar x .modal .loot-head by 1103x80","OVERLAP .res x .modal .loot-head by 993x76","OVERLAP .bottom x .modal .loot-foot by 692x61","OVERLAP .shop x .modal .loot-foot by 692x61","OVERLAP .modal .loot-foot x .ucard by 196x61"]
+r1: click on CENTRE of squad knights#5 at screen 1719,908 did not select; trying offsets
+   selected with offset 0,-12
+plan idle fps r1: 0
+r1 planned: {"gold":100,"squads":"lord1,knights1","leftMs":44661}
+r1 battle: wait 7ms {"ticks":601,"sec":30.05,"soldiers":22,"result":{"round":1,"winner":1,"timeout":false,"keepDamage":[166,0],"survivors":[[],[1,3,4]],"lordXp":[21,74],"ticks":473,"damageDealt":[1915,3439],"soldiersLost":[5,8]},"keeps":[{"seat":0,"pos":[3999,150],"hpBefore":4800,"hpMax":4800,"towers":[[2499,650],[5499,650]]},{"seat":1,"pos":[4000,11849],"hpBefore":4000,"hpMax":4000,"towers":[[5500,11349],[2500,11349]]}]}
+r1 result (4754ms after battle start): ROUND 1 · THE FIELD IS DECIDED | Defeat | DAMAGE TO THE ENEMY KEEP | 0 | 4,000 left | DAMAGE TO YOUR KEEP | 155 | 4,634 left | MOST VALUABLE SQUAD | Knights | 1,539 damage · 5 kills · Lv 1 | NEXT ROUND'S WAR CHEST | Carried over | 100 | Round 2 income | +250 | Catch-up (lost the round) | +75 | Total | 425 | Spoils await: choose 1 of 3 (one tier higher) | Next round in 5… {"keep":4634,"ekeep":4000,"phase":"results"}
+--- round 2 plan {"gold":425,"keep":4634,"ekeep":4000,"left":75000,"unlocked":["berserkers","knights","cavaliers","militia"],"draft":["pegasus","golem"],"loot":["magic:undefined","rare:undefined","rare:undefined"],"last":["lord2","militia1","cavaliers1"]}
+AUDIT draft r2: ["OVERLAP .topbar x .modal .loot-head by 790x80","OVERLAP .res x .modal .loot-head by 790x76","OVERLAP .bottom x .modal .loot-foot by 692x61","OVERLAP .shop x .modal .loot-foot by 692x61","OVERLAP .modal .loot-foot x .ucard by 52x61","OVERLAP .modal .loot-foot x .ucard by 196x61"]
+AUDIT loot r2: ["OVERLAP .res x .modal .loot-head by 801x76","OVERLAP .bottom x .modal .loot-row by 1943x139","OVERLAP .bottom x .modal .loot-foot by 1013x61","OVERLAP .bottom x .drop by 617x139","OVERLAP .bottom x .drop by 617x116","OVERLAP .shop x .modal .loot-row by 1943x139","OVERLAP .shop x .modal .loot-foot by 1013x61","OVERLAP .shop x .drop by 617x139","OVERLAP .shop x .drop by 617x116","OVERLAP .modal .loot-row x .ucard by 196x122","OVERLAP .modal .loot-foot x .ucard by 108x61","OVERLAP .modal .loot-foot x .ucard by 196x61"]
+r2: click on CENTRE of squad knights#5 at screen 1719,908 did not select; trying offsets
+   selected with offset 0,-12
+r2: click on CENTRE of squad cavaliers#13 at screen 1448,908 did not select; trying offsets
+r2: click on squad cavaliers#13 at screen 1448,908 did not select
+r2: 1 item(s) left unequipped in stash
+r2 move: 4000,3300 -> 4000,3300
+r2 rotate Q facing 64
+r2 planned: {"gold":25,"squads":"lord1,knights2,cavaliers1","leftMs":62423}
+r2 battle: wait 3ms {"ticks":745,"sec":37.25,"soldiers":30,"result":{"round":2,"winner":1,"timeout":false,"keepDamage":[261,0],"survivors":[[],[1,4,12]],"lordXp":[38,98],"ticks":528,"damageDealt":[3243,6066],"soldiersLost":[9,15]},"keeps":[{"seat":0,"pos":[3999,150],"hpBefore":4634,"hpMax":4800,"towers":[[2499,650],[5499,650]]},{"seat":1,"pos":[4000,11849],"hpBefore":4000,"hpMax":4000,"towers":[[5500,11349],[2500,11349]]}]}
+r2 battle fps: 54.8
+r2 watched battle wall 38357ms (sim 37.25s) done=true
+r2 result (43235ms after battle start): ROUND 2 · THE FIELD IS DECIDED | Defeat | DAMAGE TO THE ENEMY KEEP | 0 | 4,000 left | DAMAGE TO YOUR KEEP | 261 | 4,373 left | MOST VALUABLE SQUAD | Knights | 1,512 damage · 10 kills · Lv 2 | NEXT ROUND'S WAR CHEST | Carried over | 25 | Round 3 income | +275 | Catch-up (lost the round) | +75 | Total | 375 | Spoils await: choose 1 of 3 (one tier higher) | Next round in 2… {"keep":4373,"ekeep":4000,"phase":"results"}
+--- round 3 plan {"gold":375,"keep":4373,"ekeep":4000,"left":74999,"unlocked":["berserkers","knights","cavaliers","militia","pegasus"],"draft":["golem","mages"],"loot":["rare:undefined","rare:undefined","magic:undefined"],"last":["lord4","militia1","cavaliers1","mages1"]}
+AUDIT draft r3: ["OVERLAP .topbar x .modal .loot-head by 790x80","OVERLAP .res x .modal .loot-head by 790x76","OVERLAP .bottom x .modal .loot-foot by 692x61","OVERLAP .shop x .modal .loot-foot by 692x61","OVERLAP .modal .loot-foot x .ucard by 156x61","OVERLAP .modal .loot-foot x .ucard by 196x61","OVERLAP .modal .loot-foot x .ucard by 104x61"]
+AUDIT loot r3: ["OVERLAP .res x .modal .loot-head by 801x71","OVERLAP .bottom x .modal .loot-row by 1943x139","OVERLAP .bottom x .modal .loot-foot by 1013x61","OVERLAP .bottom x .drop by 617x70","OVERLAP .bottom x .drop by 617x139","OVERLAP .shop x .modal .loot-row by 1943x139","OVERLAP .shop x .modal .loot-foot by 1013x61","OVERLAP .shop x .drop by 617x70","OVERLAP .shop x .drop by 617x139","OVERLAP .modal .loot-row x .ucard by 196x122","OVERLAP .modal .loot-foot x .ucard by 196x61","OVERLAP .modal .loot-foot x .ucard by 160x61"]
+r3: click on CENTRE of squad cavaliers#13 at screen 1448,908 did not select; trying offsets
+r3: click on squad cavaliers#13 at screen 1448,908 did not select
+r3: click on CENTRE of squad pegasus#22 at screen 1991,907 did not select; trying offsets
+r3: click on squad pegasus#22 at screen 1991,907 did not select
+r3: click on CENTRE of squad knights#5 at screen 1719,908 did not select; trying offsets
+   selected with offset 0,-12
+r3: 2 item(s) left unequipped in stash
+plan idle fps r3: 0
+r3 planned: {"gold":175,"squads":"lord2,knights2,cavaliers1,pegasus1","leftMs":65574}
+r3 battle: wait 4ms {"ticks":823,"sec":41.15,"soldiers":49,"result":{"round":3,"winner":1,"timeout":false,"keepDamage":[359,0],"survivors":[[],[1,12,20,21]],"lordXp":[54,122],"ticks":549,"damageDealt":[5315,6854],"soldiersLost":[12,26]},"keeps":[{"seat":0,"pos":[3999,150],"hpBefore":4373,"hpMax":4800,"towers":[[2499,650],[5499,650]]},{"seat":1,"pos":[4000,11849],"hpBefore":4000,"hpMax":4000,"towers":[[5500,11349],[2500,11349]]}]}
+r3 result (5737ms after battle start): ROUND 3 · THE FIELD IS DECIDED | Defeat | DAMAGE TO THE ENEMY KEEP | 0 | 4,000 left | DAMAGE TO YOUR KEEP | 333 | 4,014 left | MOST VALUABLE SQUAD | Knights | 1,954 damage · 14 kills · Lv 2 | NEXT ROUND'S WAR CHEST | Carried over | 175 | Round 4 income | +300 | Catch-up (lost the round) | +75 | Total | 550 | Spoils await: choose 1 of 3 (one tier higher) | Next round in 5… {"keep":4014,"ekeep":4000,"phase":"results"}
+--- round 4 plan {"gold":550,"keep":4014,"ekeep":4000,"left":74999,"unlocked":["berserkers","knights","cavaliers","militia","pegasus","golem"],"draft":["pikemen","trebuchet"],"loot":["rare:undefined","rare:undefined","legendary:undefined"],"last":["lord5","militia1","cavaliers1","mages1","mages1","militia1"]}
+AUDIT draft r4: ["OVERLAP .topbar x .modal .loot-head by 790x80","OVERLAP .res x .modal .loot-head by 790x76","OVERLAP .bottom x .modal .loot-foot by 692x61","OVERLAP .shop x .modal .loot-foot by 692x61","OVERLAP .modal .loot-foot x .ucard by 52x61","OVERLAP .modal .loot-foot x .ucard by 196x61"]
+AUDIT loot r4: ["OVERLAP .topbar x .modal .loot-head by 801x36","OVERLAP .res x .modal .loot-head by 801x76","OVERLAP .bottom x .modal .loot-row by 1943x139","OVERLAP .bottom x .modal .loot-foot by 1013x61","OVERLAP .bottom x .drop by 617x76","OVERLAP .bottom x .drop by 617x37","OVERLAP .bottom x .drop by 617x139","OVERLAP .shop x .modal .loot-row by 1943x139","OVERLAP .shop x .modal .loot-foot by 1013x61","OVERLAP .shop x .drop by 617x76","OVERLAP .shop x .drop by 617x37","OVERLAP .shop x .drop by 617x139"]
+r4: click on CENTRE of squad cavaliers#13 at screen 1448,908 did not select; trying offsets
+r4: click on squad cavaliers#13 at screen 1448,908 did not select
+r4: click on CENTRE of squad pegasus#22 at screen 1991,907 did not select; trying offsets
+r4: click on squad pegasus#22 at screen 1991,907 did not select
+r4: click on CENTRE of squad knights#5 at screen 1720,908 did not select; trying offsets
+   selected with offset 0,-12
+r4: 3 item(s) left unequipped in stash
+r4 planned: {"gold":150,"squads":"lord3,knights2,cavaliers1,pegasus1,golem1","leftMs":65766}
+r4 battle: wait 2ms {"ticks":1025,"sec":51.25,"soldiers":66,"result":{"round":4,"winner":1,"timeout":false,"keepDamage":[454,0],"survivors":[[],[1,12,20,29]],"lordXp":[68,172],"ticks":733,"damageDealt":[8179,11305],"soldiersLost":[13,40]},"keeps":[{"seat":0,"pos":[3999,150],"hpBefore":4014,"hpMax":4800,"towers":[[2499,650],[5499,650]]},{"seat":1,"pos":[4000,11849],"hpBefore":4000,"hpMax":4000,"towers":[[5500,11349],[2500,11349]]}]}
+r4 result (4801ms after battle start): ROUND 4 · THE FIELD IS DECIDED | Defeat | DAMAGE TO THE ENEMY KEEP | 0 | 4,000 left | DAMAGE TO YOUR KEEP | 434 | 3,560 left | MOST VALUABLE SQUAD | Stone Golem | 3,623 damage · 20 kills · Lv 1 | NEXT ROUND'S WAR CHEST | Carried over | 150 | Round 5 income | +325 | Catch-up (lost the round) | +75 | Total | 550 | Spoils await: choose 1 of 3 (one tier higher) | Next round in 5… {"keep":3560,"ekeep":4000,"phase":"results"}
+--- round 5 plan {"gold":550,"keep":3560,"ekeep":4000,"left":74999,"unlocked":["berserkers","knights","cavaliers","militia","pegasus","golem","pikemen"],"draft":["wyvern","ballista"],"loot":["magic:undefined","magic:undefined","legendary:undefined"],"last":["lord7","militia1","cavaliers1","mages1","mages1","militia1","mages1","militia1"]}
+AUDIT loot r5: ["OVERLAP .topbar x .modal .loot-head by 801x5","OVERLAP .res x .modal .loot-head by 801x76","OVERLAP .bottom x .modal .loot-row by 1943x139","OVERLAP .bottom x .modal .loot-foot by 1013x61","OVERLAP .bottom x .drop by 617x139","OVERLAP .shop x .modal .loot-row by 1943x139","OVERLAP .shop x .modal .loot-foot by 1013x61","OVERLAP .shop x .drop by 617x139","OVERLAP .modal .loot-row x .ucard by 196x122","OVERLAP .modal .loot-foot x .ucard by 196x61","OVERLAP .modal .loot-foot x .ucard by 160x61","OVERLAP .ucard x .drop by 188x122"]
+r5: click on CENTRE of squad cavaliers#13 at screen 1448,908 did not select; trying offsets
+r5: click on squad cavaliers#13 at screen 1448,908 did not select
+r5: click on CENTRE of squad pegasus#22 at screen 1991,907 did not select; trying offsets
+r5: click on squad pegasus#22 at screen 1991,907 did not select
+r5: click on CENTRE of squad wyvern#39 at screen 2264,905 did not select; trying offsets
+r5: click on squad wyvern#39 at screen 2264,905 did not select
+r5: click on CENTRE of squad knights#5 at screen 1720,908 did not select; trying offsets
+   selected with offset 0,-12
+r5: 4 item(s) left unequipped in stash
+r5 planned: {"gold":50,"squads":"lord4,knights2,cavaliers1,pegasus1,golem1,wyvern1,cavaliers1","leftMs":55396}
+r5 battle: wait 3ms {"ticks":1040,"sec":52,"soldiers":74,"result":{"round":5,"winner":1,"timeout":false,"keepDamage":[596,0],"survivors":[[],[1,12,20,29,38]],"lordXp":[87,234],"ticks":748,"damageDealt":[9954,16005],"soldiersLost":[19,41]},"keeps":[{"seat":0,"pos":[3999,150],"hpBefore":3560,"hpMax":4800,"towers":[[2499,650],[5499,650]]},{"seat":1,"pos":[4000,11849],"hpBefore":4000,"hpMax":4000,"towers":[[5500,11349],[2500,11349]]}]}
+r5 result (4730ms after battle start): ROUND 5 · THE FIELD IS DECIDED | Defeat | DAMAGE TO THE ENEMY KEEP | 0 | 4,000 left | DAMAGE TO YOUR KEEP | 554 | 2,964 left | MOST VALUABLE SQUAD | Stone Golem | 3,083 damage · 16 kills · Lv 1 | NEXT ROUND'S WAR CHEST | Carried over | 50 | Round 6 income | +350 | Catch-up (lost the round) | +75 | Total | 475 | Spoils await: choose 1 of 3 (one tier higher) | Next round in 5… {"keep":2964,"ekeep":4000,"phase":"results"}
+--- round 6 plan {"gold":475,"keep":2964,"ekeep":4000,"left":75000,"unlocked":["berserkers","knights","cavaliers","militia","pegasus","golem","pikemen","wyvern"],"draft":["trebuchet","ballista"],"loot":["magic:undefined","rare:undefined","magic:undefined"],"last":["lord9","militia1","cavaliers1","mages1","mages1","militia1","mages1","militia1","wyvern1"]}
+r6: click on CENTRE of squad cavaliers#13 at screen 1448,908 did not select; trying offsets
+r6: click on squad cavaliers#13 at screen 1448,908 did not select
+r6: click on CENTRE of squad pegasus#22 at screen 1991,907 did not select; trying offsets
+r6: click on squad pegasus#22 at screen 1991,907 did not select
+r6: click on CENTRE of squad wyvern#39 at screen 2264,905 did not select; trying offsets
+r6: click on squad wyvern#39 at screen 2264,905 did not select
+r6: click on CENTRE of squad cavaliers#40 at screen 1720,908 did not select; trying offsets
+   selected with offset 0,-12
+r6: click on CENTRE of squad knights#5 at screen 1720,908 did not select; trying offsets
+   selected with offset 0,-12
+r6: 5 item(s) left unequipped in stash
+r6 planned: {"gold":175,"squads":"lord5,knights2,cavaliers1,pegasus1,golem1,wyvern1,cavaliers1,trebuchet1","leftMs":67556}
+r6 battle: wait 2ms {"ticks":1021,"sec":51.05,"soldiers":89,"result":{"round":6,"winner":1,"timeout":false,"keepDamage":[738,0],"survivors":[[],[1,12,20,29,38,47]],"lordXp":[99,272],"ticks":798,"damageDealt":[11053,16418],"soldiersLost":[20,53]},"keeps":[{"seat":0,"pos":[3999,150],"hpBefore":2964,"hpMax":4800,"towers":[[2499,650],[5499,650]]},{"seat":1,"pos":[4000,11849],"hpBefore":4000,"hpMax":4000,"towers":[[5500,11349],[2500,11349]]}]}
+r6 result (5776ms after battle start): ROUND 6 · THE FIELD IS DECIDED | Defeat | DAMAGE TO THE ENEMY KEEP | 0 | 4,000 left | DAMAGE TO YOUR KEEP | 693 | 2,226 left | MOST VALUABLE SQUAD | Stone Golem | 2,560 damage · 15 kills · Lv 1 | NEXT ROUND'S WAR CHEST | Carried over | 175 | Round 7 income | +375 | Catch-up (lost the round) | +75 | Total | 625 | Spoils await: choose 1 of 3 (one tier higher) | Next round in 5… {"keep":2226,"ekeep":4000,"phase":"results"}
+--- round 7 plan {"gold":625,"keep":2226,"ekeep":4000,"left":75000,"unlocked":["berserkers","knights","cavaliers","militia","pegasus","golem","pikemen","wyvern","trebuchet"],"draft":["ballista","mages"],"loot":["rare:undefined","rare:undefined","magic:undefined"],"last":["lord10","militia1","cavaliers1","mages1","mages1","militia1","mages1","militia1","wyvern1","wyvern1","militia1"]}
+r7: click on CENTRE of squad cavaliers#13 at screen 1448,908 did not select; trying offsets
+r7: click on squad cavaliers#13 at screen 1448,908 did not select
+r7: click on CENTRE of squad pegasus#22 at screen 1991,907 did not select; trying offsets
+r7: click on squad pegasus#22 at screen 1991,907 did not select
+r7: click on CENTRE of squad wyvern#39 at screen 2264,905 did not select; trying offsets
+r7: click on squad wyvern#39 at screen 2264,905 did not select
+r7: click on CENTRE of squad cavaliers#40 at screen 1720,908 did not select; trying offsets
+   selected with offset 0,-12
+r7: click on CENTRE of squad knights#5 at screen 1720,908 did not select; trying offsets
+   selected with offset 0,-12
+r7: 6 item(s) left unequipped in stash
+r7 planned: {"gold":25,"squads":"lord6,knights2,cavaliers1,pegasus1,golem2,wyvern1,cavaliers1,trebuchet1,ballista1","leftMs":61046}
+r7 battle: wait 270ms {"ticks":1335,"sec":66.75,"soldiers":97,"result":{"round":7,"winner":1,"timeout":false,"keepDamage":[679,0],"survivors":[[],[1,20,29,56]],"lordXp":[222,297],"ticks":1129,"damageDealt":[17243,17381],"soldiersLost":[21,70]},"keeps":[{"seat":0,"pos":[3999,150],"hpBefore":2226,"hpMax":4800,"towers":[[2499,650],[5499,650]]},{"seat":1,"pos":[4000,11849],"hpBefore":4000,"hpMax":4000,"towers":[[5500,11349],[2500,11349]]}]}
+r7 result (4740ms after battle start): ROUND 7 · THE FIELD IS DECIDED | Defeat | DAMAGE TO THE ENEMY KEEP | 0 | 4,000 left | DAMAGE TO YOUR KEEP | 629 | 1,547 left | MOST VALUABLE SQUAD | Ballista | 4,214 damage · 7 kills · Lv 1 | NEXT ROUND'S WAR CHEST | Carried over | 25 | Round 8 income | +400 | Catch-up (lost the round) | +75 | Total | 500 | Spoils await: choose 1 of 3 (one tier higher) | Next round in 5… {"keep":1547,"ekeep":4000,"phase":"results"}
+--- round 8 plan {"gold":500,"keep":1547,"ekeep":4000,"left":75000,"unlocked":["berserkers","knights","cavaliers","militia","pegasus","golem","pikemen","wyvern","trebuchet","ballista"],"draft":["clerics","dragon"],"loot":["legendary:undefined","legendary:undefined","legendary:undefined"],"last":["lord10","militia1","cavaliers1","mages1","mages1","militia1","mages1","militia1","wyvern1","wyvern1","militia1","ballista1","berserkers1"]}
+AUDIT draft r8: ["OVERLAP .topbar x .modal .loot-head by 790x80","OVERLAP .res x .modal .loot-head by 790x76","OVERLAP .bottom x .modal .loot-foot by 692x61","OVERLAP .shop x .modal .loot-foot by 692x61","OVERLAP .modal .loot-foot x .ucard by 52x61","OVERLAP .modal .loot-foot x .ucard by 196x61"]
+AUDIT loot r8: ["OVERLAP .topbar x .modal .loot-head by 801x5","OVERLAP .res x .modal .loot-head by 801x76","OVERLAP .bottom x .modal .loot-row by 1943x139","OVERLAP .bottom x .modal .loot-foot by 1013x61","OVERLAP .bottom x .drop by 617x139","OVERLAP .bottom x .drop by 617x108","OVERLAP .shop x .modal .loot-row by 1943x139","OVERLAP .shop x .modal .loot-foot by 1013x61","OVERLAP .shop x .drop by 617x139","OVERLAP .shop x .drop by 617x108","OVERLAP .modal .loot-row x .ucard by 154x122","OVERLAP .modal .loot-row x .ucard by 196x122"]
+r8: click on CENTRE of squad cavaliers#13 at screen 1448,908 did not select; trying offsets
+r8: click on squad cavaliers#13 at screen 1448,908 did not select
+r8: click on CENTRE of squad pegasus#22 at screen 1991,907 did not select; trying offsets
+r8: click on squad pegasus#22 at screen 1991,907 did not select
+r8: click on CENTRE of squad wyvern#39 at screen 2264,905 did not select; trying offsets
+r8: click on squad wyvern#39 at screen 2264,905 did not select
+r8: click on CENTRE of squad cavaliers#40 at screen 1720,908 did not select; trying offsets
+   selected with offset 0,-12
+r8: click on CENTRE of squad knights#5 at screen 1720,908 did not select; trying offsets
+   selected with offset 0,-12
+r8: 7 item(s) left unequipped in stash
+r8 planned: {"gold":50,"squads":"lord8,knights2,cavaliers1,pegasus1,golem2,wyvern1,cavaliers1,trebuchet2,ballista1,berserkers1","leftMs":54689}
+r8 battle: wait 2ms {"ticks":1091,"sec":54.55,"soldiers":107,"result":{"round":8,"winner":1,"timeout":false,"keepDamage":[903,0],"survivors":[[],[1,12,20,29,47,56,66]],"lordXp":[208,315],"ticks":895,"damageDealt":[17326,20224],"soldiersLost":[27,71]},"keeps":[{"seat":0,"pos":[3999,150],"hpBefore":1547,"hpMax":4800,"towers":[[2499,650],[5499,650]]},{"seat":1,"pos":[4000,11849],"hpBefore":4000,"hpMax":4000,"towers":[[5500,11349],[2500,11349]]}]}
+r8 result (4724ms after battle start): ROUND 8 · THE FIELD IS DECIDED | Defeat | DAMAGE TO THE ENEMY KEEP | 0 | 4,000 left | DAMAGE TO YOUR KEEP | 834 | 644 left | MOST VALUABLE SQUAD | Stone Golem | 3,919 damage · 20 kills · Lv 2 | NEXT ROUND'S WAR CHEST | Carried over | 50 | Round 9 income | +425 | Catch-up (lost the round) | +75 | Total | 550 | Spoils await: choose 1 of 3 (one tier higher) | Next round in 5… {"keep":644,"ekeep":4000,"phase":"results"}
+--- round 9 plan {"gold":550,"keep":644,"ekeep":4000,"left":74999,"unlocked":["berserkers","knights","cavaliers","militia","pegasus","golem","pikemen","wyvern","trebuchet","ballista","clerics"],"draft":["dragon","archers"],"loot":["legendary:undefined","legendary:undefined","magic:undefined"],"last":["lord10","militia1","cavaliers1","mages1","mages1","militia1","mages1","militia1","wyvern1","wyvern1","militia1","ballista1","berserkers1","pegasus1","ballista1"]}
+AUDIT loot r9: ["OVERLAP .res x .modal .loot-head by 801x72","OVERLAP .bottom x .modal .loot-row by 1943x139","OVERLAP .bottom x .modal .loot-foot by 1013x61","OVERLAP .bottom x .drop by 617x139","OVERLAP .bottom x .drop by 617x91","OVERLAP .shop x .modal .loot-row by 1943x139","OVERLAP .shop x .modal .loot-foot by 1013x61","OVERLAP .shop x .drop by 617x139","OVERLAP .shop x .drop by 617x91","OVERLAP .modal .loot-row x .ucard by 49x122","OVERLAP .modal .loot-row x .ucard by 196x122","OVERLAP .modal .loot-foot x .ucard by 196x61"]
+r9: click on CENTRE of squad cavaliers#13 at screen 1448,908 did not select; trying offsets
+   selected with offset -12,0
+r9: click on CENTRE of squad pegasus#22 at screen 1991,907 did not select; trying offsets
+r9: click on squad pegasus#22 at screen 1991,907 did not select
+r9: click on CENTRE of squad wyvern#39 at screen 2264,905 did not select; trying offsets
+r9: click on squad wyvern#39 at screen 2264,905 did not select
+r9: click on CENTRE of squad cavaliers#40 at screen 1720,908 did not select; trying offsets
+   selected with offset 0,-12
+r9: click on CENTRE of squad dragon#76 at screen 1430,1065 did not select; trying offsets
+r9: click on squad dragon#76 at screen 1430,1065 did not select
+r9: click on CENTRE of squad knights#5 at screen 1720,908 did not select; trying offsets
+   selected with offset 0,-12
+r9: 8 item(s) left unequipped in stash
+r9 planned: {"gold":50,"squads":"lord9,knights2,cavaliers1,pegasus1,golem2,wyvern1,cavaliers1,trebuchet2,ballista1,berserkers1,dragon1","leftMs":66445}
+r9 battle: wait 3ms {"ticks":1069,"sec":53.45,"soldiers":114,"result":{"round":9,"winner":1,"timeout":false,"keepDamage":[907,0],"survivors":[[],[1,12,20,56,66,75]],"lordXp":[278,378],"ticks":883,"damageDealt":[18542,23698],"soldiersLost":[28,77]},"keeps":[{"seat":0,"pos":[3999,150],"hpBefore":644,"hpMax":4800,"towers":[[2499,650],[5499,650]]},{"seat":1,"pos":[4000,11849],"hpBefore":4000,"hpMax":4000,"towers":[[5500,11349],[2500,11349]]}]}
+r9 result (5763ms after battle start): ROUNDS | 9 | ROUNDS WON | 0 | KEEP DAMAGE DEALT | 0 | KEEP DAMAGE TAKEN | 5,063 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | Dealt | Taken | Rematch (1/2) | Leave {"keep":0,"ekeep":4000,"phase":"over"}
+FINAL {"phase":"over","round":9,"left":-1794674916981,"gold":50,"keep":0,"keepMax":4800,"ekeep":4000,"ekeepMax":4000,"deploys":1,"unlocked":["berserkers","knights","cavaliers","militia","pegasus","golem","pikemen","wyvern","trebuchet","ballista","clerics","dragon"],"squads":[{"id":2,"type":"lord","level":10,"pos":[3999,1200],"items":0},{"id":5,"type":"knights","level":2,"pos":[4000,3300],"items":0},{"id":13,"type":"cavaliers","level":1,"pos":[2800,3300],"items":0},{"id":22,"type":"pegasus","level":1,"pos":[5200,3300],"items":0},{"id":31,"type":"golem","level":2,"pos":[1600,3300],"items":0},{"id":39,"type":"wyvern","level":1,"pos":[6400,3300],"items":0},{"id":40,"type":"cavaliers","level":1,"pos":[4000,3300],"items":0},{"id":49,"type":"trebuchet","level":2,"pos":[800,3300],"items":0},{"id":58,"type":"ballista","level":1,"pos":[7200,3300],"items":0},{"id":67,"type":"berserkers","level":1,"pos":[4000,2500],"items":0},{"id":76,"type":"dragon","level":1,"pos":[2800,2500],"items":0}],"stash":8,"draft":[],"draftPicks":0,"lastArmy":["lord10","militia1","cavaliers1","mages1","mages1","militia1","mages1","militia1","wyvern1","wyvern1","militia1","ballista1","berserkers1","pegasus1","ballista1","pegasus1","pegasus1"],"screen":"Et","winner":1}
+over text: ROUNDS | 9 | ROUNDS WON | 0 | KEEP DAMAGE DEALT | 0 | KEEP DAMAGE TAKEN | 5,063 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | Dealt | Taken | Rematch (1/2) | Leave
+over fps 0
+match wall 401s, bytes 23.27MB, reqs 272, fails []
+rounds [{"r":1,"planMs":18682,"sim":30.05,"soldiers":22,"keep":4634,"ekeep":4000,"res":{"round":1,"winner":1,"timeout":false,"keepDamage":[166,0],"survivors":[[],[1,3,4]],"lordXp":[21,74],"ticks":473,"damageDealt":[1915,3439],"soldiersLost":[5,8]}},{"r":2,"planMs":29695,"sim":37.25,"soldiers":30,"keep":4373,"ekeep":4000,"res":{"round":2,"winner":1,"timeout":false,"keepDamage":[261,0],"survivors":[[],[1,4,12]],"lordXp":[38,98],"ticks":528,"damageDealt":[3243,6066],"soldiersLost":[9,15]}},{"r":3,"planMs":30748,"sim":41.15,"soldiers":49,"keep":4014,"ekeep":4000,"res":{"round":3,"winner":1,"timeout":false,"keepDamage":[359,0],"survivors":[[],[1,12,20,21]],"lordXp":[54,122],"ticks":549,"damageDealt":[5315,6854],"soldiersLost":[12,26]}},{"r":4,"planMs":20784,"sim":51.25,"soldiers":66,"keep":3560,"ekeep":4000,"res":{"round":4,"winner":1,"timeout":false,"keepDamage":[454,0],"survivors":[[],[1,12,20,29]],"lordXp":[68,172],"ticks":733,"damageDealt":[8179,11305],"soldiersLost":[13,40]}},{"r":5,"planMs":22177,"sim":52,"soldiers":74,"keep":2964,"ekeep":4000,"res":{"round":5,"winner":1,"timeout":false,"keepDamage":[596,0],"survivors":[[],[1,12,20,29,38]],"lordXp":[87,234],"ticks":748,"damageDealt":[9954,16005],"soldiersLost":[19,41]}},{"r":6,"planMs":24684,"sim":51.05,"soldiers":89,"keep":2226,"ekeep":4000,"res":{"round":6,"winner":1,"timeout":false,"keepDamage":[738,0],"survivors":[[],[1,12,20,29,38,47]],"lordXp":[99,272],"ticks":798,"damageDealt":[11053,16418],"soldiersLost":[20,53]}},{"r":7,"planMs":26313,"sim":66.75,"soldiers":97,"keep":1547,"ekeep":4000,"res":{"round":7,"winner":1,"timeout":false,"keepDamage":[679,0],"survivors":[[],[1,20,29,56]],"lordXp":[222,297],"ticks":1129,"damageDealt":[17243,17381],"soldiersLost":[21,70]}},{"r":8,"planMs":30909,"sim":54.55,"soldiers":107,"keep":644,"ekeep":4000,"res":{"round":8,"winner":1,"timeout":false,"keepDamage":[903,0],"survivors":[[],[1,12,20,29,47,56,66]],"lordXp":[208,315],"ticks":895,"damageDealt":[17326,20224],"soldiersLost":[27,71]}},{"r":9,"planMs":29933,"sim":53.45,"soldiers":114,"keep":0,"ekeep":4000,"res":{"round":9,"winner":1,"timeout":false,"keepDamage":[907,0],"survivors":[[],[1,12,20,56,66,75]],"lordXp":[278,378],"ticks":883,"damageDealt":[18542,23698],"soldiersLost":[28,77]}}]
+LOG
+[normal3440] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0

@@ -13,13 +13,13 @@ import { UNITS } from './data/units.ts';
 import { LORD_POWER, UNIT_POWER } from './data/balance.ts';
 import { angleOf, icos, idiv, isin, isqrt, mix4 } from './fixed.ts';
 import { modsOf, type ItemMods } from './loot.ts';
-import { keepDamageOf } from './match.ts';
+import { KEEP_DMG_BASE_PER_ROUND, keepDamageOf } from './match.ts';
 import {
   ABILITY_CODES, ARC_CODES, EK, FrameEncoder, PROJ_CODES, REVIVE_CODES, WEAPON_CODES, encodeEvents, keepSource, toBase64,
 } from './replay.ts';
 import { DIRS, KIND_CODE, MOVE_PCT, RIVER_Y0, RIVER_Y1, cellOf, navFor } from './terrain.ts';
 import type {
-  AbilityEventKind, ArcType, BattleOutput, BattleResult, DamageType, KeepInfo, LordId, MatchState, ProjectileKind, Replay, ReplaySoldier,
+  AbilityEventKind, ArcType, BattleEnd, BattleOutput, BattleResult, DamageType, KeepInfo, LordId, MatchState, ProjectileKind, Replay, ReplaySoldier,
   Seat, SimulateOptions, SoldierType, Squad, Tag, Vec2, WeaponKind,
 } from './types.ts';
 
@@ -41,6 +41,15 @@ const KEEP_Y = 150;
 const TOWER_RANGE = 2200, TOWER_DMG = 900, TOWER_TICKS = 30;
 /** Global damage scale (percent) — sets the overall battle pace. */
 const DMG_SCALE = 200;
+/** Stall detection: no damage for STALL_TICKS after the first contact (or no contact by NO_CONTACT_TICKS) ends the battle. */
+export const STALL_TICKS = 300;
+export const NO_CONTACT_TICKS = 1200;
+/** One side unable to target anything left on the other side for this long also ends the battle. */
+export const HELPLESS_TICKS = 300;
+/** A timeout / stalemate is won on points by a lead of at least this many percentage points; closer is a draw. */
+export const POINTS_MARGIN = 5;
+/** Army value of the Lord for points: LORD_POINTS_BASE + LORD_POINTS_PER_LEVEL x level. */
+const LORD_POINTS_BASE = 300, LORD_POINTS_PER_LEVEL = 30;
 
 const TRIANGLE: Partial<Record<WeaponKind, WeaponKind>> = { sword: 'axe', axe: 'lance', lance: 'sword' };
 
@@ -322,6 +331,10 @@ class Battle {
   fightTicks = 0;
   winner: Seat | null = null;
   timeout = false;
+  end: BattleEnd = 'wipe';
+  score: [number, number] = [0, 0];
+  lastDamageTick = -1;
+  helplessSince = -1;
   marching = false;
   marchDue = 0;
   marchLeft = 0;
@@ -1110,6 +1123,7 @@ class Battle {
       }
       if (s.dmgAcc || s.healAcc) {
         this.dealt[(1 - s.side) as Seat] += s.dmgAcc;
+        if (s.dmgAcc > 0) this.lastDamageTick = t;
         s.hp = Math.min(s.maxHp, s.hp - s.dmgAcc + s.healAcc);
         s.dmgAcc = 0; s.healAcc = 0;
         if (s.hp <= 0) deaths.push(s);
@@ -1185,6 +1199,67 @@ class Battle {
       for (const s of b.sols) if (s.alive) return true;
     }
     return false;
+  }
+
+  /** Can any soldier of `side` target any soldier left on the other side? (Every attack hits ground; only some hit air.) */
+  canDamage(side: Seat): boolean {
+    let any = false, air = false;
+    for (const s of this.sols) {
+      if (s.side !== side || !s.alive || s.spawnTick > this.t) continue;
+      any = true;
+      if (s.st.canHitAir) { air = true; break; }
+    }
+    if (!any) return false;
+    for (const e of this.sols) {
+      if (e.side === side || !e.alive || e.spawnTick > this.t) continue;
+      if (!(e.st.tags & T_FLIER) || air) return true;
+    }
+    return false;
+  }
+
+  /** Has the battle stalled? Checked every 10 ticks while both armies stand. */
+  stalled(t: number): boolean {
+    const c0 = this.canDamage(0), c1 = this.canDamage(1);
+    if (!c0 && !c1) return true;
+    if (c0 && c1) this.helplessSince = -1;
+    else if (this.helplessSince < 0) this.helplessSince = t;
+    else if (t - this.helplessSince >= HELPLESS_TICKS) return true;
+    return this.lastDamageTick >= 0 ? t - this.lastDamageTick >= STALL_TICKS : t >= NO_CONTACT_TICKS;
+  }
+
+  /** Points for `side`: percent of its army value still standing (squad value x share of its soldiers' HP left). */
+  points(side: Seat): number {
+    let left = 0, total = 0;
+    for (const b of this.sideSquads[side]) {
+      if (b.summon || !b.sourceSquad) continue;
+      const sq = b.sourceSquad;
+      const value = sq.type === 'lord' ? LORD_POINTS_BASE + LORD_POINTS_PER_LEVEL * sq.level : Math.max(1, sq.spent);
+      let hp = 0, max = 0;
+      for (const s of b.sols) { max += s.maxHp; if (s.alive) hp += s.hp; }
+      total += value;
+      if (max > 0) left += idiv(value * hp, max);
+    }
+    return total > 0 ? idiv(left * 100, total) : 0;
+  }
+
+  /**
+   * Timeout or stalemate: decide the round on points. The winner's survivors deal their keep damage (no round bonus:
+   * that is for routing the enemy); the loser's deal none. A draw: both sides' survivors deal half.
+   */
+  endOnPoints(end: BattleEnd): void {
+    this.timeout = true;
+    this.end = end;
+    this.score = [this.points(0), this.points(1)];
+    const d = this.score[0] - this.score[1];
+    this.winner = d >= POINTS_MARGIN ? 0 : -d >= POINTS_MARGIN ? 1 : null;
+    for (const side of [0, 1] as Seat[]) this.survivors[side] = this.survivorIds(side);
+    for (const side of [0, 1] as Seat[]) {
+      if (this.winner !== null && this.winner !== side) continue;
+      const full = keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, true, false) - KEEP_DMG_BASE_PER_ROUND * this.st.round;
+      const dmg = this.winner === side ? full : keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, false, true);
+      this.keepDamage[(1 - side) as Seat] = dmg;
+      if (dmg > 0) this.hitKeep((1 - side) as Seat, keepSource((1 - side) as Seat, 2), dmg, true);
+    }
   }
 
   survivorIds(side: Seat): number[] {
@@ -1290,21 +1365,17 @@ class Battle {
         }
       } else {
         const a0 = this.armyAlive(0), a1 = this.armyAlive(1);
-        if (!a0 || !a1 || t >= MAX_BATTLE_TICKS) {
+        const stall = a0 && a1 && t > 0 && t % 10 === 0 && t < MAX_BATTLE_TICKS && this.stalled(t);
+        if (!a0 || !a1 || t >= MAX_BATTLE_TICKS || stall) {
           this.fightTicks = t;
-          if (!a0 && !a1) { this.winner = null; this.finish(); return; }
-          if (t >= MAX_BATTLE_TICKS && a0 && a1) {
-            this.timeout = true;
-            for (const side of [0, 1] as Seat[]) this.survivors[side] = this.survivorIds(side);
-            for (const side of [0, 1] as Seat[]) {
-              const dmg = keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, false, true);
-              this.keepDamage[(1 - side) as Seat] = dmg;
-              if (dmg > 0) this.hitKeep((1 - side) as Seat, keepSource((1 - side) as Seat, 2), dmg, true);
-            }
+          if (!a0 && !a1) { this.winner = null; this.end = 'mutualWipe'; this.finish(); return; }
+          if (a0 && a1) {
+            this.endOnPoints(stall ? 'stalemate' : 'timeout');
             this.finish();
             return;
           }
           this.winner = a0 ? 0 : 1;
+          this.score = [this.points(0), this.points(1)];
           this.startMarch(this.winner);
           if (this.marchLeft <= 0) { this.finish(); return; }
         }
@@ -1342,6 +1413,8 @@ class Battle {
       round: this.st.round,
       winner: this.winner,
       timeout: this.timeout,
+      end: this.end,
+      score: [this.score[0], this.score[1]],
       keepDamage: [this.keepDamage[0], this.keepDamage[1]],
       survivors: [this.survivors[0], this.survivors[1]],
       lordXp: [this.lordXp[0] + (this.winner === 0 ? 20 : 8), this.lordXp[1] + (this.winner === 1 ? 20 : 8)],

@@ -15,15 +15,19 @@ const additive = {
 
 // ------------------------------------------------------------------ ground decals
 
-export type DecalMode = 'shockwave' | 'aura' | 'glow' | 'frost' | 'heal' | 'warn';
-const DECAL_MODE: Record<DecalMode, number> = { shockwave: 0, aura: 1, glow: 2, frost: 3, heal: 4, warn: 5 };
+export type DecalMode = 'shockwave' | 'aura' | 'glow' | 'frost' | 'heal' | 'warn' | 'sigil';
+const DECAL_MODE: Record<DecalMode, number> = { shockwave: 0, aura: 1, glow: 2, frost: 3, heal: 4, warn: 5, sigil: 6 };
 
 const DECAL_VERT = /* glsl */ `
 attribute vec2 aLocal;
 varying vec2 vLocal;
 void main() {
   vLocal = aLocal;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  // depth bias toward the camera so grass tufts take the light too
+  vec4 near = projectionMatrix * vec4(mv.xy, mv.z + 0.6, 1.0);
+  gl_Position.z = near.z / near.w * gl_Position.w;
 }`;
 
 const DECAL_FRAG = /* glsl */ `
@@ -32,6 +36,8 @@ uniform float uProgress;
 uniform float uAlpha;
 uniform float uTime;
 uniform int uMode;
+uniform sampler2D uMap;
+uniform vec2 uCell;
 varying vec2 vLocal;
 float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 void main() {
@@ -66,6 +72,15 @@ void main() {
     a = exp(-pow((r - 0.85) / 0.08, 2.0)) * 0.8;
     float dots = smoothstep(0.75, 1.0, sin(ang * 8.0 + uTime * 2.0)) * exp(-pow((r - 0.85) / 0.05, 2.0));
     a += dots + smoothstep(1.0, 0.0, r) * 0.25;
+  } else if (uMode == 6) {
+    // sigil: a sheet cell turning slowly, with a soft rim and inner glow
+    float cs = cos(uTime * 0.12);
+    float sn = sin(uTime * 0.12);
+    vec2 q = vec2(vLocal.x * cs - vLocal.y * sn, vLocal.x * sn + vLocal.y * cs);
+    float m = texture2D(uMap, (uCell + clamp(q * 0.56 + 0.5, 0.003, 0.997)) / vec2(2.0, 3.0)).r;
+    // the emblem is a faint watermark; the rim carries the read (uProgress = emblem strength)
+    a = m * uProgress * (0.85 + 0.15 * sin(uTime * 2.4));
+    a += exp(-pow((r - 0.96) / 0.018, 2.0)) * 1.6 + exp(-pow((r - 0.9) / 0.006, 2.0)) * 0.8 + smoothstep(1.0, 0.0, r) * 0.06;
   } else {
     // warn: pulsing target circle that tightens as impact nears
     a = exp(-pow((r - 0.95) / 0.04, 2.0)) * (0.6 + 0.4 * sin(uTime * 18.0));
@@ -75,6 +90,8 @@ void main() {
   a *= uAlpha * smoothstep(1.0, 0.97, r);
   if (a < 0.002) discard;
   gl_FragColor = vec4(uColor * (a * 0.4), 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }`;
 
 let decalGeo: THREE.BufferGeometry | null = null;
@@ -114,7 +131,7 @@ export class GroundDecal {
     this.material = new THREE.ShaderMaterial({
       vertexShader: DECAL_VERT,
       fragmentShader: DECAL_FRAG,
-      uniforms: { uColor: { value: c }, uProgress: { value: 0 }, uAlpha: { value: 1 }, uTime: { value: 0 }, uMode: { value: DECAL_MODE[mode] } },
+      uniforms: { uColor: { value: c }, uProgress: { value: 0 }, uAlpha: { value: 1 }, uTime: { value: 0 }, uMode: { value: DECAL_MODE[mode] }, uMap: { value: null }, uCell: { value: new THREE.Vector2() } },
       ...additive,
       side: THREE.DoubleSide,
     });
@@ -145,6 +162,11 @@ export class GroundDecal {
     this.mesh.position.set(x, y0, z);
   }
 
+  /** Sheet texture + cell for 'sigil' mode. */
+  setSheet(tex: THREE.Texture, cell: number): void {
+    this.material.uniforms.uMap.value = tex;
+    (this.material.uniforms.uCell.value as THREE.Vector2).set(cell % 2, Math.floor(cell / 2));
+  }
   set progress(v: number) {
     this.material.uniforms.uProgress.value = v;
   }
@@ -206,10 +228,14 @@ void main() {
   float pulse = 0.5 + 0.5 * sin(uTime * 2.2 + cellFlick * 6.28);
   float fromTop = 1.0 - p.y;
   float ripple = exp(-pow((fromTop - uRipple * 1.3) * 5.0, 2.0)) * step(uRipple, 1.0);
-  float a = fres * 0.9 + edge * (0.22 + 0.25 * pulse) * (0.35 + fres) + ripple * 0.8;
-  a += smoothstep(0.12, 0.0, p.y) * 0.5; // bright seam at the ground
+  // edge-lit glass: almost clear face-on, bright only at the silhouette, the seam and the ripple
+  float rimLight = pow(fres, 1.6);
+  float a = rimLight * 0.75 + edge * (0.05 + 0.1 * pulse) * (0.12 + rimLight) + ripple * (0.12 + 0.5 * rimLight);
+  a += smoothstep(0.08, 0.0, p.y) * 0.45; // bright seam at the ground
   a *= uAlpha;
   gl_FragColor = vec4(uColor * (a * 0.32), 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }`;
 
 export class Dome {
@@ -262,13 +288,16 @@ float n(vec2 p) {
   return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y);
 }
 void main() {
-  float facing = pow(abs(dot(normalize(vN), normalize(vV))), 1.6);
+  float facing = smoothstep(0.0, 1.0, abs(dot(normalize(vN), normalize(vV))));
+  facing *= facing;
   float hgt = vUv.y;
   float fade = pow(1.0 - hgt, 1.3) * smoothstep(0.0, 0.03, hgt);
   float s = n(vec2(vUv.x * 14.0, hgt * 3.0 - uTime * 1.6));
   float streak = mix(1.0, 0.45 + s * 1.1, uStreaks);
   float a = facing * fade * streak * uAlpha;
   gl_FragColor = vec4(uColor * (a * 0.38), 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }`;
 
 export class Pillar {
@@ -324,6 +353,8 @@ void main() {
   float a = (1.0 - x * x) * vColor.a;
   a = a * a;
   gl_FragColor = vec4(vColor.rgb * (a * 0.45), 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }`;
 
 /** Camera-facing triangle strips rebuilt on the CPU every frame. */

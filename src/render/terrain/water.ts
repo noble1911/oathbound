@@ -28,14 +28,14 @@ export class Water {
     const geo = buildWaterGeometry(hf);
     this.uniforms = {
       tWaterN: { value: tex.waterNormal },
-      uShallow: { value: new THREE.Color('#3c7a74') },
-      uDeep: { value: new THREE.Color('#0f2c36') },
+      uShallow: { value: new THREE.Color('#3f7466') },
+      uDeep: { value: new THREE.Color('#0b2a2b') },
       tRefl: { value: null },
       uReflAmt: { value: 0 },
       uReflMat: { value: new THREE.Matrix4() },
       uTime: globalUniforms.uTime,
     };
-    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.06, metalness: 0, transparent: true, envMapIntensity: 1.5 });
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.09, metalness: 0, transparent: true, envMapIntensity: 1.15 });
     this.material = mat;
     const u = this.uniforms;
     engine.patch(mat, 'ob-water', (shader) => {
@@ -69,16 +69,22 @@ vec2 wp = vObW.xz;
 float d = vDepth;
 vec2 flow = vec2(uTime * 0.32, 0.0);
 float fn = ob_noise(wp * 0.9 - flow * 1.4) * 0.6 + ob_noise(wp * 2.6 - flow * 2.2) * 0.4;
-float shore = 1.0 - smoothstep(0.0, 0.16 + 0.14 * fn, d);
-float streaks = smoothstep(0.62, 0.8, ob_noise(vec2(wp.x * 0.35 - uTime * 0.45, wp.y * 2.2)) * fn + 0.2) * smoothstep(0.1, 0.5, d) * 0.35;
-float obFoam = clamp(shore * (0.55 + 0.45 * fn) + streaks * 0.5, 0.0, 1.0);
-vec3 wcol = mix(uShallow, uDeep, smoothstep(0.05, 1.1, d));
-diffuseColor.rgb = mix(wcol, vec3(0.92, 0.95, 0.94), obFoam * 0.85);
-diffuseColor.a = mix(0.38, 0.93, smoothstep(0.0, 1.0, d));
-diffuseColor.a = max(diffuseColor.a, obFoam * 0.9) * smoothstep(-0.03, 0.03, d);
+float fine = ob_noise(wp * 7.0 - flow * 3.0);
+// shoreline: a thin broken foam line at the water's edge plus two fading lapping bands behind it
+float edge = 1.0 - smoothstep(0.0, 0.07 + 0.06 * fn, d);
+float lap = (0.5 + 0.5 * sin(d * 30.0 - uTime * 1.3 + fn * 5.0)) * smoothstep(0.42, 0.05, d) * smoothstep(0.45, 0.75, fn + fine * 0.3);
+// sparse flecks drifting with the current in the deep channel
+float fleck = smoothstep(0.78, 0.9, ob_noise(vec2(wp.x * 0.5 - uTime * 0.5, wp.y * 2.6)) * 0.7 + fine * 0.4) * smoothstep(0.25, 0.7, d);
+float obFoam = clamp(edge * (0.5 + 0.5 * fine) + lap * 0.45 + fleck * 0.12, 0.0, 1.0);
+// depth tint: clear over the shallows (the bed shows through), deep green-blue in the channel
+float dk = 1.0 - exp(-d * 2.2);
+vec3 wcol = mix(uShallow, uDeep, dk);
+diffuseColor.rgb = mix(wcol, vec3(0.86, 0.9, 0.88), obFoam * 0.8);
+diffuseColor.a = mix(0.3, 0.96, dk);
+diffuseColor.a = max(diffuseColor.a, obFoam * 0.85) * smoothstep(-0.02, 0.05, d);
 `,
       );
-      f = replace(f, '#include <roughnessmap_fragment>', 'float roughnessFactor = mix(roughness, 0.6, obFoam);');
+      f = replace(f, '#include <roughnessmap_fragment>', 'float roughnessFactor = mix(roughness, 0.7, obFoam);');
       f = after(
         f,
         '#include <normal_fragment_maps>',
@@ -87,7 +93,7 @@ vec3 n1 = texture2D(tWaterN, wp * 0.09 + vec2(uTime * 0.035, uTime * 0.006)).xyz
 vec3 n2 = texture2D(tWaterN, wp * vec2(0.17, 0.21) + vec2(uTime * 0.052, -uTime * 0.017) + 0.43).xyz * 2.0 - 1.0;
 vec3 n3 = texture2D(tWaterN, wp * 0.5 + vec2(uTime * 0.09, uTime * 0.03)).xyz * 2.0 - 1.0;
 vec2 nxy = (n1.xy + n2.xy) * 0.5 + n3.xy * 0.25;
-float ns = mix(0.35, 0.12, obFoam);
+float ns = mix(0.55, 0.15, obFoam) * mix(0.5, 1.0, dk);
 vec3 nW = normalize(vec3(nxy.x * ns, 1.0, nxy.y * ns));
 normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
 `,

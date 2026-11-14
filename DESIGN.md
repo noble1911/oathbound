@@ -19,21 +19,40 @@ The v1 co-op FE-grid design is archived in `../oathbound-v1-snapshot.tar`.
   - During planning you see where the enemy's army stood *last* round.
   - You don't see what they buy, move or equip this round until the battle starts.
   - Round 1 shows nothing.
-- **Battle end:** one army is wiped out, or 90 s of sim time pass.
-- **Keep damage:** every surviving squad marches on the enemy Keep and attacks it on screen. Damage = the sum of each surviving squad's `keepDamage` (its cost tier × its level factor, see §3), plus 50 × the round number as a base, but only if you *won* the round (the enemy army is wiped). At the timeout, both sides deal half damage from their survivors.
+- **Battle end:** one army is wiped out, or 90 s of sim time pass, or the battle **stalls**, which ends it early:
+  - neither side has anything that can target what is left of the other (e.g. ground melee against fliers);
+  - one side has nothing that can target the other's remaining units for 15 s;
+  - no damage is dealt by anyone for 15 s (or there is no contact at all by 60 s).
+- **Round outcome** (one rule, one wording: `roundOutcomeText` in `src/sim/match.ts`):
+  - **Wipe:** the side left standing wins the round ("Victory" / "Defeat"). Both wiped on the same tick is a "Draw".
+  - **Timeout or stall:** decided **on points** ("Victory on points" / "Defeat on points"). A side's points are the
+    percent of its army's value still standing: each squad's value (gold spent; the Lord 300 + 30 per level) times the
+    share of its soldiers' HP left. A lead of 5 points or more wins; closer is a "Draw" (a stall that ends level is
+    shown as "Stalemate").
+  - Only the round **loser** gets catch-up gold and the higher loot tier. A draw is nobody's loss.
+- **Keep damage:** every surviving squad marches on the enemy Keep and attacks it on screen.
+  - A wipe: the winner deals the sum of each surviving squad's `keepDamage` (its cost tier × its level factor, see §3),
+    plus 50 × the round number as a base.
+  - A points win: the winner's survivors deal their `keepDamage` without the round base; the loser's deal none.
+  - A points draw: both sides deal half damage from their survivors.
 - A Keep is also a structure on the map with its own HP and weak arrow towers. Survivors physically walk to it and hit it. The HP removed equals the formula above, not raw unit damage, so that balance stays predictable.
 
 ## 2. Economy and limits
 
 - **Supply** (gold): 300 in round 1, then income of `200 + 25 × round`, capped at 500 per round.
-  - Losing the round gives +75 catch-up gold.
+  - **Comeback** (symmetric, so seat balance holds; `comebackFor` in `src/sim/match.ts`, shown as `PlayerState.comeback`):
+    - losing the round gives catch-up gold of `75 + 10 × round + 3 × deficit`, where the deficit is how many keep-HP
+      percentage points you trail the enemy by after the battle;
+    - trailing by 25 points or more gives **+1 squad deployment** next round, whether you won or lost.
   - Unspent gold carries over.
 - **Deployment limit (the per-round unit limit):** you may *deploy at most 2 new squads per round*. Your Lord's passive and some items change this, e.g. Marshal makes it 3. Upgrades and equipping have no limit.
 - **Army cap:** 16 squads.
 - **Unit unlocks:** you start with 4 unit types unlocked: your Lord's 2 signature units plus 2 drafted from a random 3 of the basic pool. You unlock one more each round from a choice of 2. This produces the Mechabellum-style counter-picking arms race.
-- **Squad level-ups:** gold upgrades a squad from Lv1 to Lv5. The cost is `unitCost × level`. Each level gives +25% HP and +20% damage, and Lv3 and Lv5 open item slots.
+- **Squad level-ups:** gold upgrades a squad from Lv1 to Lv5. The cost is `unitCost × level`. Each level gives +25% HP and +20% damage, and Lv2 and Lv4 open item slots.
 - Selling a squad refunds 50% (only during the planning phase of the round it was deployed; otherwise nothing).
 - Squads can be moved freely within your half during planning, every round.
+- Squads may not overlap: each has a ground footprint (its formation's half-extent plus a body radius,
+  `squadFootprint`), and a deploy or move onto another of your squads is refused ("overlaps another squad").
 
 ## 3. Units (squads)
 
@@ -84,7 +103,11 @@ If the Lord dies in battle, it respawns next round like everything else. The dea
 
 ## 5. Loot (the core replacement for spell cards)
 
-After every round, each player picks **1 item from 3**. The round's loser rolls one rarity tier higher, which is the catch-up mechanic. From round 1, the pick happens in the next planning phase.
+After every round, each player picks **1 item from 3**. The round's loser rolls one rarity tier higher, which is part of the catch-up. From round 1, the pick happens in the next planning phase.
+
+Offers lean toward **usable** slots: all but one offer (at least 2 of 3, 3 of 4 for Skylady) are for a slot the player
+can fill right now, i.e. a slot that is open and empty on some squad or the Lord, more of them than stash items
+already waiting for that slot (`usableSlots`). When nothing is free, the offer rolls unbiased (upgrades).
 
 **Rarity tiers and affix counts** (ARPG-style, Diablo-like naming and colours):
 
@@ -95,7 +118,7 @@ After every round, each player picks **1 item from 3**. The round's loser rolls 
 | Rare | yellow | 3–4 | 20 |
 | Legendary | orange | 2 affixes + 1 legendary power | 5 (round ≥ 3) |
 
-- **Slots:** a squad has Weapon at Lv1, Armor at Lv3 and Relic at Lv5. The Lord has all three from the start. An item applies to *every soldier in the squad*.
+- **Slots:** a squad has Weapon at Lv1, Armor at Lv2 and Relic at Lv4. The Lord has all three from the start. An item applies to *every soldier in the squad*.
 - **Bases** (by slot):
   - Weapon: e.g. "Steel Blade" with implicit +10% dmg, "Ironbark Bow" with +10% range.
   - Armor: "Mail Hauberk" with +12% HP, "Warded Robe" with +20% magic resist.
@@ -168,6 +191,14 @@ After every round, each player picks **1 item from 3**. The round's loser rolls 
 
 The same infrastructure as v1 (cue-club pattern):
 - Rooms have 2 seats with codes and invite links, plus token rejoin.
-- A **vs AI** option uses the tournament's best bot.
+- A **vs AI** option with three levels, all limited to what a player may see (`viewFor`):
+  - **Easy** under-spends (about 65% of its gold), rarely levels up, drafts, loots and equips at random, doesn't
+    counter-pick, and lines its army up in one naive row.
+  - **Normal** counter-picks the enemy's last army, keeps a frontline, spends sensibly (about a 15% reserve), equips
+    each item on its most valuable squad and uses fixed role lanes.
+  - **Hard** spends everything, re-forms its whole army each round against the enemy's last formation (counters
+    opposite what they counter, raiders on the flank holding the enemy backline), gears squads by affix fit, and
+    makes slot-aware level-ups and counter drafts.
+  - A disconnected player's seat is played by Hard after the grace period, until they rejoin.
 - Spectators are allowed (read-only seats beyond 2).
 - The server validates every intent with the shared rules. Hidden information is enforced *server-side*: planning snapshots sent to a player contain only the enemy's previous-round army, never their current changes.

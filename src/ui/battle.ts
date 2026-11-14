@@ -1,5 +1,6 @@
 // Battle playback HUD: Keep bars (driven by keepHit events), a squad tally per side, the sim clock,
-// 1×/2× speed, director/free camera, Skip, a kill feed of notable events (Lord abilities,
+// 1×/2×/4× speed, director/free camera (the UI owns C and Home and sets the rig's mode explicitly,
+// both ways), Skip (End; Enter is chat on every screen), a kill feed of notable events (Lord abilities,
 // legendary procs, squads wiped, Keep breaches) and big banners for Lord abilities. Battle audio
 // is driven from the same events (src/audio.ts). The clients never simulate: playback only.
 import type { DecodedReplay, LordId, Replay, ReplayEvent, Seat } from '../sim/types.ts';
@@ -13,6 +14,8 @@ import { icon } from './icons.ts';
 import { crest } from './units.ts';
 import { unitName } from './gamedata.ts';
 import { TopBar } from './hud.ts';
+import { battleStats, type BattleStats } from './insights.ts';
+import { outcomeText } from './results.ts';
 
 export interface BattleInfo {
   seat: Seat | null;
@@ -78,7 +81,7 @@ export class BattleScreen {
       <div class="b-ctrl panel">
         <div class="seg speed">${[1, 2, 4].map((s) => `<button data-s="${s}" data-tip="Playback speed [${s === 1 ? '1' : s === 2 ? '2' : '4'}]">${s}×</button>`).join('')}</div>
         <div class="seg cam"><button data-c="director" data-tip="Cinematic director camera [C]">${icon('camera')}Director</button><button data-c="free" data-tip="Free RTS camera: WASD / drag / wheel [C]">${icon('move')}Free</button></div>
-        <button class="btn skip" data-tip="Jump to the result [Enter]">${icon('skip')}Skip</button>
+        <button class="btn skip" data-tip="Jump to the result [End]">${icon('skip')}Skip<kbd>End</kbd></button>
       </div>
       <div class="b-banner"></div>
     </div>`);
@@ -113,19 +116,31 @@ export class BattleScreen {
     this.root.querySelectorAll<HTMLElement>('.cam button').forEach((b) => b.addEventListener('click', () => this.setCam(b.dataset.c as CameraMode)));
     $(this.root, '.skip').addEventListener('click', () => this.skip());
     const key = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest?.('input, textarea')) return;
+      if ((e.target as HTMLElement)?.closest?.('input, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (document.querySelector('.rules-veil, .dialog-veil')) return;
+      const k = e.key.toLowerCase();
       if (e.key === '1' || e.key === '2' || e.key === '4') this.setSpeed(Number(e.key));
-      else if (e.key.toLowerCase() === 'c') this.setCam(this.cam === 'director' ? 'free' : 'director');
-      else if (e.key === 'Enter' && !this.finished) this.skip();
+      else if (k === 'c' || k === 'home') {
+        // one owner for the camera keys: the rig never sees them (it used to flip the mode back)
+        e.preventDefault();
+        e.stopPropagation();
+        const now = this.scene.cameraMode?.() ?? this.cam;
+        this.setCam(k === 'home' || now !== 'director' ? 'director' : 'free');
+      } else if (e.key === 'End' && !this.finished) {
+        e.preventDefault();
+        this.skip();
+      }
     };
-    window.addEventListener('keydown', key);
-    this.off.push(() => removeEventListener('keydown', key));
+    // capture phase: ahead of the camera rig's own window listener
+    window.addEventListener('keydown', key, true);
+    this.off.push(() => removeEventListener('keydown', key, true));
     this.renderTop();
     this.renderTally();
+    sound.setTerrain(replay.terrain);
     if (offsetMs < 500) {
-      sound.horn();
+      sound.battleStart(replay.round);
       this.banner('To battle!', `Round ${replay.round}`, 'start');
-    }
+    } else sound.setPhase('battle');
     // the HUD clock ticks at 4 Hz (no per-frame DOM work)
     this.clock = setInterval(() => this.tickClock(), 250);
     this.tickClock();
@@ -171,10 +186,19 @@ export class BattleScreen {
     const n: [number, number] = [0, 0];
     for (const [sq, a] of this.alive) if (a > 0) n[this.squadSide.get(sq)!]++;
     const me = this.mySeat();
-    this.tally.innerHTML = `<div class="tl me" data-tip="Your squads still standing">${icon('squads')}<b>${n[me]}</b></div><i>squads</i><div class="tl foe" data-tip="Enemy squads still standing"><b>${n[1 - me]}</b>${icon('squads')}</div>`;
+    const spect = this.info.seat === null;
+    this.tally.innerHTML = `<div class="tl me" data-tip="${spect ? esc(this.info.names[me]) + "'s" : 'Your'} squads still standing">${icon('squads')}<b>${n[me]}</b></div><i>squads</i><div class="tl foe" data-tip="${spect ? esc(this.info.names[1 - me]) + "'s" : 'Enemy'} squads still standing"><b>${n[1 - me]}</b>${icon('squads')}</div>`;
   }
 
+  /** "Your" / "Enemy" for a player; the commander's name for a spectator. */
   private sideName(s: Seat): string {
+    if (this.info.seat === null) return `${esc(this.info.names[s])}'s`;
+    return s === this.mySeat() ? 'Your' : 'Enemy';
+  }
+
+  /** The same, unescaped (for text that is escaped later). */
+  private plainSide(s: Seat): string {
+    if (this.info.seat === null) return `${this.info.names[s]}'s`;
     return s === this.mySeat() ? 'Your' : 'Enemy';
   }
 
@@ -185,12 +209,6 @@ export class BattleScreen {
 
   private soldierSide(i: number): Seat | null {
     return this.decoded.replay.soldiers[i]?.side ?? null;
-  }
-
-  private pan(p: [number, number] | undefined): number {
-    if (!p) return 0;
-    const s = this.scene.toScreen(p);
-    return s ? Math.max(-0.8, Math.min(0.8, (s.x / innerWidth) * 2 - 1)) : 0;
   }
 
   private push(html: string, cls: string): void {
@@ -217,14 +235,15 @@ export class BattleScreen {
         if (!s) break;
         const left = (this.alive.get(s.squad) ?? 1) - 1;
         this.alive.set(s.squad, left);
-        if (!quiet) sound.death(0);
+        if (!quiet) sound.death(this.posOf(e.tgt, e.tick));
         if (left === 0 && !s.summoned) {
           const L = this.squadLabel(s.squad);
           if (!quiet) {
+            sound.wipe(this.posOf(e.tgt, e.tick), s.type === 'lord');
             const mine = L.side === this.mySeat();
             if (s.type === 'lord') {
               this.push(`${icon('skull')}${L.crest}<span><b>${esc(L.name)}</b> has fallen</span>`, mine ? 'bad big' : 'good big');
-              this.banner(`${L.name} has fallen`, mine ? 'Your Lord' : 'Enemy Lord', mine ? 'bad' : 'good');
+              this.banner(`${L.name} has fallen`, `${this.plainSide(L.side)} Lord`, mine ? 'bad' : 'good');
             } else this.push(`${icon('skull')}${L.crest}<span>${this.sideName(L.side)} <b>${esc(L.name)}</b> wiped out</span>`, mine ? 'bad' : 'good');
           }
         }
@@ -251,6 +270,7 @@ export class BattleScreen {
         this.alive.set(s.squad, (this.alive.get(s.squad) ?? 0) + 1);
         if (!this.squadSide.has(s.squad)) this.squadSide.set(s.squad, s.side);
         if (quiet) break;
+        sound.summon(e.pos);
         const key = `${e.src}:summon`;
         if (performance.now() - (this.procSeen.get(key) ?? -1e9) > 6000) {
           this.procSeen.set(key, performance.now());
@@ -266,15 +286,15 @@ export class BattleScreen {
         this.keepHp[e.seat] = e.hpAfter;
         if (quiet) break;
         this.renderTop();
-        sound.keepHit(e.final || e.dmg >= 200);
+        sound.keepHit(e.final || e.dmg >= 200, this.decoded.replay.keeps[e.seat].pos);
         if (!this.breached[e.seat]) {
           this.breached[e.seat] = true;
           const mine = e.seat === this.mySeat();
-          this.push(`${icon('keep')}<span>${mine ? 'Your Keep is under attack!' : 'Assault on the enemy Keep!'}</span>`, mine ? 'bad big' : 'good big');
+          this.push(`${icon('keep')}<span>${this.info.seat === null ? `${this.sideName(e.seat)} Keep is under attack!` : mine ? 'Your Keep is under attack!' : 'Assault on the enemy Keep!'}</span>`, mine ? 'bad big' : 'good big');
         }
         if (e.final && e.dmg > 0) {
           const mine = e.seat === this.mySeat();
-          this.push(`${icon('keep')}<span>${mine ? 'Your' : 'Enemy'} Keep takes <b>${e.dmg}</b></span>`, mine ? 'bad' : 'good');
+          this.push(`${icon('keep')}<span>${this.sideName(e.seat)} Keep takes <b>${e.dmg}</b></span>`, mine ? 'bad' : 'good');
         }
         break;
       }
@@ -285,8 +305,8 @@ export class BattleScreen {
           const lord = src.lord ?? 'marshal';
           const L = LORDS[lord];
           const mine = src.side === this.mySeat();
-          sound.ability(e.ability);
-          this.banner(`${L.abilityName}!`, `${mine ? 'Your' : 'Enemy'} ${L.title} ${L.name}`, `abil ${e.ability} ${mine ? 'mine' : 'foe'}`);
+          sound.ability(e.ability, e.pos);
+          this.banner(`${L.abilityName}!`, `${this.plainSide(src.side)} ${L.title} ${L.name}`, `abil ${e.ability} ${mine ? 'mine' : 'foe'}`);
           this.push(`${icon('lightning')}${crest('lord', lord, 'sm')}<span>${esc(L.title)} ${esc(L.name)} casts <b>${esc(L.abilityName)}</b></span>`, mine ? 'abil mine' : 'abil foe');
           break;
         }
@@ -298,9 +318,11 @@ export class BattleScreen {
             const L = this.squadLabel(src.squad);
             this.push(`${icon(proc.ic)}${L.crest}<span>${this.sideName(L.side)} ${esc(L.name)}: <em class="leg">${esc(proc.name)}</em></span>`, 'proc');
           }
-          if (e.ability === 'chain') sound.lightning(this.pan(e.pos));
-          else if (e.ability === 'ember_burst' || e.ability === 'earthshaker') sound.boom(3, this.pan(e.pos));
-        } else if (e.ability === 'stomp') sound.boom(2, this.pan(e.pos));
+          if (e.ability === 'chain') sound.lightning(e.pos);
+          else if (e.ability === 'ember_burst') sound.boom(3, e.pos);
+          else if (e.ability === 'earthshaker') sound.stomp(e.pos);
+          else if (e.ability === 'lifebinder') sound.heal(e.pos);
+        } else if (e.ability === 'stomp') sound.stomp(e.pos);
         else if (e.ability === 'levelup' && src) {
           const L = this.squadLabel(src.squad);
           if (src.type === 'lord') this.push(`${icon('up')}${L.crest}<span>${esc(L.name)} levels up</span>`, src.side === this.mySeat() ? 'good' : 'bad');
@@ -310,48 +332,68 @@ export class BattleScreen {
       case 'attack': {
         if (quiet) break;
         if (e.projectile === 'none' && e.weapon !== 'tower') {
-          const heavy = e.weapon === 'axe' || e.weapon === 'fists';
-          if (e.weapon === 'fists') sound.boom(1.5);
-          else sound.clash(this.pan(undefined), heavy);
+          const pos = this.posOf(e.src, e.tick);
+          if (e.weapon === 'fists') sound.fist(pos);
+          else sound.melee(pos, e.weapon === 'axe' || e.weapon === 'lance');
         }
         break;
       }
       case 'projectile': {
         if (quiet) break;
-        const p = this.pan(e.from);
-        if (e.kind === 'arrow' || e.kind === 'tower_arrow') this.volleyCount++, (this.volleyPan = p);
-        else if (e.kind === 'bolt') sound.ballista(p);
+        const p = e.from;
+        if (e.kind === 'arrow' || e.kind === 'tower_arrow') {
+          this.volleyCount++;
+          this.volleyX += p[0];
+          this.volleyY += p[1];
+        } else if (e.kind === 'bolt') sound.ballista(p);
         else if (e.kind === 'stone') sound.trebuchet(p);
         else if (e.kind === 'fireball') sound.spell(p);
-        else if (e.kind === 'firebreath') sound.breath(p);
+        else if (e.kind === 'firebreath') sound.breath(p, sol[e.src]?.type !== 'wyvern');
         else if (e.kind === 'lightning') sound.lightning(p);
         break;
       }
       case 'impact': {
         if (quiet) break;
-        if (e.kind === 'stone' || e.kind === 'fireball') sound.boom(e.splash / 100, this.pan(e.pos));
-        else if (e.kind === 'arrow') sound.thud(this.pan(e.pos));
+        if (e.kind === 'stone') sound.stoneImpact(e.pos, e.splash / 100);
+        else if (e.kind === 'fireball') sound.boom(e.splash / 100, e.pos);
+        else if (e.kind === 'arrow' || e.kind === 'tower_arrow') sound.arrowImpact(e.pos);
         break;
       }
       case 'heal':
-        if (!quiet) sound.heal();
+        if (!quiet) sound.heal(this.posOf(e.tgt, e.tick));
+        break;
+      case 'keepStage':
+        if (!quiet) sound.keepStage(e.stage, this.decoded.replay.keeps[e.seat].pos);
         break;
     }
     void this.soldierSide;
   }
   private volleyCount = 0;
-  private volleyPan = 0;
+  private volleyX = 0;
+  private volleyY = 0;
 
+  /** Arrows released in the same event burst are one volley: one whoosh at their centroid. */
   private flushVolley(): void {
-    if (this.volleyCount) sound.volley(this.volleyCount, this.volleyPan);
-    this.volleyCount = 0;
+    const n = this.volleyCount;
+    if (n) sound.volley(n, [this.volleyX / n, this.volleyY / n]);
+    this.volleyCount = this.volleyX = this.volleyY = 0;
+  }
+
+  /** A soldier's field position (cm) at a tick, from the replay keyframes. */
+  private posOf(i: number, tick: number): [number, number] | undefined {
+    const d = this.decoded;
+    if (i < 0 || i >= d.soldierCount) return undefined;
+    const f = Math.min(d.frameCount - 1, Math.max(0, Math.floor(tick / (d.replay.frameTicks || 1))));
+    const k = f * d.soldierCount + i;
+    return [d.x[k]!, d.y[k]!];
   }
 
   private tickClock(): void {
     this.t = this.pb.timeMs;
     const fight = Math.min(this.t, 90_000);
     const sec = Math.floor(fight / 1000);
-    this.top.setClock(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, 1 - fight / 90_000);
+    // elapsed against the 1:30 limit: at the limit the battle is called and Keep damage is halved
+    this.top.setClock(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, 1 - fight / 90_000, '/ 1:30', fight >= 75_000 && fight < 90_000);
   }
 
   private finish(skipped: boolean): void {
@@ -372,9 +414,12 @@ export class BattleScreen {
       this.renderTally();
     }
     const won = r.winner === null ? null : r.winner === me;
-    const title = this.info.seat === null ? (r.winner === null ? 'Stalemate' : `${this.info.names[r.winner]} wins the round`) : won === null ? (r.timeout ? 'Stalemate' : 'Mutual destruction') : won ? 'Round won' : 'Round lost';
-    sound.roundEnd(won);
-    this.banner(title, r.timeout ? 'Time is up' : 'The field falls silent', won === null ? 'neutral' : won ? 'good' : 'bad');
+    // the sim's own words for the result, so the banner, the results card and the history agree
+    const txt = outcomeText(r as unknown as Parameters<typeof outcomeText>[0], this.info.seat, r.timeout);
+    const end = (r as unknown as { end?: string }).end;
+    const title = this.info.seat === null ? (r.winner === null ? txt.title : `${this.info.names[r.winner]} wins the round`) : txt.title === 'Victory' ? 'Round won' : txt.title === 'Defeat' ? 'Round lost' : txt.title;
+    sound.battleEnd(won);
+    this.banner(title, end === 'stalemate' ? 'Neither army could harm the other' : r.timeout ? 'Time is up: 1:30' : 'The field falls silent', won === null ? 'neutral' : won ? 'good' : 'bad');
     this.root.classList.add('over');
     $(this.root, '.skip').setAttribute('disabled', '');
     setTimeout(() => this.done(), skipped ? 900 : 2200);
@@ -393,6 +438,11 @@ export class BattleScreen {
     if (this.finished) return;
     sound.whoosh();
     this.finish(true);
+  }
+
+  /** Per-squad damage dealt / taken / kills for both sides (the results report). */
+  stats(): BattleStats {
+    return battleStats(this.decoded);
   }
 
   /** Damage dealt per squad id (MVP on the results screen). */
@@ -414,6 +464,7 @@ export class BattleScreen {
   update(): void {}
 
   dispose(): void {
+    if (!this.finished) sound.battleEnd(null);
     if (this.clock) clearInterval(this.clock);
     this.pb.stop();
     this.scene.onCameraMode = null;

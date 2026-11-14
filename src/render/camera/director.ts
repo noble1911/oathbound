@@ -1,6 +1,8 @@
-// Battle auto-director. Default framing follows the engagement: the camera looks at the midpoint
-// of the two armies' fronts (each side's soldiers nearest the enemy weigh most) with a distance
-// that fits their spread, drifting slowly. Big events (Lord abilities, legendary procs, keep hits
+// Battle auto-director. Default framing follows the engagement: the camera looks mostly at the
+// largest melee contact (the 30 m patch where both sides have the most soldiers; sticky, so it does
+// not flip between two fights), blended with the midpoint of the two armies' fronts, at a distance
+// that fits the fight, drifting slowly. The engine centres the view in the HUD-free area (insets),
+// so the framed fight sits clear of the top bar / kill feed. Big events (Lord abilities, legendary procs, keep hits
 // and stage changes, squad wipes, Large-unit deaths) score a priority; the best one beyond the
 // cooldown gets a cut to a close, low shot with a short dolly and depth of field, held ~2.5 s,
 // then the camera glides back to the overview. The user can grab control at any time (CameraRig
@@ -56,6 +58,7 @@ export class Director {
     this.inShotUntil = -1;
     this.pending = null;
     this.started = false;
+    this.contactCell = -1;
     this.squadAlive.clear();
     for (const s of this.units.slots) this.squadAlive.set(s.header.squad, (this.squadAlive.get(s.header.squad) ?? 0) + (s.header.spawnTick === 0 ? 1 : 0));
   }
@@ -232,5 +235,95 @@ export class Director {
     const spread = c0.distanceTo(c1);
     this.overviewTarget.set(mid.x * 0.85, 0, mid.z);
     this.overviewDist = THREE.MathUtils.clamp(28 + gap * 0.6 + spread * 0.35, 40, 120);
+    // weight the framing toward the largest melee contact
+    const c = this.contact();
+    if (c) {
+      const k = Math.min(0.8, c.strength / 6);
+      this.overviewTarget.x += (c.x - this.overviewTarget.x) * k;
+      this.overviewTarget.z += (c.z - this.overviewTarget.z) * k;
+      // (the distance still fits both armies' spread: pulling in on the contact costs fill rate on the cheap tiers)
+    }
+  }
+
+  private static readonly CELL = 10;
+  private static readonly NX = 14;
+  private static readonly NZ = 18;
+  private grid = [new Float32Array(Director.NX * Director.NZ), new Float32Array(Director.NX * Director.NZ)];
+  private contactCell = -1;
+  /**
+   * The largest melee contact: the 3x3-cell (30 m) patch where min(side 0, side 1) soldiers is
+   * highest. Returns its centroid, strength (soldiers of the weaker side there) and RMS radius.
+   */
+  private contact(): { x: number; z: number; strength: number; radius: number } | null {
+    const { CELL, NX, NZ } = Director;
+    const g = this.grid;
+    g[0].fill(0);
+    g[1].fill(0);
+    const ci = (x: number) => Math.min(NX - 1, Math.max(0, Math.floor(x / CELL + NX / 2)));
+    const cj = (z: number) => Math.min(NZ - 1, Math.max(0, Math.floor(z / CELL + NZ / 2)));
+    for (const s of this.units.slots) {
+      if (!s.visible || s.deadAt >= 0) continue;
+      g[s.header.side][cj(s.pos.z) * NX + ci(s.pos.x)]++;
+    }
+    const strength = (k: number): number => {
+      const i0 = k % NX;
+      const j0 = (k - i0) / NX;
+      let a = 0;
+      let b = 0;
+      for (let j = Math.max(0, j0 - 1); j <= Math.min(NZ - 1, j0 + 1); j++) {
+        for (let i = Math.max(0, i0 - 1); i <= Math.min(NX - 1, i0 + 1); i++) {
+          a += g[0][j * NX + i];
+          b += g[1][j * NX + i];
+        }
+      }
+      return Math.min(a, b);
+    };
+    let best = -1;
+    let bs = 0;
+    for (let k = 0; k < NX * NZ; k++) {
+      if (g[0][k] + g[1][k] === 0) continue;
+      const st = strength(k);
+      if (st > bs) {
+        bs = st;
+        best = k;
+      }
+    }
+    if (best < 0 || bs < 2) {
+      this.contactCell = -1;
+      return null;
+    }
+    // sticky: stay on the current fight unless another is clearly bigger
+    if (this.contactCell >= 0 && this.contactCell !== best) {
+      const cur = strength(this.contactCell);
+      if (cur >= bs * 0.7) {
+        best = this.contactCell;
+        bs = cur;
+      }
+    }
+    this.contactCell = best;
+    const bi = best % NX;
+    const bj = (best - bi) / NX;
+    const cx = (bi + 0.5 - NX / 2) * CELL;
+    const cz = (bj + 0.5 - NZ / 2) * CELL;
+    let sx = 0;
+    let sz = 0;
+    let n = 0;
+    for (const s of this.units.slots) {
+      if (!s.visible || s.deadAt >= 0) continue;
+      if (Math.abs(s.pos.x - cx) > CELL * 1.5 || Math.abs(s.pos.z - cz) > CELL * 1.5) continue;
+      sx += s.pos.x;
+      sz += s.pos.z;
+      n++;
+    }
+    if (!n) return null;
+    sx /= n;
+    sz /= n;
+    let r2 = 0;
+    for (const s of this.units.slots) {
+      if (!s.visible || s.deadAt >= 0) continue;
+      if (Math.abs(s.pos.x - cx) > CELL * 1.5 || Math.abs(s.pos.z - cz) > CELL * 1.5) continue;
+      r2 += (s.pos.x - sx) ** 2 + (s.pos.z - sz) ** 2;
+    }
+    return { x: sx, z: sz, strength: bs, radius: Math.sqrt(r2 / n) };
   }
 }

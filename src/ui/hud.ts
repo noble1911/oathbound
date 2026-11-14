@@ -29,7 +29,7 @@ export class TopBar {
     this.root = el(`<div class="topbar">
       <div class="tb-side me"></div>
       <div class="tb-mid"><div class="tb-round"><small>Round</small><b>1</b></div>
-        <div class="tb-clock"><svg viewBox="0 0 40 40"><circle class="trk" cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>60</b></div>
+        <div class="tb-clock"><svg viewBox="0 0 40 40"><circle class="trk" cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>60</b><small></small></div>
         <div class="tb-phase"><small>Phase</small><b>Planning</b></div></div>
       <div class="tb-side foe"></div>
     </div>`);
@@ -75,14 +75,22 @@ export class TopBar {
     this.endsAt = endsAt;
     this.total = total;
     this.root.classList.toggle('no-clock', !endsAt);
+    if (!endsAt) {
+      // untimed (the tutorial): no countdown at all
+      $(this.root, '.tb-clock b').textContent = '∞';
+      this.root.classList.remove('hurry');
+    }
     this.tick();
     this.schedule();
   }
 
-  /** Battle: show elapsed sim time instead of a countdown. */
-  setClock(text: string, frac: number): void {
+  /** Battle: show elapsed sim time instead of a countdown; `sub` = the limit ("/ 1:30"). */
+  setClock(text: string, frac: number, sub = '', hurry = false): void {
     this.endsAt = 0;
     this.root.classList.remove('no-clock');
+    this.root.classList.toggle('hurry', hurry);
+    $(this.root, '.tb-clock').classList.toggle('with-sub', !!sub);
+    $(this.root, '.tb-clock small').textContent = sub;
     $(this.root, '.tb-clock b').textContent = text;
     ($(this.root, '.tb-clock .arc') as unknown as SVGCircleElement).style.strokeDashoffset = String(106.8 * (1 - frac));
   }
@@ -126,6 +134,7 @@ const NICE: [RegExp, string][] = [
   [/max level/, 'Already at max level'],
   [/the Lord levels/, 'Your Lord levels up from battle XP'],
   [/cannot sell the Lord/, 'The Lord cannot be sold'],
+  [/overlaps another squad/, 'No room there: each squad needs its own ground'],
 ];
 
 export function niceError(e: string): string {

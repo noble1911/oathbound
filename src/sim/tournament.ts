@@ -3,12 +3,14 @@ import { LORD_IDS } from './data/lords.ts';
 import { UNIT_TYPES } from './data/units.ts';
 import { botPlan } from './bot.ts';
 import { simulateBattle } from './battle.ts';
-import { applyBattle, newMatch, nextRound } from './match.ts';
-import type { BotStrategy, LordId, Seat, UnitType } from './types.ts';
+import { applyBattle, keepPct, newMatch, nextRound } from './match.ts';
+import type { BattleEnd, BotStrategy, LordId, Seat, UnitType } from './types.ts';
 
 export interface BattleRecord {
   winner: Seat | null;
   ticks: number;
+  /** How the battle ended (wipe / mutualWipe / timeout / stalemate). */
+  end: BattleEnd;
   /** Gold invested per unit type, per seat. */
   gold: [Partial<Record<UnitType, number>>, Partial<Record<UnitType, number>>];
   legend: [string[], string[]];
@@ -20,6 +22,8 @@ export interface MatchRecord {
   winner: Seat | 'draw' | null;
   rounds: number;
   battles: BattleRecord[];
+  /** Keep HP percent per seat at the end of the match (the winner's is the margin of victory). */
+  keepPct: [number, number];
 }
 
 export function playMatch(seed: number, lords: [LordId, LordId], strats: [BotStrategy, BotStrategy]): MatchRecord {
@@ -37,12 +41,12 @@ export function playMatch(seed: number, lords: [LordId, LordId], strats: [BotStr
       }
     }
     const { result } = simulateBattle(s, { record: false });
-    battles.push({ winner: result.winner, ticks: result.ticks, gold, legend });
+    battles.push({ winner: result.winner, ticks: result.ticks, end: result.end, gold, legend });
     applyBattle(s, result);
     if ((s.phase as string) !== 'results') break;
     nextRound(s);
   }
-  return { seed, lords, strats, winner: s.winner, rounds: s.round, battles };
+  return { seed, lords, strats, winner: s.winner, rounds: s.round, battles, keepPct: [keepPct(s.players[0]), keepPct(s.players[1])] };
 }
 
 export interface Report {
@@ -63,8 +67,17 @@ export interface Report {
   lordMatrix: Record<string, Record<string, number>>;
   rounds: number;
   battleSec: number;
+  /** Share of battles that ended with both armies standing (timeout or stalemate). */
   timeouts: number;
+  /** Share of battles ended early as a stalemate. */
+  stalemates: number;
   draws: number;
+  /** Match length histogram: rounds -> share of matches. */
+  roundHist: Record<number, number>;
+  /** Winner's keep HP left at the end, as a histogram over 0-24 / 25-49 / 50-74 / 75-100 percent (share of decided matches). */
+  marginHist: [number, number, number, number];
+  /** Mean winner's keep HP percent left (lower = closer matches). */
+  margin: number;
 }
 
 export function aggregate(recs: MatchRecord[]): Report {
@@ -77,7 +90,10 @@ export function aggregate(recs: MatchRecord[]): Report {
     const e = ((m[a] ??= {})[b] ??= [0, 0]);
     e[0] += win; e[1]++;
   };
-  let p0 = 0, rounds = 0, ticks = 0, battles = 0, timeouts = 0, draws = 0;
+  let p0 = 0, rounds = 0, ticks = 0, battles = 0, timeouts = 0, stalemates = 0, draws = 0;
+  const roundHist: Record<number, number> = {};
+  const marginHist: [number, number, number, number] = [0, 0, 0, 0];
+  let marginSum = 0, decided = 0;
   const add = (m: Record<string, [number, number]>, k: string, win: number, n = 1): void => {
     const e = (m[k] ??= [0, 0]);
     e[0] += win * n; e[1] += n;
@@ -85,7 +101,14 @@ export function aggregate(recs: MatchRecord[]): Report {
   for (const r of recs) {
     p0 += w(r, 0);
     rounds += r.rounds;
+    roundHist[r.rounds] = (roundHist[r.rounds] ?? 0) + 1;
     if (r.winner === 'draw') draws++;
+    if ((r.winner === 0 || r.winner === 1) && r.keepPct) {
+      const m = r.keepPct[r.winner];
+      marginHist[Math.min(3, Math.floor(m / 25))]++;
+      marginSum += m;
+      decided++;
+    }
     for (const seat of [0, 1] as Seat[]) {
       if (r.lords[0] !== r.lords[1]) add(lords, r.lords[seat], w(r, seat));
       if (r.strats[0] !== r.strats[1]) add(strats, r.strats[seat], w(r, seat));
@@ -95,7 +118,9 @@ export function aggregate(recs: MatchRecord[]): Report {
     for (const b of r.battles) {
       battles++;
       ticks += b.ticks;
-      if (b.winner === null) { timeouts++; continue; }
+      if (b.end === 'timeout' || b.end === 'stalemate') timeouts++;
+      if (b.end === 'stalemate') stalemates++;
+      if (b.winner === null) continue;
       const win = b.winner, lose = (1 - win) as Seat;
       const hasAir = (g: Partial<Record<UnitType, number>>): boolean => !!(g.pegasus || g.wyvern || g.dragon);
       const tot = (g: Partial<Record<UnitType, number>>): number => Object.values(g).reduce((a, x) => a + (x ?? 0), 0) || 1;
@@ -120,14 +145,20 @@ export function aggregate(recs: MatchRecord[]): Report {
     units: rate(units), unitSamples: samples(units), unitsNoAir: rate(unitsNoAir), legends: rate(legends), legendSamples: samples(legends),
     stratMatrix: Object.fromEntries(Object.entries(sm).map(([a, row]) => [a, rate(row)])),
     lordMatrix: Object.fromEntries(Object.entries(lm).map(([a, row]) => [a, rate(row)])),
-    rounds: rounds / Math.max(1, recs.length), battleSec: ticks / Math.max(1, battles) / 20, timeouts: timeouts / Math.max(1, battles), draws,
+    rounds: rounds / Math.max(1, recs.length), battleSec: ticks / Math.max(1, battles) / 20, timeouts: timeouts / Math.max(1, battles),
+    stalemates: stalemates / Math.max(1, battles), draws,
+    roundHist: Object.fromEntries(Object.entries(roundHist).map(([k, n]) => [k, n / Math.max(1, recs.length)])),
+    marginHist: marginHist.map((n) => n / Math.max(1, decided)) as [number, number, number, number],
+    margin: marginSum / Math.max(1, decided),
   };
 }
 
 const pct = (x: number): string => (100 * x).toFixed(1) + '%';
 export function formatReport(r: Report): string {
   const L: string[] = [];
-  L.push(`matches ${r.matches} | P0 win ${pct(r.p0)} | avg rounds ${r.rounds.toFixed(2)} | avg battle ${r.battleSec.toFixed(1)} s | timeouts ${pct(r.timeouts)} | draws ${r.draws}`);
+  L.push(`matches ${r.matches} | P0 win ${pct(r.p0)} | avg rounds ${r.rounds.toFixed(2)} | avg battle ${r.battleSec.toFixed(1)} s | timeouts ${pct(r.timeouts)} (stalemates ${pct(r.stalemates ?? 0)}) | draws ${r.draws}`);
+  if (r.roundHist) L.push('Match length: ' + Object.entries(r.roundHist).sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, v]) => `${k}r ${pct(v)}`).join(', '));
+  if (r.marginHist) L.push(`Winner keep HP left: mean ${r.margin.toFixed(1)}% | 0-24% ${pct(r.marginHist[0])}, 25-49% ${pct(r.marginHist[1])}, 50-74% ${pct(r.marginHist[2])}, 75-100% ${pct(r.marginHist[3])}`);
   L.push('Lords: ' + LORD_IDS.map((l) => `${l} ${pct(r.lords[l] ?? 0)}`).join(', '));
   L.push('Strategies: ' + Object.entries(r.strats).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)}`).join(', '));
   L.push('Units (cost-normalised share in round winners): ' + UNIT_TYPES.map((u) => `${u} ${pct(r.units[u] ?? 0)} (n=${(r.unitSamples[u] ?? 0).toFixed(0)})`).join(', '));

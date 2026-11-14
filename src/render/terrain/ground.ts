@@ -1,7 +1,10 @@
-// The ground mesh (1 m heightfield grid) with a splat-blended MeshStandardMaterial patch:
-// grass (two tones + macro variation), dirt/paths, rock, mud/wet banks and forest litter, height-
-// blended, anti-tiled with two texture scales and bump-mapped from the blended height. Also draws
-// the planning overlay (deploy-zone glow and grid) as emissive.
+// The ground mesh (1 m heightfield grid) with a PBR splat MeshStandardMaterial patch: five scanned
+// layers (grass, forest floor, dirt path, mud / river bank, rock; texture arrays, see
+// env-textures.ts) chosen by the splat map, height-blended at transitions, anti-tiled with a second
+// texture scale and a macro variation map, normal-mapped, with per-layer roughness and triplanar
+// rock on slopes. Only the layers present at a pixel are sampled (textureGrad inside branches), and
+// low drops the normal maps, low and medium the second scale and the triplanar path. Also draws the
+// planning overlay (deploy-zone glow and grid) as emissive.
 import * as THREE from 'three';
 import type { Engine } from '../core/engine.ts';
 import { globalUniforms } from '../core/engine.ts';
@@ -11,6 +14,7 @@ import { WORLD, WATER_LEVEL } from './layout.ts';
 import type { TerrainTextures } from './textures.ts';
 import { OVERLAY_GLSL, overlayUniforms } from './overlay.ts';
 import { BAKED_SHADOW_GLSL, BAKED_SHADOW_APPLY, bakedShadowUniforms } from './baked-shadow.ts';
+import { groundTextures } from './env-textures.ts';
 
 const BUMP_GLSL = /* glsl */ `
 vec3 ob_perturb(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDir) {
@@ -63,32 +67,30 @@ export function buildGroundGeometry(hf: Heightfield): THREE.BufferGeometry {
 }
 
 export function buildGround(engine: Engine, hf: Heightfield, tex: TerrainTextures): THREE.Mesh {
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.94, metalness: 0 });
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
+  mat.envMapIntensity = 0.55;
   const uniforms = {
-    tGrass: { value: tex.grass },
-    tDirt: { value: tex.dirt },
-    tRock: { value: tex.rock },
-    tMud: { value: tex.mud },
+    tMacro: { value: tex.macro },
     tSplat: { value: hf.splat },
     uWorldMin: { value: new THREE.Vector2(WORLD.x0, WORLD.z0) },
     uWorldSize: { value: new THREE.Vector2(WORLD.x1 - WORLD.x0, WORLD.z1 - WORLD.z0) },
     uWaterLevel: { value: WATER_LEVEL },
-    uBump: { value: 1.6 },
+    uBump: { value: 1.2 },
   };
   engine.patch(mat, 'ob-ground', (shader) => {
-    Object.assign(shader.uniforms, uniforms, overlayUniforms, bakedShadowUniforms, { uTime: globalUniforms.uTime });
-    shader.vertexShader = after(shader.vertexShader, '#include <common>', 'varying vec3 vObW;');
-    shader.vertexShader = after(shader.vertexShader, '#include <project_vertex>', 'vObW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    Object.assign(shader.uniforms, uniforms, groundTextures, overlayUniforms, bakedShadowUniforms, { uTime: globalUniforms.uTime });
+    shader.vertexShader = after(shader.vertexShader, '#include <common>', 'varying vec3 vObW;\nvarying vec3 vObN;');
+    shader.vertexShader = after(shader.vertexShader, '#include <project_vertex>', 'vObW = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvObN = normal;');
     let f = shader.fragmentShader;
     f = after(
       f,
       '#include <common>',
       /* glsl */ `
 varying vec3 vObW;
-uniform sampler2D tGrass;
-uniform sampler2D tDirt;
-uniform sampler2D tRock;
-uniform sampler2D tMud;
+varying vec3 vObN;
+uniform highp sampler2DArray tGroundA;
+uniform highp sampler2DArray tGroundN;
+uniform sampler2D tMacro;
 uniform sampler2D tSplat;
 uniform vec2 uWorldMin;
 uniform vec2 uWorldSize;
@@ -99,11 +101,6 @@ ${BAKED_SHADOW_GLSL}
 ${NOISE_GLSL}
 ${BUMP_GLSL}
 ${OVERLAY_GLSL}
-vec4 obT(sampler2D t, vec2 p, float k) {
-  vec4 a = texture2D(t, p * 0.29);
-  vec4 b = texture2D(t, p * 0.083 + vec2(0.37, 0.61));
-  return mix(a, b, k);
-}
 `,
     );
     f = replace(
@@ -112,50 +109,107 @@ vec4 obT(sampler2D t, vec2 p, float k) {
       /* glsl */ `
 vec2 wp = vObW.xz;
 vec4 sp = texture2D(tSplat, (wp - uWorldMin) / uWorldSize);
-float macro = ob_noise(wp * 0.045);
-float mk = 0.2 + 0.4 * macro;
-vec4 tg = obT(tGrass, wp, mk);
-vec4 td = obT(tDirt, wp, mk);
-vec4 tr = obT(tRock, wp * 0.7, mk);
-vec4 tm = obT(tMud, wp, mk);
-// large-scale tone variation: lush / sun-dried patches
-float tone = ob_fbm(wp * 0.018 + 3.0);
-tg.rgb *= mix(vec3(0.86, 0.98, 0.82), vec3(1.1, 1.04, 0.86), smoothstep(0.3, 0.7, tone));
-// forest litter: dark grass + leaf-brown dirt
-vec4 tf = vec4(mix(tg.rgb * vec3(0.55, 0.58, 0.42), td.rgb * vec3(0.78, 0.68, 0.55), 0.55), td.a);
+// macro variation (two scales of a tileable noise map): tone, lushness, brightness
+vec3 mac = texture2D(tMacro, wp * 0.0113).rgb;
+vec3 mac2 = texture2D(tMacro, wp * 0.047 + vec2(0.37, 0.11)).rgb;
+float mk = 0.25 + 0.3 * mac2.g;
 float wD = sp.r;
 float wR = sp.g;
 float wM = sp.b;
 float wF = sp.a * (1.0 - wR);
 float wG = max(0.0, 1.0 - max(max(wD, wR), max(wM, wF)));
+// layers: 0 grass, 1 forest floor, 2 dirt path, 3 mud / bank, 4 rock (tiles per metre below)
+float obW[5] = float[5](wG, wF, wD, wM, wR);
+const float obSc[5] = float[5](0.19, 0.22, 0.24, 0.2, 0.13);
+vec2 obGx = dFdx(wp);
+vec2 obGy = dFdy(wp);
+vec3 obNw = normalize(vObN);
+vec4 obT[5];
+float obS[5];
+float smax = 0.0;
+for (int i = 0; i < 5; i++) {
+  obT[i] = vec4(0.0);
+  obS[i] = 0.0;
+  if (obW[i] > 0.004) {
+    float k = obSc[i];
+    vec4 t = textureGrad(tGroundA, vec3(wp * k, float(i)), obGx * k, obGy * k);
+#ifdef OB_DETAIL
+    float k2 = k * 0.23;
+    t = mix(t, textureGrad(tGroundA, vec3(wp * k2 + vec2(0.37, 0.61), float(i)), obGx * k2, obGy * k2), mk);
+#endif
+    obT[i] = t;
+    obS[i] = obW[i] + t.a * 0.5;
+    smax = max(smax, obS[i]);
+  }
+}
+#ifdef OB_DETAIL
+// triplanar rock on slopes (cliffs, river banks): side projections replace the stretched top one
+float obSlope = smoothstep(0.22, 0.5, 1.0 - obNw.y) * step(0.004, wR);
+if (obSlope > 0.01) {
+  float k = obSc[4];
+  vec2 ux = vec2(vObW.z, vObW.y) * k;
+  vec2 uz = vec2(vObW.x, vObW.y) * k;
+  vec4 tx = textureGrad(tGroundA, vec3(ux, 4.0), dFdx(ux), dFdy(ux));
+  vec4 tz = textureGrad(tGroundA, vec3(uz, 4.0), dFdx(uz), dFdy(uz));
+  float bx = abs(obNw.x) / (abs(obNw.x) + abs(obNw.z) + 1e-4);
+  obT[4] = mix(obT[4], mix(tz, tx, bx), obSlope);
+}
+#endif
+// grass: lush / sun-dried patches
+obT[0].rgb *= mix(vec3(0.84, 0.98, 0.82), vec3(1.16, 1.06, 0.78), smoothstep(0.3, 0.72, mac.g));
 // height blending (stones poke through grass at transitions)
-float sG = wG + tg.a * 0.5;
-float sD = wD + td.a * 0.5;
-float sR = wR + tr.a * 0.5;
-float sM = wM + tm.a * 0.5;
-float sF = wF + tf.a * 0.5;
-float smax = max(max(max(sG, sD), max(sR, sM)), sF) - 0.18;
-vec4 bw = vec4(max(sG - smax, 0.0) * step(0.001, wG), max(sD - smax, 0.0) * step(0.001, wD), max(sR - smax, 0.0) * step(0.001, wR), max(sM - smax, 0.0) * step(0.001, wM));
-float bF = max(sF - smax, 0.0) * step(0.001, wF);
-float bs = bw.x + bw.y + bw.z + bw.w + bF + 1e-4;
-vec3 albedo = (tg.rgb * bw.x + td.rgb * bw.y + tr.rgb * bw.z + tm.rgb * bw.w + tf.rgb * bF) / bs;
-float obH = (tg.a * bw.x + td.a * bw.y + tr.a * bw.z + tm.a * bw.w + tf.a * bF) / bs;
+smax -= 0.2;
+float obB[5];
+float bs = 1e-4;
+vec3 albedo = vec3(0.0);
+float obH = 0.0;
+for (int i = 0; i < 5; i++) {
+  obB[i] = max(obS[i] - smax, 0.0);
+  bs += obB[i];
+  albedo += obT[i].rgb * obB[i];
+  obH += obT[i].a * obB[i];
+}
+albedo /= bs;
+obH /= bs;
+// roughness per layer (mud is wet: puddles in the low spots)
+float obRough = (0.96 * obB[0] + 0.93 * obB[1] + 0.9 * obB[2] + mix(0.3, 0.82, smoothstep(0.2, 0.7, obT[3].a)) * obB[3] + 0.84 * obB[4]) / bs;
+albedo *= 0.8 + 0.28 * mac.r + 0.14 * (mac2.b - 0.5);
+// cavities (height) read darker
+albedo *= mix(0.8, 1.06, obH);
 float obWet = clamp(wM * 1.2, 0.0, 1.0);
-albedo *= mix(1.0, 0.72, obWet);
+albedo *= mix(1.0, 0.78, obWet);
 // riverbed under the water: darker, cooler
 float under = smoothstep(uWaterLevel + 0.02, uWaterLevel - 0.5, vObW.y);
-albedo *= mix(vec3(1.0), vec3(0.62, 0.7, 0.68), under);
+albedo *= mix(vec3(1.0), vec3(0.6, 0.7, 0.68), under);
 // soft caustics on the shallow bed
 float ca = ob_noise(wp * 1.7 + vec2(uTime * 0.35, uTime * 0.2)) * ob_noise(wp * 2.3 - vec2(uTime * 0.25, -uTime * 0.3));
 albedo += vec3(0.5, 0.6, 0.55) * pow(ca, 3.0) * under * smoothstep(uWaterLevel - 1.2, uWaterLevel - 0.2, vObW.y) * 0.6;
 diffuseColor.rgb *= albedo;
 `,
     );
-    f = replace(f, '#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * mix(1.0, 0.42, obWet * (1.0 - under * 0.5)) * mix(1.0, 0.9, bw.z / bs);');
+    f = replace(f, '#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * obRough * mix(1.0, 0.7, under);');
     f = after(
       f,
       '#include <normal_fragment_maps>',
-      'normal = ob_perturb(-vViewPosition, normal, vec2(dFdx(obH), dFdy(obH)) * uBump * smoothstep(160.0, 25.0, length(vViewPosition)), faceDirection);',
+      /* glsl */ `
+#ifdef OB_NORMALS
+{
+  vec2 nxy = vec2(0.0);
+  for (int i = 0; i < 5; i++) {
+    if (obB[i] > 0.01) {
+      float k = obSc[i];
+      nxy += (textureGrad(tGroundN, vec3(wp * k, float(i)), obGx * k, obGy * k).rg * 2.0 - 1.0) * obB[i];
+    }
+  }
+  nxy *= uBump / bs;
+  // heightfield tangent frame: T = +X, B = +Z (uv = world xz)
+  vec3 nW = normalize(obNw + vec3(nxy.x, 0.0, nxy.y));
+  normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
+}
+#else
+normal = ob_perturb(-vViewPosition, normal, vec2(dFdx(obH), dFdy(obH)) * 1.4 * smoothstep(160.0, 25.0, length(vViewPosition)), faceDirection);
+#endif
+`,
     );
     f = after(f, '#include <emissivemap_fragment>', 'totalEmissiveRadiance += ob_zones(wp);');
     f = after(f, '#include <lights_fragment_end>', BAKED_SHADOW_APPLY);
@@ -165,5 +219,12 @@ diffuseColor.rgb *= albedo;
   mesh.name = 'ground';
   mesh.receiveShadow = true;
   mesh.castShadow = true;
+  /** Tier switch: 0 = albedo splat only (low), 1 = + normal maps (medium), 2 = + second texture scale and triplanar rock. */
+  mesh.userData.setDetail = (level: 0 | 1 | 2): void => {
+    const want: Record<string, number> = level === 2 ? { OB_DETAIL: 1, OB_NORMALS: 1 } : level === 1 ? { OB_NORMALS: 1 } : {};
+    if (JSON.stringify(mat.defines ?? {}) === JSON.stringify(want)) return;
+    mat.defines = want;
+    mat.needsUpdate = true;
+  };
   return mesh;
 }

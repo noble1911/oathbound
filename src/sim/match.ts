@@ -8,7 +8,8 @@ import { modsOf, rollLoot } from './loot.ts';
 import { Rng, hash } from './rng.ts';
 import { genTerrain } from './terrain.ts';
 import type {
-  BattleResult, EnemyView, Intent, IntentResult, Item, LordId, MatchState, PlayerState, PlayerView, Seat, Slot, Squad, UnitType, Vec2,
+  BattleResult, Comeback, EnemyView, Intent, IntentResult, Item, LordId, MatchState, PlayerState, PlayerView, RoundOutcome, RoundSummary, Seat, Slot,
+  Squad, SquadType, UnitType, Vec2,
 } from './types.ts';
 
 export const START_GOLD = 300;
@@ -18,7 +19,12 @@ export const ARMY_CAP = 16;
 export const BASE_DEPLOY_LIMIT = 2;
 export const MAX_SQUAD_LEVEL = 5;
 export const MAX_LORD_LEVEL = 10;
+/** Catch-up gold for losing a round: CATCHUP_GOLD + CATCHUP_PER_ROUND x round + CATCHUP_PER_DEFICIT x keep-HP deficit (points). */
 export const CATCHUP_GOLD = 75;
+export const CATCHUP_PER_ROUND = 10;
+export const CATCHUP_PER_DEFICIT = 3;
+/** Keep-HP deficit (percentage points) at which the trailing player gets +1 squad deployment next round. */
+export const UNDERDOG_DEFICIT = 25;
 /** Cumulative XP needed for Lord levels 1..10. */
 export const LORD_XP_LEVELS = [0, 30, 75, 135, 210, 300, 410, 540, 690, 860];
 /** Safety valve: after this round the higher keep wins. */
@@ -67,11 +73,79 @@ export function keepDamageOf(squads: Squad[], survivorIds: number[], round: numb
   return won ? d + KEEP_DMG_BASE_PER_ROUND * round : 0;
 }
 
+/** Keep HP as an integer percentage of its maximum. */
+export function keepPct(p: { keepHp: number; keepMax: number }): number {
+  return Math.trunc((p.keepHp * 100) / Math.max(1, p.keepMax));
+}
+
+/**
+ * The comeback bonus for `me` after a round (paid at the start of the next one). Symmetric in the seats:
+ *  - lost the round: CATCHUP_GOLD + CATCHUP_PER_ROUND x round + CATCHUP_PER_DEFICIT x (keep-HP deficit in points);
+ *  - keep-HP deficit >= UNDERDOG_DEFICIT points: +1 squad deployment, won or lost.
+ */
+export function comebackFor(me: PlayerState, enemy: PlayerState, round: number, lost: boolean): Comeback {
+  const deficit = Math.max(0, keepPct(enemy) - keepPct(me));
+  const gold = lost ? CATCHUP_GOLD + CATCHUP_PER_ROUND * round + CATCHUP_PER_DEFICIT * deficit : 0;
+  return { gold, deploys: deficit >= UNDERDOG_DEFICIT ? 1 : 0, deficit };
+}
+
 function newPlayer(seat: Seat): PlayerState {
   return {
     seat, lord: null, gold: 0, keepHp: KEEP_HP, keepMax: KEEP_HP, unlocked: [], draftOptions: [], draftPicks: 0, lootOffer: null,
     squads: [], stash: [], deploysUsed: 0, deployLimit: BASE_DEPLOY_LIMIT, lordXp: 0, ready: false, lostLast: false, lastArmy: null,
+    comeback: { gold: 0, deploys: 0, deficit: 0 },
   };
+}
+
+// ---------------------------------------------------------------- deploy footprints
+
+/**
+ * Ground radius (cm) a squad's formation covers: the half-extent of its soldier grid plus a body radius.
+ * Two squads of one player may not overlap: centres must be at least footprint(a) + footprint(b) apart.
+ * Mirrors the formation in battle.ts (cols by squad size, spacing = 2 x radius + 50).
+ */
+export function squadFootprint(type: SquadType): number {
+  const n = type === 'lord' ? 1 : UNITS[type].squadSize;
+  const radius = type === 'lord' ? 65 : UNITS[type].radius;
+  const cols = n <= 1 ? 1 : n <= 4 ? 2 : n <= 6 ? 3 : 4;
+  const rows = Math.ceil(n / cols);
+  const spacing = radius * 2 + 50;
+  return Math.trunc((Math.max(cols, rows) - 1) * spacing / 2) + radius;
+}
+
+/** The squad of `squads` (other than `ignoreId`) whose footprint a `type` squad at `pos` would overlap, if any. */
+export function overlappingSquad(squads: readonly Squad[], type: SquadType, pos: Vec2, ignoreId = -1): Squad | null {
+  const r = squadFootprint(type);
+  for (const q of squads) {
+    if (q.id === ignoreId) continue;
+    const dx = q.pos[0] - pos[0], dy = q.pos[1] - pos[1], d = r + squadFootprint(q.type);
+    if (dx * dx + dy * dy < d * d) return q;
+  }
+  return null;
+}
+
+/**
+ * The nearest legal spot to `want` for a `type` squad of `seat` (inside the deploy zone, overlapping nothing),
+ * searching outwards in 1 m square rings up to 40 m. Null if the zone is full. Deterministic.
+ */
+export function freeSpotNear(squads: readonly Squad[], seat: Seat, type: SquadType, want: Vec2, ignoreId = -1): Vec2 | null {
+  const z = deployZone(seat);
+  const cx = Math.min(z.x1, Math.max(z.x0, Math.trunc(want[0]))), cy = Math.min(z.y1, Math.max(z.y0, Math.trunc(want[1])));
+  const tryAt = (x: number, y: number): Vec2 | null => {
+    if (x < z.x0 || x > z.x1 || y < z.y0 || y > z.y1) return null;
+    return overlappingSquad(squads, type, [x, y], ignoreId) ? null : [x, y];
+  };
+  for (let ring = 0; ring <= 40; ring++) {
+    if (ring === 0) { const h = tryAt(cx, cy); if (h) return h; continue; }
+    // Walk the ring nearest-first: offsets sorted by |dx| + |dy|.
+    for (let k = 0; k <= ring; k++) {
+      for (const [dx, dy] of [[k, ring], [-k, ring], [k, -ring], [-k, -ring], [ring, k], [-ring, k], [ring, -k], [-ring, -k]]) {
+        const h = tryAt(cx + dx * 100, cy + dy * 100);
+        if (h) return h;
+      }
+    }
+  }
+  return null;
 }
 
 export function newMatch(seed: number, lords: [LordId, LordId] | null): MatchState {
@@ -150,6 +224,21 @@ export function slotOpen(sq: Squad, slot: Slot): boolean {
   return sq.type === 'lord' || sq.level >= SLOT_UNLOCK_LEVEL[slot];
 }
 
+/**
+ * Slots this player can fill right now: some squad (or the Lord) has the slot open and empty, more such
+ * empty slots than stash items already waiting for them. Loot offers are biased toward these.
+ */
+export function usableSlots(p: PlayerState): Slot[] {
+  const out: Slot[] = [];
+  for (const slot of ['weapon', 'armor', 'relic'] as Slot[]) {
+    let free = 0;
+    for (const q of p.squads) if (slotOpen(q, slot) && !q.items[slot]) free++;
+    for (const it of p.stash) if (it.slot === slot) free--;
+    if (free > 0) out.push(slot);
+  }
+  return out;
+}
+
 const validFacing = (f: unknown): boolean => f === undefined || (Number.isInteger(f) && (f as number) >= 0 && (f as number) <= 255);
 
 /** Validate and apply one intent for `seat`. Mutates `s` only when the result is ok. */
@@ -192,6 +281,7 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       if (p.deploysUsed >= p.deployLimit) return err('deployment limit reached');
       if (p.squads.filter((q) => q.type !== 'lord').length >= ARMY_CAP) return err('army cap reached');
       if (p.gold < def.cost) return err('not enough gold');
+      if (overlappingSquad(p.squads, intent.unit, intent.pos)) return err('overlaps another squad: each squad needs its own ground');
       p.gold -= def.cost;
       p.deploysUsed++;
       p.squads.push({
@@ -205,6 +295,7 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       if (!sq) return err('no such squad');
       if (!Array.isArray(intent.pos) || !inDeployZone(seat, intent.pos)) return err('outside deploy zone');
       if (!validFacing(intent.facing)) return err('bad facing');
+      if (overlappingSquad(p.squads, sq.type, intent.pos, sq.id)) return err('overlaps another squad: each squad needs its own ground');
       sq.pos = [intent.pos[0], intent.pos[1]];
       if (intent.facing !== undefined) sq.facing = intent.facing;
       return OK;
@@ -312,7 +403,8 @@ export function applyBattle(s: MatchState, r: BattleResult): void {
     const p = s.players[seat];
     resolveDraft(p);
     p.keepHp = Math.max(0, p.keepHp - r.keepDamage[seat]);
-    p.lostLast = r.winner !== null ? r.winner !== seat : r.keepDamage[seat] > r.keepDamage[1 - seat];
+    // The round winner is decided by the battle (on points for timeouts); a draw is nobody's loss.
+    p.lostLast = r.winner !== null && r.winner !== seat;
     p.lordXp += r.lordXp[seat];
     const lord = p.squads.find((q) => q.type === 'lord');
     if (lord) lord.level = lordLevelForXp(p.lordXp);
@@ -321,9 +413,11 @@ export function applyBattle(s: MatchState, r: BattleResult): void {
     // A loot offer that was never picked goes to the stash (first option).
     if (p.lootOffer) { p.stash.push(p.lootOffer[0]); p.lootOffer = null; }
   }
+  for (const seat of [0, 1] as Seat[]) s.players[seat].comeback = comebackFor(s.players[seat], s.players[1 - seat], s.round, s.players[seat].lostLast);
   s.history.push({
     round: s.round, winner: r.winner, keepDamage: [r.keepDamage[0], r.keepDamage[1]],
     survivors: [r.survivors[0].length, r.survivors[1].length], ticks: r.ticks,
+    end: r.end ?? (r.timeout ? 'timeout' : r.winner === null ? 'mutualWipe' : 'wipe'), score: r.score ? [r.score[0], r.score[1]] : [0, 0],
   });
   const dead0 = s.players[0].keepHp <= 0, dead1 = s.players[1].keepHp <= 0;
   if (dead0 || dead1 || s.round >= MAX_ROUNDS) {
@@ -337,25 +431,61 @@ export function applyBattle(s: MatchState, r: BattleResult): void {
   for (const seat of [0, 1] as Seat[]) {
     const p = s.players[seat];
     const n = p.lord === 'skylady' ? 4 : 3;
-    p.lootOffer = rollLoot(s.seed, s.round, seat, p.lostLast, n, () => s.nextId++);
+    p.lootOffer = rollLoot(s.seed, s.round, seat, p.lostLast, n, () => s.nextId++, usableSlots(p));
   }
   s.phase = 'results';
 }
 
-/** Results -> next round's planning: income (+75 if you lost), deploy limit, a new unlock draft. */
+/** Results -> next round's planning: income plus the comeback bonus (gold, deploys), deploy limit, a new unlock draft. */
 export function nextRound(s: MatchState): void {
   if (s.phase !== 'results') throw new Error('nextRound outside results');
   s.round++;
   s.phase = 'planning';
   for (const p of s.players) {
     resolveDraft(p);
-    p.gold += income(s.round) + (p.lostLast ? CATCHUP_GOLD : 0);
+    p.gold += income(s.round) + p.comeback.gold;
     let command = 0;
     for (const sq of p.squads) command += modsOf(sq.items).command;
-    p.deployLimit = deployLimitFor(p, Math.min(2, command));
+    p.deployLimit = deployLimitFor(p, Math.min(2, command)) + p.comeback.deploys;
     p.deploysUsed = 0;
     p.ready = false;
     rollDraft(s, p);
+  }
+}
+
+/** A round from `seat`'s point of view (spectators: seat 0's). */
+export function roundOutcome(r: Pick<RoundSummary, 'winner'>, seat: Seat | null): RoundOutcome {
+  if (r.winner === null) return 'draw';
+  return r.winner === (seat ?? 0) ? 'won' : 'lost';
+}
+
+/**
+ * The words for a round result, so the battle banner, results screen and history all say the same thing.
+ * `title` is 'Victory' / 'Defeat' / 'Victory on points' / 'Defeat on points' / 'Draw' / 'Stalemate';
+ * `detail` explains it from `seat`'s point of view. Spectators (seat null) get seat 0's wording with
+ * neutral pronouns; the UI should put player names in itself.
+ */
+export function roundOutcomeText(r: Pick<RoundSummary, 'winner' | 'end' | 'score'>, seat: Seat | null): { outcome: RoundOutcome; title: string; detail: string } {
+  const outcome = roundOutcome(r, seat);
+  const me = (seat ?? 0) as Seat, foe = (1 - me) as Seat;
+  const sc = r.score ?? [0, 0];
+  const mine = seat === null ? "Blue's army" : 'your army', theirs = seat === null ? "Red's army" : 'the enemy';
+  const pts = `${sc[me]}% of ${mine} still stands, ${sc[foe]}% of ${theirs}`;
+  switch (r.end) {
+    case 'mutualWipe':
+      return { outcome, title: 'Draw', detail: 'Both armies fell together. Neither side earns catch-up gold.' };
+    case 'timeout':
+      if (outcome === 'draw') return { outcome, title: 'Draw', detail: `Time ran out with the armies even: ${pts}.` };
+      return { outcome, title: outcome === 'won' ? 'Victory on points' : 'Defeat on points', detail: `Time ran out: ${pts}.` };
+    case 'stalemate':
+      if (outcome === 'draw') return { outcome, title: 'Stalemate', detail: `Neither army could harm the other, and they stood even: ${pts}.` };
+      return { outcome, title: outcome === 'won' ? 'Victory on points' : 'Defeat on points', detail: `Neither army could harm the other, so the battle ended early: ${pts}.` };
+    default:
+      if (outcome === 'draw') return { outcome, title: 'Draw', detail: 'The field falls silent.' };
+      return {
+        outcome, title: outcome === 'won' ? 'Victory' : 'Defeat',
+        detail: seat === null ? `${outcome === 'won' ? "Red's" : "Blue's"} army was routed.` : outcome === 'won' ? 'The enemy army was routed.' : 'Your army was routed.',
+      };
   }
 }
 

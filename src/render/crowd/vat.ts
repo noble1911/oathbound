@@ -205,6 +205,10 @@ ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
     diffuseColor.rgb *= mix(vec3(1.0), vTeam, mask);
     float dn = ob_noise(vRest.xy * 38.0 + vRest.z * 17.0) * 0.5 + ob_noise(vRest.zy * 9.0) * 0.5;
     diffuseColor.rgb *= 0.86 + 0.26 * dn;
+    // soft knee on near-white albedo (fur mantles, white horses): keeps shading instead of
+    // blowing out to a flat white blob in sunlight
+    vec3 over = max(diffuseColor.rgb - 0.45, 0.0);
+    diffuseColor.rgb = min(diffuseColor.rgb, vec3(0.45)) + over * 0.3;
   }`);
   // mirrored instances (death2) have reversed winding: flip the face direction back
   fs = after(fs, '#include <normal_fragment_begin>', '#ifdef DOUBLE_SIDED\n  normal *= vMirror;\n  #ifdef USE_TANGENT\n  tbn[2] *= vMirror;\n  #endif\n#endif');
@@ -214,7 +218,8 @@ ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
   }
   fs = after(fs, '#include <emissivemap_fragment>', `
   totalEmissiveRadiance += diffuseColor.rgb * vSurf.z;
-  totalEmissiveRadiance += vFlash * mix(vec3(1.5, 1.3, 1.1), vec3(2.6, 0.3, 0.2), vFlashCol);`);
+  // hit flash / highlight: a warm lift on top of the lit surface (never a flat white silhouette)
+  totalEmissiveRadiance += vFlash * mix(vec3(0.5, 0.42, 0.34) + diffuseColor.rgb * 0.6, vec3(2.6, 0.3, 0.2), vFlashCol);`);
   return fs;
 }
 

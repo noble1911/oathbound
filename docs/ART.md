@@ -13,14 +13,20 @@ node tools/art/run.mjs knight --from cleanup --to vat   # re-run part of the cha
 node tools/art/concept.mjs militia --n 4 --force        # more concept candidates only
 node tools/art/manifest.mjs                             # rebuild public/models/v2/manifest.json
 blender -b --factory-startup --python tools/art/blender/anim_library.py   # rebuild the shared clip library (once)
+blender -b --factory-startup --python tools/art/blender/anim_strip.py -- out.png public/models/v2/cavalier.glb run:12:90 walk:8:90   # frame strips of clips
+blender -b --factory-startup --python tools/art/blender/anim_audit.py -- golem militia   # ground contact / stride speed per clip
+node e2e/anim-strips.mjs golem,cavaliers,pegasus,wyvern,dragon            # the same strips in the engine -> e2e/shots/anim-*.png
 ```
+
+`run.mjs` packs and writes the manifest entries of **only the ids it rebuilt** (`pack.mjs --only`, `manifest.mjs --only`);
+`node tools/art/manifest.mjs` on its own still rebuilds the whole file.
 
 | stage | script | runs on | in -> out |
 |---|---|---|---|
 | concept | `concept.mjs` -> `matte.py` | Codex CLI `codex exec` (ChatGPT image generation, prompt on stdin) + WSL venv (BiRefNet matte) | `prompts/<id>.txt` + `prompts/_style_{character,object}.txt` -> `art-work/concepts/<id>/cand_<k>.png`, `_cut.png` (RGBA), `sheet.jpg`, `pick.json` |
 | mesh | `mesh.mjs` | trellis-cpp 0.8.1 (Vulkan) + TRELLIS.2 q8 GGUF, `--res 512 --seed 42` | picked cut-out -> `art-work/mesh/<id>.glb` (~140k tris, 1024 atlas) |
 | cleanup | `blender/cleanup.py` | Blender 5.2 + Cycles GPU | weld, drop floaters (<0.2 % faces), yaw-align, ground, scale, voxel remesh (size/300), quadric decimate LOD0/LOD1, Smart-UV, bake basecolour + tangent normal + MR from the 140k mesh, team mask -> `art-work/blend/<id>_clean.blend`; props: final GLBs |
-| build | `blender/rig.py` humanoids + golem; `blender/creature.py` dragon + mounted/flier units; `blender/keep.py`; `blender/siege.py` | Blender | GLBs in `public/models/v2/` |
+| build | `blender/rig.py` humanoids + golem; `blender/creature.py` dragon + mounted/flier units (joint layout per mount in `creatures.json`); `blender/keep.py`; `blender/siege.py` | Blender | GLBs in `public/models/v2/` |
 | vat | `blender/vat.py` | Blender | squads: crowd mesh `<id>_lod1.glb` + `<id>.vat.json` / `.vat.pos.bin` + `<id>_lod1_tint.png` |
 | review | `blender/render_review.py`, `blender/vat_check.py` | Blender EEVEE | re-imports the shipped files -> `docs/art-review/<id>.png`, `<id>_vat.png` (committed as JPEG to keep the repo small) |
 | pack | `pack.mjs` | node + `npx gltfpack@0.22.0` | meshopt-compresses every GLB except squad crowd meshes (originals in `art-work/unpacked/`) |
@@ -48,8 +54,10 @@ override the defaults in `mesh.mjs` (the q8 set only ships the 512 flows); `BLEN
 * **Skeleton `oathbound_humanoid_v1`** (all humanoids, golem, riders): `root` (non-deform), `hips`, `spine1-3`,
   `neck`, `head`, `shoulder/upper_arm/forearm/hand.(L|R)`, `thigh/shin/foot/toe.(L|R)`. Rest pose = the mesh's own
   A-pose; each bone frame is the Quaternius frame rotated rigidly onto the fitted bone, so all clips play on every
-  character. Mount bones are prefixed `m_` (`m_root`, `m_body`, `m_neck`, `m_head`, `m_tail1/2`,
-  `m_leg_{fl,fr,bl,br}_{1,2}`, `m_wing_{l,r}_{1,2}`); a rider's `root` is parented to `m_body`.
+  character. Mount bones are prefixed `m_`: `m_root`, `m_body` (pelvis -> mid back), `m_chest` (mid back ->
+  withers), `m_neck`, `m_neck2`, `m_head`, `m_tail1..n`, `m_leg_{fl,fr,bl,br}_{1..k}` (front: scapula, humerus,
+  forearm, cannon, pastern; hind: femur, tibia, cannon, pastern), `m_wing_{l,r}_{1..k}`; a rider's `root` is
+  parented to `m_body`. The renderer never addresses mount bones by name.
 * **Weapons** are separate rigid nodes parented to a bone (`weapon_sword_R` on `hand.R`, shields on `forearm.L`)
   in detail GLBs; in crowd meshes they are merged and skinned 100 % to that bone.
 * **Clips** (every humanoid / mounted unit): `idle, walk, run, attack_melee_a, attack_melee_b, attack_bow, cast,
@@ -57,12 +65,28 @@ override the defaults in `mesh.mjs` (the q8 set only ships the 512 flows); `BLEN
   renderer names: `idle, move, run, attack, attack2, cast, hit, death, death2, victory`. Clip sources per
   `clipset`: sword = upright procedural swings; spear = carry-forward idle/walk/run + thrusts; bow = draw-and-loose;
   cast = Quaternius spell; fist = jab/cross.
+* **Loops** end on a key equal to their first frame (clip duration = one cycle), in the GLBs and the VAT source.
+* **Mount gaits** (`creature.py`, hand-authored): the horse walks a 4-beat lateral sequence (LH, LF, RH, RF,
+  duty 0.6, 0.67 s) and gallops transverse (LH, RH, LF, RF, duty 0.27, 0.5 s) with a suspension phase; the
+  stance sweep is `speed x stance time` for the renderer's `walkSpeed` 2.2 / `runSpeed` 7 m/s (keep them in
+  step with `GAITS` or hooves slide). Fliers have no ground clips: `idle` hovers, `walk` / `run` cruise, every
+  clip keeps the wings beating (downstroke 58 % of the cycle, outer wing folds and lags on the upstroke), the
+  pegasus gallops on the air. The renderer supplies the flight height; death clips end lying on a flank at y = 0.
+* **Mount rig frame**: `creatures.json` gives a yaw / x shift per mount mesh (TRELLIS returned the wyvern 30 deg
+  and the dragon 60 deg off axis) so every creature faces +Z, then its joints in metres. Author it with
+  `creature_view.py` + `creature_grid.py` (orthographic views with a metric grid and the joints drawn in).
+* **Ground contact** (`rig.py: ground_fix`): after retargeting, toes that dip under the floor are un-pitched at
+  the ankle and the hips are lifted by what the lowest body vertex still lacks (golem feet, bodies lying down).
+* **Build checks** (the build fails, exit code 1): `creature.py` -- every leg / wing / tail / neck bone must own
+  vertices on both LODs, hooves must travel >= 0.35 m (walk) / 0.45 m (run) against the body, wing tips >= 30 %
+  of the span in every flier loop; `vat.py` repeats the hoof / wing-tip test on the baked VAT texels. A mount
+  can no longer ship as a rigid block.
 * **Siege** (rigid nodes, NLA clips `idle, fire, reload, hit, death`; manifest `fireTime` = projectile release):
   ballista `body`, `bolt`; trebuchet `frame`, `arm` (pivot at axle), `rope`, `stone`.
 * **Keep** `keep.glb`: root with children `stage0` (intact) .. `stage3` (ruin); show exactly one. Cuts are a
   seeded noise surface (vertices above it removed, holes capped with `Rubble`), plus a rubble skirt.
 * **Props** (manifest `props`): static, one mesh, LOD0 + LOD1 (`<id>_lod1.glb`), 512² atlas (LOD1 256²),
-  origin at the base centre. Trees <= 3k / 600 tris. `bridge` spans along three.js **Z** (8 m long x 4 m wide,
+  origin at the base centre (rocks, ruins, bridge, arrow tower; vegetation is procedural, section 7). `bridge` spans along three.js **Z** (8 m long x 4 m wide,
   non-uniform fit); `arrow_tower` (7 m) carries a team-tinted banner.
 * **Metalness**: TRELLIS paints stone and cloth with mid metalness; cleanup keeps metal only where the bake is
   clearly metal (`smoothstep(0.5, 0.8, m)`), so stone/wood/cloth are ~0.
@@ -103,8 +127,9 @@ Squad units (militia, pikeman, berserker, archer, knight, mage, cleric, skeleton
     Decode: `ox = floor(w / 45.); oy = w - ox * 45.; e = vec2(ox, oy) / 44. * 2. - 1.;`
     `n = vec3(e, 1. - abs(e.x) - abs(e.y)); t = max(-n.z, 0.); n.xy += mix(vec2(t), vec2(-t), step(0., n.xy)); n = normalize(n);`
     Decode both frames, then lerp and renormalise.
-* **Clips** (`clips[]`, contiguous frame ranges, per-clip `fps`): `idle` (10 fps, loop), `move` (12, loop),
-  `run` (12, loop), `attack` (12), `attack2` (12), `cast` (12, casters only), `hit` (12), `death` (10),
+* **Clips** (`clips[]`, contiguous frame ranges, per-clip `fps` -- read it, do not assume 12): `idle` (10 fps,
+  loop), `move` (12, loop; raised so a short cycle still gets >= 10 samples: mounted walk 15, gallop 20),
+  `run` (12, loop; same rule), `attack` (12), `attack2` (12), `cast` (12, casters only), `hit` (12), `death` (10),
   `victory` (8, loop). Loops have `round(duration * fps)` frames (no duplicate end frame), one-shots +1.
   `death2`: mirror the instance's X scale and play `death`.
 * Reference decoder: `tools/art/blender/vat_check.py` (renders `docs/art-review/<id>_vat.png` from the shipped files).
@@ -115,9 +140,69 @@ Squad units (militia, pikeman, berserker, archer, knight, mage, cleric, skeleton
 |---|---|---|
 | Base clips (idle, walk, jog, sword attack, punches, spell, hits, death, sit) + reference rig | Quaternius *Universal Animation Library* [Standard], opengameart.org/content/universal-animation-library | CC0 1.0 |
 | Extra clips (sword combos, knockback) | Quaternius *Universal Animation Library 2* [Standard], opengameart.org/content/universal-animation-library-2 | CC0 1.0 |
-| Procedural clips (bow, swings, spear carry/thrusts, victory, all creature and siege motion) | authored in `tools/art/blender/*.py` | ours (project licence) |
+| Procedural clips (bow, swings, spear carry/thrusts, victory, all creature and siege motion: horse walk / gallop, wing beats, rider seat) | authored in `tools/art/blender/*.py`; gait timing from standard equine footfall references (no third-party animation data) | ours (project licence) |
 | Concept images | Codex CLI / OpenAI image generation (outputs owned by the user per OpenAI terms) | n/a |
 | Image -> 3D | TRELLIS.2 (Microsoft, MIT) via trellis-cpp q8 GGUF weights | MIT |
 | Matte | BiRefNet (ZhengPeng7/BiRefNet) | MIT |
 | Fallback concept model | FLUX.1-schnell (Black Forest Labs; mirror `unsloth/FLUX.1-schnell`, GGUF `city96/FLUX.1-schnell-gguf`) | Apache-2.0 |
 | Tools | Blender 5.2 (GPL, tool only), diffusers / transformers / torch | Apache-2.0 / BSD |
+
+## 6. VFX textures
+
+Runtime files (committed, loaded by `src/render/vfx/atlas.ts`):
+
+| file | size | contents |
+|---|---|---|
+| `src/render/vfx/assets/atlas.webp` | 2048², 170 KB | 8×8 cells of 256 px, RGB on black (shader coverage = luminance): explosion flipbook (cells 0-23, 20 used), smoke / dust flipbook (24-43), fire loop (44-59), dot / spark / ring / star (60-63) |
+| `src/render/vfx/assets/decals.webp` | 1024×1536, 151 KB | 2×3 cells of 512 px, greyscale masks: scorch, ground cracks, heal sigil, rally sigil, arcane circle, frost burst |
+
+Build: `python tools/vfx/build_atlas.py` (Pillow + numpy) packs the sources in `art-work/vfx/` (git-ignored):
+it lowers the black floor, re-centres every flipbook frame, feathers the cell borders and draws the four
+procedural sprites. Squad-plate portraits reuse `public/ui/unit_*.webp` / `lord_*.webp`; damage-number
+glyphs are drawn on a canvas at startup (Cinzel, falling back to Georgia).
+
+| asset | source | licence |
+|---|---|---|
+| `explosion.png`, `smoke.png`, `fire.png` (flipbook sheets), `decals.png` (decal sheet) | Codex CLI / OpenAI image generation, prompts below (outputs owned by the user per OpenAI terms) | n/a |
+| dot, spark, ring, star sprites | generated in `tools/vfx/build_atlas.py` | ours (project licence) |
+
+Prompts (each prefixed "A game VFX flipbook sprite sheet ..., portrait 1024x1536, strict uniform grid, pure
+black background, no grid lines, no text"):
+* explosion - 4×6 grid, a single fiery explosion from white-hot ignition through roiling orange fire to sooty smoke wisps.
+* smoke - 4×6 grid, greyscale billowing dust / smoke puff lit from the top, growing then thinning out.
+* fire - 4×4 grid of 256×384 cells, a looping campfire-like flame, base near the bottom of the cell.
+* decals - 2×3 grid of 512 px top-down white-on-black decals: blast scorch, impact cracks, healing sigil,
+  heraldic rally circle (crowned sword, laurel), arcane rune circle, frost burst.
+
+## 7. Environment: ground, vegetation (CC0 scans + procedural geometry)
+
+TRELLIS cannot do foliage, so trees, bushes and reeds are **not** art-pipeline props any more (their GLBs,
+prompts and `assets.json` entries are gone). `python tools/art/env.py` (Pillow + numpy) downloads CC0 Poly Haven
+scans into `art-work/env/src/` and packs `public/textures/env/` (about 3.4 MB in the repo; a client downloads
+2.2 MB on high / ultra, 1.6 MB on low / medium):
+
+| file | content | used by |
+|---|---|---|
+| `ground_<layer>_a.webp` (1024²), `_a_512.webp` | RGB albedo (graded), A = 128 + height x 127 | ground splat, layers `grass, forest, dirt, mud, rock` (low / medium load the 512² set) |
+| `ground_<layer>_n.webp` (512²) | L = normal Y (GL), A = 128 + normal X / 2 | ground normal maps (medium and up) |
+| `veg_atlas.webp` (1024², RGBA) | leaf clusters composed from scanned leaves (oak, birch, bush), a fir bough, a procedural reed clump, 3 bark columns | every tree / bush / reed (cells: `VEG_CELLS` in `src/render/terrain/env-textures.ts`) |
+
+Alpha is kept >= 128 in the ground files because the loader reads pixels through a 2D canvas (premultiplied):
+colour keeps 7+ bits. The atlas is saved with `exact` RGB under transparent texels (bled leaf colour: no halos).
+
+* **Ground** (`terrain/ground.ts`): two texture arrays (albedo + height, normal), splat map picks the layers,
+  height-blended transitions, second texture scale + macro noise map against tiling, per-layer roughness (wet
+  mud), triplanar rock on slopes. Only layers present at a pixel are sampled; low drops the normal maps, low and
+  medium the second scale and the triplanar path.
+* **Trees** (`terrain/trees.ts`, generated at startup, no download): tapered bark tubes (trunk, primary and
+  secondary branches) + alpha-tested leaf-cluster cards. LOD0 ~300-400 tris, LOD1 ~110, far outskirts are
+  camera-facing impostor quads (4-12 tris). Species: oak, broad oak, pine, fir, birch; plus bush and reeds.
+  Shading (`terrain/foliage.ts`): normals bent away from the crown centre and never flipped, baked crown
+  occlusion in vertex colours, leaf translucency / backlight, alpha coverage kept at distance, wind sway + leaf
+  flutter in the vertex shader (shared `uTime`: it only advances while frames are drawn).
+* **Planning**: trees standing in a visible deploy zone shrink to saplings in the vertex shader (and in the
+  shadow depth material); there is no canopy dither any more.
+
+Licences (all **CC0 1.0**, polyhaven.com): textures `sparse_grass`, `forest_leaves_03`, `rocky_trail`,
+`brown_mud_03`, `mossy_rock`, `bark_brown_02`, `pine_bark`, `tree_bark_03`; leaf / twig scans from the models
+`island_tree_02`, `shrub_01`, `shrub_03`, `fir_tree_01`. Tree geometry and the reed clump are ours.

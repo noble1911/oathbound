@@ -267,6 +267,8 @@ export class UnitRenderer {
 
   /** Occluded-unit silhouettes (battle); planning turns them off (the canopy fade shows units there). */
   showGhosts = true;
+  /** Uniform scale-up applied to every unit when the camera is far out (readability, Total War style). */
+  farScale = 1;
 
   /** Called when an archetype's art arrived: rebuild its batch / hero instances in place. */
   onAssetsChanged: (() => void) | null = null;
@@ -533,7 +535,7 @@ export class UnitRenderer {
       frameOf(ca, curT, this.fa);
       frameOf(cb, prevT, this.fb);
       this.q.setFromAxisAngle(this.yAxis, s.yaw);
-      this.s.setScalar(s.arch.scale);
+      this.s.setScalar(s.arch.scale * this.farScale);
       this.m.compose(s.pos, this.q, this.s);
       const mirror = s.deadAt >= 0 && (s.index & 1) === 1 && curName === 'death' ? -1 : 1;
       b.push(this.m, this.fa, this.fb, wb, fade, Math.max(s.flash, s.glow), s.glowColor, s.team, mirror);
@@ -542,7 +544,7 @@ export class UnitRenderer {
       h.root.visible = true;
       h.root.position.copy(s.pos);
       h.root.rotation.set(0, s.yaw, 0);
-      h.root.scale.setScalar(s.arch.scale);
+      h.root.scale.setScalar(s.arch.scale * this.farScale);
       const ac = h.asset.clips.get(curName) ?? h.asset.clips.get('idle')!;
       const pc = h.asset.clips.get(a.prevClip) ?? ac;
       h.pose(ac.name, clipTime(ac, curT, this.isLoop(s, curName)), pc.name, clipTime(pc, prevT, this.isLoop(s, a.prevClip)), wb);

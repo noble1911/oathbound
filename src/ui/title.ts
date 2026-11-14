@@ -1,17 +1,21 @@
-// Title (name; Play vs AI with difficulty; create a PvP room; join or spectate with a code;
-// ?room=CODE fills the code in) and the lobby (VS seat cards, invite link, spectators, host swap
-// and Start).
+// Title (name; Play vs AI with difficulty; the guided Tutorial; create a PvP room; join or spectate
+// with a code; ?room=CODE fills the code in; the rules codex) over the painted key art, and the
+// lobby (VS seat cards, invite link, spectators, host swap and Start). Neither draws any 3D: the
+// battlefield loads behind the title, which shows its progress and never waits for it.
 import type { AiLevel, RoomView, SeatInfo } from '../net/protocol.ts';
 import { sound } from '../audio.ts';
 import { $, el, esc, store } from './dom.ts';
 import { icon } from './icons.ts';
 import { art } from './art.ts';
+import { toggleRules } from './rules.ts';
 
 export interface TitleActions {
   vsAI(name: string, level: AiLevel): void;
   create(name: string): void;
   join(code: string, name: string, spectate: boolean): void;
   offline(level: AiLevel): void;
+  /** The guided first match (offline, untimed, easy AI, with the coach). */
+  tutorial(name: string): void;
 }
 
 export class TitleScreen {
@@ -23,8 +27,11 @@ export class TitleScreen {
     const code = (new URLSearchParams(location.search).get('room') ?? '').toUpperCase().slice(0, 4);
     const name = store.get('name') ?? '';
     const level = (store.get('ai') as AiLevel) || 'normal';
+    const fresh = store.get('tutorial.done') !== '1' && !code;
+    const key = art('keyart');
     this.root = el(`
-      <div class="screen title">
+      <div class="screen title" ${key ? `style="--key:url(${key})"` : ''}>
+        <div class="title-art"></div>
         <div class="title-vignette"></div>
         <header class="title-head">
           <div class="title-sigil">${icon('sword2')}</div>
@@ -39,27 +46,21 @@ export class TitleScreen {
               ${(['easy', 'normal', 'hard'] as AiLevel[]).map((l) => `<button data-lvl="${l}" class="${l === level ? 'on' : ''}" role="radio" aria-checked="${l === level}">${l[0]!.toUpperCase() + l.slice(1)}</button>`).join('')}
             </div>
           </div>
+          <button class="btn big tutorial ${fresh ? 'fresh' : ''}" data-tip="A guided first match against an easy AI: no timers, one step at a time">${icon('star')}<span>Tutorial</span><em>${fresh ? 'New here? Start with this' : 'Guided first match'}</em></button>
           <div class="menu-sep"><span>or duel a rival</span></div>
           <button class="btn big create">${icon('sword2')}<span>${code ? 'Create a new PvP room' : 'Create PvP room'}</span></button>
           <div class="join-row">
             <input class="code" maxlength="4" placeholder="CODE" value="${esc(code)}" autocapitalize="characters" spellcheck="false" aria-label="Room code">
             <button class="btn join ${code ? 'primary' : ''}">Join</button>
-            <button class="btn spectate" data-tip="Watch the duel without a seat">${icon('eye')}</button>
+            <button class="btn spectate" data-tip="Watch the duel without taking a seat">${icon('eye')}<span>Watch</span></button>
           </div>
           <p class="err" role="status"></p>
-          <button class="linkish offline">Offline skirmish (no server)</button>
+          <div class="menu-links">
+            <button class="linkish how-btn">${icon('tome')}<span>How to play</span><kbd>F1</kbd></button>
+            <button class="linkish offline" data-tip="A full match against the AI inside this tab: no server needed">Offline skirmish</button>
+          </div>
         </div>
-        <footer class="title-foot">
-          <details class="how"><summary>How to play</summary>
-            <ol>
-              <li><b>Pick a Lord.</b> Each brings two signature units, a passive and an ability.</li>
-              <li><b>Plan:</b> deploy up to 2 new squads a round on your half, level them up, equip loot. Your army is permanent.</li>
-              <li><b>Battle</b> plays out on its own. Survivors march on the enemy Keep.</li>
-              <li><b>Loot:</b> after every round pick 1 of 3 items. Losing rolls a tier higher.</li>
-              <li>You see where the enemy stood <i>last</i> round. Counter it.</li>
-            </ol>
-          </details>
-        </footer>
+        <div class="title-load" role="status"><span>Raising the battlefield</span><div class="tl-bar"><i></i></div></div>
       </div>`);
     ui.appendChild(this.root);
     this.err = $(this.root, '.err');
@@ -92,6 +93,8 @@ export class TitleScreen {
     $(this.root, '.vsai').addEventListener('click', go(() => (this.setBusy(true), a.vsAI(who(), lvl))));
     $(this.root, '.create').addEventListener('click', go(() => (this.setBusy(true), a.create(who()))));
     $(this.root, '.offline').addEventListener('click', go(() => a.offline(lvl)));
+    $(this.root, '.tutorial').addEventListener('click', go(() => a.tutorial(who())));
+    $(this.root, '.how-btn').addEventListener('click', () => (sound.unlock(), toggleRules()));
     const join = (spectate: boolean) =>
       go(() => {
         const c = codeIn.value.trim().toUpperCase();
@@ -104,10 +107,27 @@ export class TitleScreen {
     codeIn.addEventListener('keydown', (e) => e.key === 'Enter' && join(false)());
   }
 
+  /**
+   * The battlefield loads behind the menu (the menu never waits for it). `frac` = 0..1 of the
+   * renderer's download, or null when unknown; `ready` hides the line.
+   */
+  setLoading(frac: number | null, ready: boolean): void {
+    const l = $(this.root, '.title-load');
+    l.classList.toggle('on', !ready);
+    l.classList.toggle('unknown', frac === null);
+    ($(l, '.tl-bar i') as HTMLElement).style.width = `${Math.round((frac ?? 0.3) * 100)}%`;
+  }
+
   private setBusy(b: boolean): void {
     this.busy = b;
     this.err.textContent = b ? 'Connecting…' : '';
     this.err.classList.toggle('info', b);
+  }
+
+  /** A status line under the buttons (not an error). */
+  info(msg: string): void {
+    this.err.classList.add('info');
+    this.err.textContent = msg;
   }
 
   error(msg: string): void {
@@ -146,6 +166,7 @@ export class LobbyScreen {
       if (t.classList.contains('start')) a.start();
       else if (t.classList.contains('leave')) a.leave();
       else if (t.classList.contains('swap')) a.swap();
+      else if (t.classList.contains('how-btn')) toggleRules();
       else if (t.classList.contains('copy')) {
         const link = t.dataset.link!;
         void navigator.clipboard?.writeText(link).then(
@@ -157,7 +178,9 @@ export class LobbyScreen {
   }
 
   private seatCard(s: SeatInfo | null, i: 0 | 1, mine: boolean, room: RoomView): string {
-    const side = i === 0 ? 'left' : 'right';
+    // your own seat is always the blue one, whichever end of the field it defends
+    const me = room.me.seat;
+    const side = (me === null ? i === 0 : i === me) ? 'left' : 'right';
     if (!s)
       return `<div class="vs-seat ${side} empty"><div class="vs-banner"></div><div class="vs-port">${icon('sword2')}</div><b>Awaiting a challenger</b><small>Share the code or invite link</small></div>`;
     const tags = [
@@ -187,7 +210,7 @@ export class LobbyScreen {
         <span class="specs" data-tip="Spectators watching">${icon('eye')} ${specs} watching${room.me.spectator ? ' · you are spectating' : ''}</span>
       </div>
       ${host ? `<button class="btn primary big start" ${full ? '' : 'disabled'}>${full ? 'Begin the war' : 'Waiting for an opponent…'}</button>` : `<p class="muted center">${room.me.spectator ? 'Waiting for the duel to begin…' : 'Waiting for the host to begin…'}</p>`}
-      <button class="btn leave">Leave room</button>`;
+      <div class="lobby-acts"><button class="btn leave">${room.me.spectator ? 'Stop watching' : 'Leave room'}</button><button class="linkish how-btn">${icon('tome')}<span>How to play</span></button></div>`;
   }
 
   dispose(): void {

@@ -18,19 +18,19 @@
   {
    "name": "move",
    "start": 25,
-   "frames": 12,
-   "fps": 12,
+   "frames": 10,
+   "fps": 15,
    "loop": true,
-   "duration": 0.9583,
+   "duration": 0.6667,
    "source": "walk"
   },
   {
    "name": "run",
-   "start": 37,
-   "frames": 8,
-   "fps": 12,
+   "start": 35,
+   "frames": 10,
+   "fps": 20,
    "loop": true,
-   "duration": 0.625,
+   "duration": 0.5,
    "source": "run"
   },
   {
@@ -57,7 +57,7 @@
    "frames": 5,
    "fps": 12,
    "loop": false,
-   "duration": 0.375,
+   "duration": 0.3333,
    "source": "hit"
   },
   {
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.9956,
-   -0.2952,
-   -1.7461
+   -0.9949,
+   -0.2017,
+   -1.5404
   ],
   "max": [
-   2.0622,
-   3.2238,
-   1.1051
+   2.0491,
+   3.5807,
+   1.3095
   ]
  },
  "pos": "cavalier.vat.pos.bin",

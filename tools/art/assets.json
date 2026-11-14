@@ -459,54 +459,6 @@
    "style": "object"
   },
   {
-   "id": "tree_oak",
-   "kind": "prop",
-   "height": 8,
-   "lod0": 3000,
-   "lod1": 600,
-   "style": "object"
-  },
-  {
-   "id": "tree_birch",
-   "kind": "prop",
-   "height": 7.5,
-   "lod0": 3000,
-   "lod1": 600,
-   "style": "object"
-  },
-  {
-   "id": "tree_oak_b",
-   "kind": "prop",
-   "height": 7.5,
-   "lod0": 3000,
-   "lod1": 600,
-   "style": "object"
-  },
-  {
-   "id": "tree_pine",
-   "kind": "prop",
-   "height": 10,
-   "lod0": 3000,
-   "lod1": 600,
-   "style": "object"
-  },
-  {
-   "id": "tree_fir",
-   "kind": "prop",
-   "height": 8.5,
-   "lod0": 3000,
-   "lod1": 600,
-   "style": "object"
-  },
-  {
-   "id": "bush",
-   "kind": "prop",
-   "height": 1.4,
-   "lod0": 1500,
-   "lod1": 400,
-   "style": "object"
-  },
-  {
    "id": "rocks",
    "kind": "prop",
    "height": 2.2,
@@ -558,14 +510,6 @@
    "lod1": 1200,
    "style": "object",
    "team": true
-  },
-  {
-   "id": "reeds",
-   "kind": "prop",
-   "height": 1.3,
-   "lod0": 1500,
-   "lod1": 400,
-   "style": "object"
   }
  ]
 }

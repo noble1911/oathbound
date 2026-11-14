@@ -9,6 +9,7 @@ import type { DecodedReplay, LordId, Rarity, ReplayEvent, Seat, SquadType, Terra
 
 export type SceneMode = 'title' | 'lobby' | 'lordPick' | 'planning' | 'battle' | 'results';
 export type CameraMode = 'director' | 'free';
+export type QualityChoice = 'low' | 'medium' | 'high' | 'ultra' | 'auto';
 
 export interface SquadVisual {
   id: number;
@@ -77,6 +78,8 @@ export interface SceneAdapter {
   setHidden(id: number | null): void;
   /** Project a field position (+ height in metres) to client pixels. */
   toScreen(pos: Vec2, heightM?: number): ScreenPoint | null;
+  /** Where the camera looks (field cm) and its distance in metres (audio listener). Null if unknown. */
+  cameraFocus?(): { pos: Vec2; dist: number } | null;
   /** Block/allow the RTS camera's own drag handling (while the UI drags a squad). */
   setInputLocked(locked: boolean): void;
   /** Asked on every left press on the canvas: return true to keep it for the UI (squad drag, placing). */
@@ -89,11 +92,20 @@ export interface SceneAdapter {
   playReplay(d: DecodedReplay, o: { offsetMs: number; onEvent(e: ReplayEvent, ms: number): void; onEnd(): void }): PlaybackHandle;
   clearReplay(): void;
   setCameraMode(m: CameraMode): void;
+  /** The battle camera's mode right now (the user may have grabbed it). */
+  cameraMode?(): CameraMode;
+  /** Back to the home framing (planning: the deploy zone inside the HUD insets). */
+  resetCamera?(): void;
   /** The camera changed mode by itself (the user grabbed it, or pressed C). */
   onCameraMode: ((m: CameraMode) => void) | null;
 
   /** Power: battery saver (no idle orbit, 1x pixel ratio, 30 fps) and the fps cap (30 | 60). */
   setPower(p: { batterySaver?: boolean; fpsCap?: number }): void;
+  /** The stored power settings (the renderer keeps them; one key each). */
+  power?(): { batterySaver: boolean; fpsCap: number };
+  /** Graphics tier ('auto' = pick by GPU and frame time). */
+  setQuality?(q: QualityChoice): void;
+  quality?(): { choice: QualityChoice; tier: string };
   /** Frames drawn so far (tests check idle planning draws 0 fps). */
   readonly framesDrawn: number;
 

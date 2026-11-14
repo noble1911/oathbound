@@ -36,7 +36,7 @@ export class BattlePlayback {
   private readonly hooks: PlaybackHooks;
   private tmpA = new THREE.Vector3();
   private tmpB = new THREE.Vector3();
-  private numbers = 0;
+  private sparks = 0;
 
   constructor(source: BattleSource, units: UnitRenderer, director: Director, vfx: Vfx, field: Battlefield, hooks: PlaybackHooks = {}) {
     this.source = source;
@@ -85,6 +85,7 @@ export class BattlePlayback {
     this.director.update(this.timeMs / 1000, bdt);
     if (this.timeMs >= this.durationMs) {
       this.ended = true;
+      this.vfx.settle(); // ambient fires burn out so the loop can sleep
       this.hooks.onEnd?.();
     }
     return true;
@@ -151,12 +152,18 @@ export class BattlePlayback {
     return out;
   }
 
-  private number(pos: THREE.Vector3, value: number, style: 'normal' | 'crit' | 'heal' | 'effective' | 'weak' | 'miss', important: boolean): void {
+  /**
+   * Floating numbers. 'important' (default): big crits pop on their own, everything else merges
+   * into one running total per target squad (`key`); misses are dropped. 'all': every hit.
+   */
+  private number(pos: THREE.Vector3, value: number, style: 'normal' | 'crit' | 'heal' | 'effective' | 'weak' | 'miss', important: boolean, key?: number): void {
     const mode = this.hooks.damageNumbers ?? 'important';
     if (mode === 'off') return;
-    if (mode === 'important' && !important) return;
-    if (mode === 'important' && style !== 'heal' && this.numbers++ % 2 === 1) return;
-    this.vfx.damageNumber(pos.clone().setY(pos.y + 0.6), value, style);
+    const at = pos.clone().setY(pos.y + 0.6);
+    if (mode === 'all') return this.vfx.damageNumber(at, value, style);
+    if (style === 'miss') return;
+    if (style === 'crit' && !important) style = 'effective';
+    this.vfx.damageNumber(at, value, style, key);
   }
 
   /** Event → visual effect mapping. */
@@ -176,6 +183,8 @@ export class BattlePlayback {
         } else from = this.units.muzzle(e.src, A) ?? this.ground(e.from[0], e.from[1], A, 1.5);
         const tgt = e.tgt >= 0 && e.tgt < this.units.slots.length ? this.units.slots[e.tgt] : null;
         const to = tgt && tgt.deadAt < 0 ? this.units.point(e.tgt, B)! : this.ground(e.to[0], e.to[1], B, 0.3);
+        // arrows / bolts aimed at a living soldier can stay stuck in him until he falls
+        const follow = tgt && tgt.deadAt < 0 ? () => (tgt.deadAt < 0 && tgt.visible ? tgt.pos : null) : undefined;
         let flight = (e.flight * TICK_MS) / 1000;
         // the launcher's clip may still be winding up: spawn at its release point, land on time
         const delay = e.src < KEEP_SRC_BASE ? Math.min(this.units.releaseDelay(e.src, (e.tick * TICK_MS) / 1000), flight * 0.6) : 0;
@@ -186,14 +195,14 @@ export class BattlePlayback {
           flight -= delay;
           const arc = e.arc;
           const src = e.src;
-          this.later(delay, () => v.projectile(kind, this.units.muzzle(src, new THREE.Vector3()) ?? f0, t0, flight, arc, NO_IMPACT));
+          this.later(delay, () => v.projectile(kind, this.units.muzzle(src, new THREE.Vector3()) ?? f0, t0, flight, arc, NO_IMPACT, follow));
           break;
         }
         if (e.kind === 'firebreath') {
           const dir = to.clone().sub(from);
           const len = dir.length();
           v.breath(from.clone(), dir.normalize(), Math.max(10, len + 3), 0.32, Math.max(0.9, flight + 0.6));
-        } else v.projectile(e.kind === 'none' ? 'arrow' : e.kind, from.clone(), to.clone(), flight, e.arc, NO_IMPACT); // the 'impact' event plays the landing
+        } else v.projectile(e.kind === 'none' ? 'arrow' : e.kind, from.clone(), to.clone(), flight, e.arc, NO_IMPACT, follow); // the 'impact' event plays the landing
         break;
       }
       case 'impact': {
@@ -212,22 +221,24 @@ export class BattlePlayback {
           this.number(p, 0, 'miss', false);
           break;
         }
-        if (melee) v.hitSpark(p.clone(), { crit: e.crit, magic: src?.arch.key === 'mages' });
+        // every blow in a 300-soldier melee would be a strobe: crits always spark, the rest thin out
+        if (melee && (e.crit || this.sparks++ % 2 === 0)) v.hitSpark(p.clone(), { crit: e.crit, magic: src?.arch.key === 'mages' });
         const tgt = this.units.slots[e.tgt];
-        const important = (e.crit && e.dmg >= 25) || (tgt.arch.render === 'hero' && e.dmg >= 30);
-        this.number(p, e.dmg, e.crit ? 'crit' : e.effective ? 'effective' : e.triangle < 0 ? 'weak' : 'normal', important);
+        const hero = tgt.arch.render === 'hero';
+        const important = e.crit && (e.dmg >= 25 || hero);
+        this.number(p, e.dmg, e.crit ? 'crit' : e.effective ? 'effective' : e.triangle < 0 ? 'weak' : 'normal', important, hero ? 500_000 + e.tgt : tgt.header.squad);
         break;
       }
       case 'heal': {
         const p = this.soldierPoint(e.tgt, A);
         if (!p) break;
         v.heal(p.clone().setY(p.y - 1), Math.min(1.5, e.amount / 60));
-        this.number(p, e.amount, 'heal', true);
+        this.number(p, e.amount, 'heal', true, this.units.slots[e.tgt].header.squad);
         break;
       }
       case 'death': {
         const s = this.units.slots[e.tgt];
-        if (s) v.marchDust(s.pos.clone(), s.arch.render === 'hero' ? 6 : 1.5);
+        if (s) v.death(s.pos, s.arch.render === 'hero' ? 2.2 : s.arch.render === 'crowd' ? 1 : 1.7);
         break;
       }
       case 'ability': {
@@ -307,6 +318,8 @@ export class BattlePlayback {
         const k = this.field.keep(e.seat);
         k.setStage(e.stage);
         v.keepCollapse(k.position.clone());
+        // the wounded keep burns: more fires with every stage lost
+        if (e.stage > 0) v.keepFire(Array.from({ length: Math.min(4, e.stage + 1) }, () => k.hitPoint()), 45, 0.8 + e.stage * 0.15);
         break;
       }
       case 'revive': {

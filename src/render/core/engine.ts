@@ -131,7 +131,8 @@ export class Engine {
     this.sun = new Sun(this.scene, this.camera);
     this.sky = new Sky(this.sun.direction, this.sun.color);
     this.scene.add(this.sky.mesh);
-    this.scene.fog = new THREE.FogExp2(new THREE.Color('#b9c6cf'), 0.0034);
+    // aerial perspective: a warm haze matching the sky's horizon band
+    this.scene.fog = new THREE.FogExp2(new THREE.Color('#c6c4b2'), 0.0024);
     this.scene.environment = this.sky.buildEnvironment(r);
     this.scene.environmentIntensity = 0.85;
     this.post = new PostStack(r, this.scene, this.camera);
@@ -265,6 +266,9 @@ export class Engine {
     this.resize();
   }
 
+  /** Called after every viewport / HUD-inset change (the camera rig re-fits its home framing). */
+  readonly onResize = new Set<() => void>();
+
   resize(): void {
     const w = Math.max(1, this.container.clientWidth || window.innerWidth);
     const h = Math.max(1, this.container.clientHeight || window.innerHeight);
@@ -283,6 +287,7 @@ export class Engine {
     this.sun.updateFrustums();
     this.stats.width = Math.round(w * pr);
     this.stats.height = Math.round(h * pr);
+    for (const f of this.onResize) f();
     this.wake();
   }
 

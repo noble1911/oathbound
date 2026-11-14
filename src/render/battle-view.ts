@@ -10,6 +10,7 @@ import { createHeroMaterial } from './crowd/vat.ts';
 import { archetypeFor } from './crowd/archetypes.ts';
 import { Battlefield, defaultTerrain } from './terrain/index.ts';
 import { Vfx } from './vfx/index.ts';
+import { SquadPlates, type PlateState } from './plates.ts';
 import { BattlePlayback, type PlaybackHooks } from './battle-playback.ts';
 import { RangeRing, type RangeRingHandle } from './range-ring.ts';
 import { TEAM_COLORS } from './crowd/archetypes.ts';
@@ -60,6 +61,8 @@ export class BattleView {
   readonly units: UnitRenderer;
   field: Battlefield;
   readonly vfx: Vfx;
+  /** In-world squad plates (crest, HP bar, level pips); see `setSquadPlate`. */
+  readonly plates: SquadPlates;
   seat: 0 | 1;
   private playback: BattlePlayback | null = null;
   private army: { tf: SoldierTransforms; squads: number[]; ghosts: Set<number> } | null = null;
@@ -94,6 +97,7 @@ export class BattleView {
     this.director = new Director(this.camera, this.units);
     this.syncKeeps();
     this.vfx = new Vfx(this.engine, (x, z) => this.field.heightAt(x, z));
+    this.plates = new SquadPlates(this.engine);
     this.camera.home(this.seat);
     this.camera.snap();
     if (opts.artManifest) {
@@ -210,6 +214,8 @@ export class BattleView {
       s.glow = h === 'selected' ? 0.16 : h === 'hover' ? 0.08 : h === 'invalid' ? 0.2 : 0;
       s.glowColor = h === 'invalid' ? 1 : 0;
     });
+    this.plates.clearStates();
+    for (const id in o.highlight ?? {}) this.plates.setState(Number(id), { hovered: o.highlight![id] === 'hover', selected: o.highlight![id] === 'selected' });
     this.units.update(tf, this.engine.time, 0);
     this.engine.markShadows();
     this.engine.wake();
@@ -224,6 +230,18 @@ export class BattleView {
       s.glow = st === 'selected' ? 0.16 : st === 'hover' ? 0.08 : st === 'invalid' ? 0.2 : 0;
       s.glowColor = st === 'invalid' ? 1 : 0;
     });
+    this.plates.clearStates();
+    for (const id in h) this.plates.setState(Number(id), { hovered: h[id] === 'hover', selected: h[id] === 'selected' });
+    this.engine.wake();
+  }
+
+  /** Hover / selected state of a squad's in-world plate (planning and battle). `{}` clears it. */
+  setSquadPlate(squadId: number, state: PlateState): void {
+    this.plates.setState(squadId, state);
+  }
+  /** Show / hide all squad plates (default on). */
+  setSquadPlates(visible: boolean): void {
+    this.plates.enabled = visible;
     this.engine.wake();
   }
 
@@ -375,6 +393,17 @@ export class BattleView {
   setCameraMode(m: CameraMode): void {
     this.camera.setMode(m);
   }
+  /**
+   * Home / reset key. Planning: back to the fitted home framing (also undoes Q/E rotation and zoom).
+   * Battle: hand the camera back to the director.
+   */
+  resetCamera(): void {
+    if (this.playback) this.camera.setMode('director');
+    else {
+      this.camera.setMode('rts');
+      this.camera.home(this.seat);
+    }
+  }
   setQuality(t: QualityTier | 'auto'): void {
     this.engine.setQuality(t);
   }
@@ -395,9 +424,14 @@ export class BattleView {
 
   private frame(dt: number): void {
     const now = this.engine.time;
+    // far zoom: soldiers grow a little so formations stay readable
+    this.units.farScale = 1 + 0.3 * THREE.MathUtils.smoothstep(this.camera.dist, 55, 115);
     if (this.army) this.units.update(this.army.tf, now, now - this.lastFrame);
     this.lastFrame = now;
     const pb = this.playback;
+    if (this.army) this.plates.sync(this.units.slots, null);
+    else if (pb) this.plates.sync(this.units.slots, pb.tf.hp);
+    else this.plates.hide();
     if (pb && pb.playing && !pb.ended) this.engine.markShadows(); // units move: shadow maps redraw
     for (const e of this.rings) if (e.squad !== null) this.placeRing(e);
     const speed = pb ? (pb.playing ? pb.speed : 0) : 1;
@@ -410,6 +444,7 @@ export class BattleView {
 
   dispose(): void {
     this.stopBattle();
+    this.plates.dispose();
     this.camera.dispose();
     this.field.dispose();
     this.engine.dispose();

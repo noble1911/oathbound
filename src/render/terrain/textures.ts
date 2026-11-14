@@ -1,5 +1,6 @@
-// Procedural, tileable textures generated once at startup (no files, no licences): ground
-// materials (albedo in RGB, height in A), a water normal map, masonry and roof tiles.
+// Procedural, tileable textures generated once at startup (no files, no licences): the macro
+// variation map and a rock texture (albedo in RGB, height in A), a water normal map, masonry and roof
+// tiles. The ground's scanned layers live in env-textures.ts.
 import * as THREE from 'three';
 import { fbm, worley, vnoise, hash2, smoothstep, clamp01, lerp } from './noise.ts';
 
@@ -36,14 +37,13 @@ function makeTex(size: number, fn: (u: number, v: number) => [number, number, nu
 }
 
 export interface TerrainTextures {
-  grass: THREE.DataTexture;
-  dirt: THREE.DataTexture;
   rock: THREE.DataTexture;
-  mud: THREE.DataTexture;
   waterNormal: THREE.DataTexture;
   bricks: THREE.DataTexture;
   bricksBump: THREE.DataTexture;
   tiles: THREE.DataTexture;
+  /** Tileable low-frequency variation (three independent fbm channels) for the ground's macro tone. */
+  macro: THREE.DataTexture;
   all: THREE.Texture[];
 }
 
@@ -53,39 +53,6 @@ let cached: TerrainTextures | null = null;
 export function terrainTextures(size = 512): TerrainTextures {
   if (cached) return cached;
   const S = 8; // lattice periods per tile
-
-  const gA = hex('#4f6e2a');
-  const gB = hex('#7a9238');
-  const gDry = hex('#a19a55');
-  const grass = makeTex(size, (u, v) => {
-    const n1 = fbm(u * S, v * S, 11, 4, S);
-    const n2 = fbm(u * S * 2 + 3, v * S * 2, 12, 3, S * 2);
-    const blades = vnoise(u * 128, v * 48, 14, 128, 48) * 0.55 + vnoise(u * 256, v * 96, 15, 256, 96) * 0.45;
-    let c = mix3(gA, gB, smoothstep(0.35, 0.7, n1));
-    c = mix3(c, gDry, smoothstep(0.6, 0.78, n2) * 0.45);
-    c = mul3(c, 0.72 + 0.5 * blades);
-    const speck = hash2(Math.floor(u * 256), Math.floor(v * 256), 16);
-    if (speck > 0.985) c = mix3(c, hex('#d8d7a0'), 0.5);
-    else if (speck < 0.02) c = mul3(c, 0.6);
-    return [c[0], c[1], c[2], 0.35 + 0.45 * blades + 0.2 * n1];
-  }, true);
-
-  const dA = hex('#6b533c');
-  const dB = hex('#8a7052');
-  const pebble = hex('#9a9184');
-  const dirt = makeTex(size, (u, v) => {
-    const n = fbm(u * S, v * S, 21, 5, S);
-    const w = worley(u * 24, v * 24, 24, 22);
-    const w2 = worley(u * 10, v * 10, 10, 23);
-    let c = mix3(dA, dB, smoothstep(0.3, 0.75, n));
-    const stone = smoothstep(0.42, 0.25, w.f1) * (w.id > 0.55 ? 1 : 0);
-    const big = smoothstep(0.36, 0.2, w2.f1) * (w2.id > 0.8 ? 1 : 0);
-    c = mix3(c, mul3(pebble, 0.75 + 0.4 * w.id), stone * 0.85);
-    c = mix3(c, mul3(pebble, 0.85 + 0.2 * w2.id), big * 0.9);
-    c = mul3(c, 0.85 + 0.25 * vnoise(u * 128, v * 128, 24, 128));
-    const h = 0.3 + 0.3 * n + stone * 0.35 * (1 - w.f1 * 2) + big * 0.5;
-    return [c[0], c[1], c[2], h];
-  }, true);
 
   const rA = hex('#77756d');
   const rB = hex('#9a978c');
@@ -100,18 +67,6 @@ export function terrainTextures(size = 512): TerrainTextures {
     c = mix3(c, lichen, l * 0.55);
     c = mul3(c, 0.9 + 0.2 * vnoise(u * 160, v * 160, 34, 160));
     return [c[0], c[1], c[2], crack * (0.5 + 0.5 * (1 - w.f1)) * 0.8 + n * 0.2];
-  }, true);
-
-  const mA = hex('#3e3227');
-  const mB = hex('#58483a');
-  const mGravel = hex('#7d7466');
-  const mud = makeTex(size, (u, v) => {
-    const n = fbm(u * S, v * S, 41, 5, S);
-    const w = worley(u * 32, v * 32, 32, 42);
-    let c = mix3(mA, mB, smoothstep(0.35, 0.7, n));
-    const g = smoothstep(0.35, 0.2, w.f1) * (w.id > 0.6 ? 1 : 0);
-    c = mix3(c, mul3(mGravel, 0.7 + 0.4 * w.id), g * 0.6);
-    return [c[0], c[1], c[2], 0.2 + n * 0.4 + g * 0.3];
   }, true);
 
   // water normal: from a periodic height field (central differences)
@@ -181,7 +136,9 @@ export function terrainTextures(size = 512): TerrainTextures {
     return [g, g, g, 1];
   }, true);
 
-  cached = { grass, dirt, rock, mud, waterNormal, bricks, bricksBump, tiles, all: [grass, dirt, rock, mud, waterNormal, bricks, bricksBump, tiles] };
+  const macro = makeTex(256, (u, v) => [fbm(u * 4, v * 4, 81, 4, 4), fbm(u * 4 + 9, v * 4, 82, 4, 4), fbm(u * 8, v * 8, 83, 3, 8), 1], false);
+
+  cached = { macro, rock, waterNormal, bricks, bricksBump, tiles, all: [rock, waterNormal, bricks, bricksBump, tiles, macro] };
   return cached;
 }
 

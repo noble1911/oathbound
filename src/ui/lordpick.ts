@@ -32,11 +32,12 @@ export class LordPickScreen {
   private endsAt = 0;
 
   constructor(ui: HTMLElement, pick: (l: LordId) => void, spectator: boolean) {
-    this.root = el(`<div class="screen lordpick">
+    const key = art('keyart');
+    this.root = el(`<div class="screen lordpick" ${key ? `style="--key:url(${key})"` : ''}>
       <header class="lp-head"><small class="eyebrow">Choose your Lord</small><h2>Who leads your host?</h2>
         <div class="lp-timer">${icon('timer')}<b>30</b></div></header>
       <div class="lp-cards">${LORD_IDS.map((id) => this.card(id)).join('')}</div>
-      <p class="lp-foot muted">${spectator ? 'The commanders are choosing their Lords…' : 'Both players may pick the same Lord. Picks are revealed together.'}</p>
+      <p class="lp-foot muted">${spectator ? 'The commanders are choosing their Lords…' : 'Both players may pick the same Lord. Picks are revealed together. If the timer runs out, a Lord is chosen for you.'}</p>
     </div>`);
     this.timer = $(this.root, '.lp-timer b');
     ui.appendChild(this.root);
@@ -72,13 +73,16 @@ export class LordPickScreen {
   }
 
   private tick(): void {
+    // untimed (the tutorial): no countdown
+    this.timer.parentElement!.classList.toggle('hidden', !this.endsAt);
+    if (!this.endsAt) return;
     const s = secsLeft(this.endsAt);
     this.timer.textContent = String(s);
     this.timer.parentElement!.classList.toggle('hurry', s <= 5 && !this.picked);
   }
 
   update(room: RoomView): void {
-    this.endsAt = room.phaseEndsAt - room.serverNow + Date.now();
+    this.endsAt = room.phaseEndsAt ? room.phaseEndsAt - room.serverNow + Date.now() : 0;
     const me = room.view?.you;
     if (me?.lord && !this.picked) {
       this.picked = me.lord;

@@ -56,6 +56,11 @@ const P: Record<string, string> = {
   sword2: '<path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M9.5 17.5L21 6V3h-3L6.5 14.5M11 19l-6-6M8 16l-4 4M5 21l-2-2" />',
   bag: '<path d="M6 8h12l1 13H5z" /><path d="M9 8V6a3 3 0 016 0v2" />',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 018 0v3" />',
+  flag: '<path d="M5 21V4" /><path d="M5 4h12l-2.5 4L17 12H5z" fill="currentColor" fill-opacity=".3" />',
+  help: '<circle cx="12" cy="12" r="9" /><path d="M9.2 9.3a2.9 2.9 0 015.6 1c0 2-2.8 2.4-2.8 4.2M12 17.6v.2" />',
+  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />',
+  undo: '<path d="M9 7L4 12l5 5" /><path d="M4 12h10a6 6 0 010 12" transform="translate(0 -3.5)" />',
+  chart: '<path d="M4 20V4M4 20h16M8 16v-5M12 16V7M16 16v-8" />',
   spectate: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />',
 };
 

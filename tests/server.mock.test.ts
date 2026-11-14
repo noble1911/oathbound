@@ -170,13 +170,21 @@ describe('rooms (fake sim)', () => {
     for (const c of all) c.close();
   });
 
-  it('chat reaches everyone, cleaned', async () => {
+  it('chat reaches everyone as typed (control characters dropped; the client escapes it)', async () => {
     const { host, guest, all } = await makeRoom(url);
-    host.send({ t: 'chat', text: '  hello <b>there</b>  ' });
+    host.send({ t: 'chat', text: '  hello <b>there</b>\u0007  ' });
     const m = await guest.wait('chat', (x) => !x.system);
     expect(m).toMatchObject({ seat: 0, name: 'Host' });
-    expect(m.text).not.toMatch(/</);
+    expect(m.text).toBe('hello <b>there</b>');
     for (const c of all) c.close();
+  });
+
+  it('display names keep their raw text (no more "bAl/b")', async () => {
+    const c = await connect(url);
+    c.send({ t: 'create', name: '<b>Al</b>\u0000', mode: 'pvp' });
+    const r = await c.wait('room');
+    expect(r.room.seats[0]!.name).toBe('<b>Al</b>');
+    c.close();
   });
 
   it('floods are dropped and the flooder is cut off', async () => {
@@ -246,7 +254,7 @@ describe('phase machine (fake sim)', () => {
       await host.wait('battle');
     }
     await host.wait('room', (m) => m.room.phase === 'over', 3000);
-    expect(calls).toContain('bot:1:random:planning');
+    expect(calls).toContain('bot:1:easy:planning');
     for (const c of all) c.close();
   }, 15_000);
 
@@ -264,7 +272,7 @@ describe('phase machine (fake sim)', () => {
     expect((await host.wait('chat', (m) => m.system && /disconnected/.test(m.text))).text).toMatch(/AI takes over/);
     const taken = await host.wait('room', (m) => !!m.room.seats[1]?.botControlled, 2000);
     expect(taken.room.view!.enemy.ready).toBe(true);
-    expect(calls).toContain('bot:1:best:planning');
+    expect(calls).toContain('bot:1:hard:planning');
     host.send({ t: 'intent', intent: { t: 'ready' } });
     await host.wait('battle');
     await sleep(60);

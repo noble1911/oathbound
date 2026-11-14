@@ -37,17 +37,18 @@ export function rollRarity(rng: Rng, round: number, bump: boolean): Rarity {
   return r;
 }
 
-export function rollItem(rng: Rng, id: number, ilvl: number, rarity: Rarity): Item {
+/** Roll one item. `onlySlot` forces the slot (used to bias offers toward slots the player can fill). */
+export function rollItem(rng: Rng, id: number, ilvl: number, rarity: Rarity, onlySlot?: Slot): Item {
   let legendary: Item['legendary'] = null;
   let slot: Slot;
   let baseId;
   if (rarity === 'legendary') {
-    legendary = rng.pick(LEGENDARY_IDS);
+    legendary = rng.pick(onlySlot ? LEGENDARY_IDS.filter((l) => LEGENDARIES[l].slot === onlySlot) : LEGENDARY_IDS);
     slot = LEGENDARIES[legendary].slot;
     const bases = BASE_IDS.filter((b) => BASES[b].slot === slot);
     baseId = rng.pick(bases);
   } else {
-    baseId = rng.pick(BASE_IDS);
+    baseId = rng.pick(onlySlot ? BASE_IDS.filter((b) => BASES[b].slot === onlySlot) : BASE_IDS);
     slot = BASES[baseId].slot;
   }
   const base = BASES[baseId];
@@ -80,16 +81,28 @@ export function rollItem(rng: Rng, id: number, ilvl: number, rarity: Rarity): It
 /**
  * The loot offer for one seat after a round. Seeded by (match seed, round, seat) so it is reproducible,
  * and both seats draw from the same distribution. `count` is 3 (4 for Skylady).
+ *
+ * `usable` = the slots the player can fill right now (see usableSlots in match.ts). When given and non-empty,
+ * all but one offer (at least 2 of 3, 3 of 4) are in a usable slot: offers in other slots are re-rolled into
+ * a usable slot at the same rarity.
  */
-export function rollLoot(seed: number, round: number, seat: number, bump: boolean, count: number, nextId: () => number): Item[] {
+export function rollLoot(seed: number, round: number, seat: number, bump: boolean, count: number, nextId: () => number, usable?: readonly Slot[]): Item[] {
   const rng = new Rng(hash(seed, 'loot', round, seat));
   const out: Item[] = [];
   const seenLegendary = new Set<string>();
+  const need = usable && usable.length ? count - 1 : 0;
+  let ok = 0;
   for (let i = 0; i < count; i++) {
     const rarity = rollRarity(rng, round, bump);
     let it = rollItem(rng, 0, round, rarity);
-    for (let k = 0; k < 4 && it.legendary && seenLegendary.has(it.legendary); k++) it = rollItem(rng, 0, round, rarity);
+    const fits = (x: Item): boolean => !usable || !usable.length || usable.includes(x.slot);
+    // Too many unusable offers so far: force this one into a usable slot.
+    const force = !fits(it) && ok + (count - i - 1) < need;
+    if (force) it = rollItem(rng, 0, round, rarity, usable![rng.int(usable!.length)]);
+    const keepSlot = force || (need && fits(it)) ? it.slot : undefined;
+    for (let k = 0; k < 4 && it.legendary && seenLegendary.has(it.legendary); k++) it = rollItem(rng, 0, round, rarity, keepSlot);
     if (it.legendary) seenLegendary.add(it.legendary);
+    if (fits(it)) ok++;
     it.id = nextId();
     out.push(it);
   }

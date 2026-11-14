@@ -16,25 +16,42 @@ function lit(engine: Engine, params: THREE.MeshStandardMaterialParameters): THRE
   return m;
 }
 
-function arrowGeo(len: number, shaftR: number, headR: number, fletch: number): THREE.BufferGeometry {
+export const ARROW_LEN = 1.25;
+
+/** An arrow along +Z (tip forward): shaft, flat broadhead, nock and three fletching vanes. */
+export function arrowGeo(len: number, shaftR: number, headR: number, fletch: number): THREE.BufferGeometry {
   const shaft = new THREE.CylinderGeometry(shaftR, shaftR, len, 5, 1).rotateX(Math.PI / 2);
-  const head = new THREE.ConeGeometry(headR, len * 0.14, 5).rotateX(Math.PI / 2).translate(0, 0, len / 2 + len * 0.06);
-  const f1 = new THREE.PlaneGeometry(fletch * 0.5, fletch).rotateX(Math.PI / 2).translate(0, 0, -len / 2 + fletch * 0.55);
-  const f2 = f1.clone().rotateZ(Math.PI / 2);
-  for (const g of [shaft, head, f1, f2]) g.deleteAttribute('uv');
-  // per-vertex colour: wood shaft, iron head, pale fletching
-  const paint = (g: THREE.BufferGeometry, c: THREE.Color) => {
-    const n = g.attributes.position.count;
+  const headL = len * 0.13;
+  const head = new THREE.ConeGeometry(headR, headL, 4).rotateX(Math.PI / 2).scale(1, 0.45, 1).translate(0, 0, len / 2 + headL * 0.45);
+  const nock = new THREE.CylinderGeometry(shaftR * 1.5, shaftR * 1.5, len * 0.03, 5, 1).rotateX(Math.PI / 2).translate(0, 0, -len / 2);
+  const parts: THREE.BufferGeometry[] = [shaft, head, nock];
+  const colors = ['#6b4a2c', '#aab2bb', '#3a2a1c'];
+  // vanes: swept quads standing off the shaft, 120° apart (one cock feather in red)
+  for (let k = 0; k < 3; k++) {
+    const g = new THREE.BufferGeometry();
+    const z0 = -len / 2 + len * 0.04;
+    const z1 = z0 + fletch;
+    const h = fletch * 0.34;
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, shaftR, z0, 0, shaftR + h, z0 + fletch * 0.12, 0, shaftR + h * 0.7, z1 - fletch * 0.3, 0, shaftR, z1]), 3));
+    g.setIndex([0, 1, 2, 0, 2, 3]);
+    g.rotateZ((k * Math.PI * 2) / 3);
+    parts.push(g);
+    colors.push(k === 0 ? '#b8322a' : '#ece4d2');
+  }
+  const out: THREE.BufferGeometry[] = [];
+  parts.forEach((g, i) => {
+    g.deleteAttribute('uv');
+    g.deleteAttribute('normal');
+    const ni = g.index ? g.toNonIndexed() : g;
+    ni.computeVertexNormals();
+    const c = new THREE.Color(colors[i]);
+    const n = ni.attributes.position.count;
     const a = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) a.set([c.r, c.g, c.b], i * 3);
-    g.setAttribute('color', new THREE.BufferAttribute(a, 3));
-    return g;
-  };
-  paint(shaft, new THREE.Color('#7a5534'));
-  paint(head, new THREE.Color('#9aa2ab'));
-  paint(f1, new THREE.Color('#e9e2d0'));
-  paint(f2, new THREE.Color('#e9e2d0'));
-  return mergeGeometries([shaft.toNonIndexed(), head.toNonIndexed(), f1.toNonIndexed(), f2.toNonIndexed()])!;
+    for (let j = 0; j < n; j++) a.set([c.r, c.g, c.b], j * 3);
+    ni.setAttribute('color', new THREE.BufferAttribute(a, 3));
+    out.push(ni);
+  });
+  return mergeGeometries(out)!;
 }
 
 interface Flying {
@@ -46,13 +63,17 @@ interface Flying {
   arcH: number;
   spin: number;
   onImpact?: () => void;
+  follow?: Follow;
 }
+
+/** Position of a moving body an arrow can stay stuck in (null once it is gone). */
+export type Follow = () => THREE.Vector3 | null;
 
 export interface ProjectileHooks {
   /** Called every frame per projectile (trail emission). */
   trail(kind: ProjectileKind, pos: THREE.Vector3, dir: THREE.Vector3, dt: number): void;
   /** Called when a projectile lands. */
-  land(kind: ProjectileKind, pos: THREE.Vector3, dir: THREE.Vector3): void;
+  land(kind: ProjectileKind, pos: THREE.Vector3, dir: THREE.Vector3, follow?: Follow): void;
 }
 
 const MAX_PER_KIND = 768;
@@ -70,10 +91,13 @@ export class Projectiles {
   private s = new THREE.Vector3();
   private fwd = new THREE.Vector3(0, 0, 1);
   private counts = new Map<ProjectileKind, number>();
+  readonly arrow: THREE.BufferGeometry;
+  readonly wood: THREE.Material;
 
   constructor(engine: Engine, hooks: ProjectileHooks) {
     this.hooks = hooks;
-    const wood = lit(engine, { vertexColors: true, roughness: 0.7, metalness: 0.1 });
+    const wood = lit(engine, { vertexColors: true, roughness: 0.7, metalness: 0.1, side: THREE.DoubleSide });
+    this.wood = wood;
     const stone = lit(engine, { color: '#8d8578', roughness: 0.95, flatShading: true });
     const add = (kind: ProjectileKind, geo: THREE.BufferGeometry, mat: THREE.Material) => {
       const m = new THREE.InstancedMesh(geo, mat, MAX_PER_KIND);
@@ -85,23 +109,24 @@ export class Projectiles {
       this.group.add(m);
     };
     // exaggerated ~1.5× so volleys read from RTS height
-    const arrow = arrowGeo(1.15, 0.022, 0.05, 0.16);
+    const arrow = arrowGeo(ARROW_LEN, 0.02, 0.06, 0.24);
+    this.arrow = arrow;
     add('arrow', arrow, wood);
     add('tower_arrow', arrow, wood);
-    add('bolt', arrowGeo(2.2, 0.05, 0.12, 0.34), wood);
-    add('stone', new THREE.DodecahedronGeometry(0.42, 0), stone);
-    const core = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 1.9, 0.5), fog: false });
-    add('fireball', new THREE.IcosahedronGeometry(0.24, 2), core);
+    add('bolt', arrowGeo(2.4, 0.05, 0.14, 0.42), wood);
+    add('stone', new THREE.DodecahedronGeometry(0.55, 1), stone);
+    const core = new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 6.5, 3.2), fog: false });
+    add('fireball', new THREE.IcosahedronGeometry(0.13, 2), core);
   }
 
   get active(): number {
     return this.live.length;
   }
 
-  launch(kind: ProjectileKind, from: THREE.Vector3, to: THREE.Vector3, flight: number, arc: ArcType, onImpact?: () => void): void {
+  launch(kind: ProjectileKind, from: THREE.Vector3, to: THREE.Vector3, flight: number, arc: ArcType, onImpact?: () => void, follow?: Follow): void {
     const dist = from.distanceTo(to);
     const arcH = arc === 'line' ? (kind === 'stone' ? dist * 0.05 : 0) : arc === 'arc' ? Math.min(14, dist * 0.16) : Math.min(35, dist * 0.42);
-    this.live.push({ kind, from: from.clone(), to: to.clone(), t: 0, flight: Math.max(0.05, flight), arcH, spin: Math.random() * 6, onImpact });
+    this.live.push({ kind, from: from.clone(), to: to.clone(), t: 0, flight: Math.max(0.05, flight), arcH, spin: Math.random() * 6, onImpact, follow });
   }
 
   private at(f: Flying, s: number, out: THREE.Vector3): THREE.Vector3 {
@@ -124,7 +149,7 @@ export class Projectiles {
       this.d.y += 4 * f.arcH * (1 - 2 * s);
       this.d.normalize();
       if (s >= 1) {
-        this.hooks.land(f.kind, this.p, this.d);
+        this.hooks.land(f.kind, this.p, this.d, f.follow);
         f.onImpact?.();
         continue;
       }
@@ -191,7 +216,17 @@ export class Debris {
 
   constructor(engine: Engine, ground: Ground) {
     this.ground = ground;
-    const geo = new THREE.DodecahedronGeometry(0.5, 0);
+    // an irregular chunk: a low-poly ball with its corners pushed about (flat shaded)
+    const geo = new THREE.IcosahedronGeometry(0.5, 1);
+    const gp = geo.attributes.position;
+    for (let i = 0; i < gp.count; i++) {
+      const x = gp.getX(i);
+      const y = gp.getY(i);
+      const z = gp.getZ(i);
+      const h = Math.sin(x * 37.1 + y * 17.3 + z * 29.7) * 43758.5453;
+      const k = 0.72 + 0.5 * (h - Math.floor(h));
+      gp.setXYZ(i, x * k, y * k * 0.8, z * k);
+    }
     const mat = lit(engine, { color: '#ffffff', roughness: 0.92, metalness: 0, flatShading: true });
     this.mesh = new THREE.InstancedMesh(geo, mat, MAX_DEBRIS);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_DEBRIS * 3), 3);
@@ -268,7 +303,7 @@ export class Debris {
       const left = this.life[w] - this.age[w];
       const sc = this.size[w] * Math.min(1, left / 0.6);
       this.q.setFromAxisAngle(this.v.set(this.ax[w * 3], this.ax[w * 3 + 1], this.ax[w * 3 + 2]), this.ang[w]);
-      this.m4.compose(this.v.set(this.px[w], this.py[w], this.pz[w]), this.q, this.s.set(sc, sc, sc * this.stretch[w]));
+      this.m4.compose(this.v.set(this.px[w], this.py[w], this.pz[w]), this.q, this.s.set(sc * (0.7 + 0.6 * Math.abs(this.ax[w * 3])), sc * (0.6 + 0.5 * Math.abs(this.ax[w * 3 + 1])), sc * this.stretch[w]));
       this.mesh.setMatrixAt(w, this.m4);
       cols[w * 3] = this.col[w * 3];
       cols[w * 3 + 1] = this.col[w * 3 + 1];
@@ -286,5 +321,116 @@ export class Debris {
   clear(): void {
     this.n = 0;
     this.mesh.count = 0;
+  }
+}
+
+// ------------------------------------------------------------------ stuck arrows
+
+interface StuckFollow {
+  slot: number;
+  follow: Follow;
+  off: THREE.Vector3;
+}
+
+/**
+ * Arrows and bolts left standing where they landed: in the ground for a while, or riding on a
+ * soldier until he falls. One InstancedMesh; static ones cost nothing per frame.
+ */
+export class StuckArrows {
+  readonly mesh: THREE.InstancedMesh;
+  private cap: number;
+  private head = 0;
+  private until: Float32Array;
+  private followers: StuckFollow[] = [];
+  private m4 = new THREE.Matrix4();
+  private quats: THREE.Quaternion[] = [];
+  private scales: Float32Array;
+  private p = new THREE.Vector3();
+  private s = new THREE.Vector3();
+  private fwd = new THREE.Vector3(0, 0, 1);
+  private zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  private time = 0;
+  private sweep = 0;
+  maxFollowers: number;
+
+  constructor(geo: THREE.BufferGeometry, mat: THREE.Material, capacity: number, maxFollowers: number) {
+    this.cap = capacity;
+    this.maxFollowers = maxFollowers;
+    this.mesh = new THREE.InstancedMesh(geo, mat, capacity);
+    this.mesh.count = 0;
+    this.mesh.frustumCulled = false;
+    this.mesh.layers.set(LAYER_VFX);
+    this.mesh.name = 'vfx.stuck';
+    this.until = new Float32Array(capacity).fill(-1);
+    this.scales = new Float32Array(capacity);
+    for (let i = 0; i < capacity; i++) this.quats.push(new THREE.Quaternion());
+  }
+
+  /** Stick an arrow whose tip is at `tip`, flying along `dir`. `follow` rides a moving body. */
+  add(tip: THREE.Vector3, dir: THREE.Vector3, scale: number, life: number, follow?: Follow): void {
+    if (follow && this.followers.length >= this.maxFollowers) return;
+    const i = this.head++ % this.cap;
+    this.followers = this.followers.filter((f) => f.slot !== i);
+    // a little scatter so a volley doesn't land as parallel lines
+    this.s.set(dir.x + (Math.random() - 0.5) * 0.25, dir.y + (Math.random() - 0.5) * 0.2, dir.z + (Math.random() - 0.5) * 0.25).normalize();
+    this.quats[i].setFromUnitVectors(this.fwd, this.s);
+    this.scales[i] = scale;
+    // the geometry is centred: back the centre off so about a quarter of the shaft is buried
+    this.p.copy(tip).addScaledVector(this.s, -ARROW_LEN * scale * (0.26 + Math.random() * 0.12));
+    this.m4.compose(this.p, this.quats[i], this.s.set(scale, scale, scale));
+    this.mesh.setMatrixAt(i, this.m4);
+    this.until[i] = this.time + life;
+    if (follow) {
+      const base = follow();
+      if (base) this.followers.push({ slot: i, follow, off: this.p.clone().sub(base) });
+    }
+    this.mesh.count = Math.min(this.cap, Math.max(this.mesh.count, i + 1));
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  update(dt: number): void {
+    this.time += dt;
+    let dirty = false;
+    if (this.followers.length) {
+      let w = 0;
+      for (const f of this.followers) {
+        const base = f.follow();
+        if (!base || this.until[f.slot] < this.time) {
+          this.mesh.setMatrixAt(f.slot, this.zero);
+          this.until[f.slot] = -1;
+        } else {
+          const sc = this.scales[f.slot];
+          this.m4.compose(this.p.copy(base).add(f.off), this.quats[f.slot], this.s.set(sc, sc, sc));
+          this.mesh.setMatrixAt(f.slot, this.m4);
+          this.followers[w++] = f;
+        }
+        dirty = true;
+      }
+      this.followers.length = w;
+    }
+    this.sweep += dt;
+    if (this.sweep > 0.5) {
+      this.sweep = 0;
+      for (let i = 0; i < this.mesh.count; i++) {
+        if (this.until[i] >= 0 && this.until[i] < this.time) {
+          this.mesh.setMatrixAt(i, this.zero);
+          this.until[i] = -1;
+          dirty = true;
+        }
+      }
+    }
+    if (dirty) this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  clear(): void {
+    this.followers.length = 0;
+    this.until.fill(-1);
+    this.mesh.count = 0;
+    this.head = 0;
+  }
+
+  dispose(): void {
+    this.mesh.removeFromParent();
+    this.mesh.dispose();
   }
 }

@@ -144,12 +144,12 @@ describe('match rules', () => {
     const r = applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [3500, 2000] });
     expect(r).toEqual({ ok: false, error: 'deployment limit reached' });
     // Marshal gets 3.
-    for (let i = 0; i < 2; i++) expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [3000 + i * 100, 9000] }).ok).toBe(true);
+    for (let i = 0; i < 2; i++) expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [3000 + i * 700, 9000] }).ok).toBe(true);
     s.players[1].gold = 10000;
     expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [2000, 9000] }).ok).toBe(false);
     // Army cap.
     p0.deployLimit = 99;
-    for (let i = 0; i < ARMY_CAP - 2; i++) expect(applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [500 + i * 300, 1000] }).ok).toBe(true);
+    for (let i = 0; i < ARMY_CAP - 2; i++) expect(applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [500 + (i % 7) * 1100, i < 7 ? 600 : 3000] }).ok).toBe(true);
     expect(applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [500, 1200] })).toEqual({ ok: false, error: 'army cap reached' });
   });
 

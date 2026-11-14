@@ -81,13 +81,12 @@ Fixes made after the pilot review:
 
 Per-asset notes:
 * **Squads** (militia, pikeman, berserker, archer, knight, mage, cleric, skeleton): readable and clearly team-coloured. The skeleton's tabard drifted teal in TRELLIS, so the hue window was widened to 0.49–0.74. Hands are mittens, faces are soft. The archer's bowstring does not deform.
-* **Cavalier / pegasus / wyvern:**
-  * Rider and mount are one armature (mount `m_*` bones, rider seated with its legs from the CC0 sitting clip).
-  * The mount is driven by procedural gaits; the pegasus and wyvern flap their wings and hover 0.35 m while moving.
-  * Gaits are simple sine cycles, not mocap.
-  * The wyvern's wing bones come from geometry heuristics and look stiff.
-* **Golem:** short-legged proportions needed crotch detection and rigid wrists. It now punches cleanly.
-* **Dragon:** the mesh is very good. The skeleton and procedural clips (wing flap, bite lunge, roll-over death) are subtle; it has no fire-breath pose.
+* **Cavalier / pegasus / wyvern** (animation pass, see below):
+  * Rider and mount are one armature (mount `m_*` bones). The rider sits astride (procedural leg pose), hips ride the saddle with the gait's bounce, and the seat follows only part of the mount's pitch.
+  * The mount skeleton is laid out per mesh in `tools/art/creatures.json` (the first version guessed joints from slices, put the leg bones in the wrong place and shipped a horse that only rocked).
+  * Horse: 4-beat walk and a transverse gallop with a suspension phase, hooves planted by IK. Fliers: asymmetric wing beat with a folding, lagging outer wing; the pegasus gallops on the air.
+* **Golem:** short-legged proportions needed crotch detection and rigid wrists. Its legs used to splay 40° in every clip (the leg fit picked up the hanging fists); fixed, and toes / corpse now stay on the ground.
+* **Dragon:** the mesh is very good. It now faces forward (TRELLIS returned it 60° off axis), flies level with its wings laid flat and its curled tail straightened, rears the head back and drives it forward to breathe, and falls onto its flank.
 * **Lords:** the best-looking assets (15k triangles, 1024² textures). Capes are skinned to the spine only, with no cloth sim.
 * **Ballista:** rigid nodes: body recoil, and a bolt that flies and reloads. The bow arms do not flex.
 * **Trebuchet:** the throwing arm and bucket are split from the frame by RANSAC beam detection and pivot at about 28% along the beam. There are small open seams where the arm met the frame.
@@ -96,3 +95,19 @@ Per-asset notes:
   * The oak, birch, pine and fir trees, rocks, ruins (3 pieces), bridge (8×4 m) and arrow tower are good.
   * The bush and reeds are "leaf-sheet" meshes and look somewhat shredded at LOD0.
   * The maple needed a finer remesh because TRELLIS models its trunk as a thin bark shell.
+
+## Animation pass (after play-testing)
+
+Frame strips: `e2e/shots/anim-*.png` (in the engine) and `anim_strip.py` (Blender, from the shipped GLBs).
+
+* **Golem "legs at 45°".** `rig.py` fitted the leg centre line from slices up to 0.42 H; above the golem's crotch the nearest off-centre segment is a hanging fist, so the hip joints landed 1.2 m outside the body and the rest thigh bones sloped 40°. The retarget copies the mannequin's bone orientations, so the mesh legs were swung 40° outward in every clip. The fit now stops at the crotch, follows one continuous segment and rejects slopes over 20°. The archmage had the same fault hidden under her robe (both hips on one side); she falls back to the mannequin's legs.
+* **Ground contact.** Hips travel now scales with leg length instead of body height, and a post-pass un-pitches toes that go under the floor and lifts the hips by what the body still lacks. Before, the golem's 0.8-leg-length feet went 40 cm into the ground at toe-off and its corpse lay 75 cm under it.
+* **Mounts.** The old creature rig put two short bones per leg at the wrong height and placed them from point clouds, so bone-heat gave the legs almost no weight: the horse rocked as one piece. The wyvern and dragon also faced 30° / 60° off axis. Mounted units also shipped a rider-only `idle` (the mount froze) with the real clip exported as `idle.001`.
+* **Checks.** `creature.py` and `vat.py` now fail the build when a limb bone owns no vertices or when hooves / wing tips do not move against the body in the locomotion clips.
+
+Still weak:
+* Everything on the mounts is hand-authored, not captured. The gallop reads well at game distance; close up the legs are a little rubbery (the crowd horse is 750 triangles, with few edge loops at the joints) and the tail moves as one sheet.
+* Horse and pegasus manes, barding and the rider's cloak are skinned to the nearest bones: no secondary cloth motion.
+* The dragon's and wyvern's wings are rolled ~65° / ~30° at the root to lie flat in flight (the meshes hold them "displayed"), which twists the shoulder skin if you look closely from below.
+* Rider upper bodies still come from the foot-soldier clips: no reins, and the staff-wielders' melee swing strikes with the butt of the staff.
+* Skirted squads have short rigged legs (the hip joint sits at the hem), so their walk covers less ground than the renderer's `walkSpeed` assumes; see the audit numbers from `anim_audit.py`.

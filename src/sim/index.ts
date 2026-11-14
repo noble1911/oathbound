@@ -23,7 +23,15 @@ export {
   newMatch, applyIntent, applyBattle, nextRound, viewFor, allReady, forceReady,
   income, deployZone, inDeployZone, levelUpCost, sellRefund, keepDamageOf, squadKeepDamage, lordLevelForXp,
   START_GOLD, KEEP_HP, ARMY_CAP, BASE_DEPLOY_LIMIT, MAX_SQUAD_LEVEL, MAX_LORD_LEVEL, LORD_XP_LEVELS,
+  roundOutcome, roundOutcomeText, comebackFor, keepPct, usableSlots, slotOpen, squadFootprint, overlappingSquad, freeSpotNear,
+  CATCHUP_GOLD, CATCHUP_PER_ROUND, CATCHUP_PER_DEFICIT, UNDERDOG_DEFICIT,
 } from './match.ts';
+// roundOutcomeText(summaryOrResult, seat): {outcome: 'won'|'lost'|'draw', title, detail} — the one wording for round results
+// comebackFor(me, enemy, round, lost): Comeback       — the catch-up bonus rule (PlayerState.comeback holds the live value)
+// usableSlots(player): Slot[]                          — slots with an empty open slot to fill (loot offers lean toward these)
+// squadFootprint(type) / overlappingSquad(squads, type, pos, ignoreId?) / freeSpotNear(squads, seat, type, pos, ignoreId?)
+//                                                     — deploy/move footprints: squads of one player may not overlap
+export { POINTS_MARGIN } from './battle.ts';
 // newMatch(seed: number, lords: [LordId, LordId] | null): MatchState
 // applyIntent(state, seat, intent): IntentResult           — validates everything (phase, gold, zone, limits, slots)
 // viewFor(state, seat: Seat | null): PlayerView            — seat's own full state + enemy's LAST-ROUND army only

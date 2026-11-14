@@ -7,7 +7,8 @@ out on its own. Whoever tears down the other's Keep first wins.
 **Play:** https://games.noblehaus.uk/oathbound/
 
 You can play vs the computer (Easy, Normal, Hard), challenge a friend online with a room code or
-invite link, or spectate a match (up to 6 spectators).
+invite link, or spectate a match (up to 6 spectators). New players can start with the guided
+**Tutorial** on the title screen; the full rules are in the codex (F1).
 
 ## How it plays
 
@@ -46,6 +47,12 @@ Balance is checked by bot tournaments: 2,268 matches, with seat 0 winning 50.9%,
   4. Squads get vertex-animation textures, and everything is packed with gltfpack.
 
   See `docs/ART.md`. The animation clips are CC0 (Quaternius).
+
+## Credits
+
+Sounds and music: see `docs/AUDIO.md` (Sonniss GDC bundles, Kenney, OpenGameArt and others; CC0 /
+CC-BY with attribution there). Environment textures: Poly Haven (CC0), see `docs/ART.md`.
+Animation clips: Quaternius Universal Animation Library (CC0).
 
 ## Develop
 

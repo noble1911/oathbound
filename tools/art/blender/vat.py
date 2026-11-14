@@ -158,6 +158,47 @@ def glb_attr(path, name):
     return None, 0
 
 
+def motion_check(aid, a, crowd, F, clips):
+    """Mounted squads: fail the bake when the VAT itself shows a rigid mount -- hooves (ground mounts) or wing
+    tips (fliers) that do not move against the body in the move / run clips. Measured on the baked texels, so
+    it covers weights, clips and sampling together."""
+    if not a.get('rider'):
+        return
+    names = {g.index: g.name for g in crowd.vertex_groups}
+    dom = {}
+    for v in crowd.data.vertices:
+        if v.groups:
+            g = max(v.groups, key=lambda g: g.weight)
+            dom.setdefault(names[g.group], []).append(v.index)
+    body = np.array(dom.get('m_body', []) + dom.get('m_chest', []), int)
+    chains = {}
+    for n in names.values():
+        if n.startswith(('m_leg_', 'm_wing_')):
+            chains.setdefault(n.rsplit('_', 1)[0], []).append(n)
+    flier = a['kind'] == 'flier'
+    errs = []
+    assert len(body) > 10, 'crowd mesh has no vertices on the mount body bones'
+    for c in clips:
+        if c['name'] not in ('move', 'run'):
+            continue
+        P = F[c['start']:c['start'] + c['frames'], :, :3]
+        for chain, bones in sorted(chains.items()):
+            if ('wing' in chain) != flier:
+                continue
+            bones = sorted(bones, key=lambda b: int(b.rsplit('_', 1)[1]))
+            idx = np.array([i for b in bones[len(bones) // 2:] for i in dom.get(b, [])], int)
+            if len(idx) < 2:
+                errs.append(f"{c['name']}: {chain} owns {len(idx)} crowd vertices on its lower bones"); continue
+            rel = P[:, idx].mean(1) - P[:, body].mean(1)
+            travel = float(np.linalg.norm(rel.max(0) - rel.min(0)))
+            need = 0.3
+            print(f"[vat] check {c['name']} {chain}: {len(idx)} verts travel {travel:.2f} m against the body")
+            if travel < need:
+                errs.append(f"{c['name']}: {chain} moves only {travel:.2f} m against the body (< {need})")
+    if errs:
+        raise RuntimeError(f'{aid}: VAT motion checks FAILED (mount would play as a rigid block): ' + '; '.join(errs))
+
+
 def main():
     aid = L.argv()[0]
     a = L.assets()[aid]
@@ -228,6 +269,8 @@ def main():
         act = bpy.data.actions[act_name]
         f0, f1 = act.frame_range
         dur = (f1 - f0) / src_fps
+        if loop and cname in ('move', 'run') and dur * fps < 10:
+            fps = int(math.ceil(10 / dur))            # short cycles (gallop 0.5 s, wing beats): >= 10 samples per cycle
         n = max(1, int(round(dur * fps)) + (0 if loop else 1))
         R.set_action(rig, act)
         for k in range(n):
@@ -245,6 +288,7 @@ def main():
         start += n
     R.set_action(rig, bpy.data.actions['idle'])
     F = np.stack(frames)                                          # [frames, V, 4]
+    motion_check(aid, a, crowd, F, clips)
     tex = np.zeros((start, rows * width, 4), np.float32)
     tex[:, :V] = F
     tex.astype('<f2').tofile(L.OUT / f'{aid}.vat.pos.bin')

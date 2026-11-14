@@ -70,11 +70,11 @@ export class Sky {
   readonly mesh: THREE.Mesh;
   readonly material: THREE.ShaderMaterial;
   readonly params: SkyParams = {
-    zenith: new THREE.Color('#3f74c4'),
-    horizon: new THREE.Color('#c9d6df'),
-    ground: new THREE.Color('#6f7466'),
-    sunGlow: new THREE.Color('#ffc58a'),
-    cloudCover: 0.46,
+    zenith: new THREE.Color('#3d6fb8'),
+    horizon: new THREE.Color('#d9d2c0'),
+    ground: new THREE.Color('#77775f'),
+    sunGlow: new THREE.Color('#ffbe7a'),
+    cloudCover: 0.5,
     exposure: 1.25,
   };
   private envRT: THREE.WebGLRenderTarget | null = null;

@@ -65,7 +65,20 @@ for (const a of assets) {
   e.totalBytes = files.reduce((t, x) => t + size(x), 0);
   if (a.kind === 'prop') { delete e.scale; out.props[id] = e; } else out.models[id] = e;
 }
-writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(out, null, 1));
+// `--only a,b,c`: refresh just those entries and keep the rest of the existing manifest byte-for-byte (so a unit
+// rebuild cannot clobber prop entries someone else is regenerating at the same time).
+const onlyArg = process.argv.indexOf('--only');
+const mf = join(OUT, 'manifest.json');
+if (onlyArg > 0 && existsSync(mf)) {
+  const only = new Set(process.argv[onlyArg + 1].split(','));
+  const cur = JSON.parse(readFileSync(mf, 'utf8'));
+  for (const key of ['models', 'props']) {
+    for (const id of only) if (out[key][id]) cur[key][id] = out[key][id];
+    out[key] = cur[key];
+  }
+  out.conventions = cur.conventions ?? out.conventions;
+}
+writeFileSync(mf, JSON.stringify(out, null, 1));
 let total = 0;
 for (const x of readdirSync(OUT)) total += size(x);
 console.log(`manifest: ${Object.keys(out.models).length} models + ${Object.keys(out.props).length} props, public/models/v2 total ${(total / 1e6).toFixed(2)} MB`);

@@ -1,0 +1,37 @@
+room MPLV https://games.noblehaus.uk/oathbound/?room=MPLV
+start disabled alone: true
+join bad code error text: No room with that code
+lobby audit B ["OFFSCREEN .lobby-card [99,0,924,807] in 1024x768","OFFSCREEN .leave [337,749,686,785] in 1024x768","OVERLAP .lobby-card x .shell .corner by 33x36","OVERLAP .lobby-card x .vs-seat by 759x190","OVERLAP .lobby-card x .vs-seat by 759x190","OVERLAP .lobby-card x .leave by 349x35"]
+name rendered in B lobby (XSS check): bAl/b&amp;"x
+B got chat: ["Wanderer is spectating.","bAl/b&\"xglhf  img src=x onerror=window.__xss=1","Wanderer is spectating.","bAl/b&\"xglhf  img src=x onerror=window.__xss=1"] xss fired: false
+lordpick audit B 1024 ["OVERLAP .lp-head x .shell .corner by 112x16","OVERLAP .lp-head x .lp-timer by 75x39","OVERLAP .lp-cards x .lcard by 269x304","OVERLAP .lp-cards x .lcard by 269x304","OVERLAP .lp-cards x .lcard by 269x304","OVERLAP .lp-cards x .lcard by 269x304"]
+lordpick audit S 1366 ["OVERLAP .lp-head x .shell .corner by 98x14","OVERLAP .lp-head x .lp-timer by 71x36","OVERLAP .lp-cards x .lcard by 254x433","OVERLAP .lp-cards x .lcard by 254x433","OVERLAP .lp-cards x .lcard by 254x433","OVERLAP .lp-cards x .lcard by 254x433"]
+B idle on lord pick: planning after 27378ms; B lord = marshal
+r1 audit B 1024 (draft modal open) ["OVERLAP .topbar x .modal .loot-head by 623x46","OVERLAP .res x .notices by 5x37","OVERLAP .res x .modal .loot-head by 566x43","OVERLAP .shop x .ucard by 111x119","OVERLAP .shop x .ucard by 111x119","OVERLAP .shop x .loot-foot by 392x35","OVERLAP .notices x .modal .loot-head by 34x53","OVERLAP .ucard x .loot-foot by 111x35","OVERLAP .ucard x .loot-foot by 111x35","OVERLAP .draft-row x .dcard by 190x211","OVERLAP .draft-row x .dcard by 190x211","OVERLAP .draft-row x .dcard by 190x211"]
+clock text A/B/S: ["55","55","55"]
+A view of enemy keys: ["seat","lord","keepHp","keepMax","ready","lastArmy"]
+S view keys: {"you":false,"enemies":[["seat","lord","keepHp","keepMax","ready","lastArmy"],["seat","lord","keepHp","keepMax","ready","lastArmy"]]}
+B idle in planning: battle after 49808ms got=true; B squads ["lord"] B unlocked ["militia","cavaliers","pegasus","mages"]
+battle audit B 1024 []
+battle audit S 1366 []
+replay sig A {"h":825717857,"ticks":782,"winner":0,"kd":[0,122],"bytes":10616,"keys":["v","seed","round","ticks","frameTicks","frameCount","soldiers","keeps","terrain","frames","events","eventCount","result"]}
+replay sig B {"h":825717857,"ticks":782,"winner":0,"kd":[0,122],"bytes":10616,"keys":["v","seed","round","ticks","frameTicks","frameCount","soldiers","keeps","terrain","frames","events","eventCount","result"]}
+replay sig S {"h":825717857,"ticks":782,"winner":0,"kd":[0,122],"bytes":10616,"keys":["v","seed","round","ticks","frameTicks","frameCount","soldiers","keeps","terrain","frames","events","eventCount","result"]}
+battle clocks A/B/S ["0:03","0:03","0:03"]
+A after skip: phase battle wait note: Waiting for the other commander…
+B reload mid-battle: rejoined true phase planning battle screen false clock 75
+results audit B []
+results text S: ROUND 2 · THE FIELD IS DECIDED | bAl/b&"x takes the round | DAMAGE TO BRANN THE LONG N | 195 | 3,683 left | DAMAGE TO BAL/B&"X | 0 | 4,000 left | MOST VALUABLE SQUAD | Skylady Ione | 684 damage · 1 kills | Next round in 4…
+keeps A [0,4000,3683] B [1,3683,4000] S [4000,3683]
+r2 audit B 1024 (modal) ["OVERLAP .draft-row x .dcard by 190x185","OVERLAP .draft-row x .dcard by 190x185"]
+r2 audit B 1024 ["OVERLAP .shop x .ucard by 111x119","OVERLAP .shop x .ucard by 111x119","OVERLAP .shop x .ucard by 111x119","OVERLAP .shop x .ucard by 111x119","OVERLAP .shop x .ucard by 111x119","OVERLAP .shop x .ucard by 111x119"]
+r2 selected audit B 1024 ["OVERLAP .res x .sqpanel by 113x37"]
+A sees after B closed: {"status":"Brann the Long NMarshal AldricDisconnected\n        3,683 / 4,000","chat":["Brann the Long N disconnected: the AI takes over their seat in 60 s unless they return.","Brann the Long N reconnected.","Brann the Long N disconnected: the AI takes over their seat in 60 s unless they return."],"seat":[{"c":true,"bot":false,"grace":0},{"c":false,"bot":false,"grace":60}]}
+with B gone, battle started after 35404ms
+round 3 with B gone: seats [{"c":true,"bot":false},{"c":false,"bot":true}] chat ["Brann the Long N disconnected: the AI takes over their seat in 60 s unless they return.","Brann the Long N reconnected.","Brann the Long N disconnected: the AI takes over their seat in 60 s unless they return.","Brann the Long N is still away: the AI plays their seat until they return."]
+spectator buttons: ["6","icon mute-btn","icon set-btn","1×","2×","4×","Director","Free","Skip"]
+LOG
+[A] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0
+[X] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0
+[B] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0
+[S] console.warn: art prop rocks: LOD1 looks shredded (8.6% long triangles vs 0.0% in LOD0); using LOD0

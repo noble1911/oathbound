@@ -61,12 +61,13 @@ const riderLook = (o: Partial<HumanLook>): HumanLook => base({ body: 'plate', he
 
 export const ARCHETYPES: Record<string, Archetype> = {
   militia: human('militia', 'crowd'),
-  pikemen: human('pikemen', 'crowd'),
+  // skirted/robed squads have short rigged legs: their walk clip covers ~0.8 m/s (see docs/art-review/PILOT.md)
+  pikemen: human('pikemen', 'crowd', { walkSpeed: 0.9, runAbove: 2.0 }),
   berserkers: human('berserkers', 'crowd', { attackImpact: 0.42 }),
   archers: human('archers', 'crowd', { attackImpact: 0.64 }),
-  knights: human('knights', 'crowd', { walkSpeed: 1.3, dust: 0.35 }),
-  mages: human('mages', 'crowd', { attackImpact: 0.45, muzzle: 2.0 }),
-  clerics: human('clerics', 'crowd', { attackImpact: 0.5, muzzle: 2.0 }),
+  knights: human('knights', 'crowd', { walkSpeed: 0.9, runAbove: 2.0, dust: 0.35 }),
+  mages: human('mages', 'crowd', { walkSpeed: 0.9, runAbove: 2.0, attackImpact: 0.45, muzzle: 2.0 }),
+  clerics: human('clerics', 'crowd', { walkSpeed: 0.9, runAbove: 2.0, attackImpact: 0.5, muzzle: 2.0 }),
   skeleton: human('skeleton', 'crowd', { dust: 0.1 }),
   cavaliers: {
     key: 'cavaliers', render: 'crowd',

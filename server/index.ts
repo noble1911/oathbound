@@ -12,16 +12,18 @@
 // Timers (ms) are env-overridable: LORD_PICK_MS, PLANNING_MS, LOOT_BONUS_MS, BATTLE_SLACK_MS, BATTLE_CAP_MS,
 // RESULTS_MS, DISCONNECT_GRACE_MS.
 
-import { createServer, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import { randomBytes, randomInt } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
+import { promisify } from 'node:util';
+import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import * as sim from '../src/sim/index.ts';
 import type { BattleResult, BotStrategy, Intent, MatchState, PlayerView, Replay, Seat as SeatNo } from '../src/sim/types.ts';
 import {
-  AI_STRATEGY, BATTLE_SLACK_MS, DISCONNECT_GRACE_MS, LOOT_BONUS_MS, LORD_PICK_MS, MAX_SPECTATORS, PLANNING_MS, RESULTS_MS,
+  AI_STRATEGY, TAKEOVER_STRATEGY, BATTLE_SLACK_MS, DISCONNECT_GRACE_MS, LOOT_BONUS_MS, LORD_PICK_MS, MAX_SPECTATORS, PLANNING_MS, RESULTS_MS,
   type AiLevel, type ClientMsg, type RoomMode, type RoomPhase, type RoomView, type SeatInfo, type ServerMsg,
 } from '../src/net/protocol.ts';
 
@@ -41,10 +43,74 @@ const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.mp3': 'audio/mpeg',
-  '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.ktx2': 'image/ktx2',
+  '.ogg': 'audio/ogg', '.webm': 'audio/webm', '.wav': 'audio/wav', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.ktx2': 'image/ktx2',
   '.hdr': 'application/octet-stream', '.bin': 'application/octet-stream',
   '.txt': 'text/plain; charset=utf-8', '.md': 'text/markdown; charset=utf-8', '.map': 'application/json',
 };
+
+// ---------------------------------------------------------------- static files: caching + compression
+//
+// Cache policy (the gateway and Cloudflare pass these through):
+//  - index.html (any .html): no-cache, i.e. always revalidated, so a deploy is picked up at once;
+//  - /assets/*: Vite's content-hashed bundles, immutable for a year;
+//  - /models/**, /ui/**: unhashed art, a week fresh + a day stale-while-revalidate, then a cheap 304 via the ETag;
+//  - everything else: an hour, then the ETag.
+// ETags are strong: a content hash (computed once per file version and cached with its mtime/size), with a
+// -br / -gz suffix for the compressed variants. Text-like files (json, js, css, html, svg, VAT .bin, glb) are
+// brotli/gzip-compressed on first request and the result is kept in memory; audio and images are already
+// compressed and never re-encoded, and byte ranges always come from the identity bytes.
+
+const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.bin', '.glb', '.gltf', '.txt', '.md', '.map', '.wasm', '.hdr']);
+const brotliP = promisify(brotliCompress);
+const gzipP = promisify(gzip);
+
+export function cacheControlFor(path: string, ext: string): string {
+  if (ext === '.html') return 'no-cache';
+  if (path.startsWith('/assets/')) return 'public, max-age=31536000, immutable';
+  if (path.startsWith('/models/') || path.startsWith('/ui/')) return 'public, max-age=604800, stale-while-revalidate=86400';
+  return 'public, max-age=3600';
+}
+
+interface StaticEntry { mtimeMs: number; size: number; body: Buffer; etag: string; br?: Promise<Buffer | null>; gzip?: Promise<Buffer | null> }
+const staticCache = new Map<string, StaticEntry>();
+
+async function staticEntry(file: string, mtimeMs: number, size: number): Promise<StaticEntry> {
+  const hit = staticCache.get(file);
+  if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit;
+  const body = await readFile(file);
+  const etag = `"${createHash('sha256').update(body).digest('base64url').slice(0, 22)}"`;
+  const e: StaticEntry = { mtimeMs, size, body, etag };
+  staticCache.set(file, e);
+  return e;
+}
+
+/** brotli if the client takes it, else gzip, else identity (q=0 means "not acceptable"). */
+export function pickEncoding(accept: string): 'br' | 'gzip' | null {
+  const allowed = (name: string): boolean => {
+    const m = new RegExp(`(?:^|,)\\s*${name}\\s*(?:;\\s*q\\s*=\\s*([0-9.]+))?\\s*(?:,|$)`, 'i').exec(accept);
+    return !!m && (m[1] === undefined || Number(m[1]) > 0);
+  };
+  return allowed('br') ? 'br' : allowed('gzip') ? 'gzip' : null;
+}
+
+/** The compressed variant (computed once, then cached), or null when compression does not pay. */
+function compressedOf(e: StaticEntry, enc: 'br' | 'gzip'): Promise<Buffer | null> {
+  const run = async (): Promise<Buffer | null> => {
+    if (e.body.length < 1024) return null;
+    const out = enc === 'br'
+      ? await brotliP(e.body, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: e.body.length > 1 << 20 ? 6 : 11, [zlibConstants.BROTLI_PARAM_SIZE_HINT]: e.body.length } })
+      : await gzipP(e.body, { level: 9 });
+    return out.length < e.body.length * 0.95 ? out : null;
+  };
+  if (enc === 'br') return (e.br ??= run());
+  return (e.gzip ??= run());
+}
+
+function etagMatches(header: string | string[] | undefined, etag: string): boolean {
+  if (!header) return false;
+  const list = (Array.isArray(header) ? header.join(',') : header).split(',').map((x) => x.trim().replace(/^W\//, ''));
+  return list.includes('*') || list.includes(etag);
+}
 
 export interface ServerOptions {
   lordPickMs?: number;
@@ -58,6 +124,8 @@ export interface ServerOptions {
   graceMs?: number;
   /** Lobby seats / spectators of vanished players are freed after this long. */
   lobbyGraceMs?: number;
+  /** Tests: build each new match (default sim.newMatch(seed, null)), e.g. one a round from its end. */
+  newMatch?: (seed: number) => MatchState;
 }
 
 /** Someone in a room: a player (seat 0/1), the vs-AI bot, or a spectator (seat null). */
@@ -117,13 +185,24 @@ const online = (m: Member | null): boolean => !!m && !!m.ws && m.ws.readyState =
 const isAi = (m: Member | null) => !!m && (m.bot || m.botControlled);
 const AI_NAMES: Record<AiLevel, string> = { easy: 'AI (Easy)', normal: 'AI (Normal)', hard: 'AI (Hard)' };
 
-function cleanName(n: unknown): string {
-  const s = String(n ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 16);
+/**
+ * Control characters (C0, DEL, C1), bidi overrides/isolates and zero-width marks: they can't be typed meaningfully
+ * and are used to spoof or break layouts. Everything else, including < > & and quotes, is kept as typed: the
+ * client escapes text for display (the server never treats it as HTML).
+ */
+const CONTROL = /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁩﻿]/g;
+/** Truncate to `max` code points (never splits a surrogate pair). */
+const clip = (s: string, max: number): string => Array.from(s).slice(0, max).join('');
+export const MAX_NAME_CHARS = 16;
+export const MAX_CHAT_CHARS = 200;
+
+export function cleanName(n: unknown): string {
+  const s = clip(String(n ?? '').replace(CONTROL, '').replace(/\s+/g, ' ').trim(), MAX_NAME_CHARS).trim();
   return s || 'Player';
 }
 
-function cleanText(n: unknown): string {
-  return String(n ?? '').replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, 200);
+export function cleanText(n: unknown): string {
+  return clip(String(n ?? '').replace(CONTROL, ' ').trim(), MAX_CHAT_CHARS).trim();
 }
 
 const env = (k: string, d: number) => (process.env[k] !== undefined && process.env[k] !== '' ? Number(process.env[k]) : d);
@@ -230,8 +309,8 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
 
   // ---------------------------------------------------------------- bots
 
-  /** The vs-AI bot plays at the room's difficulty; a taken-over human seat gets the best bot. */
-  const strategyFor = (room: Room, m: Member): BotStrategy => (m.bot ? AI_STRATEGY[room.aiLevel] : 'best');
+  /** The vs-AI bot plays at the room's difficulty; a taken-over human seat gets the hard bot. */
+  const strategyFor = (room: Room, m: Member): BotStrategy => (m.bot ? AI_STRATEGY[room.aiLevel] : TAKEOVER_STRATEGY);
 
   /** Let the server play every AI seat for the current phase. */
   function runBots(room: Room): void {
@@ -261,7 +340,8 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
   // ---------------------------------------------------------------- phase machine
 
   function startMatch(room: Room): void {
-    room.state = sim.newMatch(randomBytes(4).readUInt32LE(0) >>> 0, null);
+    const seed = randomBytes(4).readUInt32LE(0) >>> 0;
+    room.state = opts.newMatch ? opts.newMatch(seed) : sim.newMatch(seed, null);
     room.battle = null;
     for (const m of room.seats) if (m) (m.rematch = false), (m.done = false);
     room.phase = 'lordPick';
@@ -593,11 +673,11 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
 
   // ---------------------------------------------------------------- http + ws
 
-  async function serveFile(rawUrl: string, res: ServerResponse): Promise<void> {
+  async function serveFile(req: IncomingMessage, res: ServerResponse): Promise<void> {
     let url: URL;
     let p: string;
     try {
-      url = new URL(rawUrl, 'http://x');
+      url = new URL(req.url ?? '/', 'http://x');
       p = decodeURIComponent(url.pathname);
     } catch {
       res.writeHead(400, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
@@ -615,24 +695,66 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
       res.writeHead(403, { 'Cache-Control': 'no-store' });
       return void res.end();
     }
+    let st: Awaited<ReturnType<typeof stat>>;
     try {
-      if (!(await stat(file)).isFile()) throw new Error('not a file');
+      st = await stat(file);
+      if (!st.isFile()) throw new Error('not a file');
     } catch {
       res.writeHead(404, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
       return void res.end('not found');
     }
     const ext = extname(file).toLowerCase();
-    const body = await readFile(file);
-    res.writeHead(200, {
+    const entry = await staticEntry(file, Number(st.mtimeMs), Number(st.size));
+    const head = req.method === 'HEAD';
+    const headers: Record<string, string | number> = {
       'Content-Type': TYPES[ext] ?? 'application/octet-stream',
-      'Cache-Control': ext === '.html' ? 'no-cache' : p.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
-    });
-    res.end(body);
+      'Cache-Control': cacheControlFor(p, ext),
+      'Accept-Ranges': 'bytes',
+    };
+    const compressible = COMPRESSIBLE.has(ext);
+    if (compressible) headers.Vary = 'Accept-Encoding';
+    const range = req.headers.range;
+    const ifRange = req.headers['if-range'];
+    // byte ranges: <audio> streams music with them (Safari refuses media without 206 support). Ranges always come
+    // from the identity bytes; a stale If-Range validator gets the whole file instead.
+    const m = range && (!ifRange || ifRange === entry.etag) ? /^bytes=(\d*)-(\d*)$/.exec(range) : null;
+    if (m && (m[1] || m[2])) {
+      const body = entry.body, size = body.length;
+      let a = m[1] ? Number(m[1]) : size - Number(m[2]);
+      let b = m[1] && m[2] ? Number(m[2]) : size - 1;
+      a = Math.max(0, a);
+      b = Math.min(size - 1, b);
+      if (a > b || a >= size) {
+        res.writeHead(416, { 'Content-Range': `bytes */${size}`, 'Cache-Control': 'no-store' });
+        return void res.end();
+      }
+      res.writeHead(206, { ...headers, ETag: entry.etag, 'Content-Range': `bytes ${a}-${b}/${size}`, 'Content-Length': b - a + 1 });
+      return void res.end(head ? undefined : body.subarray(a, b + 1));
+    }
+    const enc = compressible ? pickEncoding(String(req.headers['accept-encoding'] ?? '')) : null;
+    let body = entry.body, etag = entry.etag;
+    if (enc) {
+      const packed = await compressedOf(entry, enc);
+      if (packed) {
+        body = packed;
+        etag = entry.etag.slice(0, -1) + (enc === 'br' ? '-br"' : '-gz"');
+        headers['Content-Encoding'] = enc;
+      }
+    }
+    headers.ETag = etag;
+    if (etagMatches(req.headers['if-none-match'], etag)) {
+      delete headers['Content-Encoding'];
+      res.writeHead(304, headers);
+      return void res.end();
+    }
+    headers['Content-Length'] = body.length;
+    res.writeHead(200, headers);
+    res.end(head ? undefined : body);
   }
 
   const http = createServer((req, res) => {
     // anything thrown while handling a request answers that request, never takes the server down
-    serveFile(req.url ?? '/', res).catch((e) => {
+    serveFile(req, res).catch((e) => {
       console.error('request failed', req.url, e);
       if (!res.headersSent) res.writeHead(500);
       res.end();

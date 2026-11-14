@@ -131,32 +131,6 @@ def fit_landmarks(co, H):
             hm = m & (sg * co[:, 0] > ext - 0.06 * H)
             c = co[hm].mean(0)
             land[f'arm_{side}'] = dict(hand=c.tolist(), n=0)
-    # ---- legs
-    for side, sg in (('L', 1), ('R', -1)):
-        pts = []
-        for zk in np.arange(0.06, 0.42, 0.01) * H:
-            sl = co[np.abs(z - zk) < th]
-            if len(sl) < 8:
-                continue
-            segs = segments(sl[:, 0], 0.01 * H)
-            mine = [sg_ for sg_ in segs if (sg * (sg_[0] + sg_[1]) / 2) > 0.01 * H]
-            if len(segs) >= 2 and mine:
-                lo, hi = mine[0] if sg < 0 else mine[0]
-                lo, hi = min(mine, key=lambda q: abs((q[0] + q[1]) / 2))
-                m = (sl[:, 0] >= lo) & (sl[:, 0] <= hi)
-                pts.append((zk, sl[m, 0].mean(), sl[m, 1].mean()))
-        if len(pts) >= 5:
-            P = np.array(pts)
-            A = np.c_[P[:, 0], np.ones(len(P))]
-            land[f'leg_{side}'] = dict(kx=np.linalg.lstsq(A, P[:, 1], rcond=None)[0].tolist(),
-                                       ky=np.linalg.lstsq(A, P[:, 2], rcond=None)[0].tolist(), n=len(pts))
-    # ---- torso depth centre per height
-    def ycen(zk):
-        sl = co[(np.abs(z - zk) < th * 2) & (np.abs(co[:, 0]) < 0.08 * H)]
-        return float((sl[:, 1].min() + sl[:, 1].max()) / 2) if len(sl) > 4 else 0.0
-    land['ycen'] = {round(f, 2): ycen(f * H) for f in np.arange(0.40, 0.99, 0.02)}
-    foot = co[z < 0.04 * H]
-    land['toe_y'] = float(foot[:, 1].min()) if len(foot) else -0.15 * s
     # crotch: lowest height where the body centre line is filled for 4 consecutive slices. Used only when it is
     # clearly lower than the mannequin's (short-legged bruisers); robes fill the centre from the floor -> ignored.
     filled = [(zk, bool((np.abs(co[np.abs(z - zk) < th][:, 0]) < 0.012 * H).any())) for zk in np.arange(0.06, 0.6, 0.01) * H]
@@ -166,6 +140,43 @@ def fit_landmarks(co, H):
             if 0.18 < cz < 0.43:
                 land['crotch'] = float(filled[i][0])
             break
+    # ---- legs: per side, the segment nearest the centre line, followed upward from the ankle while it stays
+    # continuous. Only slices BELOW the crotch count: above it there is no leg, and the nearest off-centre
+    # segment is a hanging fist or forearm (that put the golem's hip joints 1.2 m outside the body and slanted
+    # its thigh bones 40 deg, which the 'absolute' retarget then turned into legs splayed 40 deg in every clip).
+    z_top = (land['crotch'] - 0.015 * H) if 'crotch' in land else 0.42 * H
+    for side, sg in (('L', 1), ('R', -1)):
+        pts = []
+        for zk in np.arange(0.08, 0.42, 0.01) * H:
+            if zk > z_top:
+                break
+            sl = co[np.abs(z - zk) < th]
+            if len(sl) < 8:
+                continue
+            segs = segments(sl[:, 0], 0.01 * H)
+            mine = [sg_ for sg_ in segs if (sg * (sg_[0] + sg_[1]) / 2) > 0.01 * H]
+            if len(segs) >= 2 and mine:
+                lo, hi = min(mine, key=lambda q: abs((q[0] + q[1]) / 2))
+                m = (sl[:, 0] >= lo) & (sl[:, 0] <= hi)
+                cx = sl[m, 0].mean()
+                if pts and abs(cx - pts[-1][1]) > 0.03 * H:
+                    break                                   # jumped to another body part
+                pts.append((zk, cx, (sl[m, 1].min() + sl[m, 1].max()) / 2))
+        if len(pts) >= 8:
+            P = np.array(pts)
+            A = np.c_[P[:, 0], np.ones(len(P))]
+            kx = np.linalg.lstsq(A, P[:, 1], rcond=None)[0]
+            ky = np.linalg.lstsq(A, P[:, 2], rcond=None)[0]
+            # a leg in an A-pose is within ~20 deg of vertical; anything else is a bad fit (robes, props)
+            if abs(kx[0]) < 0.36 and abs(ky[0]) < 0.36:
+                land[f'leg_{side}'] = dict(kx=kx.tolist(), ky=ky.tolist(), n=len(pts))
+    # ---- torso depth centre per height
+    def ycen(zk):
+        sl = co[(np.abs(z - zk) < th * 2) & (np.abs(co[:, 0]) < 0.08 * H)]
+        return float((sl[:, 1].min() + sl[:, 1].max()) / 2) if len(sl) > 4 else 0.0
+    land['ycen'] = {round(f, 2): ycen(f * H) for f in np.arange(0.40, 0.99, 0.02)}
+    foot = co[z < 0.04 * H]
+    land['toe_y'] = float(foot[:, 1].min()) if len(foot) else -0.15 * s
     return land
 
 
@@ -320,6 +331,89 @@ def skin(aid, rig, meshes, H):
     return ok
 
 
+def ground_fix(rig, body, act, death=False):
+    """Keep a retargeted clip on the ground. The clips are FK copies of a mannequin's joint angles, so a
+    character with other proportions misses the floor: long feet (the golem's are 0.8 x its leg) stab 40 cm into
+    it at toe-off, thick torsos sink when the body lies down. Per frame: (a) un-pitch a foot whose toes go under
+    the floor, pivoting at the ankle; (b) lift the hips by whatever the lowest body vertex still lacks."""
+    sc = bpy.context.scene
+    R.set_action(rig, act)
+    B = rig.data.bones
+    g_tip = {sd: min(B[f'toe.{sd}'].tail_local.z, B[f'toe.{sd}'].head_local.z) for sd in 'LR'}
+    f0, f1 = act.frame_range
+    names = {g.index: g.name for g in body.vertex_groups}
+    keep = ('hips', 'spine', 'neck', 'head', 'thigh', 'shin')
+    core = np.array([v.index for v in body.data.vertices
+                     if v.groups and names[max(v.groups, key=lambda g: g.weight).group].startswith(keep)], int)
+    worst_toe, worst_body = 0.0, 0.0
+    for f in range(int(f0), int(f1) + 1):
+        sc.frame_set(f)
+        if not death:
+            for sd in 'LR':
+                foot = rig.pose.bones[f'foot.{sd}']; toe = rig.pose.bones[f'toe.{sd}']
+                ankle = foot.head.copy()
+                pts = [toe.head.copy(), toe.tail.copy()]
+                low = min(p.z for p in pts) - g_tip[sd]
+                if low >= -0.004:
+                    continue
+                worst_toe = min(worst_toe, low)
+                d = pts[1] - ankle; d.z = 0
+                if d.length < 1e-4:
+                    continue
+                axis = Vector((0, 0, 1)).cross(d.normalized())      # +angle about it lowers the toes
+                lo_a, hi_a = -1.4, 0.0
+                def lowest(a):
+                    rm = Matrix.Rotation(a, 3, axis)
+                    return min((ankle + rm @ (p - ankle)).z for p in pts) - g_tip[sd]
+                if lowest(lo_a) < 0:
+                    ang = lo_a
+                else:
+                    for _ in range(18):
+                        mid = (lo_a + hi_a) / 2
+                        if lowest(mid) < 0:
+                            hi_a = mid
+                        else:
+                            lo_a = mid
+                    ang = lo_a
+                M = Matrix.Translation(ankle) @ Matrix.Rotation(ang, 4, axis) @ Matrix.Translation(-ankle)
+                foot.matrix = M @ foot.matrix
+                bpy.context.view_layer.update()
+                foot.keyframe_insert('rotation_quaternion', frame=f, group=foot.name)
+        bpy.context.view_layer.update()
+        oe = body.evaluated_get(bpy.context.evaluated_depsgraph_get())
+        me = oe.to_mesh()
+        co = np.empty(len(me.vertices) * 3, np.float32); me.vertices.foreach_get('co', co)
+        oe.to_mesh_clear()
+        zz = co.reshape(-1, 3)[:, 2]
+        zmin = float(zz.min())
+        if death:
+            # lying down: rest the torso and legs on the floor; arms may dig in up to half of what they lack
+            # (lifting by the lowest fist left the golem's corpse hovering 70 cm up on its knuckles)
+            zmin = min(float(zz[core].min()), 0.5 * zmin)
+        if zmin < -0.004:
+            worst_body = min(worst_body, zmin)
+            hips = rig.pose.bones['hips']
+            m = hips.matrix.copy(); m.translation.z -= zmin
+            hips.matrix = m
+            bpy.context.view_layer.update()
+            hips.keyframe_insert('location', frame=f, group='hips')
+            hips.keyframe_insert('rotation_quaternion', frame=f, group='hips')
+    # keep quaternion signs continuous after the edits (the VAT samples between keys)
+    for bn in ('foot.L', 'foot.R', 'hips'):
+        pb = rig.pose.bones[bn]
+        last = None
+        for f in range(int(f0), int(f1) + 1):
+            sc.frame_set(f)
+            q = pb.rotation_quaternion.copy()
+            if last is not None and last.dot(q) < 0:
+                q.negate()
+                pb.rotation_quaternion = q
+                pb.keyframe_insert('rotation_quaternion', frame=f, group=bn)
+            last = q
+    R.set_action(rig, None)
+    return worst_toe, worst_body
+
+
 def weapon_objects(wid):
     p = L.WORK / 'blend' / f'{wid}_clean.blend'
     with bpy.data.libraries.load(str(p), link=False) as (src, dst):
@@ -377,8 +471,10 @@ def main():
         wnodes.append(dict(id=wid, node=f'{wid}_{side}', bone=bn))
     # clips
     mapping = dict(COMMON, **CLIPSETS[a.get('clipset', 'sword')])
-    hs = s
-    hoff = rig.data.bones['hips'].head_local - lib.data.bones['hips'].head_local * s
+    # hips travel scales with LEG length, not body height: short-legged units (golem, skirted squads) otherwise
+    # bob too far and sink below the ground in the death clips
+    hs = rig.data.bones['hips'].head_local.z / lib.data.bones['hips'].head_local.z
+    hoff = rig.data.bones['hips'].head_local - lib.data.bones['hips'].head_local * hs
     bones = [b.name for b in rig.data.bones]
     clips = {}
     rigid_wrist = None
@@ -396,6 +492,10 @@ def main():
                      rule='absolute', hips_scale=hs, hips_offset=hoff, extra=rigid_wrist)
         clips[final] = dict(frames=nf, duration=round((nf - 1) / sc.render.fps, 4), loop=final in LOOPS,
                             source=mapping[final])
+    for final in FINAL_CLIPS:
+        wt, wb = ground_fix(rig, lod1, bpy.data.actions[final], death=final.startswith('death'))
+        if wt < -0.02 or wb < -0.02:
+            print(f'[rig] ground fix {final}: toes were {-wt * 100:.0f} cm, body {-wb * 100:.0f} cm under the floor')
     R.set_action(rig, bpy.data.actions['idle'])
     # drop the library before export so only the unit's clips are exported
     bpy.data.objects.remove(lib, do_unlink=True)

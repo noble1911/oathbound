@@ -20,6 +20,7 @@ import { Props } from './props.ts';
 import { bakeTreeShadow, bakedShadowUniforms } from './baked-shadow.ts';
 import { ArtProps, tintedPropMaterial } from './art-props.ts';
 import { CanopyGrid } from './canopy.ts';
+import { loadGround, setGroundAnisotropy } from './env-textures.ts';
 import type { PropAsset } from '../crowd/assets.ts';
 import { Keep, keepMaterials, type KeepView } from './keep.ts';
 import { ZONES, buildCurtain, overlayUniforms } from './overlay.ts';
@@ -92,15 +93,20 @@ export class Battlefield {
       this.group.add(c);
       return c;
     });
-    this.water.hideInReflection.push(this.foliage.grass, ...this.foliage.trees.slice(5), ...this.curtains);
+    this.water.hideInReflection.push(this.foliage.grass, ...this.foliage.trees.slice(5), ...this.foliage.plants.map((pl) => pl.mesh), ...this.curtains);
     this.applyQuality(e.quality);
     e.wake();
   }
 
   private bakedTex: THREE.DataTexture | null = null;
   private applyQuality(q: QualitySettings): void {
-    this.foliage.setDensity(q.grassDensity, q.treeDensity);
+    this.foliage.setDensity(q.grassDensity, q.treeDensity, q.tier);
     this.artProps?.setQuality(q);
+    // scanned ground layers: half-resolution albedo on the cheap tiers; low has no normal maps, low / medium no second scale
+    const cheap = q.tier === 'low' || q.tier === 'medium';
+    void loadGround(cheap ? 512 : 1024, q.tier !== 'low', () => this.engine.wake());
+    setGroundAnisotropy(q.anisotropy);
+    (this.ground.userData.setDetail as (level: 0 | 1 | 2) => void)(q.tier === 'low' ? 0 : q.tier === 'medium' ? 1 : 2);
     if (this.props) this.rebuildCanopy();
     // power: prop shadows from the shadow map only on high/ultra; elsewhere a baked tree mask
     // shadow-map casters only near the action: field-forest trees and props on high/ultra; the
@@ -110,7 +116,7 @@ export class Battlefield {
     this.foliage.trees.forEach((t, k) => (t.castShadow = liveTrees && k < 5));
     this.props.group.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (m.isMesh) m.castShadow = q.propShadows && !/lod1|reeds|rocks|bush/.test(m.name);
+      if (m.isMesh) m.castShadow = q.propShadows && !/lod1|rocks/.test(m.name);
     });
     this.ground.castShadow = q.propShadows;
     this.bakedTex = bakeTreeShadow(liveTrees ? this.foliage.trees.slice(5) : this.foliage.trees, this.engine.sun.direction, this.bakedTex);
@@ -143,8 +149,6 @@ export class Battlefield {
   private keepModel: THREE.Object3D | null = null;
   private art: Map<string, PropAsset> | null = null;
   private canopy = new CanopyGrid();
-  /** Trees currently use the planning canopy-fade material. */
-  private canopyFade = false;
 
   /** Highest tree crown / prop / castle top at a world point (−1e9 on open ground): the camera stays above it. */
   canopyAt(x: number, z: number): number {
@@ -173,8 +177,7 @@ export class Battlefield {
   private buildArt(): void {
     const art = this.art!;
     this.artProps?.dispose();
-    this.artProps = new ArtProps({ engine: this.engine, hf: this.hf, trees: this.foliage.trees, props: this.props.group, treeDepth: this.foliage.treeDepth }, art);
-    this.artProps.setCanopyFade(this.canopyFade);
+    this.artProps = new ArtProps({ engine: this.engine, hf: this.hf, props: this.props.group }, art);
     const tower = art.get('arrow_tower');
     if (tower) {
       const b = tower.lod0.box;
@@ -205,10 +208,6 @@ export class Battlefield {
 
   setPlanning(p: PlanningOverlay): void {
     const seat = p.seat ?? 0;
-    if (p.visible) {
-      this.canopyFade = true;
-      this.artProps?.setCanopyFade(true);
-    }
     if (!p.visible) this.planTarget.set(0, 0, 0);
     else {
       const other = p.bothSides ? 0.4 : 0;
@@ -232,14 +231,9 @@ export class Battlefield {
     if (u.distanceToSquared(tgt) > 1e-5) {
       u.lerp(tgt, k);
       busy = true;
-    } else {
-      u.copy(tgt);
-      // overlay fully gone: back to the plain tree material (keeps early-z in battle)
-      if (tgt.x === 0 && tgt.y === 0 && this.canopyFade) {
-        this.canopyFade = false;
-        this.artProps?.setCanopyFade(false);
-      }
-    }
+      // trees in the deploy zone shrink / grow with the overlay: their shadows follow
+      this.engine.markShadows();
+    } else u.copy(tgt);
     this.curtains.forEach((c, i) => {
       const f = i === 0 ? u.x : u.y;
       c.visible = f > 0.002;

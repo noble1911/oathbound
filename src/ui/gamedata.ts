@@ -3,7 +3,8 @@
 import type { Affix, Item, LordId, Rarity, Seat, Slot, Squad, SquadType, Tag, UnitDef, UnitType, Vec2, WeaponKind } from '../sim/types.ts';
 import { UNITS, UNIT_TYPES } from '../sim/data/units.ts';
 import { LORDS } from '../sim/data/lords.ts';
-import { AFFIXES, LEGENDARIES, SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
+import { AFFIXES, LEGENDARIES } from '../sim/data/items.ts';
+import { slotOpen as simSlotOpen } from '../sim/match.ts';
 
 export const RARITY_CSS: Record<Rarity, string> = { common: '#e3ddd3', magic: '#7e9cff', rare: '#ffe35c', legendary: '#ff8a1e' };
 export const RARITY_LABEL: Record<Rarity, string> = { common: 'Common', magic: 'Magic', rare: 'Rare', legendary: 'Legendary' };
@@ -44,8 +45,9 @@ export function dps(dmg: number, attackTicks: number): number {
   return attackTicks > 0 ? (dmg * 20) / attackTicks : 0;
 }
 
+/** The sim's own rule (never a copy of the unlock levels). */
 export function slotOpen(sq: Pick<Squad, 'type' | 'level'>, slot: Slot): boolean {
-  return sq.type === 'lord' || sq.level >= SLOT_UNLOCK_LEVEL[slot];
+  return simSlotOpen(sq as Squad, slot);
 }
 
 export function tagsOf(t: SquadType, lord?: LordId | null): Tag[] {
@@ -202,3 +204,72 @@ export function allItems(squads: Squad[]): { item: Item; squad: Squad }[] {
   for (const s of squads) for (const slot of SLOTS) if (s.items[slot]) out.push({ item: s.items[slot]!, squad: s });
   return out;
 }
+
+// ---------------------------------------------------------------- does an item help that squad?
+
+const OFFENSIVE = new Set(['keen', 'vicious', 'leech', 'slaying', 'embers', 'frost']);
+const OFFENSIVE_LEGENDS = new Set(['stormcaller', 'kingsbane', 'bloodthirst', 'earthshaker', 'frostheart', 'hydra_volley', 'gravebloom']);
+
+function isHealer(t: SquadType): boolean {
+  return t !== 'lord' && !!UNITS[t].traits?.includes('healer');
+}
+
+/** Why an affix does nothing on this squad, or null if it works. */
+export function affixDead(a: Affix, t: SquadType, lord?: LordId | null): string | null {
+  if (a.id === 'farreach' && soldierStats(t, 1, lord).range < 400) return 'melee: no range to extend';
+  if (OFFENSIVE.has(a.id) && isHealer(t)) return 'healers never attack';
+  return null;
+}
+
+export function legendaryDead(item: Item, t: SquadType): string | null {
+  return item.legendary && OFFENSIVE_LEGENDS.has(item.legendary) && isHealer(t) ? 'healers never attack' : null;
+}
+
+/** Which of an item's lines are dead on a squad: [implicit, ...affixes] in tooltip order, and the legendary power. */
+export function deadLines(item: Item, t: SquadType, lord?: LordId | null): { affix: (string | null)[]; legendary: string | null } {
+  return { affix: [item.implicit, ...item.affixes].map((a) => affixDead(a, t, lord)), legendary: legendaryDead(item, t) };
+}
+
+/** What the squad is worth on the field (gold-ish): items are worth more on bigger squads. */
+function squadWorth(sq: Pick<Squad, 'type' | 'level'>): number {
+  if (sq.type === 'lord') return 320 * (1 + 0.1 * (sq.level - 1));
+  return UNITS[sq.type].cost * (1 + 0.5 * (sq.level - 1));
+}
+
+/** Usefulness of an item on a squad: the budget of the affixes that actually work there, times the squad's worth. */
+export function itemUse(item: Item, sq: Pick<Squad, 'type' | 'level'>, lord?: LordId | null): number {
+  let p = 0;
+  for (const a of [item.implicit, ...item.affixes]) if (!affixDead(a, sq.type, lord)) p += a.value * AFFIXES[a.id].power;
+  if (item.legendary && !legendaryDead(item, sq.type)) p += LEGENDARIES[item.legendary].power;
+  return (p * squadWorth(sq)) / 100;
+}
+
+export interface Fit {
+  squad: Squad;
+  /** Usefulness gained over what is in the slot now. */
+  gain: number;
+  replaces: Item | null;
+  /** Lines of the item that do nothing there. */
+  dead: number;
+}
+
+/**
+ * The squad an item helps most right now (its slot must be open): the biggest usefulness gain over
+ * what is already equipped. Null when no squad has that slot open, or nothing would improve.
+ */
+export function bestFit(item: Item, squads: Squad[], lord?: LordId | null): Fit | null {
+  let best: Fit | null = null;
+  for (const sq of squads) {
+    if (!slotOpen(sq, item.slot)) continue;
+    const cur = sq.items[item.slot] ?? null;
+    const gain = itemUse(item, sq, lord) - (cur ? itemUse(cur, sq, lord) : 0);
+    if (gain <= 0) continue;
+    const d = deadLines(item, sq.type, lord);
+    const dead = d.affix.filter(Boolean).length + (d.legendary ? 1 : 0);
+    if (!best || gain > best.gain) best = { squad: sq, gain, replaces: cur, dead };
+  }
+  return best;
+}
+
+/** Keys that pick shop cards: 1-9, then 0, -, =. */
+export const SHOP_KEYS: readonly string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='];

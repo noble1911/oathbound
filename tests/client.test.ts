@@ -7,6 +7,7 @@ import { LocalMatch } from '../src/ui/local.ts';
 import type { Item, Replay, Seat } from '../src/sim/types.ts';
 import type { RoomView } from '../src/net/protocol.ts';
 import { UNITS, UNIT_TYPES } from '../src/sim/data/units.ts';
+import { SLOT_UNLOCK_LEVEL } from '../src/sim/data/items.ts';
 
 const item = (over: Partial<Item> = {}): Item => ({
   id: 1, base: 'steel_blade', slot: 'weapon', rarity: 'magic', ilvl: 3,
@@ -45,10 +46,13 @@ describe('unit readings', () => {
     expect(l3.dmg).toBe(Math.round(UNITS.knights.dmg * 1.4));
     expect(l1.size).toBe(UNITS.knights.squadSize);
   });
-  it('slots open at Lv1/3/5; the Lord has all three', () => {
-    expect(slotOpen({ type: 'archers', level: 2 }, 'armor')).toBe(false);
-    expect(slotOpen({ type: 'archers', level: 3 }, 'armor')).toBe(true);
-    expect(slotOpen({ type: 'archers', level: 4 }, 'relic')).toBe(false);
+  it('slots open at the unlock levels of the sim; the Lord has all three', () => {
+    const { armor, relic } = SLOT_UNLOCK_LEVEL;
+    expect(slotOpen({ type: 'archers', level: 1 }, 'weapon')).toBe(true);
+    expect(slotOpen({ type: 'archers', level: armor - 1 }, 'armor')).toBe(false);
+    expect(slotOpen({ type: 'archers', level: armor }, 'armor')).toBe(true);
+    expect(slotOpen({ type: 'archers', level: relic - 1 }, 'relic')).toBe(false);
+    expect(slotOpen({ type: 'archers', level: relic }, 'relic')).toBe(true);
     expect(slotOpen({ type: 'lord', level: 1 }, 'relic')).toBe(true);
   });
 });
@@ -119,5 +123,41 @@ describe('local match (dev harness)', () => {
     expect(r2.view!.enemy.lastArmy?.length).toBeGreaterThan(0);
     m.dispose();
     vi.useRealTimers();
+  });
+});
+
+describe('audio bank', () => {
+  it('every sound and music file the bank references is shipped', async () => {
+    const { existsSync, statSync } = await import('node:fs');
+    const { bankFiles, MUSIC } = await import('../src/audio/bank.ts');
+    const files = [...bankFiles().map((f) => `public/audio/${f}`), ...Object.values(MUSIC).map((f) => `public/${f}`)];
+    for (const f of files) expect(existsSync(f), f).toBe(true);
+    // the effects stay within the download budget (music streams separately)
+    const sfx = bankFiles().reduce((n, f) => n + statSync(`public/audio/${f}`).size, 0);
+    expect(sfx).toBeLessThan(3.2e6);
+  });
+  it('battle sounds have variants, limits and cooldowns (no machine-gunning)', async () => {
+    const { BANK } = await import('../src/audio/bank.ts');
+    for (const id of ['clash', 'clashHeavy', 'death', 'volleySmall', 'volleyLarge', 'arrowHit', 'boom', 'stone'] as const) {
+      const d = BANK[id];
+      expect(d.files.length, id).toBeGreaterThanOrEqual(3);
+      expect(d.limit, id).toBeGreaterThan(0);
+      expect(d.cooldown, id).toBeGreaterThan(0);
+    }
+  });
+  it('distance attenuation falls off smoothly and never fully silences the field', async () => {
+    const { attenuate, distanceCutoff } = await import('../src/audio/bank.ts');
+    expect(attenuate(0, 60)).toBe(1);
+    let last = 1;
+    for (let d = 0; d <= 200; d += 10) {
+      const g = attenuate(d, 60);
+      expect(g).toBeLessThanOrEqual(last);
+      last = g;
+    }
+    expect(attenuate(500, 60)).toBeGreaterThan(0);
+    // zoomed out, the same distance is louder (more of the field is in view)
+    expect(attenuate(60, 140)).toBeGreaterThan(attenuate(60, 40));
+    expect(distanceCutoff(1)).toBe(20000);
+    expect(distanceCutoff(0.1)).toBeLessThan(5000);
   });
 });

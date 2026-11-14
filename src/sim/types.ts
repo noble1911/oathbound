@@ -205,14 +205,43 @@ export interface PlayerState {
   lostLast: boolean;
   /** The army as it fought last battle — the only thing the opponent sees during planning. */
   lastArmy: Squad[] | null;
+  /**
+   * Comeback bonus earned by the last battle (set by applyBattle, paid by nextRound, kept for display until the
+   * next battle). `gold` = catch-up gold (only when you lost the round; grows with the round and your keep-HP
+   * deficit); `deploys` = extra squad deployments (when your keep is far behind). See comebackFor in match.ts.
+   */
+  comeback: Comeback;
 }
+
+export interface Comeback {
+  gold: number;
+  deploys: number;
+  /** Your keep-HP deficit in percentage points after the battle (0 = not behind). */
+  deficit: number;
+}
+
+/**
+ * How a battle ended.
+ *  - 'wipe': one army was destroyed (the other side won and marched on the keep).
+ *  - 'mutualWipe': both armies were destroyed on the same tick (a draw).
+ *  - 'timeout': 90 s passed with both armies standing; the round is decided on points.
+ *  - 'stalemate': ended early because neither side could damage the other (nothing able to target the
+ *    remaining enemies, or no damage dealt for 15 s); decided on points like a timeout.
+ */
+export type BattleEnd = 'wipe' | 'mutualWipe' | 'timeout' | 'stalemate';
+/** A round from one seat's point of view. */
+export type RoundOutcome = 'won' | 'lost' | 'draw';
 
 export interface RoundSummary {
   round: number;
-  winner: Seat | null; // null = timeout / both wiped
+  /** The round winner (on points for timeouts / stalemates). null = a draw: no catch-up for anyone. */
+  winner: Seat | null;
   keepDamage: [number, number]; // damage dealt TO seat 0's and seat 1's keep
   survivors: [number, number]; // surviving squads per seat
   ticks: number;
+  end: BattleEnd;
+  /** Points per seat: percent (0..100) of the army's value still standing at the end (see BattleResult.score). */
+  score: [number, number];
 }
 
 export interface MatchState {
@@ -278,9 +307,19 @@ export type IntentResult = { ok: true } | { ok: false; error: string };
 
 export interface BattleResult {
   round: number;
-  /** null = timeout (both may have survivors) or both armies wiped. */
+  /**
+   * The round winner. A wipe is won by the side left standing; a timeout or stalemate is won on points
+   * (`score`, at least POINTS_MARGIN ahead). null = a draw (mutual wipe, or points within the margin).
+   */
   winner: Seat | null;
+  /** Both armies were still standing when the battle ended (end = 'timeout' or 'stalemate'). */
   timeout: boolean;
+  end: BattleEnd;
+  /**
+   * Points per seat at the end of the battle: the percent (0..100) of the army's value still standing, each squad
+   * weighted by its value (cost x level; the Lord 300) times the share of its soldiers' HP left.
+   */
+  score: [number, number];
   /** Keep damage dealt TO seat 0's keep and seat 1's keep (already clamped by nothing; applyBattle clamps at 0). */
   keepDamage: [number, number];
   /** Squad ids (MatchState ids) that had at least one survivor at battle end, per seat. Lord included. */
@@ -430,4 +469,8 @@ export interface SimulateOptions {
 
 // ---------------------------------------------------------------- Bots
 
-export type BotStrategy = 'rush' | 'ranged' | 'armor' | 'air' | 'counter' | 'random' | 'best';
+/**
+ * Tournament strategies plus the three vs-AI difficulties: 'easy', 'normal', 'hard' ('best' = 'hard').
+ * 'counter' is the plain counter-picker the 'normal' level builds on.
+ */
+export type BotStrategy = 'rush' | 'ranged' | 'armor' | 'air' | 'counter' | 'random' | 'best' | 'easy' | 'normal' | 'hard';

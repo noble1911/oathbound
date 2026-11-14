@@ -155,3 +155,108 @@ describe('real sim', () => {
     for (const c of [...all, back]) c.close();
   }, 20_000);
 });
+
+describe('real sim: AI takeover and rematch', () => {
+  it('a disconnected player\'s seat is played by the AI round after round, then handed back on rejoin', async (ctx) => {
+    skipIfNoSim(ctx);
+    const { host, guest, all, code } = await makeRoom(url);
+    host.send({ t: 'start' });
+    host.send({ t: 'intent', intent: { t: 'pickLord', lord: 'marshal' } });
+    guest.send({ t: 'intent', intent: { t: 'pickLord', lord: 'skylady' } });
+    await host.wait('room', (m) => m.room.phase === 'planning');
+    const tok = guest.token;
+    guest.close();
+    const taken = await host.wait('room', (m) => !!m.room.seats[1]?.botControlled && !!m.room.view?.enemy.ready, 3000);
+    // the AI plays (and readies) seat 1 in every planning phase while its player is away
+    let played = 0;
+    for (let round = 1; round <= 2; round++) {
+      const r = round === 1 ? taken : await host.wait('room', (m) => (m.room.phase === 'planning' && m.room.view!.round === round && !!m.room.view!.enemy.ready) || m.room.phase === 'over', 10_000);
+      if (r.room.phase === 'over') break;
+      expect(r.room.seats[1]!.botControlled).toBe(true);
+      host.send({ t: 'intent', intent: { t: 'ready' } });
+      const b = await host.wait('battle', () => true, 10_000);
+      expect(b.replay.round).toBe(round);
+      // the AI really deployed an army for the absent player (more than the Lord alone)
+      expect(b.replay.soldiers.filter((s) => s.side === 1 && s.type !== 'lord').length).toBeGreaterThan(0);
+      played++;
+    }
+    expect(played).toBeGreaterThanOrEqual(1);
+    const back = await connect(url);
+    back.send({ t: 'join', code, name: 'Guest', token: tok });
+    expect((await back.wait('welcome')).seat).toBe(1);
+    const r = await back.wait('room', (m) => m.room.seats[1]?.botControlled === false && !!m.room.view);
+    expect(r.room.view!.you!.lord).toBe('skylady');
+    expect(r.room.view!.you!.squads.length).toBeGreaterThan(1);
+    for (const c of [...all, back]) c.close();
+  }, 60_000);
+});
+
+describe('real sim: match end and rematch (matches one hit from the end)', () => {
+  let fast: { port: number; close(): Promise<void> } | null = null;
+  let furl = '';
+  beforeAll(async () => {
+    if (!server) return;
+    const sim = await import('../src/sim/index.ts');
+    const { startServer } = await import('../server/index.ts');
+    fast = await startServer(0, {
+      lordPickMs: 400, planningMs: 4000, lootBonusMs: 0, battleSlackMs: 200, battleCapMs: 800, resultsMs: 100, graceMs: 300,
+      // both keeps at 1 HP with the Lords already picked: the first decided round ends the match
+      newMatch: (seed) => {
+        const s = sim.newMatch(seed, ['marshal', 'archmage']);
+        for (const p of s.players) p.keepHp = 1;
+        return s;
+      },
+    });
+    furl = `ws://127.0.0.1:${fast.port}/ws`;
+  });
+  afterAll(() => fast?.close());
+
+  async function playToOver(c: Client): Promise<RoomView> {
+    let done = 0;
+    for (let i = 0; i < 12; i++) {
+      const r = await c.wait('room', (m) => (m.room.phase === 'planning' && m.room.view!.round > done) || m.room.phase === 'over', 10_000);
+      if (r.room.phase === 'over') return r.room;
+      done = r.room.view!.round;
+      c.send({ t: 'intent', intent: { t: 'ready' } });
+      await c.wait('battle', (m) => m.replay.round === done, 10_000);
+    }
+    throw new Error('the match did not end');
+  }
+
+  it('vsAI: the match ends, the winner is shown, and a rematch starts a fresh match (the bot always agrees)', async (ctx) => {
+    if (!fast) return ctx.skip('sim not ready');
+    const { host, all } = await makeRoom(furl, 'vsAI', 'hard');
+    host.send({ t: 'start' });
+    const over = await playToOver(host);
+    expect(over.view!.phase).toBe('over');
+    expect([0, 1, 'draw']).toContain(over.view!.winner);
+    expect(over.seats[1]!.rematch).toBe(true);
+    expect(over.phaseEndsAt).toBe(0);
+    host.drain();
+    host.send({ t: 'rematch' });
+    expect((await host.wait('chat', (m) => m.system && /Rematch/.test(m.text))).text).toMatch(/new match/);
+    const fresh = await host.wait('room', (m) => m.room.phase === 'planning' && m.room.view!.round === 1);
+    expect(fresh.room.view!.history.length).toBe(0);
+    expect(fresh.room.seats[0]!.rematch).toBe(false);
+    for (const c of all) c.close();
+  }, 60_000);
+
+  it('pvp: a rematch needs every human; a player who left is played by the AI and does not block it', async (ctx) => {
+    if (!fast) return ctx.skip('sim not ready');
+    const { host, guest, all } = await makeRoom(furl);
+    host.send({ t: 'start' });
+    const over = await Promise.all([playToOver(host), playToOver(guest)]);
+    expect(over[0].view!.winner).toBe(over[1].view!.winner);
+    host.drain();
+    guest.drain();
+    host.send({ t: 'rematch' });
+    const waiting = await guest.wait('room', (m) => !!m.room.seats[0]?.rematch);
+    expect(waiting.room.phase).toBe('over'); // still waiting for the guest
+    guest.send({ t: 'leave' });
+    await host.wait('room', (m) => !!m.room.seats[1]?.botControlled);
+    const fresh = await host.wait('room', (m) => m.room.phase === 'planning' && m.room.view!.round === 1);
+    expect(fresh.room.seats[1]!.botControlled).toBe(true);
+    expect(fresh.room.view!.enemy.ready).toBe(true); // the AI already played seat 1's first turn
+    for (const c of all) c.close();
+  }, 60_000);
+});
