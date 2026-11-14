@@ -521,8 +521,12 @@ export class Vfx {
     if (kind !== 'arrow' && kind !== 'tower_arrow' && kind !== 'bolt' && kind !== 'fire_arrow' && kind !== 'pin_shot') return;
     const scale = kind === 'bolt' ? 1.9 : kind === 'pin_shot' ? 1.2 : 1;
     const gy = this.ground(p.x, p.z);
-    if (follow && follow() && Math.random() < 0.7) {
-      this.stuck.add(p, d, scale, kind === 'bolt' ? 4 : 7, follow);
+    if (follow && follow()) {
+      // Struck a soldier: no arrow left in the body. A rigidly-offset arrow can't follow the
+      // skinned/VAT animation, so it poked out at odd angles and floated as the soldier moved.
+      // A small hit spark instead; only misses stay stuck in the ground.
+      const hy = Math.min(p.y, gy + 1.6);
+      this.sparks(p.x, hy, p.z, this.n(3), 2.5, [2.2, 1.8, 1.4], [0.4, 0.4, 0.4], 0.25, 0.04);
       return;
     }
     if (p.y - gy > 3.5) return; // struck something tall (a keep wall): no ground arrow
