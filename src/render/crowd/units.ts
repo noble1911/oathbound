@@ -20,6 +20,8 @@ const CORPSE_HOLD = 4;
 const CORPSE_SINK = 2.5;
 /** Strength of the body glow while a soldier is blessed (the flash channel, warm white). */
 const BLESS_GLOW = 0.22;
+/** Hero (single large unit) meshes draw after the crowd silhouette pass (renderOrder 5 in vat.ts). */
+const HERO_RENDER_ORDER = 6;
 
 interface Anim {
   clip: string;
@@ -173,6 +175,8 @@ class HeroInst {
       m.castShadow = true;
       m.receiveShadow = true;
       m.frustumCulled = false;
+      // after the crowds' occluded-silhouette pass (vat.ts): big units hide the silhouettes behind them
+      m.renderOrder = HERO_RENDER_ORDER;
       this.uniforms.push(uniforms);
     });
     engine.prepare(root);
@@ -391,7 +395,11 @@ export class UnitRenderer {
       case 'hit': {
         const s = this.slots[e.tgt];
         if (!s || e.miss) return;
-        s.flash = e.crit ? 1 : 0.75;
+        // single large units (elephants, golems, drakes) take a hit from a whole squad several times a
+        // second: a full flash per blow kept them saturated to a pale wash. Scale theirs by the share
+        // of life the blow took (a chip hit is a faint warm lift, a heavy one still flashes).
+        const amt = (e.crit ? 1 : 0.75) * (s.hero ? clamp(0.25 + (5 * e.dmg) / Math.max(1, s.header.maxHp), 0.25, 1) : 1);
+        s.flash = s.hero ? Math.max(s.flash, amt) : amt;
         s.flashTint = 0;
         if (s.hero && !s.anim.oneShot && this.hasClip(s, 'hit')) this.oneShot(s, 'hit', t);
         break;

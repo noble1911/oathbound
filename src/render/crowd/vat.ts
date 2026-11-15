@@ -379,8 +379,16 @@ varying float vMirror;`);
   depth.customProgramCacheKey = () => `vatdepth:${o.key}:${vat.octNormals ? 'o' : ''}`;
   // occluded-unit silhouette: drawn only where something is MORE than ~4 m in front of the soldier
   // (depth test GREATER after pulling the soldier 4 m toward the camera), so canopies / walls / hills
-  // reveal a team-coloured shape while neighbouring soldiers don't ghost each other
-  const ghost = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, depthFunc: THREE.GreaterDepth, side: THREE.DoubleSide, fog: false });
+  // reveal a team-coloured shape while neighbouring soldiers don't ghost each other.
+  // It is drawn in the OPAQUE queue (alpha-blended through CustomBlending, not `transparent`) at
+  // renderOrder 5, i.e. after the terrain, props and crowds but BEFORE the single large units
+  // (heroes: elephants, golems, drakes; renderOrder 6 in units.ts): a war elephant is deeper than
+  // 4 m, so with it in the depth buffer every soldier behind it used to paint a team-coloured
+  // blotch across its body. Drawn first, the hero simply covers those silhouettes.
+  const ghost = new THREE.MeshBasicMaterial({
+    transparent: false, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    depthWrite: false, depthFunc: THREE.GreaterDepth, side: THREE.DoubleSide, fog: false,
+  });
   if (vat.octNormals) ghost.defines = { ...(ghost.defines ?? {}), OB_VAT_OCT: '' };
   ghost.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
