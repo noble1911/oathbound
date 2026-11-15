@@ -15,6 +15,7 @@ import { BattlePlayback, type NumberMode, type PlaybackHooks } from './battle-pl
 import { RangeRing, type RangeRingHandle } from './range-ring.ts';
 import { GhostMarks, type GhostMark } from './ghost-marks.ts';
 import { TEAM_COLORS } from './crowd/archetypes.ts';
+import { UNITS } from '../sim/data/units.ts';
 import { makeTransforms, type BattleSource, type KeepInfo, type ReplaySoldier, type SoldierTransforms, type Terrain } from './battle-source.ts';
 
 export interface BattleViewOptions extends EngineOptions {
@@ -54,6 +55,14 @@ const SQUAD_SIZE: Record<string, number> = {
   ballista: 1, trebuchet: 1, golem: 1, wyvern: 2, dragon: 1, lord: 1, skeleton: 1,
 };
 const SPACING: Record<string, number> = { cavaliers: 3, pegasus: 4, wyvern: 5, knights: 1.9, berserkers: 1.6 };
+/** Soldiers per squad and formation spacing for any faction's unit: the sim's squadSize, spaced like its Kingdom twin. */
+function squadSize(type: string): number {
+  return (UNITS as Record<string, { squadSize: number } | undefined>)[type]?.squadSize ?? SQUAD_SIZE[type] ?? 1;
+}
+function spacing(type: string): number {
+  const like = (UNITS as Record<string, { like: string } | undefined>)[type]?.like;
+  return SPACING[type] ?? (like ? SPACING[like] : undefined) ?? 1.5;
+}
 
 export class BattleView {
   readonly engine: Engine;
@@ -187,12 +196,12 @@ export class BattleView {
     const marks: GhostMark[] = [];
     for (const sq of squads) {
       const type = sq.type;
-      const n = sq.size ?? SQUAD_SIZE[type] ?? 1;
+      const n = sq.size ?? squadSize(type);
       const facing = sq.facing ?? (sq.owner === 0 ? 64 : 192);
       const rad = (facing / 256) * Math.PI * 2;
       const modelId = sq.modelId ?? (type === 'lord' && sq.lord ? `lord_${sq.lord}` : type);
       const arch = archetypeFor({ modelId, type, lord: sq.lord ?? undefined });
-      const sp = (SPACING[type] ?? 1.5) * 100;
+      const sp = spacing(type) * 100;
       const cols = n <= 1 ? 1 : Math.ceil(Math.sqrt(n * 2));
       const rows = Math.ceil(n / cols);
       // formation axes: "right" and "forward" in field space
