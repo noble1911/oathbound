@@ -122,7 +122,7 @@ A squad is N identical soldiers with shared orders. Each soldier has its own HP 
 
 ## 4. Lords (the "commander" / FE-Lord layer, also the ARPG hero)
 
-At match start, each player picks a faction (§4b) and one of its Lords: four for the Kingdom, one each for the Ashen Covenant and the Sun Caliphate. They are mirrored-available, so both players can pick the same one. The Lord:
+At match start, each player picks a faction (§4b) and one of its four Lords. Every faction has one Lord in each role (infantry, magic, armour, fliers), and each newer Lord's passive and ability have a clear counterpart in the Kingdom Lord of the same role, so the twelve balance against comparable numbers. They are mirrored-available, so both players can pick the same one. The Lord:
 - Is a single hero unit on the field, deployed like a squad. It does not count against the deployment limit.
 - Gains XP from kills, levels up during the match (to Lv10), and has **3 item slots** (weapon, armor, relic) from the start.
 - Has a passive and an active ability that fires automatically in battle.
@@ -135,6 +135,22 @@ At match start, each player picks a faction (§4b) and one of its Lords: four fo
 | **Skylady Ione** (lance) | Pegasus, Archers | Loot picks see 4 items instead of 3 | Skyfall: dive on the furthest enemy ranged squad |
 | **Lich-Priest Morthen** (tome; Ashen Covenant) | Skeleton Spearmen, Grave Acolytes | Squads deal +12% damage | Necromancy: raises 3 (+1 per 3 Lord levels) skeletons from the fallen within 25 m |
 | **Sultana Zahira** (sword; Sun Caliphate) | Spear Levy, Camel Archers | Squads attack 8% faster | Radiance: 20 (+4 per Lord level) magic damage to enemies within 8 m, and as much life restored to allies |
+
+The other six Lords of the Ashen Covenant and the Sun Caliphate. The exact numbers live in `src/sim/data/lords.ts` (the
+constants above each Lord) and are what the tournament tuned; the text the game shows is built from them.
+
+| Lord (role, plays like) | Signature units | Passive | Auto ability (one mechanic each) |
+|---|---|---|---|
+| **Death Knight Vaelric** (greatsword; Ashen; infantry, like the Marshal) | Skeleton Spearmen, Wraith Riders | Infantry squads (and he) deal +15% damage | **Soul Reaping**: allies within 20 m drain 35% of the damage they deal as life for 10 s (Rally's aura, with life instead of speed) |
+| **Ossuary Warden Gorrath** (bone maul; Ashen; armour, like the Warden) | Grave Knights, Bone Archers | Keep +500 HP; squads +12 armour | **Grave Taunt**: needs 3 enemies within 10 m; they must attack him for 5 s while he takes 40% less damage |
+| **Drake Rider Nyssara** (lance, flier; Ashen; fliers, like the Skylady) | Wraith Riders, Bone Archers | Squads move 10% faster | **Plague Breath**: dives onto the densest enemy cluster within 30 m (3 or more within 4.5 m): 120% of her damage as magic, then a plague of 10 (+1 per level) a second for 3 s |
+| **Grand Vizier Kasim** (staff; Caliphate; magic, like the Archmage) | Djinn-Binders, Sun Priests | Magic squads attack 20% faster | **Djinn Whirlwind**: on the densest enemy cluster within 40 m, 4 s: each second 10 (+2 per level) magic damage within 5 m and a 40% slow |
+| **Rajah Bahadur** (war elephant, Large; Caliphate; armour and giants, like the Warden) | Scimitar Guard, Mamluk Lancers | Giants (and he) +20% life and +10 armour | **Stampede**: charges through the nearest ground enemy within 12 m, trampling everything within 2.8 m of the path for 40 (+6 per level) and throwing it 2 m aside; he ends the charge where it stops |
+| **Roc Rider Amira** (bow, flier; Caliphate; fliers, like the Skylady) | Camel Archers, Mamluk Lancers | Archer squads deal +25% damage | **Talon Strike**: the roc seizes the toughest enemy within 30 m that is not Large, strikes it for 250% of her damage, drops it 8 m towards her own lines and stuns it for 1.5 s |
+
+Every Ashen Lord is undead (the Sultana's sunlight and the Sun Priests burn them for 50% more). A taunted soldier keeps
+its taunt only while it can hit the Warden (fliers cannot be made to strike him from the ground); a stunned soldier
+neither moves nor attacks. All six are integer-only and seat-symmetric (`tests/sim.lords.test.ts`, `tests/sim.mirror.test.ts`).
 
 If the Lord dies in battle, it respawns next round like everything else. The death only costs you its presence in that fight.
 
@@ -159,7 +175,7 @@ match start, then one of its Lords. Either player can pick any faction, includin
   per faction in per mille, applied to every unit of the faction. The target is equal-level play (Hard vs Hard), as
   two humans play; see `docs/BALANCE.md`.
 
-**1. The Oathsworn Kingdom** (blue, steel, gold): the original 14 units and 4 Lords. The broadest roster, with healers.
+**1. The Oathsworn Kingdom** (blue, steel, gold): the original 14 units and Lords. The broadest roster, with healers.
 
 **2. The Ashen Covenant** (bone white, ash grey, tarnished bronze, green soul-fire). No healers; the fallen rise instead.
 
@@ -174,7 +190,7 @@ match start, then one of its Lords. Either player can pick any faction, includin
 | Corpse Catapult (`corpse_catapult`) | 1 | 300 | siege | Trebuchet | 55 m, 5 m splash; **plague**: hits fester for 4 damage a second over 3 s |
 | Bone Golem (`bone_golem`) | 1 | 400 | giant | Golem | Large, stomps, crushes armour |
 
-Lord: the **Lich-Priest** (`lich`, model `lord_lich`), a soul-lantern caster. Raised skeletons (by Acolytes, the Lich
+Lords: the **Death Knight** (`deathknight`), the **Lich-Priest** (`lich`, a soul-lantern caster), the **Ossuary Warden** (`ossuary`) and the **Drake Rider** (`drakerider`); models `lord_<id>`. Raised skeletons (by Acolytes, the Lich
 or the Gravebloom legendary) are summoned soldiers of type `skeleton` (120 life, 16 damage a blow): they fight until the
 battle ends and are gone.
 Each side can raise a given corpse once; Lords and Large units leave no usable corpse.
@@ -193,10 +209,11 @@ Each side can raise a given corpse once; Lords and Large units leave no usable c
 | War Elephant (`war_elephant`) | 1 | 400 | giant | Golem | Large, tramples (3 m); **howdah archers** let it strike fliers in reach; from round 3 |
 | Sand Golem (`sand_golem`) | 1 | 300 | giant | Golem | Large; **regenerates 1.5% of its life a second** |
 
-Lord: the **Sultana** (`sultana`, model `lord_sultana`), a sun-banner commander. Sunlight burns the dead: her blade and her
-Radiance deal 50% more to the undead (Ashen units, the Lich-Priest, raised skeletons; `SULTANA_HOLY`).
+Lords: the **Sultana** (`sultana`, a sun-banner commander), the **Grand Vizier** (`vizier`), the **Rajah** (`rajah`) and the
+**Roc Rider** (`rocrider`); models `lord_<id>`. Sunlight burns the dead: the Sultana's blade and her Radiance deal 50% more
+to the undead (Ashen units, the Ashen Lords, raised skeletons; `SULTANA_HOLY`).
 
-Future work: a second Lord for each new faction, and one or two faction-flavoured item skills.
+Future work: one or two faction-flavoured item skills.
 
 ## 5. Loot (the core replacement for spell cards)
 
@@ -279,14 +296,14 @@ fighting style. Knights do not cast fireballs: `applyIntent` refuses to equip a 
 
 | Class | Units |
 |---|---|
-| caster | Mages, Clerics, Archmage Sefa |
-| infantry | Militia, Pikemen, Berserkers, Knights, Marshal Aldric, Warden Hrolf |
-| ranged | Archers |
-| mounted | Cavaliers |
-| flier | Pegasus Knights, Wyvern Riders, Dragon, Skylady Ione |
-| siege | Ballista, Trebuchet |
-| giant | Stone Golem |
-| lord | all four Lords |
+| caster | Mages, Clerics, Archmage Sefa (and the Ashen and Caliphate casters, the Lich-Priest, the Grand Vizier) |
+| infantry | Militia, Pikemen, Berserkers, Knights, Marshal Aldric, Warden Hrolf (and their counterparts, the Sultana, the Death Knight, the Ossuary Warden) |
+| ranged | Archers, Bone Archers, Camel Archers |
+| mounted | Cavaliers, Wraith Riders, Mamluk Lancers |
+| flier | Pegasus Knights, Wyvern Riders, Dragon, Skylady Ione, Bone Drake, Bound Djinn, the Drake Rider, the Roc Rider |
+| siege | Ballista, Trebuchet, Corpse Catapult |
+| giant | Stone Golem, Bone Golem, War Elephant, Sand Golem, the Rajah |
+| lord | all twelve Lords |
 
 **Item skills.** It is an auto-battler, so a squad casts a skill by itself whenever its cooldown is up and its
 trigger holds (checked 4 times a second; the first cast is possible 2 s into the battle). `L` is the item level

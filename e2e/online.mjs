@@ -102,10 +102,10 @@ try {
   await a.click('.start');
   check(await waitFor(a, () => window.__ob.app.room?.phase === 'lordPick'), 'lord pick');
   await waitFor(b, () => !!document.querySelector('.lcard'));
-  // the faction step: three banners; B takes the Ashen Covenant (its one Lord), A stays with the Kingdom
+  // the faction step: three banners; B takes the Ashen Covenant (its four Lords), A stays with the Kingdom
   check((await a.$$('.fcard')).length === 3 && !!(await a.$('.fcard.on[data-faction="kingdom"]')) && (await a.$$('.lcard')).length === 4, 'three faction banners; the Kingdom shows its four Lords');
   await b.click('.fcard[data-faction="ashen"]');
-  check(await waitFor(b, () => window.__ob.app.room.view.you.faction === 'ashen' && document.querySelectorAll('.lcard').length === 1), 'B picks the Ashen Covenant: the server has it, one Lord card shows');
+  check(await waitFor(b, () => window.__ob.app.room.view.you.faction === 'ashen' && document.querySelectorAll('.lcard').length === 4 && !!document.querySelector('.lcard[data-lord="lich"]')), 'B picks the Ashen Covenant: the server has it, its four Lord cards show');
   check(await a.evaluate(() => window.__ob.app.room.view.enemy.faction === null), 'A cannot see the rival faction before the reveal');
   await a.click('.lcard[data-lord="marshal"]');
   await b.click('.lcard[data-lord="lich"]');

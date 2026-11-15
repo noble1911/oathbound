@@ -83,6 +83,13 @@ describe('mirror symmetry (seat fairness)', () => {
     [7, ['lich', 'sultana'], ['best', 'ranged']],
     [8, ['sultana', 'marshal'], ['air', 'best']],
     [9, ['archmage', 'lich'], ['random', 'armor']],
+    // the six newer Lords, each in a bot match
+    [16, ['deathknight', 'rajah'], ['hard', 'normal']],
+    [17, ['ossuary', 'vizier'], ['normal', 'hard']],
+    [18, ['drakerider', 'rocrider'], ['hard', 'hard']],
+    [19, ['vizier', 'deathknight'], ['best', 'easy']],
+    [20, ['rocrider', 'ossuary'], ['hard', 'counter']],
+    [21, ['rajah', 'drakerider'], ['air', 'hard']],
   ];
   for (const [seed, lords, strats] of cases) {
     it(`seed ${seed}: ${lords.join(' vs ')} (${strats.join(' vs ')}) mirrors exactly every round`, () => {
@@ -149,6 +156,33 @@ describe('mirror symmetry (seat fairness)', () => {
         expect(d.events.some((e) => e.k === 'ability' && e.ability === 'necromancy')).toBe(true);
       }
       if (lords.includes('sultana')) expect(d.events.some((e) => e.k === 'ability' && e.ability === 'radiance')).toBe(true);
+    }
+  }, 60_000);
+
+  it('the newer Lord abilities mirror exactly, each cast by the Lord in the thick of a fight', () => {
+    // Both seats field different armies; seat 0's Lord stands at the front, so its ability has targets.
+    const cases: [number, [LordId, LordId], string][] = [
+      [31, ['deathknight', 'warden'], 'soul_reap'], [32, ['ossuary', 'marshal'], 'grave_taunt'], [33, ['drakerider', 'archmage'], 'plague_breath'],
+      [34, ['vizier', 'lich'], 'whirlwind'], [35, ['rajah', 'sultana'], 'stampede'], [36, ['rocrider', 'skylady'], 'talon'],
+      [37, ['ossuary', 'rajah'], 'grave_taunt'], [38, ['rocrider', 'rocrider'], 'talon'],
+    ];
+    const armies: [UnitType[], UnitType[]] = [['militia', 'knights', 'archers', 'pikemen', 'mages', 'cavaliers'], ['skeleton', 'grave_knight', 'scimitar', 'spear_levy', 'bone_archer', 'camel_archer']];
+    for (const [seed, lords, ability] of cases) {
+      const s = newMatch(seed, [...lords] as [LordId, LordId]);
+      s.round = 6;
+      for (const seat of [0, 1] as Seat[]) {
+        const p = s.players[seat];
+        p.squads[0].level = 4;
+        const lp: [number, number] = seat === 0 ? [3700, 3600] : [5200, 2400];
+        p.squads[0].pos = seat === 0 ? lp : [FIELD_W - 1 - lp[0], FIELD_H - 1 - lp[1]];
+        armies[seat].forEach((u, k) => {
+          const x = 1500 + (k % 3) * 2200, y = 3800 - Math.floor(k / 3) * 1200;
+          p.squads.push({ id: s.nextId++, owner: seat, type: u, level: 2, pos: seat === 0 ? [x, y] : [FIELD_W - 1 - x, FIELD_H - 1 - y], facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 300 });
+        });
+      }
+      checkMirror(s);
+      const d = decodeReplay(simulateBattle(s).replay);
+      expect(d.events.some((e) => e.k === 'ability' && e.ability === ability), `${lords.join('/')} ${ability}`).toBe(true);
     }
   }, 60_000);
 

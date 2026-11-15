@@ -1895,6 +1895,439 @@ export class Vfx {
     this.shake(0.2, x, gy, z);
   }
 
+  // ------------------------------------------------------------------ the newer Lords (one signature effect each)
+
+  /**
+   * The Death Knight's Soul Reaping: a ring of green soul-fire unfurls around him and follows him for
+   * `durSec`; wisps are torn off the edge of the circle and stream in to him, the life his army reaps.
+   */
+  soulReap(pos: THREE.Vector3, radiusM: number, durSec: number, follow?: () => THREE.Vector3): void {
+    const c = pos.clone();
+    const aura = new GroundDecal('sigil', [0.18, 1.5, 0.6], radiusM, this.ground);
+    aura.setSheet(this.sheet, DECAL.arcane);
+    aura.progress = 0.4;
+    aura.place(c.x, c.z, radiusM);
+    this.root.add(aura.mesh);
+    const gy = this.ground(c.x, c.z);
+    this.flash(c.x, gy + 2, c.z, 4.2, [1.4, 7.5, 3.2], 0.2);
+    // (the aura is wide: 20 m; it stays a faint wash so the fight inside it reads)
+    this.decal({ kind: DK.shock, x: c.x, z: c.z, radius: radiusM * 1.1, life: 0.75, r: 0.45, g: 3.0, b: 1.2 });
+    this.decal({ kind: DK.shock, x: c.x, z: c.z, radius: radiusM * 0.55, life: 0.55, r: 0.35, g: 2.2, b: 0.9, delay: 0.15 });
+    this.decal({ kind: DK.glow, x: c.x, z: c.z, radius: radiusM * 0.7, life: 1.4, r: 0.05, g: 0.4, b: 0.16, fadeIn: 0.2 });
+    const beam = new Pillar([0.4, 2.8, 1.1], 0.8, 14, 1);
+    beam.mesh.position.set(c.x, gy, c.z);
+    this.root.add(beam.mesh);
+    // a crown of soul-fire bursting off him, then racing out along the ground
+    for (let i = 0; i < this.n(14); i++) this.soulWisp(c.x, gy + rnd(0.6, 2.2), c.z, 1.5, rnd(0, 0.2));
+    const n = this.n(24);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU;
+      this.emitA({
+        x: c.x, y: gy + 0.4, z: c.z, vx: Math.cos(a) * radiusM * 1.6, vy: rnd(0.5, 1.4), vz: Math.sin(a) * radiusM * 1.6, life: 0.65, size: 0.24, size1: 0.05, drag: 1.6,
+        r: 1.2, g: 7, b: 2.8, cell: CELL.spark, stretch: 0.13,
+      });
+    }
+    let t = 0;
+    let acc = 0;
+    this.actor({
+      update: (dt, time) => {
+        t += dt;
+        if (follow) c.copy(follow());
+        aura.place(c.x, c.z, radiusM);
+        aura.time = time;
+        const fin = Math.min(1, t / 0.4);
+        const fout = Math.min(1, (durSec - t) / 0.7);
+        aura.alpha = Math.max(0, Math.min(fin, fout)) * (0.75 - 0.4 * Math.min(1, t / 2));
+        const bk = Math.max(0, 1 - t / 1.2);
+        beam.material.uniforms.uAlpha.value = bk * bk * 0.8;
+        beam.material.uniforms.uTime.value = time;
+        beam.mesh.position.set(c.x, this.ground(c.x, c.z), c.z);
+        // souls drawn in from the edge of the circle to the knight
+        acc += Math.min(dt, 0.1) * 16 * this.density * Math.max(0, fout);
+        while (acc >= 1) {
+          acc -= 1;
+          const a = Math.random() * TAU;
+          const r = radiusM * rnd(0.55, 1);
+          const x = c.x + Math.cos(a) * r;
+          const z = c.z + Math.sin(a) * r;
+          const y = this.ground(x, z) + rnd(0.6, 1.6);
+          const life = rnd(0.7, 1.0);
+          const k = 1 / life;
+          this.emitA({
+            x, y, z, vx: (c.x - x) * k, vy: (gy + 1.6 - y) * k, vz: (c.z - z) * k, life, size: rnd(0.16, 0.26), size1: 0.05, drag: 0,
+            r: 1.0, g: 6.5, b: 2.6, r1: 0.4, g1: 3, b1: 1.4, cell: CELL.spark, stretch: 0.22, fadeIn: 0.25,
+          });
+        }
+        return t < durSec;
+      },
+      dispose: () => {
+        aura.dispose();
+        beam.dispose();
+      },
+    });
+    this.shake(0.12, c.x, gy, c.z);
+  }
+
+  /**
+   * The Ossuary Warden's Grave Taunt: a bone-white roar bursts out over `radiusM`, and a shell of
+   * green-lit bone closes over him for `durSec` (he takes less damage while they hammer at him).
+   */
+  graveTaunt(pos: THREE.Vector3, radiusM: number, durSec: number, follow?: () => THREE.Vector3): void {
+    const c = pos.clone();
+    const gy0 = this.ground(c.x, c.z);
+    const BONE: RGB = [5.2, 4.8, 3.6];
+    this.flash(c.x, gy0 + 2.4, c.z, 4, [6, 7, 4.5], 0.18);
+    for (let i = 0; i < 3; i++) this.decal({ kind: DK.shock, x: c.x, z: c.z, radius: radiusM * (1.0 + i * 0.06), life: 0.65, r: 2.4, g: 2.6, b: 1.6, delay: i * 0.03 });
+    this.decal({ kind: DK.shock, x: c.x, z: c.z, radius: radiusM * 0.55, life: 0.5, r: 0.4, g: 2.6, b: 1.0, delay: 0.14 });
+    this.decal({ kind: DK.mark, cell: DECAL.cracks, x: c.x, z: c.z, radius: 3.2, life: 24, r: 0.5, g: 4.5, b: 1.6, alpha: 0.85, fadeIn: 0.08 });
+    // the roar made visible: a pressure wave of pale bone light
+    const wave = new Dome([3.4, 3.2, 2.2]);
+    this.root.add(wave.mesh);
+    wave.mesh.position.set(c.x, gy0 - 0.1, c.z);
+    // the guard: a smaller, steady shell of green bone-light that follows him
+    const shell = new Dome([0.45, 2.2, 1.0]);
+    this.root.add(shell.mesh);
+    for (let i = 0; i < this.n(18); i++) {
+      const a = Math.random() * TAU;
+      this.emitA({
+        x: c.x + Math.cos(a) * 0.6, y: gy0 + 2, z: c.z + Math.sin(a) * 0.6, vx: Math.cos(a) * 3, vy: rnd(4, 8), vz: Math.sin(a) * 3, life: rnd(0.4, 0.7), size: 0.22, size1: 0.04, drag: 1.5,
+        r: BONE[0], g: BONE[1], b: BONE[2], cell: CELL.spark, stretch: 0.16,
+      });
+    }
+    // bone chips and grave dust kicked up by the bellow
+    this.debrisBurst(c.x, gy0, c.z, this.n(10), 6, 0.16, '#d9d4c2', 1.2);
+    this.dustRing(c.x, c.z, this.n(14), radiusM * 1.3, 1.2, 1.2, [0.62, 0.6, 0.52], 0.5);
+    this.shake(0.3, c.x, gy0, c.z);
+    let t = 0;
+    this.actor({
+      update: (dt, time) => {
+        t += dt;
+        if (follow) c.copy(follow());
+        const gy = this.ground(c.x, c.z);
+        const k = Math.min(1, t / 0.55);
+        const rr = radiusM * (0.1 + 0.9 * (1 - Math.pow(1 - k, 2.2)));
+        wave.mesh.scale.set(rr, rr * 0.55, rr);
+        wave.material.uniforms.uAlpha.value = k < 1 ? Math.pow(1 - k, 1.3) * 2.2 : 0;
+        wave.material.uniforms.uRipple.value = 2;
+        wave.material.uniforms.uTime.value = time;
+        shell.mesh.position.set(c.x, gy - 0.2, c.z);
+        shell.mesh.scale.set(2.6, 3.4, 2.6);
+        const fin = Math.min(1, t / 0.3);
+        const fout = Math.max(0, Math.min(1, (durSec - t) / 0.5));
+        shell.material.uniforms.uAlpha.value = Math.min(fin, fout) * (0.55 + 0.15 * Math.sin(time * 6));
+        shell.material.uniforms.uRipple.value = (t % 1.4) / 0.7;
+        shell.material.uniforms.uTime.value = time;
+        return t < durSec;
+      },
+      dispose: () => {
+        wave.dispose();
+        shell.dispose();
+      },
+    });
+  }
+
+  /**
+   * A soldier taken by the Grave Taunt: a thread of green light snaps from the taunter to it, then a
+   * baleful green mark hangs over its head while the taunt lasts. Both ends are followed.
+   */
+  tauntMark(from: () => THREE.Vector3 | null, to: () => THREE.Vector3 | null, durSec: number): void {
+    const core = new THREE.Color(1.5, 6.5, 2.6);
+    const glow = new THREE.Color(0.25, 1.4, 0.6);
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const pts = Array.from({ length: 6 }, () => new THREE.Vector3());
+    let t = 0;
+    let acc = 0;
+    this.actor({
+      update: (dt) => {
+        t += dt;
+        const q = to();
+        if (!q) return false;
+        b.copy(q);
+        const f = Math.max(0, 1 - t / 0.5);
+        const p = f > 0 ? from() : null;
+        if (p) {
+          a.copy(p);
+          for (let i = 0; i < pts.length; i++) {
+            const k = i / (pts.length - 1);
+            pts[i].lerpVectors(a, b, k);
+            pts[i].y += Math.sin(k * Math.PI) * 1.2 + 1.2;
+          }
+          this.ribbonList.push({ points: pts, width: 0.35, color: glow, alpha: 0.45 * f });
+          this.ribbonList.push({ points: pts, width: 0.06, color: core, alpha: f });
+        }
+        // the mark: a slow green ember above the head (cheap: ~3 particles a second)
+        acc += Math.min(dt, 0.1) * 3 * this.density;
+        while (acc >= 1) {
+          acc -= 1;
+          this.emitA({ x: b.x, y: b.y + 2.4, z: b.z, vy: 0.3, life: 0.45, size: 0.5, size1: 0.3, r: 1.2, g: 6, b: 2.4, cell: CELL.star, fadeIn: 0.2, fadeOut: 0.4 });
+        }
+        return t < durSec;
+      },
+      dispose: () => {},
+    });
+  }
+
+  /**
+   * The Drake Rider's Plague Breath: a green streak dives from `from` onto the cluster at `to`, the
+   * drake vomits a jet of plague down over it, and a festering cloud hangs there for 3 s.
+   */
+  plagueBreath(from: THREE.Vector3, to: THREE.Vector3, radiusM: number, delaySec = 0.6): void {
+    const a = from.clone();
+    const b = to.clone();
+    const top = b.clone().add(new THREE.Vector3(0, 5, 0)).lerp(a, 0.15);
+    const head = new THREE.Vector3();
+    const tail = new THREE.Vector3();
+    const core = new THREE.Color(2, 7, 1.6);
+    const glow = new THREE.Color(0.4, 1.8, 0.35);
+    const pts: THREE.Vector3[] = Array.from({ length: 10 }, () => new THREE.Vector3());
+    const widths = pts.map((_, i) => 0.06 + (i / 9) * 0.5);
+    const glowW = widths.map((w) => w * 3.6);
+    const dive = Math.max(0.2, delaySec * 0.6);
+    const gyb = this.ground(b.x, b.z);
+    this.decal({ kind: DK.warn, x: b.x, z: b.z, radius: radiusM, life: dive + 0.2, r: 0.8, g: 2.6, b: 0.5, rot: 0 });
+    let t = 0;
+    let jet = -1;
+    this.actor({
+      update: (dt) => {
+        t += dt;
+        const sh = Math.min(1, Math.pow(t / dive, 1.5));
+        const st = Math.min(1, Math.pow(Math.max(0, t - 0.1) / dive, 1.5));
+        head.lerpVectors(a, top, sh);
+        tail.lerpVectors(a, top, st);
+        for (let i = 0; i < pts.length; i++) pts[i].lerpVectors(tail, head, i / (pts.length - 1));
+        const fade = jet >= 0 ? Math.max(0, 1 - (t - jet) / 0.3) : 1;
+        this.ribbonList.push({ points: pts, width: glowW, color: glow, alpha: 0.5 * fade });
+        this.ribbonList.push({ points: pts, width: widths, color: core, alpha: 0.9 * fade });
+        if (jet < 0 && sh >= 1) {
+          jet = t;
+          this.flash(top.x, top.y, top.z, 3, [2, 8, 1.6], 0.16);
+          this.shake(0.22, b.x, gyb, b.z);
+        }
+        if (jet >= 0 && t - jet < 0.45) {
+          // the breath: streaks of bile-green fire fanning down from the jaws onto the ground
+          const k = this.n(7);
+          for (let i = 0; i < k; i++) {
+            const an = Math.random() * TAU;
+            const r = Math.sqrt(Math.random()) * radiusM;
+            const gx = b.x + Math.cos(an) * r;
+            const gz = b.z + Math.sin(an) * r;
+            const life = rnd(0.25, 0.35);
+            this.emitA({
+              x: top.x, y: top.y, z: top.z, vx: (gx - top.x) / life, vy: (this.ground(gx, gz) - top.y) / life, vz: (gz - top.z) / life, life, size: rnd(0.25, 0.45), size1: rnd(0.6, 1),
+              r: 2.2, g: 6.5, b: 1.2, r1: 0.6, g1: 2.2, b1: 0.2, cell: CELL.spark, stretch: 0.08, fadeOut: 0.4,
+            });
+          }
+          if (Math.random() < 0.6) this.puff(b.x + rnd(-1, 1) * radiusM * 0.6, gyb + 0.4, b.z + rnd(-1, 1) * radiusM * 0.6, radiusM * 0.35, { vy: 0.6, life: 1.2, alpha: 0.5, color: [0.34, 0.5, 0.16], grow: 2.3 });
+        }
+        if (jet >= 0 && t - jet >= 0.2 && t - jet - dt < 0.2) this.plagueBurst(b, radiusM, 3);
+        return jet < 0 || t - jet < 0.5;
+      },
+      dispose: () => {},
+    });
+  }
+
+  /**
+   * The Vizier's Djinn Whirlwind: a towering vortex of sand shot through with turquoise djinn-light,
+   * spinning over `radiusM` for `durSec`, with a faint arcane circle under it.
+   */
+  djinnWhirlwind(pos: THREE.Vector3, radiusM: number, durSec: number): void {
+    const { x, z } = pos;
+    const gy = this.ground(x, z);
+    const SAND: RGB = [0.78, 0.62, 0.38];
+    const TURQ: RGB = [0.6, 4.6, 4.2];
+    this.flash(x, gy + 2.5, z, 4.5, [1.5, 7, 6.5], 0.2);
+    this.decal({ kind: DK.shock, x, z, radius: radiusM * 1.3, life: 0.5, r: 0.4, g: 2.6, b: 2.4 });
+    this.decal({ kind: DK.sigil, cell: DECAL.arcane, x, z, radius: radiusM * 1.05, life: durSec, r: 0.12, g: 0.95, b: 0.9, fadeIn: 0.3, grow: 0.4, spin: 1.6, alpha: 0.8 });
+    this.decal({ kind: DK.scuff, x, z, radius: radiusM * 0.9, life: 16, r: 0, g: 0, b: 0, alpha: 0.4, fadeIn: 0.4 });
+    const core = new Pillar([0.25, 1.9, 1.8], radiusM * 0.55, 8, 4);
+    core.mesh.position.set(x, gy, z);
+    this.root.add(core.mesh);
+    const spin = Math.random() < 0.5 ? 1 : -1;
+    // the vortex itself: bands of djinn-light and sand spiralling up the funnel (ribbons: cheap on every tier)
+    const H = 7;
+    const bands = Array.from({ length: 4 }, (_, j) => ({
+      pts: Array.from({ length: 18 }, () => new THREE.Vector3()),
+      phase: (j / 4) * TAU,
+      core: j % 2 ? new THREE.Color(1.4, 1.1, 0.6) : new THREE.Color(0.6, 4.2, 3.9),
+      glow: j % 2 ? new THREE.Color(0.5, 0.38, 0.2) : new THREE.Color(0.12, 0.9, 0.85),
+    }));
+    const widths = bands[0].pts.map((_, i) => 0.08 + 0.3 * (i / 17));
+    const glowW = widths.map((w) => w * 3.2);
+    let t = 0;
+    let acc = 0;
+    this.actor({
+      update: (dt, time) => {
+        t += dt;
+        const fin = Math.min(1, t / 0.4);
+        const fout = Math.max(0, Math.min(1, (durSec - t) / 0.6));
+        const f = Math.min(fin, fout);
+        core.material.uniforms.uAlpha.value = f * 0.3;
+        core.material.uniforms.uTime.value = time;
+        for (const b of bands) {
+          for (let i = 0; i < b.pts.length; i++) {
+            const h = i / (b.pts.length - 1);
+            const a = b.phase + spin * (time * 5.5 + h * 5);
+            const r = radiusM * (0.15 + 0.6 * h) * fin;
+            b.pts[i].set(x + Math.cos(a) * r, gy + 0.2 + h * H * fin, z + Math.sin(a) * r);
+          }
+          this.ribbonList.push({ points: b.pts, width: glowW, color: b.glow, alpha: 0.35 * f });
+          this.ribbonList.push({ points: b.pts, width: widths, color: b.core, alpha: 0.75 * f });
+        }
+        acc += Math.min(dt, 0.1) * 80 * this.density * f;
+        while (acc >= 1) {
+          acc -= 1;
+          const a = Math.random() * TAU;
+          const h = Math.random();
+          // a funnel: tight at the foot, wide at the top, everything moving along the tangent
+          const r = radiusM * (0.2 + 0.85 * h) * rnd(0.75, 1.0);
+          const sp = (6 + 5 * h) * spin;
+          const px = x + Math.cos(a) * r;
+          const pz = z + Math.sin(a) * r;
+          const k = Math.random();
+          if (k < 0.5)
+            this.puff(px, gy + 0.3 + h * 6, pz, 0.9 + h * 1.2, { vx: -Math.sin(a) * sp, vy: rnd(0.8, 2.2), vz: Math.cos(a) * sp, life: rnd(0.6, 0.9), alpha: 0.55, color: SAND, grow: 1.8, drag: 1.5 });
+          else if (k < 0.85)
+            this.emitA({
+              x: px, y: gy + 0.2 + h * 5.5, z: pz, vx: -Math.sin(a) * sp * 1.3, vy: rnd(0.5, 2.5), vz: Math.cos(a) * sp * 1.3, life: rnd(0.3, 0.5), size: 0.1, size1: 0.03, drag: 1,
+              r: 2.6, g: 2.0, b: 1.1, alpha: 0.8, cell: CELL.spark, stretch: 0.1,
+            });
+          else
+            this.emitA({
+              x: px, y: gy + 0.5 + h * 5, z: pz, vx: -Math.sin(a) * sp, vy: rnd(1, 3), vz: Math.cos(a) * sp, life: rnd(0.4, 0.7), size: rnd(0.25, 0.45), size1: 0.06, drag: 1,
+              r: TURQ[0], g: TURQ[1], b: TURQ[2], cell: CELL.spark, stretch: 0.18, fadeIn: 0.15,
+            });
+        }
+        if (Math.floor(t / 1) !== Math.floor((t - dt) / 1)) this.shake(0.06, x, gy, z);
+        return t < durSec;
+      },
+      dispose: () => core.dispose(),
+    });
+  }
+
+  /**
+   * The Rajah's Stampede: the elephant's charge from `from` to `to`, a rolling wall of dust along the
+   * path, the ground cracking under each footfall `widthM` either side, and a heavy slam at the end.
+   */
+  stampede(from: THREE.Vector3, to: THREE.Vector3, widthM: number): void {
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const ux = dx / len;
+    const uz = dz / len;
+    const steps = Math.max(3, Math.round(len / 2));
+    const dur = 0.45;
+    for (let i = 0; i <= steps; i++) {
+      const k = i / steps;
+      const px = from.x + dx * k;
+      const pz = from.z + dz * k;
+      this.later(k * dur, () => {
+        const py = this.ground(px, pz);
+        this.decal({ kind: DK.mark, cell: DECAL.cracks, x: px, z: pz, radius: widthM * 0.8, life: 22, r: 0, g: 0, b: 0, alpha: 0.85, fadeIn: 0.05 });
+        this.decal({ kind: DK.shock, x: px, z: pz, radius: widthM * 1.5, life: 0.35, r: 1.0, g: 0.8, b: 0.5 });
+        this.puff(px, py + 0.6, pz, widthM * 0.7, { vx: ux * 4, vy: rnd(1.2, 2.6), vz: uz * 4, life: rnd(1.6, 2.2), alpha: 0.65, color: [0.72, 0.6, 0.42], grow: 2.6, drag: 1.8 });
+        // the dust thrown out to both sides of the path
+        for (const s of [-1, 1]) {
+          const sx = -uz * s;
+          const sz = ux * s;
+          this.puff(px + sx * widthM * 0.5, py + 0.4, pz + sz * widthM * 0.5, widthM * 0.55, { vx: sx * rnd(3, 6) + ux * 2, vy: rnd(0.8, 2.2), vz: sz * rnd(3, 6) + uz * 2, life: rnd(1.3, 1.9), alpha: 0.6, color: [0.7, 0.58, 0.4], grow: 2.4, drag: 2.2 });
+        }
+        if (i % 2 === 0) this.debrisBurst(px, py, pz, this.n(3), 4.5, 0.18, EARTH, 1.1);
+        this.shake(0.07, px, py, pz);
+      });
+    }
+    this.later(dur, () => {
+      this.chargeImpact(from, to, widthM * 1.2);
+      this.elephantTrample(to, widthM * 1.1);
+    });
+  }
+
+  /**
+   * The Roc Rider's Talon Strike: a gold streak swoops from `from` onto the victim (followed) over
+   * `delaySec`, then carries it up and over in an arc and drops it at `drop` in a burst of dust and feathers.
+   */
+  talon(from: THREE.Vector3, victim: () => THREE.Vector3 | null, drop: THREE.Vector3, delaySec = 0.6): void {
+    const a = from.clone();
+    const tgt = victim()?.clone() ?? drop.clone();
+    const head = new THREE.Vector3();
+    const tail = new THREE.Vector3();
+    const core = new THREE.Color(8, 6.5, 3.4);
+    const glow = new THREE.Color(2.4, 1.8, 0.7);
+    const pts: THREE.Vector3[] = Array.from({ length: 12 }, () => new THREE.Vector3());
+    const widths = pts.map((_, i) => 0.05 + (i / 11) * 0.45);
+    const glowW = widths.map((w) => w * 3.4);
+    const swoop = Math.max(0.2, delaySec);
+    const carry = 0.5;
+    const lift = new THREE.Vector3();
+    const arcAt = (k: number, out: THREE.Vector3) => {
+      out.lerpVectors(tgt, drop, k);
+      out.y = THREE.MathUtils.lerp(tgt.y, this.ground(drop.x, drop.z), k) + Math.sin(k * Math.PI) * 6 + 1;
+      return out;
+    };
+    let t = 0;
+    let grabbed = false;
+    let landed = false;
+    this.actor({
+      update: (dt) => {
+        t += dt;
+        if (!grabbed) {
+          const v = victim();
+          if (v) tgt.copy(v);
+          // a curving stoop: the streak dips through a point above the victim
+          const sh = Math.min(1, Math.pow(t / swoop, 1.4));
+          const st = Math.min(1, Math.pow(Math.max(0, t - 0.1) / swoop, 1.4));
+          const mid = lift.copy(tgt).setY(tgt.y + 1.5);
+          head.lerpVectors(a, mid, sh);
+          tail.lerpVectors(a, mid, st);
+          for (let i = 0; i < pts.length; i++) pts[i].lerpVectors(tail, head, i / (pts.length - 1));
+          this.ribbonList.push({ points: pts, width: glowW, color: glow, alpha: 0.55 });
+          this.ribbonList.push({ points: pts, width: widths, color: core, alpha: 0.9 });
+          if (sh >= 1) {
+            grabbed = true;
+            const gy = this.ground(tgt.x, tgt.z);
+            this.flash(tgt.x, tgt.y + 1.4, tgt.z, 2.6, [8, 6.5, 3.4], 0.14);
+            this.sparks(tgt.x, tgt.y + 1.2, tgt.z, this.n(14), 8, SPARK0, SPARK1, 0.5, 0.08);
+            this.dustRing(tgt.x, tgt.z, this.n(10), 5, 1.2, 1.1);
+            this.decal({ kind: DK.shock, x: tgt.x, z: tgt.z, radius: 3, life: 0.35, r: 2.4, g: 1.8, b: 0.8 });
+            this.shake(0.14, tgt.x, gy, tgt.z);
+          }
+          return true;
+        }
+        // the carry: a streak following the lift-and-drop arc
+        const k = Math.min(1, (t - swoop) / carry);
+        for (let i = 0; i < pts.length; i++) arcAt(Math.max(0, k - 0.35 + (i / (pts.length - 1)) * 0.35), pts[i]);
+        const fade = landed ? Math.max(0, 1 - (t - swoop - carry) / 0.25) : 1;
+        this.ribbonList.push({ points: pts, width: glowW, color: glow, alpha: 0.45 * fade });
+        this.ribbonList.push({ points: pts, width: widths, color: core, alpha: 0.75 * fade });
+        if (!landed && Math.random() < 0.7 * this.density) {
+          const p = pts[pts.length - 1];
+          this.emitA({ x: p.x, y: p.y, z: p.z, vx: rnd(-1.5, 1.5), vy: rnd(-1, 0.5), vz: rnd(-1.5, 1.5), life: rnd(0.8, 1.3), size: 0.22, size1: 0.1, gravity: -1.5, drag: 1.4, spin: rnd(-5, 5), r: 4.5, g: 4, b: 3, cell: CELL.star });
+        }
+        if (!landed && k >= 1) {
+          landed = true;
+          const { x, z } = drop;
+          const gy = this.ground(x, z);
+          this.flash(x, gy + 0.8, z, 2.2, [6, 5, 3], 0.12);
+          this.dustRing(x, z, this.n(14), 6, 1.6, 1.4);
+          this.debrisBurst(x, gy, z, this.n(8), 5.5, 0.18, EARTH, 1.2);
+          this.decal({ kind: DK.mark, cell: DECAL.cracks, x, z, radius: 2.2, life: 22, r: 0, g: 0, b: 0, alpha: 0.8, fadeIn: 0.06 });
+          this.decal({ kind: DK.shock, x, z, radius: 4, life: 0.4, r: 1.0, g: 0.85, b: 0.6 });
+          // feathers shaken loose by the drop
+          for (let i = 0; i < this.n(10); i++) {
+            const an = Math.random() * TAU;
+            this.emitA({
+              x, y: gy + 1.5, z, vx: Math.cos(an) * rnd(1.5, 3.5), vy: rnd(2, 4), vz: Math.sin(an) * rnd(1.5, 3.5), life: rnd(1.0, 1.6), size: 0.24, size1: 0.12, gravity: -2.5, drag: 1.8, spin: rnd(-6, 6),
+              r: 4, g: 3.6, b: 2.8, cell: CELL.star, fadeOut: 0.5,
+            });
+          }
+          this.shake(0.24, x, gy, z);
+        }
+        return !landed || t < swoop + carry + 0.3;
+      },
+      dispose: () => {},
+    });
+  }
+
   // ------------------------------------------------------------------ keeps
 
   /** A blow on the keep wall: chips of stone, mortar dust, sparks. */

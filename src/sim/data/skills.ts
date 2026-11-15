@@ -6,7 +6,10 @@
 import { TICK_HZ } from '../constants.ts';
 import type { Item, LordId, SkillId, SkillInfo, Slot, Squad, SquadType, UnitClass, UnitType } from '../types.ts';
 import { LEGENDARIES } from './items.ts';
-import { LORDS, METEOR_BASE, METEOR_PER_LEVEL } from './lords.ts';
+import {
+  LORDS, METEOR_BASE, METEOR_PER_LEVEL, PLAGUE_BURN_BASE, PLAGUE_BURN_PER_LEVEL, PLAGUE_PCT, PLAGUE_RADIUS, PLAGUE_REACH, STAMPEDE_BASE, STAMPEDE_KNOCK, STAMPEDE_REACH,
+  STAMPEDE_PER_LEVEL, WHIRL_BASE, WHIRL_PER_LEVEL, WHIRL_RADIUS, WHIRL_REACH, WHIRL_SLOW, WHIRL_WAVES,
+} from './lords.ts';
 import { UNITS } from './units.ts';
 
 /** Mirrors FLIER_EVADE_PCT in battle.ts (a test keeps them equal; data files do not import the battle). */
@@ -25,7 +28,10 @@ export const UNIT_CLASS: Record<UnitType, UnitClass> = {
   war_elephant: 'giant', sand_golem: 'giant',
 };
 /** A Lord is of class 'lord' and also of the class of its fighting style. */
-export const LORD_CLASS: Record<LordId, UnitClass> = { marshal: 'infantry', warden: 'infantry', archmage: 'caster', skylady: 'flier', lich: 'caster', sultana: 'infantry' };
+export const LORD_CLASS: Record<LordId, UnitClass> = {
+  marshal: 'infantry', warden: 'infantry', archmage: 'caster', skylady: 'flier', lich: 'caster', sultana: 'infantry',
+  deathknight: 'infantry', ossuary: 'infantry', drakerider: 'flier', vizier: 'caster', rajah: 'giant', rocrider: 'flier',
+};
 export const UNIT_CLASSES: readonly UnitClass[] = ['caster', 'infantry', 'ranged', 'mounted', 'flier', 'siege', 'giant', 'lord'];
 export const CLASS_NAME: Record<UnitClass, string> = {
   caster: 'Casters', infantry: 'Infantry', ranged: 'Archers', mounted: 'Cavalry', flier: 'Fliers', siege: 'Siege engines', giant: 'Giants', lord: 'Lords',
@@ -189,7 +195,10 @@ const sec = (ticks: number): number => Math.round((ticks / TICK_HZ) * 10) / 10;
 const TAGN: Record<string, string> = { mounted: 'Mounted', armored: 'Armored', flier: 'Flying', large: 'Large', infantry: 'Infantry' };
 
 /** Lord ability cooldowns in ticks (battle.ts uses these). */
-export const ABILITY_CD = { rally: 280, bulwark: 340, meteor: 300, skyfall: 360, necromancy: 320, radiance: 300 } as const;
+export const ABILITY_CD = {
+  rally: 280, bulwark: 340, meteor: 300, skyfall: 360, necromancy: 320, radiance: 300,
+  soul_reap: 300, grave_taunt: 340, plague_breath: 340, whirlwind: 320, stampede: 300, talon: 340,
+} as const;
 
 /** The innate abilities of a unit type: traits, counters and movement rules, as data. Behaviour lives in battle.ts. */
 export function unitSkills(type: UnitType): SkillInfo[] {
@@ -237,6 +246,9 @@ export function lordSkills(lord: LordId, level = 1): SkillInfo[] {
   let text = L.abilityText;
   if (L.ability === 'meteor') text = `Calls a meteor on the densest enemy cluster within 40 m: ${METEOR_BASE + METEOR_PER_LEVEL * level} magic damage in a 10 m radius.`;
   if (L.ability === 'skyfall') text = 'Dives onto the furthest enemy backline squad, striking everything within 4 m for 250% damage.';
+  if (L.ability === 'plague_breath') text = `Dives onto the densest enemy cluster within ${m(PLAGUE_REACH)} m and breathes plague: ${PLAGUE_PCT}% of her damage as magic within ${m(PLAGUE_RADIUS)} m, then ${PLAGUE_BURN_BASE + PLAGUE_BURN_PER_LEVEL * level} damage a second for 3 s.`;
+  if (L.ability === 'whirlwind') text = `A djinn whirlwind spins on the densest enemy cluster within ${m(WHIRL_REACH)} m for ${WHIRL_WAVES} s: each second ${WHIRL_BASE + WHIRL_PER_LEVEL * level} magic damage within ${m(WHIRL_RADIUS)} m and a ${WHIRL_SLOW}% slow.`;
+  if (L.ability === 'stampede') text = `His elephant charges through the nearest ground enemy within ${m(STAMPEDE_REACH)} m, trampling everything in its path for ${STAMPEDE_BASE + STAMPEDE_PER_LEVEL * level} damage and throwing it ${m(STAMPEDE_KNOCK)} m aside.`;
   const out: SkillInfo[] = [
     { id: `${lord}_passive`, name: `${L.title}'s command`, kind: 'passive', text: L.passive, source: 'lord' },
     { id: L.ability, name: L.abilityName, kind: 'active', text, cooldown: sec(ABILITY_CD[L.ability]), source: 'lord' },

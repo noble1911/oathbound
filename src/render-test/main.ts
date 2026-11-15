@@ -185,6 +185,21 @@ const actions: Record<string, () => void> = {
     const p = groundAtView();
     view.vfx.skyfall(p.clone().add(new THREE.Vector3(-20, 35, 10)), p);
   },
+  soulReap: () => view.vfx.soulReap(groundAtView(), 20, 6),
+  graveTaunt: () => view.vfx.graveTaunt(groundAtView(), 10, 5),
+  plagueBreath: () => {
+    const p = groundAtView();
+    view.vfx.plagueBreath(p.clone().add(new THREE.Vector3(-14, 18, 10)), p, 4.5, 0.7);
+  },
+  whirlwind: () => view.vfx.djinnWhirlwind(groundAtView(), 5, 4.5),
+  stampede: () => {
+    const p = groundAtView();
+    view.vfx.stampede(p.clone().add(new THREE.Vector3(-8, 0, 6)), p, 2.8);
+  },
+  talon: () => {
+    const p = groundAtView();
+    view.vfx.talon(p.clone().add(new THREE.Vector3(-12, 14, 8)), () => p, p.clone().add(new THREE.Vector3(0, 0, 8)), 0.6);
+  },
   lightning: () => {
     const p = groundAtView();
     view.vfx.lightning(p.clone().add(new THREE.Vector3(-6, 1.5, 0)), p.clone().add(new THREE.Vector3(6, 1.5, 2)));

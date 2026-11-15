@@ -37,7 +37,7 @@ function lock(purpose) {
   let said = false;
   while (existsSync(LOCK)) {
     if (!said) { console.log(`waiting for the GPU: ${readFileSync(LOCK, 'utf8').trim()}`); said = true; }
-    sleep(10000);
+    sleep(400);                                          // poll fast: other lock users (e2e/with-gpu-lock.mjs) do too, a slow poll never wins the lock
   }
   writeFileSync(LOCK, `tools/art/mesh.mjs: ${purpose} (pid ${process.pid}, ${new Date().toISOString()})\n`);
   held = true;

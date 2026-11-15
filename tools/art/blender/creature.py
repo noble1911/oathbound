@@ -383,6 +383,8 @@ class Creature:
                     for ax, ang, mirror in st:
                         pose.add(n, {'X': X, 'Y': Y, 'Z': Z, 'A': self.axis}[ax], ang * spread * (sg if mirror else 1.0))
                 if i == 0:
+                    for ax, ang in fl.get('wing_fix', {}).get(k, []):      # one wing of the mesh held differently from the other (3/4 concept): square it up
+                        pose.add(n, {'X': X, 'Y': Y, 'Z': Z}[ax], ang)
                     pose.add(n, X, pron)
                     pose.add(n, Z, -sg * sweep * math.sin(2 * math.pi * (p - 0.08)))   # forward on the downstroke
                     pose.add(n, self.axis, sg * (mid + amp * w))
@@ -871,6 +873,24 @@ def main():
         refine_hooves(cfg, co)
     rig, info = build_skeleton('rig', cfg)
     RG.skin(mount_id, rig, [m0, m1], Hm)
+    if info['wings'] and cfg.get('wing_root_tight', 0):
+        # the wing is rolled ~60 degrees about its span at the root (`wing_pron`): a wide bone-heat blend between the
+        # chest and the first wing bone smears the shoulder skin (seen from below). Narrow the blend band.
+        lo_, hi_ = 0.5 - 0.5 * (1 - cfg['wing_root_tight']), 0.5 + 0.5 * (1 - cfg['wing_root_tight'])
+        wb = {n for names in info['wings'].values() for n in names}
+        for ob in (m0, m1):
+            gi = {g.index: g.name in wb for g in ob.vertex_groups}
+            nfix = 0
+            for v in ob.data.vertices:
+                ww = sum(g.weight for g in v.groups if gi[g.group]); tot = sum(g.weight for g in v.groups)
+                if tot <= 0 or ww <= 1e-4 or ww >= tot - 1e-4:
+                    continue
+                t = min(1.0, max(0.0, (ww / tot - lo_) / max(1e-6, hi_ - lo_))); t = t * t * (3 - 2 * t)
+                kw = t * tot / ww; ko = (1 - t) * tot / (tot - ww)
+                for g in v.groups:
+                    g.weight = g.weight * (kw if gi[g.group] else ko)
+                nfix += 1
+            print(f'[creature] {ob.name}: wing-root blend narrowed on {nfix} vertices')
     meshes0, meshes1, weapons = [m0], [m1], []
     lib = None
     if rider_id:

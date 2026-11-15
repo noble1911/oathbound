@@ -12,6 +12,7 @@ import type { Engine } from '../core/engine.ts';
 import { worldX, worldZ, facingToYaw } from '../core/coords.ts';
 import type { ReplaySoldier, SoldierTransforms, ReplayEvent } from '../battle-source.ts';
 import { archetypeFor, TEAM_COLORS, type Archetype } from './archetypes.ts';
+import { LORD_ABILITY_IDS } from '../../sim/data/lords.ts';
 import { UnitAssets, type CrowdAsset, type HeroAsset } from './assets.ts';
 import type { VatClip } from './vat.ts';
 
@@ -389,7 +390,9 @@ export class UnitRenderer {
       case 'ability': {
         const s = this.slots[e.src];
         const c = s ? this.resolveClip(s, 'cast') : null;
-        if (s && c && s.deadAt < 0 && ['rally', 'meteor', 'bulwark'].includes(e.ability)) this.oneShot(s, c, t);
+        // a Lord's own cast (not the per-soldier marks of a Grave Taunt, nor an acolyte raising one corpse)
+        const lordCast = LORD_ABILITY_IDS.includes(e.ability as never) && e.ability !== 'skyfall' && s?.header.type === 'lord' && !(e.ability === 'grave_taunt' && e.radius === 0);
+        if (s && c && s.deadAt < 0 && lordCast && s.anim.oneShot !== c) this.oneShot(s, c, t);
         break;
       }
       case 'hit': {

@@ -798,10 +798,12 @@ export class StandInScene implements SceneAdapter {
         if (e.splash > 0 || e.kind === 'stone' || e.kind === 'fireball') this.flash(e.pos, Math.max(150, e.splash) / 100, e.kind === 'fireball' ? '#ff8a30' : '#c9b08a', 450, now);
         break;
       case 'ability': {
-        const col: Record<string, string> = { rally: '#ffd24a', meteor: '#ff5a1e', bulwark: '#6ab0ff', skyfall: '#d8f0ff', chain: '#a8c8ff', ember_burst: '#ff7a2a', stomp: '#c9a070', earthshaker: '#c9a070', sunfire: '#ffb84a', lifebinder: '#7dffa0', levelup: '#ffe8a0' };
+        const col: Record<string, string> = { rally: '#ffd24a', meteor: '#ff5a1e', bulwark: '#6ab0ff', skyfall: '#d8f0ff', chain: '#a8c8ff', ember_burst: '#ff7a2a', stomp: '#c9a070', earthshaker: '#c9a070', sunfire: '#ffb84a', lifebinder: '#7dffa0', levelup: '#ffe8a0',
+          radiance: '#ffd46a', necromancy: '#5fe08a', soul_reap: '#5fe08a', grave_taunt: '#e6e0c8', plague_breath: '#8fd04a', whirlwind: '#4fd8d0', stampede: '#c9a070', talon: '#ffd890' };
         if (e.ability === 'burn' || e.ability === 'frost' || e.ability === 'brace' || e.ability === 'charge' || e.ability === 'reflect') break;
+        if (e.ability === 'grave_taunt' && e.radius === 0) break; // the per-soldier marks: the Warden's own event flashes
         this.flash(e.pos, Math.max(2, e.radius / 100), col[e.ability] ?? '#ffffff', e.ability === 'meteor' ? 1200 : 700, now);
-        if (e.ability === 'meteor' || e.ability === 'skyfall') this.shake = 0.8;
+        if (e.ability === 'meteor' || e.ability === 'skyfall' || e.ability === 'plague_breath' || e.ability === 'stampede' || e.ability === 'talon') this.shake = 0.8;
         break;
       }
       case 'keepHit': {

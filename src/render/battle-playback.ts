@@ -649,6 +649,47 @@ export class BattlePlayback {
             v.skyfall(from.clone().add(new THREE.Vector3(0, 25, 0)), p);
             break;
           }
+          // ---- the newer Lords (see the AbilityEventKind comment in sim/types.ts)
+          case 'soul_reap':
+            v.soulReap(p, r, Math.max(3, dur), follow);
+            break;
+          case 'grave_taunt': {
+            if (e.radius > 0) v.graveTaunt(p, r, Math.max(2, dur), follow);
+            else {
+              // one taunted soldier: a thread from the Warden to it, and a mark over it while the taunt lasts
+              const tg = e.tgt;
+              const at = new THREE.Vector3();
+              const from = new THREE.Vector3();
+              v.tauntMark(() => this.soldierPoint(src, from, 2.4), () => {
+                const q = this.units.slots[tg];
+                return q && q.deadAt < 0 ? at.copy(q.pos) : null;
+              }, Math.max(1, dur));
+            }
+            break;
+          }
+          case 'plague_breath': {
+            const from = (this.units.point(src, B) ?? p.clone()).clone().add(new THREE.Vector3(0, 6, 0));
+            v.plagueBreath(from, p, r, Math.max(0.3, dur));
+            break;
+          }
+          case 'whirlwind':
+            v.djinnWhirlwind(p, r, Math.max(2, dur));
+            break;
+          case 'stampede': {
+            const s0 = this.units.slots[src];
+            v.stampede(s0 ? s0.pos.clone() : p.clone(), p, r);
+            break;
+          }
+          case 'talon': {
+            const from = (this.units.point(src, B) ?? p.clone()).clone().add(new THREE.Vector3(0, 4, 0));
+            const tg = e.tgt;
+            const at = new THREE.Vector3();
+            v.talon(from, () => {
+              const q = this.units.slots[tg];
+              return q && q.deadAt < 0 ? at.copy(q.pos) : null;
+            }, p, Math.max(0.3, dur));
+            break;
+          }
           case 'chain': {
             const a = this.soldierPoint(e.src, A);
             const b = this.soldierPoint(e.tgt, B);

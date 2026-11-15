@@ -27,6 +27,8 @@ def tint_tex(objs, glb):
         cands.insert(0, L.WORK / 'stage_v2' / f'{uid}_team.png')
     elif g.parent.name == 'unpacked':
         cands.insert(0, L.ROOT / 'public' / 'models' / 'v2' / f'{uid}_team.png')
+    if g.stem.endswith('_lod1'):                  # a hero LOD1 has its own atlas -> its own mask (manifest lod1TintMask)
+        cands = [c.with_name(f'{uid}_lod1_team.png') for c in cands]
     mp = next((c for c in cands if c.exists()), None)
     if mp is None:
         return RV.tint(objs)

@@ -26,7 +26,10 @@ const TRAIT_TEXT: Record<string, string> = {
   backline: 'Holds back behind the front line',
 };
 
-export const LORD_HUE: Record<LordId, string> = { marshal: '#b98a2e', archmage: '#6a4fb0', warden: '#3f7a48', skylady: '#3f86c4', lich: '#4fbf7a', sultana: '#2fa7a0' };
+export const LORD_HUE: Record<LordId, string> = {
+  marshal: '#b98a2e', archmage: '#6a4fb0', warden: '#3f7a48', skylady: '#3f86c4', lich: '#4fbf7a', sultana: '#2fa7a0',
+  deathknight: '#7f9a5a', ossuary: '#a89f86', drakerider: '#5a8f7a', vizier: '#4f86c9', rajah: '#c9873a', rocrider: '#d0a24a',
+};
 
 /**
  * A crest: the woodcut portrait in a shield. It also carries the unit's battlefield glyph (class `gl` + sprite
@@ -109,10 +112,11 @@ export function sheetStats(sheet: SquadSheet): string {
 
 const SKILL_SOURCE: Record<SkillInfo['source'], string> = { innate: 'Innate', lord: 'Lord', item: 'Item' };
 /** The glyph of an innate or Lord ability (item skills have their own, see items.ts). */
-const INNATE_ICON: Record<string, string> = {
+export const INNATE_ICON: Record<string, string> = {
   heal: 'heart', brace: 'shield', charge: 'mounted', raider: 'move', lifesteal: 'heart', pierce: 'bolt', stomp: 'large', cone: 'breath', splash: 'stone',
   magic: 'tome', crushing: 'fists', min_range: 'stone', flier: 'flier', armored: 'armored', resist: 'staff', ranged: 'bow',
-  rally: 'flag', bulwark: 'shield', meteor: 'flame', skyfall: 'flier',
+  rally: 'flag', bulwark: 'shield', meteor: 'flame', skyfall: 'flier', necromancy: 'skull', radiance: 'star',
+  soul_reap: 'heart', grave_taunt: 'shield', plague_breath: 'breath', whirlwind: 'staff', stampede: 'large', talon: 'flier',
 };
 function skillIcon(k: SkillInfo): string {
   if (k.skill) return skillGlyph(k.skill);

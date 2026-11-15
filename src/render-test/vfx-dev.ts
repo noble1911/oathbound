@@ -39,6 +39,16 @@ const fx: Record<string, () => void> = {
   rally: () => vfx.rally(V(0, 0, 0), 10, 6),
   bulwark: () => vfx.bulwark(V(0, 0, 0), 9, 6),
   skyfall: () => vfx.skyfall(V(-10, 40, -20), V(0, 0, 0)),
+  // the newer Lords
+  soulReap: () => vfx.soulReap(V(0, 0, 0), 12, 6),
+  graveTaunt: () => {
+    vfx.graveTaunt(V(0, 0, 0), 10, 5);
+    for (let i = 0; i < 6; i++) { const p = V(Math.cos(i) * 7, 0, Math.sin(i) * 7); vfx.tauntMark(() => V(0, 2.4, 0), () => p, 5); }
+  },
+  plagueBreath: () => vfx.plagueBreath(V(-14, 18, -10), V(0, 0, 0), 4.5, 0.7),
+  whirlwind: () => vfx.djinnWhirlwind(V(0, 0, 0), 5, 4.5),
+  stampede: () => vfx.stampede(V(-8, 0, 6), V(4, 0, -3), 2.8),
+  talon: () => vfx.talon(V(-12, 14, -8), () => V(0, 0, 0), V(0, 0, 8), 0.6),
   breath: () => vfx.breath(V(-12, 5, 4), V(1, -0.35, -0.3), 14, 0.35, 2.5),
   stomp: () => vfx.stomp(V(0, 0, 0), 5),
   dust: () => { for (let i = 0; i < 40; i++) vfx.marchDust(V(Math.random() * 10 - 5, 0, Math.random() * 6 - 3)); },

@@ -1,6 +1,6 @@
 {
   "about": "Lord voice lines for Oathbound. Rendered with Breeze-TTS-2 by tools/voice/render.py (WSL), built to public/audio/voice/<lord>/<event>_<n>.webm by tools/voice/build.py. Every voice is designed from the text description below; no reference audio of any real person is used. Licence: see docs/AUDIO.md (Voices).",
-  "cfg_scale": 4.0,
+  "cfg_scale": 4,
   "events": {
     "pick": "Proud and assured, introducing yourself.",
     "taunt": "A taunt to the rival across the field, relishing it.",
@@ -257,7 +257,7 @@
         60,
         170
       ],
-      "rate": 2.0,
+      "rate": 2,
       "seed": 11,
       "lines": {
         "pick": [
@@ -357,6 +357,360 @@
         ],
         "defeat": [
           "Even the sun must set. For tonight."
+        ]
+      }
+    },
+    "deathknight": {
+      "name": "Lord Vaelric the Death Knight",
+      "voice": "A cursed knight risen from the grave: a deep, heavy, iron-hard male voice in his forties, cold and grim, a low growl with a faint metallic rasp as if speaking from inside a closed helm. A hard northern English accent, slow and menacing, every word a verdict. Clear and intelligible.",
+      "style": "Grim, iron-hard, low and menacing.",
+      "delivery": {
+        "charge": "A grim, heavy war cry from deep in the chest, forceful but never shrill."
+      },
+      "reference_text": "I swore an oath to my king, and I kept it past my own death. Now my blade serves only the grave.",
+      "f0": [
+        65,
+        140
+      ],
+      "rate": 2.2,
+      "seed": 37,
+      "lines": {
+        "pick": [
+          "Vaelric, sworn in death. My blade still remembers."
+        ],
+        "taunt": [
+          "Run if you like. The grave is patient, and so am I."
+        ],
+        "deploy": [
+          "Take your place.",
+          "March, dead men.",
+          "Hold. Wait for blood."
+        ],
+        "ready": [
+          "The dead stand ready. Begin."
+        ],
+        "charge": [
+          "Forward! Reap them all!",
+          "No mercy! No retreat!"
+        ],
+        "ability": [
+          "Feed on them! Take their souls!",
+          "Drink, my legion! Drink deep!"
+        ],
+        "roundWon": [
+          "Their souls are ours now.",
+          "A good harvest. Gather the fallen."
+        ],
+        "roundLost": [
+          "Death is no stranger to me.",
+          "We will rise again. We always do."
+        ],
+        "keep": [
+          "They breach the crypt! Hold them!"
+        ],
+        "legendary": [
+          "This steel hungers. I know the feeling."
+        ],
+        "victory": [
+          "Kneel. Your kingdom belongs to the grave."
+        ],
+        "defeat": [
+          "Even death can be defeated."
+        ]
+      }
+    },
+    "ossuary": {
+      "name": "Gorrath the Ossuary Warden",
+      "voice": "A colossal giant built of fused bone and iron: an extremely deep, slow, cavernous bass male voice, rumbling and hollow like stones grinding in a tomb. Ancient and simple, he speaks in short blunt words with long pauses, heavy and calm. Clear and intelligible.",
+      "style": "Cavernous, very deep, slow and blunt.",
+      "delivery": {
+        "charge": "A slow, earth-shaking roar of a command."
+      },
+      "echo": true,
+      "reference_text": "I am the wall of bones. A thousand warriors built me, and a thousand more will break upon me.",
+      "f0": [
+        50,
+        115
+      ],
+      "rate": 1.7,
+      "seed": 67,
+      "lines": {
+        "pick": [
+          "I am the warden of the bones. None pass."
+        ],
+        "taunt": [
+          "Little things. I will build a wall from you."
+        ],
+        "deploy": [
+          "Stand there.",
+          "Hold here.",
+          "Raise the shields."
+        ],
+        "ready": [
+          "The wall stands. Come."
+        ],
+        "charge": [
+          "Crush them! Crush them all!",
+          "Forward, bones! Break them!"
+        ],
+        "ability": [
+          "Look at me! Fight me!",
+          "Strike me, if you dare!"
+        ],
+        "roundWon": [
+          "More bones for the wall.",
+          "They broke. We did not."
+        ],
+        "roundLost": [
+          "Cracked. Not broken.",
+          "Pick up the pieces. Again."
+        ],
+        "keep": [
+          "The walls! They are at the walls!"
+        ],
+        "legendary": [
+          "Heavy. Good. I like heavy."
+        ],
+        "victory": [
+          "Nothing passes. Nothing ever passes."
+        ],
+        "defeat": [
+          "The wall falls."
+        ]
+      }
+    },
+    "drakerider": {
+      "name": "Queen Nyssara the Bone Drake Rider",
+      "voice": "An undead queen in her thirties: a cold, silken, haunting female voice, a low alto with a whispery chill and a refined eastern European accent. Proud, cruel and graceful, half-smiling as she speaks, savouring every word. Clear and intelligible.",
+      "style": "Cold, silken, cruel and regal.",
+      "delivery": {
+        "charge": "A cruel, exultant cry over rushing wind, sharp but controlled."
+      },
+      "echo": true,
+      "reference_text": "My kingdom died, so I took a dragon from its grave and made the sky my throne. Look up, and kneel.",
+      "f0": [
+        150,
+        260
+      ],
+      "rate": 2.6,
+      "seed": 41,
+      "lines": {
+        "pick": [
+          "Queen Nyssara rides again. Look up, and despair."
+        ],
+        "taunt": [
+          "Such pretty soldiers. They will rot beautifully."
+        ],
+        "deploy": [
+          "Go, my pets.",
+          "Take wing.",
+          "Wait for my signal."
+        ],
+        "ready": [
+          "My drake is hungry. Let us begin."
+        ],
+        "charge": [
+          "Into the sky! Rain death!",
+          "Dive, my darling! Dive!"
+        ],
+        "ability": [
+          "Breathe, my drake! Let them rot!",
+          "Plague and ruin, from above!"
+        ],
+        "roundWon": [
+          "Delicious. Who is next?",
+          "They fell so gracefully."
+        ],
+        "roundLost": [
+          "A setback. Queens do not bleed.",
+          "Annoying. We fly again."
+        ],
+        "keep": [
+          "My keep! Drive them from my walls!"
+        ],
+        "legendary": [
+          "Exquisite. It suits a queen."
+        ],
+        "victory": [
+          "Bow to your queen, forever."
+        ],
+        "defeat": [
+          "No. My crown. My kingdom."
+        ]
+      }
+    },
+    "vizier": {
+      "name": "Grand Vizier Kasim the Djinn-caller",
+      "voice": "An elderly court sorcerer in his seventies: a thin, reedy, slightly nasal tenor male voice with a Persian accent, sly, silky and theatrical, savouring every word, a schemer's soft chuckle beneath it. Unhurried and clever. Clear and intelligible.",
+      "style": "Sly, silky, reedy and theatrical.",
+      "delivery": {
+        "charge": "Gleeful and sly, urging his servants on, raised but never a full shout."
+      },
+      "reference_text": "Every lamp holds a servant, and every servant holds a secret. Rub gently, my friend, and the desert will answer.",
+      "f0": [
+        100,
+        200
+      ],
+      "rate": 2.4,
+      "seed": 11,
+      "lines": {
+        "pick": [
+          "Kasim, Grand Vizier. My lamp is never empty."
+        ],
+        "taunt": [
+          "You fight with steel? How charmingly old fashioned."
+        ],
+        "deploy": [
+          "Yes, yes, there.",
+          "As I foresaw.",
+          "A small move. A clever one."
+        ],
+        "ready": [
+          "The stars agree. We begin."
+        ],
+        "charge": [
+          "Go, my servants! Go!",
+          "Now, before they understand!"
+        ],
+        "ability": [
+          "Rise from the lamp! Whirlwind!",
+          "Winds of the desert, obey me!"
+        ],
+        "roundWon": [
+          "Exactly as I planned.",
+          "Delightful. Truly delightful."
+        ],
+        "roundLost": [
+          "A minor miscalculation.",
+          "The stars lied to me."
+        ],
+        "keep": [
+          "The palace! Someone defend the palace!"
+        ],
+        "legendary": [
+          "Oh, now this is a treasure."
+        ],
+        "victory": [
+          "Wisdom wins, as it always does."
+        ],
+        "defeat": [
+          "Impossible. I saw every move."
+        ]
+      }
+    },
+    "rajah": {
+      "name": "Rajah Bahadur the Elephant Lord",
+      "voice": "A heavyset man in his sixties with a very deep, low, rumbling bass-baritone voice and a warm Indian accent. He speaks slowly and grandly from deep in the chest, relaxed and hearty, with a low chuckle, like a great lord at ease on the back of his war elephant. Low-pitched, never shrill, never shouting. Clear and intelligible.",
+      "style": "Deep, rumbling, hearty and grand.",
+      "reference_text": "My grandfather rode this elephant, and his grandfather before him. Make way, little ones. The river kingdom is marching.",
+      "f0": [
+        80,
+        155
+      ],
+      "rate": 2.2,
+      "seed": 37,
+      "lines": {
+        "pick": [
+          "Bahadur, lord of the river kingdom! Make way!"
+        ],
+        "taunt": [
+          "My elephant has stepped on bigger armies than yours."
+        ],
+        "deploy": [
+          "There! Stand proud.",
+          "Good, good. Hold.",
+          "Make room for the giants."
+        ],
+        "ready": [
+          "Sound the drums! We are ready!"
+        ],
+        "charge": [
+          "Stampede! Trample them flat!",
+          "Forward, my mighty ones!"
+        ],
+        "ability": [
+          "Charge, my beauty! Charge!",
+          "Nothing stops the stampede!"
+        ],
+        "roundWon": [
+          "Ha! Did you see them run?",
+          "A fine day. Feed the elephants."
+        ],
+        "roundLost": [
+          "A bruise. Only a bruise.",
+          "We will come back twice as heavy."
+        ],
+        "keep": [
+          "They are at my gates! Shut the gates!"
+        ],
+        "legendary": [
+          "Gold and glory! I love it!"
+        ],
+        "victory": [
+          "Victory! Tonight we feast for a week!"
+        ],
+        "defeat": [
+          "Even the mightiest beast must fall."
+        ]
+      },
+      "delivery": {
+        "charge": "A deep, booming roar from the chest, low and hearty, never shrill.",
+        "ability": "A deep, booming command from the chest, low and powerful, never shrill."
+      }
+    },
+    "rocrider": {
+      "name": "Amira Falconheart the Roc Rider",
+      "voice": "A young desert archer-warrior in her twenties: a clear, keen, focused female voice with a light Arabic accent, quick and calm like a hunter, bright mid-range, confident and a little wry. Natural and grounded. Clear and intelligible.",
+      "style": "Keen, bright, quick and confident.",
+      "reference_text": "From up here the whole desert is a map, and every enemy is a mark. Breathe out, draw, and let the wind do the rest.",
+      "f0": [
+        170,
+        300
+      ],
+      "rate": 2.9,
+      "seed": 53,
+      "lines": {
+        "pick": [
+          "Amira Falconheart. My arrows never miss."
+        ],
+        "taunt": [
+          "I see you from the clouds. Every single one of you."
+        ],
+        "deploy": [
+          "On my mark.",
+          "Fly low.",
+          "Watch the flanks."
+        ],
+        "ready": [
+          "Wings ready. Bows ready."
+        ],
+        "charge": [
+          "Up, up! Strike from the sun!",
+          "Loose! Let them fall!"
+        ],
+        "ability": [
+          "Talons out! Take that one!",
+          "Up you go! And down!"
+        ],
+        "roundWon": [
+          "Clean shots. Well flown.",
+          "The sky belongs to us."
+        ],
+        "roundLost": [
+          "We fly higher next time.",
+          "They got lucky. Not again."
+        ],
+        "keep": [
+          "Our home is burning! Fly back!"
+        ],
+        "legendary": [
+          "Feather light and sharp. Perfect."
+        ],
+        "victory": [
+          "The wind carried us to victory!"
+        ],
+        "defeat": [
+          "Grounded, at last."
         ]
       }
     }

@@ -73,8 +73,10 @@ export class Director {
     let c: Candidate | null = null;
     switch (e.k) {
       case 'ability': {
-        const big: Record<string, number> = { meteor: 10, skyfall: 9.5, rally: 8.5, bulwark: 8.5, earthshaker: 7, sunfire: 7, ember_burst: 5.5, stomp: 5, chain: 5.2, lifebinder: 5, bloodthirst: 4.5, charge: 4 };
-        const p = big[e.ability];
+        const big: Record<string, number> = { meteor: 10, skyfall: 9.5, rally: 8.5, bulwark: 8.5, earthshaker: 7, sunfire: 7, ember_burst: 5.5, stomp: 5, chain: 5.2, lifebinder: 5, bloodthirst: 4.5, charge: 4,
+          // the newer Lords' abilities (a Grave Taunt's per-soldier marks have radius 0 and are not shots of their own)
+          plague_breath: 9.5, talon: 9.2, stampede: 9, whirlwind: 9, soul_reap: 8.5, grave_taunt: 8.5 };
+        const p = e.ability === 'grave_taunt' && e.radius === 0 ? 0 : big[e.ability];
         if (p) c = { prio: p, pos: fieldToWorld(e.pos[0], e.pos[1]), at: t, kind: e.ability, dist: e.ability === 'meteor' ? 34 : e.ability === 'skyfall' ? 24 : 20, hold: e.ability === 'meteor' ? 3.2 : 2.6 };
         break;
       }

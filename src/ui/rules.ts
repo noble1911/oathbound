@@ -11,7 +11,7 @@ import { lootSchedule } from '../sim/loot.ts';
 import type { Rarity } from '../sim/types.ts';
 import { ARMY_CAP, BASE_DEPLOY_LIMIT, KEEP_HP, LEVEL_COST_PCT, MAX_SQUAD_LEVEL, START_GOLD, deployZone, income } from '../sim/match.ts';
 import { RIVER_Y0 } from '../sim/terrain.ts';
-import { LORDS } from '../sim/data/lords.ts';
+import { LORDS, LORD_ROLE, LORD_ROLES, LORD_ROLE_NAME } from '../sim/data/lords.ts';
 import { TICK_HZ } from '../sim/constants.ts';
 import { sound } from '../audio.ts';
 import { $, el, esc, store } from './dom.ts';
@@ -84,7 +84,7 @@ const antiAir = () => roster().filter((u) => !UNITS[u].traits?.includes('healer'
 function factionsPage(): string {
   const mine = factionContext().mine;
   return `<h3>Three factions, one set of rules</h3>
-    <p class="lead">A faction is a <b>roster</b>: its own units and Lords. Gold, loot offers, the deploy limit, Keep life and every rule of battle are <b>the same for all three</b>.</p>
+    <p class="lead">A faction is a <b>roster</b>: its own units and four Lords, one for each way to lead (infantry, magic, armour, fliers). Gold, loot offers, the deploy limit, Keep life and every rule of battle are <b>the same for all three</b>.</p>
     <div class="rl-facs">${FACTION_IDS.map((f) => {
       const F = FACTIONS[f];
       const mech = factionMechanics(f);
@@ -92,12 +92,23 @@ function factionsPage(): string {
         <i class="fc-band"></i>
         <b>${esc(F.name)}${f === mine ? ' <em>yours</em>' : ''}</b>
         <p>${esc(F.blurb)} ${esc(F.identity)}</p>
-        <small>Lords</small><div>${F.lords.map((l) => `<span class="uchip">${crest('lord', l, 'sm')}${esc(LORDS[l].title)} ${esc(LORDS[l].name)}</span>`).join('')}</div>
+        <small>Lords</small><div>${F.lords.map((l) => `<span class="uchip" data-tip="${esc(`${LORD_ROLE_NAME[LORD_ROLE[l]]}. ${LORDS[l].passive}. ${LORDS[l].abilityName}: ${LORDS[l].abilityText}`)}">${crest('lord', l, 'sm')}${esc(LORDS[l].title)} ${esc(LORDS[l].name)}</span>`).join('')}</div>
         <small>Units</small><div>${chips(F.units)}</div>
         <small>What sets it apart</small>
         <ul class="rl-list">${mech.map((m) => `<li class="${m.tone}"><b>${esc(m.name)}</b>${m.units.length ? ` (${esc(names(m.units, 2))})` : ''}: ${esc(m.text)}</li>`).join('')}</ul>
       </div>`;
-    }).join('')}</div>`;
+    }).join('')}</div>
+    <h3>The Lords, role by role</h3>
+    <p class="lead">Each faction's Lord in a role plays the same part as the others in that row, with its own passive and ability.</p>
+    <div class="rl-lords">
+      <span></span>${FACTION_IDS.map((f) => `<b class="rl-lh">${esc(FACTIONS[f].short)}</b>`).join('')}
+      ${LORD_ROLES.map((r) => `<b class="rl-lr">${esc(LORD_ROLE_NAME[r])}</b>${FACTION_IDS.map((f) => {
+        const id = FACTIONS[f].lords.find((l) => LORD_ROLE[l] === r);
+        if (!id) return '<span></span>';
+        const L = LORDS[id];
+        return `<div class="rl-lord">${crest('lord', id, 'sm')}<span><b>${esc(L.title)} ${esc(L.name)}</b><small>${esc(L.passive)}</small><small><em>${esc(L.abilityName)}:</em> ${esc(L.abilityText)}</small></span></div>`;
+      }).join('')}`).join('')}
+    </div>`;
 }
 
 function triangle(): string {

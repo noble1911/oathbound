@@ -17,8 +17,13 @@ export type Vec2 = [number, number];
 /** The three playable factions. Both players may pick any of them (also the same one); a Lord belongs to one faction. */
 export type FactionId = 'kingdom' | 'ashen' | 'caliphate';
 
-/** Kingdom: marshal, archmage, warden, skylady. Ashen Covenant: lich. Sun Caliphate: sultana. */
-export type LordId = 'marshal' | 'archmage' | 'warden' | 'skylady' | 'lich' | 'sultana';
+/**
+ * Four per faction, one in each role (infantry, magic, armour, fliers). Kingdom: marshal, archmage, warden, skylady.
+ * Ashen Covenant: deathknight, lich, ossuary, drakerider. Sun Caliphate: sultana, vizier, rajah, rocrider.
+ */
+export type LordId =
+  | 'marshal' | 'archmage' | 'warden' | 'skylady' | 'lich' | 'sultana'
+  | 'deathknight' | 'ossuary' | 'drakerider' | 'vizier' | 'rajah' | 'rocrider';
 
 /** The Oathsworn Kingdom's 14 units. */
 export type KingdomUnit =
@@ -134,7 +139,9 @@ export interface LordDef {
   abilityName: string;
   abilityText: string;
 }
-export type AbilityId = 'rally' | 'meteor' | 'bulwark' | 'skyfall' | 'necromancy' | 'radiance';
+export type AbilityId =
+  | 'rally' | 'meteor' | 'bulwark' | 'skyfall' | 'necromancy' | 'radiance'
+  | 'soul_reap' | 'grave_taunt' | 'plague_breath' | 'whirlwind' | 'stampede' | 'talon';
 
 export interface FactionDef {
   id: FactionId;
@@ -532,7 +539,8 @@ export type TallyEvent =
 /** What a ledger entry is attributed to: plain attacks, damage-over-time and procs, Lord abilities, heals, or an item skill. */
 export type StatCause =
   | 'attack' | 'burn' | 'thorns' | 'tower' | 'chain' | 'ember_burst' | 'sunfire' | 'meteor' | 'skyfall'
-  | 'heal' | 'leech' | 'lifebinder' | 'bloodthirst' | 'revive' | 'rout' | 'radiance' | 'regen' | SkillId;
+  | 'heal' | 'leech' | 'lifebinder' | 'bloodthirst' | 'revive' | 'rout' | 'radiance' | 'regen' | SkillId
+  | 'soul_reap' | 'plague_breath' | 'whirlwind' | 'stampede' | 'talon';
 
 /** One squad of the battle (header row). Row index = position in Replay.squads; summoned skeleton bands get their own row. */
 export interface ReplaySquad {
@@ -556,6 +564,13 @@ export interface ReplaySquad {
 
 export type AbilityEventKind =
   | 'rally' | 'meteor' | 'bulwark' | 'skyfall' | 'necromancy' | 'radiance'
+  /**
+   * The six newer Lord abilities. Each has one event from the Lord (`src`) at cast time: 'soul_reap' and 'grave_taunt'
+   * at the Lord (radius = reach, dur = ticks); 'plague_breath' and 'whirlwind' at the impact point (dur = ticks until it
+   * lands / lasts); 'stampede' at the end of the charge (radius = trample width); 'talon' at the drop point, `tgt` = the
+   * soldier seized. A taunted soldier also gets a 'grave_taunt' event with `tgt` = it and radius 0.
+   */
+  | 'soul_reap' | 'grave_taunt' | 'plague_breath' | 'whirlwind' | 'stampede' | 'talon'
   | 'chain' /* chain lightning segment src->tgt */
   /**
    * Debuff windows, one event when the debuff STARTS on soldier `tgt` (refreshes are not repeated), `src` = the soldier

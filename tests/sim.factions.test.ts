@@ -32,9 +32,9 @@ describe('faction data', () => {
     expect(FACTIONS.kingdom.units.length).toBe(14);
     expect(FACTIONS.kingdom.lords).toEqual(['marshal', 'archmage', 'warden', 'skylady']);
     expect(FACTIONS.ashen.units).toEqual(['skeleton', 'grave_knight', 'bone_archer', 'wraith_rider', 'grave_acolyte', 'bone_drake', 'corpse_catapult', 'bone_golem']);
-    expect(FACTIONS.ashen.lords).toEqual(['lich']);
+    expect(FACTIONS.ashen.lords).toEqual(['deathknight', 'lich', 'ossuary', 'drakerider']);
     expect(FACTIONS.caliphate.units).toEqual(['spear_levy', 'scimitar', 'camel_archer', 'mamluk', 'djinn_binder', 'sun_priest', 'djinn', 'war_elephant', 'sand_golem']);
-    expect(FACTIONS.caliphate.lords).toEqual(['sultana']);
+    expect(FACTIONS.caliphate.lords).toEqual(['sultana', 'vizier', 'rajah', 'rocrider']);
     expect(LORDS.lich.modelId).toBe('lord_lich');
     expect(LORDS.sultana.modelId).toBe('lord_sultana');
     const all = FACTION_IDS.flatMap((f) => FACTIONS[f].units);
@@ -311,8 +311,8 @@ describe('bots play every faction', () => {
   it('all levels finish matches with every Lord, fielding only their faction', () => {
     const strats: BotStrategy[] = ['easy', 'normal', 'hard', 'rush', 'air', 'ranged'];
     let k = 0;
-    for (const lord of ['lich', 'sultana'] as LordId[]) {
-      for (const strat of strats) {
+    for (const lord of ['lich', 'sultana', 'deathknight', 'ossuary', 'drakerider', 'vizier', 'rajah', 'rocrider'] as LordId[]) {
+      for (const strat of lord === 'lich' || lord === 'sultana' ? strats : (['easy', 'normal', 'hard'] as BotStrategy[])) {
         const other = LORD_IDS[k % LORD_IDS.length];
         const s = newMatch(40 + k++, [lord, other]);
         const seen = new Set<UnitType>();
@@ -327,7 +327,7 @@ describe('bots play every faction', () => {
         }
         expect(s.phase).toBe('over');
         expect(s.round).toBeLessThan(20);
-        expect(seen.size).toBeGreaterThanOrEqual(strat === 'easy' ? 2 : 3);
+        expect(seen.size, `${lord} ${strat} rounds ${s.round}`).toBeGreaterThanOrEqual(strat === 'normal' || strat === 'hard' ? 3 : 2); // (a flavoured bot may stick to two kinds, e.g. 'ranged' Caliphate: camel archers and binders)
       }
     }
   }, 180_000);
@@ -362,7 +362,7 @@ describe('bots play every faction', () => {
     expect(holder('marshal')).toBe('lord');
   });
 
-  it('a bot left to pick its own Lord may pick any of the six', () => {
+  it('a bot left to pick its own Lord may pick any of the twelve', () => {
     const picked = new Set<LordId>();
     for (let seed = 0; seed < 60; seed++) {
       const s = newMatch(seed, null);
@@ -371,6 +371,6 @@ describe('bots play every faction', () => {
       expect(s.phase).toBe('planning');
       for (const p of s.players) { picked.add(p.lord!); expect(p.faction).toBe(LORDS[p.lord!].faction); }
     }
-    expect(picked.size).toBe(6);
+    expect(picked.size).toBe(12);
   });
 });

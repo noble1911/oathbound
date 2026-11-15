@@ -26,6 +26,12 @@ export interface Archetype {
   attackImpact: number;
   /** Marching dust amount (0 = none). */
   dust: number;
+  /**
+   * Nearest existing art models (manifest keys) to wear until this archetype's own model is in the manifest (the
+   * newer Lords' `lord_<id>` GLBs land with the remodel): the own key always wins, then these in order, then the
+   * procedural stand-in. Team tint comes from the borrowed model's own tint mask.
+   */
+  fallback?: string[];
 }
 
 const SKIN = ['#e2b48f', '#c99470', '#f0c9a6'];
@@ -121,7 +127,7 @@ export const ARCHETYPES: Record<string, Archetype> = {
   },
   trebuchet: {
     key: 'trebuchet', render: 'hero', build: () => buildTrebuchet('trebuchet', '#e4e1da'),
-    walkSpeed: 0.8, runSpeed: 1.5, runAbove: 99, flyHeight: 0, muzzle: 5.5, chest: 2.0, scale: 1, attackImpact: 0.35, dust: 0.6,
+    walkSpeed: 0.8, runSpeed: 1.5, runAbove: 99, flyHeight: 0, muzzle: 8.3, chest: 2.0, scale: 1, attackImpact: 0.35, dust: 0.6,
   },
   // ---------------------------------------------------------------- The Ashen Covenant (docs/ART.md, "Factions")
   // walkSpeed / runSpeed = what the shipped clips cover at rate 1 (anim_audit.py for humanoids, creatures.json
@@ -141,7 +147,7 @@ export const ARCHETYPES: Record<string, Archetype> = {
   },
   corpse_catapult: {
     key: 'corpse_catapult', render: 'hero', build: () => buildTrebuchet('corpse_catapult', '#e4e1da'),
-    walkSpeed: 0.8, runSpeed: 1.5, runAbove: 99, flyHeight: 0, muzzle: 4.6, chest: 1.8, scale: 1, attackImpact: 0.35, dust: 0.6,
+    walkSpeed: 0.8, runSpeed: 1.5, runAbove: 99, flyHeight: 0, muzzle: 6.9, chest: 1.8, scale: 1, attackImpact: 0.35, dust: 0.6,
   },
   bone_golem: {
     key: 'bone_golem', render: 'hero', build: () => buildGolem('bone_golem'),
@@ -178,29 +184,29 @@ export const ARCHETYPES: Record<string, Archetype> = {
   },
   lord_sultana: human('lord_sultana', 'hero', { dust: 0.3, walkSpeed: 1.13, runSpeed: 3.8, runAbove: 2.2 }, 1.22),
   // ---------------------------------------------------------------- Lords whose art ships ahead of the sim
-  // Keyed by model id only (not in LORD_KEY: the sim does not know them yet), so `showArmy` / a replay row with
-  // `modelId: 'lord_<id>'` can already display them (e2e/model-compare.mjs, e2e/anim-audit.mjs).
+  // Keyed by model id (and in LORD_KEY). Until each `lord_<id>` GLB is in the manifest they wear `fallback`.
   // walkSpeed / runSpeed are placeholders: set them from tools/art/blender/anim_audit.py once the models are built.
-  lord_deathknight: human('lord_deathknight', 'hero', { dust: 0.3, walkSpeed: 1.0, runSpeed: 3.0, runAbove: 1.9 }, 1.25),
+  lord_deathknight: human('lord_deathknight', 'hero', { dust: 0.3, walkSpeed: 1.0, runSpeed: 3.0, runAbove: 1.9, fallback: ['lord_warden'] }, 1.25),
   lord_ossuary: {
     key: 'lord_ossuary', render: 'hero', build: () => buildGolem('lord_ossuary'),
-    walkSpeed: 1.4, runSpeed: 3, runAbove: 99, flyHeight: 0, muzzle: 2.4, chest: 2.0, scale: 1, attackImpact: 0.5, dust: 1.0,
+    walkSpeed: 1.4, runSpeed: 3, runAbove: 99, flyHeight: 0, muzzle: 2.4, chest: 2.0, scale: 1, attackImpact: 0.5, dust: 1.0, fallback: ['bone_golem'],
   },
   lord_drakerider: {
     key: 'lord_drakerider', render: 'hero',
     build: () => buildDragon('lord_drakerider', { scale: 1.4, body: '#d9d4c2', belly: '#b9b29c', wing: '#77736c', glow: '#5fe08a', rider: riderLook({ weapon: 'lance', helmet: 'crown', metal: '#8a7a55' }) }),
-    walkSpeed: 3, runSpeed: 6, runAbove: 4.5, flyHeight: 7.5, muzzle: 2.4, chest: 1.8, scale: 1, attackImpact: 0.45, dust: 0,
+    walkSpeed: 3, runSpeed: 6, runAbove: 4.5, flyHeight: 7.5, muzzle: 2.4, chest: 1.8, scale: 1, attackImpact: 0.45, dust: 0, fallback: ['bone_drake'],
   },
-  lord_vizier: human('lord_vizier', 'hero', { attackImpact: 0.45, muzzle: 2.4, walkSpeed: 1.1, runSpeed: 3.6, runAbove: 2.2, dust: 0.1 }, 1.22),
-  lord_rajah: human('lord_rajah', 'hero', { dust: 0.4, walkSpeed: 1.0, runSpeed: 3.2, runAbove: 2.0 }, 1.25),
+  lord_vizier: human('lord_vizier', 'hero', { attackImpact: 0.45, muzzle: 2.4, walkSpeed: 1.1, runSpeed: 3.6, runAbove: 2.2, dust: 0.1, fallback: ['lord_archmage'] }, 1.22),
+  lord_rajah: human('lord_rajah', 'hero', { dust: 0.4, walkSpeed: 1.0, runSpeed: 3.2, runAbove: 2.0, fallback: ['lord_marshal'] }, 1.25),
   lord_rocrider: {
     key: 'lord_rocrider', render: 'hero',
     build: () => buildDragon('lord_rocrider', { scale: 1.4, body: '#c9a04a', belly: '#e9d9a8', wing: '#d9b25a', rider: riderLook({ weapon: 'bow', helmet: 'cap', metal: '#d9b25a' }) }),
-    walkSpeed: 3, runSpeed: 6, runAbove: 4.5, flyHeight: 7.5, muzzle: 2.4, chest: 1.8, scale: 1, attackImpact: 0.64, dust: 0,
+    walkSpeed: 3, runSpeed: 6, runAbove: 4.5, flyHeight: 7.5, muzzle: 2.4, chest: 1.8, scale: 1, attackImpact: 0.64, dust: 0, fallback: ['wyvern'],
   },
 };
 
-const LORD_KEY: Record<string, string> = { marshal: 'lord_marshal', archmage: 'lord_archmage', warden: 'lord_warden', skylady: 'lord_skylady', lich: 'lord_lich', sultana: 'lord_sultana' };
+const LORD_KEY: Record<string, string> = { marshal: 'lord_marshal', archmage: 'lord_archmage', warden: 'lord_warden', skylady: 'lord_skylady', lich: 'lord_lich', sultana: 'lord_sultana',
+  deathknight: 'lord_deathknight', ossuary: 'lord_ossuary', drakerider: 'lord_drakerider', vizier: 'lord_vizier', rajah: 'lord_rajah', rocrider: 'lord_rocrider' };
 
 /** The archetype for a replay header row. */
 export function archetypeFor(s: { modelId: string; type: string; lord?: string }): Archetype {

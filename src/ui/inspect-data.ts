@@ -4,7 +4,7 @@
 // done so far, and its sheet (base -> effective stats, items). Plus the pair view for compare mode.
 import type { DecodedReplay, FactionId, LordId, ReplaySquad, Seat, SkillId, SkillInfo, SquadType, StatCause } from '../sim/types.ts';
 import { UNITS } from '../sim/data/units.ts';
-import { LORDS } from '../sim/data/lords.ts';
+import { LORDS, LORD_ABILITY_IDS } from '../sim/data/lords.ts';
 import { LEGENDARIES } from '../sim/data/items.ts';
 import { SKILLS } from '../sim/data/skills.ts';
 import { replaySquadSheet, type SquadSheet } from '../sim/sheet.ts';
@@ -70,6 +70,7 @@ const CAUSE_LABEL: Partial<Record<StatCause, string>> = {
   ember_burst: 'Ember Crown', sunfire: 'Sunfire Mantle', meteor: 'Meteor', skyfall: 'Skyfall', rout: 'Rout',
   heal: 'Healing', leech: 'Lifesteal', lifebinder: 'Lifebinder', bloodthirst: 'Bloodthirst', revive: 'Revive',
   radiance: 'Radiance', regen: 'Regeneration',
+  soul_reap: 'Soul Reaping', plague_breath: 'Plague Breath', whirlwind: 'Djinn Whirlwind', stampede: 'Stampede', talon: 'Talon Strike',
 };
 
 export function causeLabel(c: StatCause | 'other'): string {
@@ -86,7 +87,7 @@ export function ordinal(n: number): string {
 
 interface Index { rowOf: Int32Array; lordCasts: { tick: number; row: number; ability: string }[] }
 const INDEX = new WeakMap<DecodedReplay, Index>();
-const LORD_ABILITIES = new Set(['rally', 'meteor', 'bulwark', 'skyfall', 'necromancy', 'radiance']);
+const LORD_ABILITIES: ReadonlySet<string> = new Set(LORD_ABILITY_IDS);
 
 function index(d: DecodedReplay): Index {
   let ix = INDEX.get(d);
@@ -95,7 +96,7 @@ function index(d: DecodedReplay): Index {
   const rowOf = new Int32Array(d.replay.soldiers.length).fill(-1);
   for (const q of rows) for (const i of q.soldiers) if (i >= 0 && i < rowOf.length) rowOf[i] = q.row;
   const lordCasts: Index['lordCasts'] = [];
-  for (const e of d.events) if (e.k === 'ability' && LORD_ABILITIES.has(e.ability) && d.replay.soldiers[e.src]?.type === 'lord' && rowOf[e.src] !== undefined && rowOf[e.src]! >= 0) lordCasts.push({ tick: e.tick, row: rowOf[e.src]!, ability: e.ability });
+  for (const e of d.events) if (e.k === 'ability' && LORD_ABILITIES.has(e.ability) && !(e.ability === 'grave_taunt' && e.radius === 0) && d.replay.soldiers[e.src]?.type === 'lord' && rowOf[e.src] !== undefined && rowOf[e.src]! >= 0) lordCasts.push({ tick: e.tick, row: rowOf[e.src]!, ability: e.ability });
   INDEX.set(d, (ix = { rowOf, lordCasts }));
   return ix;
 }

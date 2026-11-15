@@ -1,6 +1,6 @@
 # Lord voices (tools/voice)
 
-The six Lords' voice lines are rendered offline with Breeze-TTS-2 and shipped as
+The twelve Lords' voice lines are rendered offline with Breeze-TTS-2 and shipped as
 `public/audio/voice/<lord>/<event>_<n>.webm`. Licence and in-game use: `docs/AUDIO.md` (Voices).
 
 ## Files
@@ -23,7 +23,7 @@ measurements), `render.log`, and `shipped/` + `verify.json` (the built clips dec
 
 ```
 # WSL (Ubuntu), Breeze in ~/breeze-tts with weights in ~/breeze-tts-2 (setup in render.ps1)
-bash tools/voice/render-loop.sh design            # audition voices: 6 seeds per Lord, best kept
+bash tools/voice/render-loop.sh design            # audition voices: 6 seeds per Lord, best kept (a pinned seed skips it)
 bash tools/voice/render-loop.sh lines             # every line: 3 takes, best kept, failures re-rendered
 bash tools/voice/render-loop.sh lines warden --only ability --force   # redo some lines
 # Windows
@@ -34,6 +34,15 @@ npx vitest run tests/voice.test.ts                # every line shipped, under 2.
 ```
 
 A changed line text is re-rendered automatically (the report remembers the text of each take).
+
+`render-loop.sh` only waits for the GPU lock to be free; it does not take it. To render a batch while holding the
+lock (so the TRELLIS queue does not start a job in the middle), wrap the WSL call in `e2e/with-gpu-lock.mjs` and call
+`render.py` directly inside it (render-loop.sh would wait for its own lock forever). From Git Bash, set
+`MSYS_NO_PATHCONV=1` so the `/mnt/...` path reaches WSL intact:
+
+```
+MSYS_NO_PATHCONV=1 node e2e/with-gpu-lock.mjs "Lord voices" -- wsl -e bash -lc   "cd /mnt/c/.../oathbound && ~/breeze-tts/.venv/bin/python tools/voice/render.py design deathknight vizier && ~/breeze-tts/.venv/bin/python tools/voice/render.py lines deathknight vizier"
+```
 
 ## How a voice is made
 

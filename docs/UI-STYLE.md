@@ -223,9 +223,8 @@ circle, so the set is uniform; it writes the 1024 px atlas (128 px cells) and it
 grade pass, so the atlas colours are the colours on screen; do not brighten them in the shader.
 `python tools/art/woodcut-sheet.py <dir>` writes contact sheets of both layers (with 40 px and 28 px versions).
 
-Six Lords have art before they have rules (`lord_deathknight`, `lord_ossuary`, `lord_drakerider`, `lord_vizier`,
-`lord_rajah`, `lord_rocrider`): their portraits are in `public/ui/` and their glyphs are in the atlas, keyed by the
-Lord id the gameplay data must use.
+All twelve Lords have a portrait (`public/ui/lord_<id>.webp`) and a glyph in the atlas, keyed by the Lord id
+(`tests/client.lords.test.ts` checks both).
 
 ## Factions
 
@@ -236,6 +235,6 @@ Lord id the gameplay data must use.
   soul-green for the Covenant, turquoise and ochre for the Caliphate). It never colours text, frames
   or buttons, and the Caliphate's ochre is not the primary-action gold.
 - The pick screen is one flow: three banners, the chosen faction's identity and mechanics, then its
-  Lords (one wide charter when a faction has a single Lord).
+  four Lords, one per role (infantry, magic, armour, fliers), each card tagged with its role.
 - The codex speaks about one faction at a time (yours in a match) and says so in a scope line; the
   Factions tab describes all three.

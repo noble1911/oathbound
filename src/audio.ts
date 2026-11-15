@@ -740,10 +740,20 @@ class Sound {
   /** Lord abilities: always heard (they're the headline), music ducks. */
   ability(kind: string, pos?: Vec2): void {
     const big = { meteor: 'meteor', rally: 'rally', bulwark: 'bulwark', skyfall: 'skyfall' } as const;
+    // the newer Lords: a headline sound from the four Lord stingers (or the nearest big one) and a layer that says what it is
+    const layered = {
+      soul_reap: ['rally', 'summon'], grave_taunt: ['bulwark', 'roar'], plague_breath: ['skyfall', 'breath'],
+      whirlwind: ['whoosh', 'cast'], stampede: ['charge', 'roar'], talon: ['skyfall', 'screech'],
+    } as const;
     const id = big[kind as keyof typeof big];
+    const lay = layered[kind as keyof typeof layered];
     if (id) {
       this.play(id, { pos, gain: 1.2 });
       this.duck(10, kind === 'meteor' ? 2.5 : 2);
+    } else if (lay) {
+      this.play(lay[0], { pos, gain: 1.2 });
+      this.play(lay[1], { pos, gain: 0.9 });
+      this.duck(10, 2);
     } else this.play('cast', { pos });
   }
 

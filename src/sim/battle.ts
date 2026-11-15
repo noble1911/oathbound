@@ -13,8 +13,12 @@ import { CELL, FIELD_H, FIELD_W, GRID_W, KEYFRAME_TICKS, MARCH_TICKS, MAX_BATTLE
 import {
   ARCHMAGE_MAGIC_PCT, LICH_DMG_PCT, LORDS, LORD_LEVEL_DMG, LORD_LEVEL_HP, METEOR_BASE, METEOR_PER_LEVEL, NECRO_BASE, NECRO_LEVELS_PER, NECRO_RANGE,
   RADIANCE_BASE, RADIANCE_PER_LEVEL, RADIANCE_RANGE, RALLY_PCT, RALLY_RANGE, BULWARK_RANGE, METEOR_REACH, LORD_TRIGGER_RANGE, SULTANA_HASTE_PCT, SULTANA_HOLY, SUN_PRIEST_HOLY,
+  DK_INFANTRY_PCT, SOUL_REAP_PCT, SOUL_REAP_RANGE, SOUL_REAP_TICKS, OSSUARY_ARMOR, TAUNT_GUARD_PCT, TAUNT_RANGE, TAUNT_TICKS, DRAKE_SPEED_PCT, PLAGUE_BURN_BASE,
+  PLAGUE_BURN_PER_LEVEL, PLAGUE_PCT, PLAGUE_RADIUS, PLAGUE_REACH, VIZIER_HASTE_PCT, WHIRL_BASE, WHIRL_PER_LEVEL, WHIRL_RADIUS, WHIRL_REACH, WHIRL_SLOW, WHIRL_WAVES,
+  RAJAH_GIANT_ARMOR, RAJAH_GIANT_HP, STAMPEDE_BASE, STAMPEDE_KNOCK, STAMPEDE_LEN, STAMPEDE_PER_LEVEL, STAMPEDE_REACH, STAMPEDE_WIDTH, ROC_RANGED_PCT, TALON_PCT,
+  TALON_REACH, TALON_STUN, TALON_THROW,
 } from './data/lords.ts';
-import { ABILITY_CD, SKILLS, SKILL_START_CD, canEquip, skillNum } from './data/skills.ts';
+import { ABILITY_CD, SKILLS, SKILL_START_CD, canEquip, classesOf, skillNum } from './data/skills.ts';
 import { UNITS } from './data/units.ts';
 import { FACTION_POWER, LORD_POWER, UNIT_POWER } from './data/balance.ts';
 import { angleOf, icos, idiv, isin, isqrt } from './fixed.ts';
@@ -26,7 +30,7 @@ import {
 } from './replay.ts';
 import { DIRS, KIND_CODE, MOVE_PCT, RIVER_Y0, RIVER_Y1, cellOf, navFor } from './terrain.ts';
 import type {
-  AbilityEventKind, ArcType, BattleEnd, BattleOutput, BattleResult, DamageType, KeepInfo, LordId, MatchState, ProjectileKind, Replay, ReplaySoldier,
+  AbilityEventKind, AbilityId, ArcType, BattleEnd, BattleOutput, BattleResult, DamageType, KeepInfo, LordId, MatchState, ProjectileKind, Replay, ReplaySoldier,
   ReplaySquad, Seat, SimulateOptions, SkillId, SoldierType, Squad, StatCause, Tag, Vec2, WeaponKind,
 } from './types.ts';
 
@@ -34,7 +38,8 @@ import type {
 const cz = (c: StatCause): number => STAT_CAUSES.indexOf(c);
 const C_ATTACK = cz('attack'), C_BURN = cz('burn'), C_THORNS = cz('thorns'), C_TOWER = cz('tower'), C_CHAIN = cz('chain'), C_EMBER = cz('ember_burst'),
   C_SUNFIRE = cz('sunfire'), C_METEOR = cz('meteor'), C_SKYFALL = cz('skyfall'), C_HEAL = cz('heal'), C_LEECH = cz('leech'), C_LIFEBINDER = cz('lifebinder'),
-  C_BLOOD = cz('bloodthirst'), C_REVIVE = cz('revive'), C_ROUT = cz('rout'), C_RADIANCE = cz('radiance'), C_REGEN = cz('regen');
+  C_BLOOD = cz('bloodthirst'), C_REVIVE = cz('revive'), C_ROUT = cz('rout'), C_RADIANCE = cz('radiance'), C_REGEN = cz('regen'),
+  C_SOUL_REAP = cz('soul_reap'), C_PLAGUE = cz('plague_breath'), C_WHIRL = cz('whirlwind'), C_STAMPEDE = cz('stampede'), C_TALON = cz('talon');
 
 // ---------------------------------------------------------------- tuning constants
 
@@ -184,6 +189,10 @@ interface Sol {
   burnDps: number; burnUntil: number; burnSrc: Sol | null;
   slowPct: number; slowUntil: number;
   rallyUntil: number; bulwarkUntil: number;
+  /** Soul Reaping (Death Knight): extra life drain until this tick. Grave Taunt (Ossuary Warden): must attack `tauntBy`
+   *  until `tauntUntil`. Talon Strike (Roc Rider): stunned (no move, no attack) until `stunUntil`; `pendingStun` is applied at
+   *  the end of the tick. */
+  reapUntil: number; tauntBy: Sol | null; tauntUntil: number; stunUntil: number; pendingStun: number;
   dmgAcc: number; healAcc: number; killer: Sol | null; killerDmg: number; killerTower: number;
   attacks: number; blood: number;
   summoned: boolean;
@@ -242,6 +251,8 @@ interface Strike {
   seq: number;
   /** A critical strike (decided by the attacker's crit counter when it swung): every hit of the strike is x1.5. */
   crit?: boolean;
+  /** A skill strike the owner dives with (Plague Breath): the owner lands on the impact point. */
+  dive?: boolean;
 }
 
 // ---------------------------------------------------------------- stats
@@ -288,17 +299,22 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
     regen = U.regen;
   }
   const wardenHp = lordOf === 'warden' ? 10 : 0;
+  // The newer Lords' passives, by the class of the squad (classesOf: a Lord is also of its fighting class).
+  const cls = classesOf(sq.type, lordOf);
+  const rajahGiant = lordOf === 'rajah' && cls.includes('giant');
   // Power in 1/100000: percent x per mille (a unit's own multiplier times its faction's; Lords have only their own).
   const pw = sq.type === 'lord' ? LORD_POWER[lordOf!] * 1000 : UNIT_POWER[sq.type] * FACTION_POWER[UNITS[sq.type].faction];
-  let hpPct = 100 + m.hp + wardenHp;
-  let dmgPct = 100 + m.dmg + (lordOf === 'lich' ? LICH_DMG_PCT : 0);
+  let hpPct = 100 + m.hp + wardenHp + (rajahGiant ? RAJAH_GIANT_HP : 0);
+  let dmgPct = 100 + m.dmg + (lordOf === 'lich' ? LICH_DMG_PCT : 0) + (lordOf === 'deathknight' && cls.includes('infantry') ? DK_INFANTRY_PCT : 0)
+    + (lordOf === 'rocrider' && cls.includes('ranged') ? ROC_RANGED_PCT : 0);
   const size = sq.type === 'lord' ? 1 : UNITS[sq.type].squadSize;
   if (hasL(m, 'warhorn') && size <= 2) { hpPct += 35; dmgPct += 35; }
   const ranged = base.range > 400;
   const weapon = base.weapon;
-  let speedPct = 100 + m.move + (hasL(m, 'windrunner') ? 40 : 0);
+  let speedPct = 100 + m.move + (hasL(m, 'windrunner') ? 40 : 0) + (lordOf === 'drakerider' ? DRAKE_SPEED_PCT : 0);
   const windAs = hasL(m, 'windrunner') ? 25 : 0;
-  const atk = Math.max(4, idiv(base.attackTicks * 100, 100 + m.as + windAs + (lordOf === 'sultana' ? SULTANA_HASTE_PCT : 0)));
+  const atk = Math.max(4, idiv(base.attackTicks * 100, 100 + m.as + windAs + (lordOf === 'sultana' ? SULTANA_HASTE_PCT : 0)
+    + (lordOf === 'vizier' && base.damageType === 'magic' ? VIZIER_HASTE_PCT : 0)));
   const st: Stats = {
     hp: idiv(idiv(base.hp * lvlHp * hpPct, 100) * pw, 100000),
     dmg: idiv(idiv(base.dmg * lvlDmg * dmgPct * DMG_SCALE, 10000) * pw, 100000),
@@ -306,7 +322,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
     range: base.range + (ranged ? m.range : 0),
     minRange,
     speed: idiv(base.speed * speedPct, 100),
-    armor: Math.min(80, base.armor + m.armor),
+    armor: Math.min(80, base.armor + m.armor + (lordOf === 'ossuary' ? OSSUARY_ARMOR : 0) + (rajahGiant ? RAJAH_GIANT_ARMOR : 0)),
     // May be negative (ethereal Wraith Riders): magic then deals more than its listed damage.
     mr: Math.min(80, base.magicResist + m.mr),
     splash,
@@ -343,7 +359,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
     bless: traits.includes('bless'),
     regen,
     holy: sq.type === 'sun_priest' ? SUN_PRIEST_HOLY : lordOf === 'sultana' && sq.type === 'lord' ? SULTANA_HOLY : 100,
-    undead: sq.type === 'lord' ? lordOf === 'lich' : UNITS[sq.type].faction === 'ashen',
+    undead: sq.type === 'lord' ? LORDS[lordOf!].faction === 'ashen' : UNITS[sq.type].faction === 'ashen',
     magicBonus: lordOf === 'archmage' && base.damageType === 'magic' ? ARCHMAGE_MAGIC_PCT : 0,
     L: m.legend,
     ilvl: m.ilvl,
@@ -427,7 +443,7 @@ class Battle {
   survivors: [number[], number[]] = [[], []];
   /** The fallen that can still be raised as skeletons (no Lords, no Large units, no summons). */
   corpses: Sol[] = [];
-  queuedBuffs: { sol: Sol; kind: 'rally' | 'bulwark' | 'wall' | 'cry' | 'cleave'; until: number; pct: number }[] = [];
+  queuedBuffs: { sol: Sol; kind: 'rally' | 'bulwark' | 'wall' | 'cry' | 'cleave' | 'reap' | 'taunt'; until: number; pct: number; by?: Sol }[] = [];
   // Statistics ledger (only when recording): this tick's raw contributions, and the running TALLY_TICKS window.
   cT: Sol[] = []; cS: number[] = []; cC: number[] = []; cA: number[] = []; cM: number[] = []; cH: number[] = [];
   tally = new Map<number, [number, number, number, number]>();
@@ -501,6 +517,7 @@ class Battle {
       cd: ((b.sideIdx * 7 + k * 13) % 50) * st.atk, target: null, facing: b.facing, anim: 0, animUntil: 0,
       chargeReady: st.charge, firstStrike: st.L.has('windrunner'), lastAttack: -1000, reflects: st.L.has('mirror_aegis') ? 3 : 0,
       undying: st.L.has('undying_oath'), burnDps: 0, burnUntil: 0, burnSrc: null, slowPct: 0, slowUntil: 0, rallyUntil: 0, bulwarkUntil: 0,
+      reapUntil: 0, tauntBy: null, tauntUntil: 0, stunUntil: 0, pendingStun: 0,
       dmgAcc: 0, healAcc: 0, killer: null, killerDmg: 0, killerTower: -1, attacks: 0, blood: 0, summoned, moved: false, relocate: null,
       pendingSlow: 0, pendingSlowUntil: 0, pendingSlowSrc: null, pendingBurn: 0, pendingBurnSrc: null,
       xpValue: b.type === 'lord' ? 30 : summoned ? 0 : Math.max(1, Math.round(UNITS[b.type as keyof typeof UNITS].cost / UNITS[b.type as keyof typeof UNITS].squadSize / 8)),
@@ -779,7 +796,127 @@ class Battle {
         this.emitAbility(s.i, -1, 'radiance', s.x, s.y, RADIANCE_RANGE, 0);
         s.anim = 3; s.animUntil = this.t + 14;
         b.abilityCd = ABILITY_CD.radiance;
+      } else {
+        // The newer abilities poll a failed trigger again a quarter of a second later (their target searches are wider).
+        b.abilityCd = this.newLordAbility(b, s, L.ability, enemySide, nearEnemy) ? ABILITY_CD[L.ability] : 5;
       }
+    }
+  }
+
+  /**
+   * The six newer Lord abilities (one distinct mechanic each). Returns true when cast. Like the others they read only the
+   * tick-start snapshot and queue their effects (buffs, strikes, knockback, stun) for the end of the tick.
+   */
+  newLordAbility(b: BSquad, s: Sol, ab: AbilityId, enemy: Seat, nearEnemy: boolean): boolean {
+    const t = this.t, lvl = b.level;
+    const FX = (dmg: number, type: DamageType, o: Partial<SkFx> = {}): SkFx => ({ dmg, type, burn: 0, slow: 0, slowTicks: 0, knock: 0, ground: false, ...o });
+    const strike = (target: Sol | null, x: number, y: number, radius: number, mul: number, cause: number, fx: SkFx): Strike => ({
+      kind: 'skill', cause, sk: fx, owner: s, side: b.side, target, ax: x, ay: y, fx: s.x, fy: s.y, mul, pid: 0, proj: 'none',
+      melee: false, hill: false, dmg: 0, radius, reflected: false, extra: true, towerSrc: -1, seq: 0,
+    });
+    switch (ab) {
+      case 'soul_reap': {
+        // Death Knight: every ally around him drains life from what it strikes (like Rally, but life instead of speed).
+        if (!nearEnemy) return false;
+        this.near(b.side, s.x, s.y, SOUL_REAP_RANGE, (o) => { if (o.spawnTick <= t) this.queuedBuffs.push({ sol: o, kind: 'reap', until: t + SOUL_REAP_TICKS, pct: 0 }); });
+        this.emitAbility(s.i, -1, 'soul_reap', s.x, s.y, SOUL_REAP_RANGE, SOUL_REAP_TICKS);
+        s.anim = 3; s.animUntil = t + 14;
+        return true;
+      }
+      case 'grave_taunt': {
+        // Ossuary Warden: the enemies around him must strike him (and he braces for it).
+        let foes = 0;
+        this.near(enemy, s.x, s.y, TAUNT_RANGE, (o) => { if (o.spawnTick <= t) foes++; });
+        if (foes < 3) return false;
+        this.near(enemy, s.x, s.y, TAUNT_RANGE, (o) => {
+          if (o.spawnTick > t) return;
+          this.queuedBuffs.push({ sol: o, kind: 'taunt', until: t + TAUNT_TICKS, pct: 0, by: s });
+          this.emitAbility(s.i, o.i, 'grave_taunt', o.x, o.y, 0, TAUNT_TICKS);
+        });
+        // TAUNT_GUARD_PCT is Bulwark's 40% (damage() applies bulwarkUntil).
+        this.queuedBuffs.push({ sol: s, kind: 'bulwark', until: t + TAUNT_TICKS, pct: TAUNT_GUARD_PCT });
+        this.emitAbility(s.i, -1, 'grave_taunt', s.x, s.y, TAUNT_RANGE, TAUNT_TICKS);
+        s.anim = 3; s.animUntil = t + 14;
+        return true;
+      }
+      case 'plague_breath': {
+        // Drake Rider: dives onto the densest enemy cluster and breathes a festering plague over it.
+        if (!nearEnemy) return false;
+        const c = this.cluster(enemy, s.x, s.y, PLAGUE_REACH, 0, PLAGUE_RADIUS, 3, false);
+        if (!c) return false;
+        const k = strike(c, c.x, c.y, PLAGUE_RADIUS, PLAGUE_PCT, C_PLAGUE, FX(0, 'magic', { burn: (PLAGUE_BURN_BASE + PLAGUE_BURN_PER_LEVEL * lvl) * 100 }));
+        k.dive = true;
+        this.queueStrike(k, 14);
+        this.emitAbility(s.i, c.i, 'plague_breath', c.x, c.y, PLAGUE_RADIUS, 14);
+        s.anim = 3; s.animUntil = t + 14;
+        return true;
+      }
+      case 'whirlwind': {
+        // Grand Vizier: a djinn whirlwind spins on the densest enemy cluster for WHIRL_WAVES seconds, cutting and slowing.
+        const c = this.cluster(enemy, s.x, s.y, WHIRL_REACH, 0, WHIRL_RADIUS, 3, false);
+        if (!c) return false;
+        const fx = FX((WHIRL_BASE + WHIRL_PER_LEVEL * lvl) * 100, 'magic', { slow: WHIRL_SLOW, slowTicks: 30 });
+        for (let w = 0; w < WHIRL_WAVES; w++) this.queueStrike(strike(null, c.x, c.y, WHIRL_RADIUS, 100, C_WHIRL, fx), 10 + 20 * w);
+        this.emitAbility(s.i, c.i, 'whirlwind', c.x, c.y, WHIRL_RADIUS, 10 + 20 * WHIRL_WAVES);
+        s.anim = 3; s.animUntil = t + 16;
+        return true;
+      }
+      case 'stampede': {
+        // Rajah: his elephant charges at the nearest ground enemy, trampling and throwing aside all in its path.
+        let tg: Sol | null = null, bd = 0;
+        this.near(enemy, s.x, s.y, STAMPEDE_REACH, (o, d2) => {
+          if (o.spawnTick > t || o.st.tags & T_FLIER) return;
+          if (!tg || d2 < bd || (d2 === bd && o.key < tg.key)) { tg = o; bd = d2; }
+        });
+        if (!tg) return false;
+        const o0 = tg as Sol;
+        const dx = o0.x - s.x, dy = o0.y - s.y, d = isqrt(dx * dx + dy * dy);
+        // Charge through the target (a little past it), up to STAMPEDE_LEN.
+        const len = Math.min(STAMPEDE_LEN, d + 200);
+        const ex = d > 0 ? clampX(s.x + idiv(dx * len, d)) : s.x, ey = d > 0 ? clampY(s.y + idiv(dy * len, d)) : clampY(s.y + sideSign(b.side) * len);
+        const sx = ex - s.x, sy = ey - s.y, l2 = sx * sx + sy * sy;
+        const fx = FX((STAMPEDE_BASE + STAMPEDE_PER_LEVEL * lvl) * 100, 'physical', { knock: STAMPEDE_KNOCK, ground: true });
+        const w2 = STAMPEDE_WIDTH * STAMPEDE_WIDTH;
+        const r = idiv(len, 2) + STAMPEDE_WIDTH;
+        this.near(enemy, s.x + idiv(sx, 2), s.y + idiv(sy, 2), r, (o) => {
+          if (o.spawnTick > t || o.st.tags & T_FLIER) return;
+          // Distance from the soldier to the charge's path (integer point-to-segment test).
+          const px = o.x - s.x, py = o.y - s.y, dot = px * sx + py * sy;
+          let qx: number, qy: number;
+          if (dot <= 0 || l2 === 0) { qx = s.x; qy = s.y; if (px * px + py * py > w2) return; }
+          else if (dot >= l2) { qx = ex; qy = ey; const fx2 = o.x - ex, fy2 = o.y - ey; if (fx2 * fx2 + fy2 * fy2 > w2) return; }
+          else {
+            const cr = px * sy - py * sx;
+            if (cr * cr > w2 * l2) return;
+            // Thrown sideways, away from the path: the knockback pushes away from its nearest point on the path.
+            qx = s.x + idiv(sx * idiv(dot * 1024, l2), 1024); qy = s.y + idiv(sy * idiv(dot * 1024, l2), 1024);
+          }
+          this.skillHit(s, o, C_STAMPEDE, fx, 100, qx, qy);
+        });
+        s.relocate = [ex, ey];
+        this.emitAbility(s.i, o0.i, 'stampede', ex, ey, STAMPEDE_WIDTH, 0);
+        s.anim = 3; s.animUntil = t + 12;
+        return true;
+      }
+      case 'talon': {
+        // Roc Rider: the roc seizes the toughest enemy in reach that is not Large and drops it among her own army.
+        if (!nearEnemy) return false;
+        let tg: Sol | null = null;
+        this.near(enemy, s.x, s.y, TALON_REACH, (o) => {
+          if (o.spawnTick > t || o.st.tags & T_LARGE) return;
+          if (!tg || o.maxHp > tg.maxHp || (o.maxHp === tg.maxHp && o.key < tg.key)) tg = o;
+        });
+        if (!tg) return false;
+        const o0 = tg as Sol;
+        const dropX = o0.x, dropY = clampY(o0.y - sideSign(b.side) * TALON_THROW);
+        const k = strike(o0, o0.x, o0.y, 0, TALON_PCT, C_TALON, FX(0, 'physical'));
+        this.queueStrike(k, 12);
+        this.emitAbility(s.i, o0.i, 'talon', dropX, dropY, 0, 12);
+        s.anim = 3; s.animUntil = t + 12;
+        return true;
+      }
+      default:
+        return false;
     }
   }
 
@@ -868,13 +1005,22 @@ class Battle {
     let ix = k.ax, iy = k.ay;
     const tg = k.target;
     if (tg && tg.alive) { ix = tg.x; iy = tg.y; }
+    if (k.dive && a.alive) a.relocate = [ix, iy];
     if (k.pid > 0) this.emit(EK.impact, k.pid, ix, iy, PROJ_CODES.indexOf(k.proj), k.radius);
     if (k.radius > 0) {
       this.near(enemy, ix, iy, k.radius, (d) => {
         if (d.spawnTick > t || (fx.ground && d.st.tags & T_FLIER)) return;
         this.skillHit(a, d, cause, fx, k.mul, k.fx, k.fy);
       });
-    } else if (tg && tg.alive) this.skillHit(a, tg, cause, fx, k.mul, k.fx, k.fy);
+    } else if (tg && tg.alive) {
+      this.skillHit(a, tg, cause, fx, k.mul, k.fx, k.fy);
+      if (cause === C_TALON) {
+        // Lifted and dropped TALON_THROW towards the Roc Rider's own lines (end-of-tick displacement), then dazed.
+        const ny = clampY(tg.y - sideSign(a.side) * TALON_THROW);
+        tg.kx = 0; tg.ky = ny - tg.y;
+        tg.pendingStun = t + TALON_STUN;
+      }
+    }
   }
 
   skillStrike(owner: Sol, id: SkillId, target: Sol | null, x: number, y: number, radius: number, mul: number, fx: SkFx): Strike {
@@ -1129,10 +1275,13 @@ class Battle {
       s.cd -= 100 + (s.rallyUntil > t ? (cry > RALLY_PCT ? cry : RALLY_PCT) : cry) + s.blood * BLOOD_HASTE;
       if (s.cd < -100) s.cd = -100;
       if (this.marching) { this.marchSoldier(s); continue; }
+      if (s.stunUntil > t) continue; // seized and dropped by a roc: dazed
       if (st.healer) { this.healerAct(s); continue; }
-      // Targeting.
+      // Targeting. A soldier taunted by the Ossuary Warden attacks him while it can.
       const tgt = s.target;
-      if (!tgt || !this.canHit(s, tgt) || (t + s.key) % 6 === 0) {
+      const taunter = s.tauntUntil > t ? s.tauntBy : null;
+      if (taunter && taunter.alive && this.canHit(s, taunter)) s.target = taunter;
+      else if (!tgt || !this.canHit(s, tgt) || (t + s.key) % 6 === 0) {
         const r = st.ranged ? st.range + 300 : AGGRO + (b.engaged ? 800 : 0) + (st.raider ? 1200 : 0);
         s.target = this.findTarget(s, r);
       }
@@ -1390,6 +1539,7 @@ class Battle {
     const r = this.damage(st, primary ? a : null, d, mul, crit, k.hill, ranged, st.dmgType, 0);
     this.credit(d, r.dmg, a, -1, k.cause ?? C_ATTACK, r.mit);
     if (st.leech && a.alive) this.heal(a, idiv(r.dmg * st.leech, 100), a, C_LEECH);
+    if (a.reapUntil > this.t && a.alive) this.heal(a, idiv(r.dmg * SOUL_REAP_PCT, 100), a, C_SOUL_REAP);
     if (k.melee && d.st.thorns && a.alive) this.credit(a, idiv(r.dmg * d.st.thorns, 100), d, -1, C_THORNS);
     if (st.burn) { if (st.burn * 100 > d.pendingBurn) { d.pendingBurn = st.burn * 100; d.pendingBurnSrc = a; d.pendingBurnCause = C_BURN; } }
     if (st.frost && st.frost > d.pendingSlow) { d.pendingSlow = st.frost; d.pendingSlowUntil = this.t + 40; d.pendingSlowSrc = a; }
@@ -1614,6 +1764,8 @@ class Battle {
       const o = b.sol;
       if (b.kind === 'rally') o.rallyUntil = Math.max(o.rallyUntil, b.until);
       else if (b.kind === 'bulwark') o.bulwarkUntil = Math.max(o.bulwarkUntil, b.until);
+      else if (b.kind === 'reap') o.reapUntil = Math.max(o.reapUntil, b.until);
+      else if (b.kind === 'taunt') { o.tauntBy = b.by ?? null; o.tauntUntil = b.until; }
       else if (b.kind === 'wall') { if (o.wallUntil <= t || b.pct >= o.wallPct) o.wallPct = b.pct; o.wallUntil = Math.max(o.wallUntil, b.until); }
       else if (b.kind === 'cry') { if (o.cryUntil <= t || b.pct >= o.cryPct) o.cryPct = b.pct; o.cryUntil = Math.max(o.cryUntil, b.until); }
       else { if (o.cleaveUntil <= t || b.pct >= o.cleavePct) o.cleavePct = b.pct; o.cleaveUntil = Math.max(o.cleaveUntil, b.until); }
@@ -1626,6 +1778,7 @@ class Battle {
       if (s.relocate) { s.x = s.relocate[0]; s.y = s.relocate[1]; s.relocate = null; }
       if (s.kx || s.ky) { if (s.alive) { s.x = clampX(s.x + s.kx); s.y = clampY(s.y + s.ky); } s.kx = 0; s.ky = 0; }
       if (!s.alive) continue;
+      if (s.pendingStun) { s.stunUntil = Math.max(s.stunUntil, s.pendingStun); s.pendingStun = 0; }
       if (s.pendingSlow) {
         // A debuff event when a slow STARTS (not on every refresh): src = who applied it, dur = how long it lasts.
         if (s.slowUntil <= t) this.emitAbility(s.pendingSlowSrc ? s.pendingSlowSrc.i : -1, s.i, 'frost', s.x, s.y, 0, s.pendingSlowUntil - t);

@@ -17,7 +17,7 @@
 import { mirrorPos } from './constants.ts';
 import { LORDS, LORD_IDS } from './data/lords.ts';
 import { AFFIXES, SLOT_UNLOCK_LEVEL } from './data/items.ts';
-import { SKILLS, canEquip } from './data/skills.ts';
+import { SKILLS, UNIT_CLASS, canEquip } from './data/skills.ts';
 import { UNITS } from './data/units.ts';
 import { itemPower } from './loot.ts';
 import { ARMY_CAP, MAX_SQUAD_LEVEL, applyIntent, deployZone, freeSpotNear, levelUpCost, slotOpen, squadFootprint, viewFor } from './match.ts';
@@ -98,9 +98,10 @@ function cvReal(a: UnitType, b: UnitType): number {
  * its Djinn, not with a mass of Spear Levy and unsupported Mamluks (which need Hard's flanking to pay off).
  */
 const CLASSIC_PREF: Partial<Record<UnitType, number>> = {
-  djinn_binder: 1.35, scimitar: 1.25, djinn: 1.2, spear_levy: 0.8, mamluk: 0.85,
+  // (Re-tuned with the twelve Lords by a coordinate search on Normal vs Normal; see BALANCE.md.)
+  djinn_binder: 0.95, scimitar: 1.1, djinn: 1.05, spear_levy: 0.8, mamluk: 0.85,
   // The Covenant: fewer Skeleton Spearmen (splash fodder), more of what stands up to it.
-  skeleton: 0.7, grave_knight: 1.0, bone_archer: 1.3, wraith_rider: 1.0, bone_drake: 1.3,
+  skeleton: 1.0, grave_knight: 1.0, bone_archer: 1.25, wraith_rider: 1.0, bone_drake: 1.1,
 };
 
 const FRONT: ReadonlySet<UnitType> = new Set(['militia', 'pikemen', 'berserkers', 'knights', 'cavaliers', 'golem']);
@@ -117,19 +118,56 @@ function rnd01(...parts: (string | number)[]): number {
   return (hash(...parts) % 10000) / 10000;
 }
 
+/** The unit an enemy Lord fights like, for the classic planner's counter-buying (null: a Lord on foot is not countered). */
+function lordStandIn(l: LordId): UnitType | null {
+  const L = LORDS[l];
+  if (L.tags.includes('flier')) return 'pegasus';
+  if (L.tags.includes('large')) return 'golem';
+  return null;
+}
+const LORD_THREAT_VALUE = 300;
+
 /** How much more the classic planner wants casters under the Archmage (her passive multiplies their damage). */
-const ARCHMAGE_CASTERS = 1.15;
+const ARCHMAGE_CASTERS = 0.9;
+
+/**
+ * Playing to the passive of the newer Lords: how much more a bot wants a unit its Lord's passive favours, per level
+ * ([Hard, the classic planner]; 1 = no change). The Archmage keeps her own, older weights (ARCHMAGE_CASTERS for the
+ * classic planner, 1.5 for Hard). The numbers were tuned with the tournament (see BALANCE.md): they also even out how
+ * strong a Lord is in Hard's hands and in Normal's.
+ */
+const LORD_PLAY: Partial<Record<LordId, { fits: (u: UnitType) => boolean; w: [number, number] }>> = {
+  deathknight: { fits: (u) => UNIT_CLASS[u] === 'infantry', w: [1.2, 0.9] }, // infantry hits harder
+  ossuary: { fits: (u) => UNITS[u].armor >= 30, w: [1.2, 1.3] }, // armour stacks on armour
+  drakerider: { fits: (u) => UNITS[u].speed >= 20, w: [1.1, 1.0] }, // the quick ones get there first
+  vizier: { fits: (u) => UNITS[u].damageType === 'magic', w: [1.35, 1.2] }, // magic attacks faster (heals too)
+  rajah: { fits: (u) => UNIT_CLASS[u] === 'giant', w: [1.5, 0.8] }, // tougher giants
+  rocrider: { fits: (u) => UNIT_CLASS[u] === 'ranged', w: [1.3, 2] }, // archers hit harder
+};
+function lordAffinity(lord: LordId | null, u: UnitType, hard: boolean): number {
+  const k = lord ? LORD_PLAY[lord] : undefined;
+  return k && k.fits(u) ? k.w[hard ? 0 : 1] : 1;
+}
+/** Lords whose hero is a tank: the classic planner values their gear like the Warden's (WARDEN_GEAR). */
+const TANK_LORDS: ReadonlySet<LordId> = new Set(['warden', 'ossuary', 'rajah']);
 
 function unitScore(s: MatchState, seat: Seat, strat: BotStrategy, u: UnitType, salt: number, mine: Squad[], enemy: Squad[] | null): number {
   const def = UNITS[u];
   // Counter score vs the enemy's last army (only public information).
   let counter = 1;
+  // A flying or Large enemy Lord is answered like the unit it fights like (the Skylady, the Drake and Roc Riders, the
+  // Rajah on his elephant): the Lord is public, and he is worth a 300-gold squad.
+  const foeLord = s.players[1 - seat].lord;
+  const lordLike = foeLord ? lordStandIn(foeLord) : null;
+  const typeOf = (e: Squad): UnitType | null => (e.type === 'lord' ? lordLike : e.type);
+  const costOf = (e: Squad): number => (e.type === 'lord' ? LORD_THREAT_VALUE : UNITS[e.type].cost * e.level);
   if (enemy && enemy.length) {
     let num = 0, den = 0;
     for (const e of enemy) {
-      if (e.type === 'lord') continue;
-      const val = UNITS[e.type].cost * e.level;
-      num += val * (cvReal(u, e.type) - 0.7 * cvReal(e.type, u));
+      const et = typeOf(e);
+      if (!et) continue;
+      const val = costOf(e);
+      num += val * (cvReal(u, et) - 0.7 * cvReal(et, u));
       den += val;
     }
     counter = Math.max(0.2, 1.2 + (2 * num) / Math.max(1, den));
@@ -143,8 +181,9 @@ function unitScore(s: MatchState, seat: Seat, strat: BotStrategy, u: UnitType, s
   if (enemy && enemy.length) {
     let air = 0, mounted = 0, all = 0, bigAir = 0;
     for (const e of enemy) {
-      if (e.type === 'lord') continue;
-      const d = UNITS[e.type], val = d.cost * e.level;
+      const et = typeOf(e);
+      if (!et) continue;
+      const d = UNITS[et], val = costOf(e);
       all += val;
       if (d.tags.includes('flier') && d.tags.includes('large')) bigAir += val;
       if (d.tags.includes('flier')) air += val;
@@ -181,6 +220,7 @@ function unitScore(s: MatchState, seat: Seat, strat: BotStrategy, u: UnitType, s
   if (lord && LORDS[lord].signature.includes(u)) w *= 1.25;
   // Play to the Lord's passive: the Archmage's magic bonus makes her casters worth far more than anyone else's.
   if (lord === 'archmage' && def.damageType === 'magic' && !def.traits.includes('healer')) w *= ARCHMAGE_CASTERS;
+  w *= lordAffinity(lord, u, false);
   // What the classic planner has learnt about a roster that the Kingdom counter table does not say (CLASSIC_PREF).
   w *= CLASSIC_PREF[u] ?? 1;
   w *= 0.9 + 0.2 * rnd01(s.seed, s.round, seat, u, salt, 'j');
@@ -213,7 +253,9 @@ function placeFor(u: UnitType | 'lord', squads: readonly Squad[], lord: LordId |
   const k = squads.filter((q) => q.type !== 'lord').length;
   const lanes = [3999, 2600, 5400, 1300, 6700, 3300, 4700, 2000, 6000];
   const x = lanes[k % lanes.length];
-  if (u === 'lord') return lord && LORDS[lord].range > 400 ? [3999, 1500] : [3999, 2600];
+  // A Lord who shoots or flies starts behind the army (a flier sent ahead alone meets every bow on the field).
+  // The Ossuary Warden stands in the front line: Grave Taunt needs the enemy around him.
+  if (u === 'lord') return lord && (LORDS[lord].range > 400 || LORDS[lord].tags.includes('flier')) ? [3999, 1500] : lord === 'ossuary' ? [3999, 3300] : [3999, 2600];
   const def = UNITS[u], ku = K(u);
   let y: number;
   if (ku === 'trebuchet') y = 700;
@@ -262,7 +304,7 @@ function bestSquadFor(item: Item, squads: Squad[], lord: LordId | null): Squad |
     const cur = q.items[item.slot];
     if (cur && itemPower(cur) >= itemPower(item)) continue;
     // The Warden's hero already outlasts most armies it meets: he shares more of his gear with the squads around him.
-    const value = q.type === 'lord' && lord === 'warden' ? WARDEN_GEAR * valueOf(q) / 100 : valueOf(q);
+    const value = q.type === 'lord' && lord && TANK_LORDS.has(lord) ? WARDEN_GEAR * valueOf(q) / 100 : valueOf(q);
     const v = value - (cur ? itemPower(cur) * 5 : 0);
     if (v > bestV) { bestV = v; best = q; }
   }
@@ -446,6 +488,7 @@ function hardUnitScore(s: MatchState, seat: Seat, u: UnitType, mine: Squad[], th
   if (lord && LORDS[lord].signature.includes(u)) w *= 1.2;
   // Play to the Lord's passive: the Archmage's magic bonus makes her casters worth far more than anyone else's.
   if (lord === 'archmage' && def.damageType === 'magic' && !def.traits.includes('healer')) w *= 1.5;
+  w *= lordAffinity(lord, u, true);
   // Spending gold well: prefer the stronger buy when two are close (bigger units are better per deploy slot).
   w *= 0.6 + 0.4 * (def.cost / 200);
   w *= 0.95 + 0.1 * rnd01(s.seed, s.round, seat, u, salt, 'hj');
@@ -454,7 +497,9 @@ function hardUnitScore(s: MatchState, seat: Seat, u: UnitType, mine: Squad[], th
 
 type Role = 'front' | 'flank' | 'ranged' | 'support' | 'artillery';
 function roleOf(t: SquadType, lord: LordId | null): Role {
-  if (t === 'lord') return lord === 'skylady' ? 'flank' : lord && LORDS[lord].range > 400 ? 'ranged' : 'support';
+  // The Skylady flanks; the Drake Rider flies with the army (Plague Breath wants the enemy bunched in melee); a Lord who
+  // shoots (the Roc Rider) stands with the bows.
+  if (t === 'lord') return !lord ? 'support' : LORDS[lord].range > 400 ? 'ranged' : LORDS[lord].tags.includes('flier') && lord !== 'drakerider' ? 'flank' : 'support';
   const k = K(t);
   if (k === 'trebuchet') return 'artillery';
   if (k === 'clerics') return 'support';
@@ -493,7 +538,7 @@ function hardLayout(p: PlayerState, threats: Threat[]): Map<number, Vec2> {
     if (q.type !== 'lord') {
       const u = q.type as UnitType;
       if (role === 'flank') want = flankX;
-      else if (K(u) === 'archers') want = meanX(threats, (e) => (e.tags.includes('flier') ? 3 : 0) + (e.type !== 'lord' && cv(u, e.type) > 0 ? 1 : 0), centre);
+      else if (K(u) === 'archers') want = meanX(threats, (e) => (e.tags.includes('flier') ? (e.type === 'lord' ? 1 : 3) : 0) + (e.type !== 'lord' && cv(u, e.type) > 0 ? 1 : 0), centre);
       else if (role !== 'support') want = meanX(threats, (e) => (e.type !== 'lord' ? Math.max(0, cv(u, e.type)) : 0), centre);
     } else if (role === 'flank') want = flankX;
     rows[role].push({ q, want });
@@ -581,8 +626,10 @@ function applyLayout(s: MatchState, seat: Seat, layout: Map<number, Vec2>): void
 
 /** Normal's anti-air placement: Hard's formation, applied to the archer-type squads only, when the enemy flew last round. */
 function antiAirPlacement(s: MatchState, seat: Seat, all: Threat[]): void {
-  // Flier squads only: a flying Lord (the Skylady) is one rider, and archers parked under her strip her army's flank.
-  const threats = all.filter((e) => e.type !== 'lord');
+  // Flier squads only: a flying Lord who dives (the Skylady, the Drake Rider) is one rider, and archers parked under her
+  // strip her army's flank. A flying Lord who shoots (the Roc Rider) hangs over her own backline all battle: the bows
+  // go under her too.
+  const threats = all.filter((e) => e.type !== 'lord' || e.ranged);
   if (!threats.some((e) => e.tags.includes('flier'))) return;
   const p = s.players[seat];
   const layout = hardLayout(p, threats);

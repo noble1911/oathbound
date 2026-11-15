@@ -1,10 +1,168 @@
 # Oathbound v2: balance report
 
-The numbers come from `node tools/tournament.ts --seeds 3 --best`. That run has 28 entries: 7 bot strategies × 4 Lords. Every entry plays every other entry from both seats, on 3 seeds each, for 2268 matches. It takes about 2 minutes on 18 worker threads. The report also prints the match-length histogram and the margin-of-victory distribution.
+The gated numbers come from `node tools/tournament.ts --strats hard --seeds 100` and `--strats normal` (12 Lords, 13 200 matches each; see the current report). The mixed field is `node tools/tournament.ts --seeds 3 --best` (bot strategies × Lords). Every entry plays every other entry from both seats. The report also prints the match-length histogram and the margin-of-victory distribution.
 
 To re-tune, run `node tools/tournament.ts --seeds 1 --tune N`. It rewrites the multipliers in `src/sim/data/balance.ts`.
 
-## Current report: after the positioning-and-economy pass (2026-11-15)
+## Current report: twelve Lords (2026-11-15)
+
+Six Lords joined, so each faction now has four, one in each role (DESIGN §4). Each new Lord mirrors the Kingdom Lord
+of the same role, so the numbers stay comparable. Its passive and its ability each have one distinct mechanic.
+
+| Lord | Role (mirrors) | Passive | Ability (cooldown) |
+|---|---|---|---|
+| Death Knight Vaelric (Ashen) | infantry (Marshal) | Infantry squads (and he) +15% damage | **Soul Reaping** (15 s): allies within 20 m drain 35% of the damage they deal as life for 10 s |
+| Ossuary Warden Gorrath (Ashen) | armour (Warden) | Keep +500 HP; squads +12 armour | **Grave Taunt** (17 s): if 3 or more enemies are within 10 m, they must attack him for 5 s, and he takes 40% less damage meanwhile |
+| Drake Rider Nyssara (Ashen) | fliers (Skylady) | Squads move 10% faster | **Plague Breath** (17 s): dives onto the densest cluster within 30 m; 120% of her damage as magic in 4.5 m, then a plague of 10 (+1 per level) a second for 3 s |
+| Grand Vizier Kasim (Caliphate) | magic (Archmage) | Magic squads attack 20% faster | **Djinn Whirlwind** (16 s): spins 4 s on the densest cluster within 40 m; 10 (+2 per level) magic a second in 5 m, and a 40% slow |
+| Rajah Bahadur (Caliphate) | armour and giants (Warden) | Giants (and he) +20% life and +10 armour | **Stampede** (15 s): charges through the nearest ground enemy within 12 m; 40 (+6 per level) to everything within 2.8 m of the path, thrown 2 m aside |
+| Roc Rider Amira (Caliphate) | fliers (Skylady) | Archer squads +25% damage | **Talon Strike** (17 s): seizes the toughest enemy within 30 m that is not Large; 250% of her damage, dropped 8 m towards her lines, stunned 1.5 s |
+
+Every Ashen Lord is now undead, not only the Lich-Priest, so sunlight burns all of them for 50% more. The abilities
+are integer-only and seat-symmetric. `tests/sim.lords.test.ts` covers the effect and determinism of each, and
+`tests/sim.mirror.test.ts` covers the mirror (eight ability arenas and six bot matches).
+
+There are now 12 Lords and 144 Lord pairings. Hard vs Hard and Normal vs Normal are
+`node tools/tournament.ts --strats hard --seeds 100` (and `--strats normal`), on fresh seed sets (`--seed0 300000`
+and `500000`) that tuning never saw. Each run is 13 200 matches: n = 3200 per cross-faction pairing (about ±1.8
+points) and 2200 per Lord (about ±2.1).
+
+### Gates
+
+| Gate | Hard vs Hard | Normal vs Normal | Target |
+|---|---|---|---|
+| Kingdom vs Ashen | **51.5%** | **49.2%** | 45–55% ✅ |
+| Kingdom vs Caliphate | **49.5%** | **53.0%** | 45–55% ✅ |
+| Ashen vs Caliphate | **54.7%** | **45.6%** | 45–55% ✅ |
+| Factions vs the other two | Kingdom 50.5, Ashen 51.6, Caliphate 47.9 | Kingdom 51.1, Ashen 48.2, Caliphate 50.7 | |
+| Seat advantage | **49.2%** | **49.5%** | < 52% ✅ |
+| Average match length | **8.43** rounds | **8.71** rounds | 8–9 ✅ |
+| Past round 12 | 0.0% (longest 14) | 0.7% (longest 15) | rare ✅ |
+| Lord share of army damage | 13.7% | 14.9% | ≤ 25% ✅ |
+| Blowouts (winner above 75% keep) | 36.6% | 51.8% | reported |
+
+| Lord | Hard | Normal |
+|---|---|---|
+| Marshal Aldric | 51.2 | 53.9 |
+| Archmage Sefa | 49.5 | 51.0 |
+| Warden Hrolf | 50.0 | 47.7 |
+| Skylady Ione | 50.8 | 50.6 |
+| Death Knight Vaelric | 49.4 | 46.7 |
+| Lich-Priest Morthen | 51.7 | 54.7 |
+| Ossuary Warden Gorrath | 54.2 | **44.6** ⚠ |
+| Drake Rider Nyssara | 49.4 | 48.7 |
+| Sultana Zahira | 52.2 | 51.8 |
+| Grand Vizier Kasim | 45.3 | 49.8 |
+| Rajah Bahadur | 47.9 | 49.5 |
+| Roc Rider Amira | 48.5 | 50.8 |
+
+Every Lord is within 45–55% at both levels except the Ossuary Warden at Normal, at 44.6% (0.4 below the band, inside
+the ±2.1 error). Hard's Grand Vizier, at 45.3%, is at the edge.
+
+Match lengths:
+- Hard: 6r 5.0%, 7r 17.2%, 8r 29.5%, 9r 29.8%, 10r 15.6%, 11r 2.7%, 12r 0.2%.
+- Normal: 6r 5.2%, 7r 16.2%, 8r 24.6%, 9r 25.1%, 10r 17.8%, 11r 7.9%, 12r 2.5%, 13r+ 0.7%.
+
+**Ladder** (`--strats easy,normal,hard --seeds 10 --seed0 600000`, 12 600 matches):
+
+| | Now | Target |
+|---|---|---|
+| Hard beats Normal | **83%** | ≥ 65% ✅ |
+| Normal beats Easy | **95%** | ≥ 75% ✅ |
+| Hard beats Easy | 98% | |
+
+**Units** (n ≥ 100):
+- Hard: 38.9% (scimitar) to 57.8% (archers). Outside that: militia at 28% (n = 188, rarely bought at Hard), and the
+  Dragon at 71% (n = 43).
+- Normal: 39.0% (ballista) to 61.0% (grave knights). Outside that: clerics at 30.5% (n = 291), which were already the
+  outlier in the last pass at 29%.
+- Wraith Riders read 57% at both levels, and Bone Drakes 59% at Normal.
+
+**The Lord matrix is rock-paper-scissors.** Single Lord pairings range from 5% to 96%. Each cell is n = 200 here, and
+because the bots are deterministic, one pairing tends to go the same way. Some examples at Hard:
+- the Ossuary Warden beats the Drake Rider 96%;
+- the Grand Vizier beats the Ossuary Warden 92%;
+- the Rajah loses to the Death Knight 9%.
+
+The gates are per Lord and per faction, and those even out. A human player sees the enemy's Lord before planning and
+can answer it. The full 12 × 12 matrices are in the tournament output.
+
+### What changed
+
+**Rules and numbers.** No rule of the last pass moved: the margin-scaled round bonus, the level costs and slots, and
+Hard's speed stagger are unchanged.
+- `FACTION_POWER`: Kingdom 964 → 962, Ashen 1062 → 1066, Caliphate 976 → 987.
+- `LORD_POWER`:
+  - Marshal 125 → 118, Archmage 43 → 40, Warden 130 → 135, Skylady 65 → 68, Lich 95 → 99, Sultana 115 → 126.
+  - New: Death Knight 113, Ossuary Warden 130, Drake Rider 73, Grand Vizier 45, Rajah 108, Roc Rider 98.
+- The ability numbers in the table above were set over about 30 tournament runs. For example, the Vizier's haste went
+  from 40% to 20%, the Rajah's giant life from 20% to 10% and back to 20%, and Plague Breath from 120% to 150% and back
+  to 120%.
+
+**Bots** (`src/sim/bot.ts`):
+- **Lord pick.** All levels pick uniformly from the 12 Lords, which is a third per faction. The server's timer pick
+  stays within the chosen faction.
+- **Playing to the passive** (`LORD_PLAY`). Under a new Lord, each level wants that Lord's favoured units more: the Death
+  Knight's infantry, the Ossuary Warden's armour, the Drake Rider's fast units, the Vizier's magic, the Rajah's giants
+  and the Roc Rider's archers. The weights are per level, Hard first and then the classic planner:
+  - Death Knight 1.2 / 0.9
+  - Ossuary Warden 1.2 / 1.3
+  - Drake Rider 1.1 / 1.0
+  - Grand Vizier 1.35 / 1.2
+  - Rajah 1.5 / 0.8
+  - Roc Rider 1.3 / 2.0
+
+  At Normal a higher weight often meant a lower win rate, because Normal over-concentrates. For example, the Roc
+  Rider read 75% at 1.0 and 55% at 2.0. So these weights also even out a Lord's Hard and Normal rates.
+- **Lord placement.** Hard places a Lord by role: the Skylady flanks; the Drake Rider flies with the army, because
+  Plague Breath wants a melee crowd; the Roc Rider stands with the bows. Normal (`placeFor`) starts a flying or
+  shooting Lord behind the army; a lone flier sent ahead met every bow, which put the Skylady and the Drake Rider at
+  35–41% at Normal. It also puts the Ossuary Warden in the front line.
+- **Normal answers a flying or Large enemy Lord.** `lordStandIn` treats the Skylady, the Drake Rider and the Roc Rider
+  as a Pegasus worth 300 gold, and the Rajah as a Golem. Normal's anti-air placement now covers a flying Lord who
+  shoots (the Roc Rider), because she hangs over her backline all battle. Hard's archers weigh a flying Lord at a
+  third of a flier squad.
+- **Gear.** The tank Lords (the Warden, the Ossuary Warden and the Rajah) share the Warden's gear valuation
+  (`TANK_LORDS`).
+- **`CLASSIC_PREF`** was re-tuned for Normal by a coordinate search (`tournament --strats normal` on a fixed seed set,
+  each knob ×1.25 or ×0.8 in turn, minimising the gate deviations), then by hand:
+
+  | Unit | Before | Now |
+  |---|---|---|
+  | djinn-binder | 1.35 | 0.95 |
+  | scimitar | 1.25 | 1.1 |
+  | djinn | 1.2 | 1.05 |
+  | skeleton | 0.7 | 1.0 |
+  | bone drake | 1.3 | 1.1 |
+  | bone archer | 1.3 | 1.25 |
+
+  `ARCHMAGE_CASTERS` went from 1.15 to 0.9.
+
+### Tried and rejected
+
+| Change | Result |
+|---|---|
+| Rajah's signature Scimitar + Sand Golem (not a basic unit), or Scimitar + Spear Levy | 67% / 14% at Hard; Scimitar + Mamluk kept |
+| Hard places the Ossuary Warden or the Rajah in the front row | Ossuary 57 → 64%, Rajah 44 → 38% at Hard |
+| No Lord affinity at all | Rajah 30% at Hard, Ossuary 74% |
+| Hard Rajah giant weight 1.15 / 2.0 | 38% / 30% (1.5: 44–51%) |
+| Lowering Wraith Rider preference at Normal (0.75–0.8) | Ashen collapses at Normal (Kingdom vs Ashen 55–58%) |
+
+### Open
+
+- **Normal's cycle.** At Normal the factions form a mild cycle: Ashen edges the Kingdom, the Caliphate beats the
+  Ashen, and the Kingdom edges the Caliphate. It is inside the band now (49 / 53 / 46), but small changes to the
+  classic planner swing it by 5 or more points.
+- **The Ossuary Warden at Normal** reads 44.6%. He needs the enemy around him, and the classic planner does not fight
+  for that.
+- **Seed sensitivity.** The same configuration read up to 4 points apart on two 40-seed sets. Re-check every Lord
+  number at 100 seeds before trusting a change.
+- **Older open items.** Clerics at Normal (31%), and tall against wide (see below).
+
+## Previous report: after the positioning-and-economy pass (2026-11-15, six Lords)
+
+The numbers in this section are from before the six new Lords; the section above is current.
+
 
 This pass worked through the balancing items of `docs/reviews/POSITIONING-AND-ECONOMY.md`: a full refund for a
 same-round sale, a round bonus scaled by the winning margin, flat level-up costs with earlier item slots, bots that

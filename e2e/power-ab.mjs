@@ -4,7 +4,14 @@
 //   node e2e/with-gpu-lock.mjs "power-ab" -- node e2e/power-ab.mjs <out.txt> [--stage art-work/stage_v2] [--rounds 2] [--tiers low,medium,high,ultra,saver] [--sets old,new]
 // (always under the GPU lock: no TRELLIS / Cycles job may run during the measurement)
 // `--sets old,cur` compares against what is in public/models/v2 without a staging overlay.
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+// async: the model-set server lives in THIS process, so a spawnSync would block it and every page load would time out
+const run = (cmd, a, o) => new Promise((res) => {
+  const p = spawn(cmd, a, { env: o.env });
+  let stdout = '', stderr = '';
+  p.stdout.on('data', (d) => (stdout += d)); p.stderr.on('data', (d) => (stderr += d));
+  p.on('close', (status) => res({ status, stdout, stderr }));
+});
 import fs from 'node:fs';
 import { startServer } from './remodel-lib.mjs';
 
@@ -22,7 +29,7 @@ try {
     for (const set of sets) {
       const env = { ...process.env, BASE: srv.base, REAL: 'all', TIERS: tiers };
       if (set !== 'cur') env.MANIFEST = `models/v2-${set}/manifest.json`; else delete env.MANIFEST;
-      const p = spawnSync(process.execPath, ['e2e/render-power.mjs'], { env, encoding: 'utf8', maxBuffer: 1 << 26 });
+      const p = await run(process.execPath, ['e2e/render-power.mjs'], { env });
       log += `\n## round ${r + 1}, ${set}\n${p.stdout}${p.stderr}`;
       for (const l of p.stdout.split(/\r?\n/)) if (l.startsWith('{')) rows.push({ set, round: r, ...JSON.parse(l) });
       fs.writeFileSync(out, log);

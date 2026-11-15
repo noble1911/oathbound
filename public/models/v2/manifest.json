@@ -827,6 +827,7 @@
    "glb": "wyvern.glb",
    "lod1": "wyvern_lod1.glb",
    "tintMask": "wyvern_team.png",
+   "lod1TintMask": "wyvern_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -892,23 +893,25 @@
     }
    ],
    "tris": {
-    "lod0": 14280,
-    "lod1": 3239
+    "lod0": 28574,
+    "lod1": 7876
    },
    "bytes": {
-    "wyvern.glb": 1563236,
-    "wyvern_lod1.glb": 564580,
-    "wyvern_team.png": 64280
+    "wyvern.glb": 2338404,
+    "wyvern_lod1.glb": 1197888,
+    "wyvern_team.png": 238064,
+    "wyvern_lod1_team.png": 97352
    },
-   "totalBytes": 2192096
+   "totalBytes": 3871708
   },
   "ballista": {
    "kind": "siege",
    "scale": 1,
-   "height": 1.7,
+   "height": 2.18,
    "glb": "ballista.glb",
    "lod1": "ballista_lod1.glb",
    "tintMask": "ballista_team.png",
+   "lod1TintMask": "ballista_lod1_team.png",
    "clips": {
     "idle": "idle",
     "attack": "fire",
@@ -940,26 +943,38 @@
    },
    "nodes": [
     "body",
-    "bolt"
+    "bolt",
+    "arm_l",
+    "arm_r",
+    "string_l",
+    "string_r"
+   ],
+   "fireTime": 0.125,
+   "release": [
+    0,
+    1.147,
+    0.383
    ],
    "tris": {
-    "lod0": 14816,
-    "lod1": 2978
+    "lod0": 5292,
+    "lod1": 2112
    },
    "bytes": {
-    "ballista.glb": 892568,
-    "ballista_lod1.glb": 257676,
-    "ballista_team.png": 4303
+    "ballista.glb": 1466404,
+    "ballista_lod1.glb": 191524,
+    "ballista_team.png": 18501,
+    "ballista_lod1_team.png": 1680
    },
-   "totalBytes": 1154547
+   "totalBytes": 1678109
   },
   "trebuchet": {
    "kind": "siege",
    "scale": 1,
-   "height": 6,
+   "height": 5.98,
    "glb": "trebuchet.glb",
    "lod1": "trebuchet_lod1.glb",
    "tintMask": "trebuchet_team.png",
+   "lod1TintMask": "trebuchet_lod1_team.png",
    "clips": {
     "idle": "idle",
     "attack": "fire",
@@ -992,19 +1007,27 @@
    "nodes": [
     "frame",
     "arm",
+    "weight",
     "rope",
     "stone"
    ],
+   "fireTime": 0.417,
+   "release": [
+    0,
+    8.276,
+    -1.063
+   ],
    "tris": {
-    "lod0": 14806,
-    "lod1": 2986
+    "lod0": 6922,
+    "lod1": 2342
    },
    "bytes": {
-    "trebuchet.glb": 723772,
-    "trebuchet_lod1.glb": 243580,
-    "trebuchet_team.png": 6195
+    "trebuchet.glb": 1420424,
+    "trebuchet_lod1.glb": 186524,
+    "trebuchet_team.png": 32605,
+    "trebuchet_lod1_team.png": 2422
    },
-   "totalBytes": 973547
+   "totalBytes": 1641975
   },
   "golem": {
    "kind": "large",
@@ -1013,6 +1036,7 @@
    "glb": "golem.glb",
    "lod1": "golem_lod1.glb",
    "tintMask": "golem_team.png",
+   "lod1TintMask": "golem_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -1073,15 +1097,16 @@
    },
    "weapons": [],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2954
+    "lod0": 29550,
+    "lod1": 7880
    },
    "bytes": {
-    "golem.glb": 824984,
-    "golem_lod1.glb": 312548,
-    "golem_team.png": 11360
+    "golem.glb": 2035904,
+    "golem_lod1.glb": 963480,
+    "golem_team.png": 102110,
+    "golem_lod1_team.png": 37622
    },
-   "totalBytes": 1148892
+   "totalBytes": 3139116
   },
   "dragon": {
    "kind": "flier",
@@ -1090,6 +1115,7 @@
    "glb": "dragon.glb",
    "lod1": "dragon_lod1.glb",
    "tintMask": "dragon_team.png",
+   "lod1TintMask": "dragon_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -1150,15 +1176,16 @@
    },
    "weapons": [],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2954
+    "lod0": 29550,
+    "lod1": 7880
    },
    "bytes": {
-    "dragon.glb": 1091208,
-    "dragon_lod1.glb": 362176,
-    "dragon_team.png": 29457
+    "dragon.glb": 2358456,
+    "dragon_lod1.glb": 1076528,
+    "dragon_team.png": 207767,
+    "dragon_lod1_team.png": 46137
    },
-   "totalBytes": 1482841
+   "totalBytes": 3688888
   },
   "lord_marshal": {
    "kind": "humanoid",
@@ -1167,6 +1194,7 @@
    "glb": "lord_marshal.glb",
    "lod1": "lord_marshal_lod1.glb",
    "tintMask": "lord_marshal_team.png",
+   "lod1TintMask": "lord_marshal_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -1232,15 +1260,16 @@
     }
    ],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2953
+    "lod0": 29548,
+    "lod1": 7878
    },
    "bytes": {
-    "lord_marshal.glb": 822812,
-    "lord_marshal_lod1.glb": 363740,
-    "lord_marshal_team.png": 41639
+    "lord_marshal.glb": 1812808,
+    "lord_marshal_lod1.glb": 866756,
+    "lord_marshal_team.png": 224019,
+    "lord_marshal_lod1_team.png": 79028
    },
-   "totalBytes": 1228191
+   "totalBytes": 2982611
   },
   "lord_archmage": {
    "kind": "humanoid",
@@ -1249,6 +1278,7 @@
    "glb": "lord_archmage.glb",
    "lod1": "lord_archmage_lod1.glb",
    "tintMask": "lord_archmage_team.png",
+   "lod1TintMask": "lord_archmage_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -1314,15 +1344,16 @@
     }
    ],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2942
+    "lod0": 29548,
+    "lod1": 7878
    },
    "bytes": {
-    "lord_archmage.glb": 979772,
-    "lord_archmage_lod1.glb": 472788,
-    "lord_archmage_team.png": 36040
+    "lord_archmage.glb": 2043020,
+    "lord_archmage_lod1.glb": 923352,
+    "lord_archmage_team.png": 217481,
+    "lord_archmage_lod1_team.png": 66307
    },
-   "totalBytes": 1488600
+   "totalBytes": 3250160
   },
   "lord_warden": {
    "kind": "humanoid",
@@ -1331,6 +1362,7 @@
    "glb": "lord_warden.glb",
    "lod1": "lord_warden_lod1.glb",
    "tintMask": "lord_warden_team.png",
+   "lod1TintMask": "lord_warden_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -1396,15 +1428,16 @@
     }
    ],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2954
+    "lod0": 29548,
+    "lod1": 7878
    },
    "bytes": {
-    "lord_warden.glb": 992764,
-    "lord_warden_lod1.glb": 360060,
-    "lord_warden_team.png": 12368
+    "lord_warden.glb": 2387912,
+    "lord_warden_lod1.glb": 1053864,
+    "lord_warden_team.png": 183681,
+    "lord_warden_lod1_team.png": 27051
    },
-   "totalBytes": 1365192
+   "totalBytes": 3652508
   },
   "lord_skylady": {
    "kind": "humanoid",
@@ -1413,6 +1446,7 @@
    "glb": "lord_skylady.glb",
    "lod1": "lord_skylady_lod1.glb",
    "tintMask": "lord_skylady_team.png",
+   "lod1TintMask": "lord_skylady_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -1478,15 +1512,16 @@
     }
    ],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2920
+    "lod0": 29548,
+    "lod1": 7878
    },
    "bytes": {
-    "lord_skylady.glb": 952752,
-    "lord_skylady_lod1.glb": 380340,
-    "lord_skylady_team.png": 14371
+    "lord_skylady.glb": 1870192,
+    "lord_skylady_lod1.glb": 931064,
+    "lord_skylady_team.png": 122149,
+    "lord_skylady_lod1_team.png": 42350
    },
-   "totalBytes": 1347463
+   "totalBytes": 2965755
   },
   "skeleton": {
    "kind": "humanoid",
@@ -1859,6 +1894,7 @@
    "glb": "lord_lich.glb",
    "lod1": "lord_lich_lod1.glb",
    "tintMask": "lord_lich_team.png",
+   "lod1TintMask": "lord_lich_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -1928,15 +1964,16 @@
     }
    ],
    "tris": {
-    "lod0": 14772,
-    "lod1": 2952
+    "lod0": 29548,
+    "lod1": 7876
    },
    "bytes": {
-    "lord_lich.glb": 1036752,
-    "lord_lich_lod1.glb": 411908,
-    "lord_lich_team.png": 17136
+    "lord_lich.glb": 2598372,
+    "lord_lich_lod1.glb": 1053500,
+    "lord_lich_team.png": 314380,
+    "lord_lich_lod1_team.png": 38185
    },
-   "totalBytes": 1465796
+   "totalBytes": 4004437
   },
   "bone_golem": {
    "kind": "large",
@@ -1945,6 +1982,7 @@
    "glb": "bone_golem.glb",
    "lod1": "bone_golem_lod1.glb",
    "tintMask": "bone_golem_team.png",
+   "lod1TintMask": "bone_golem_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -2005,15 +2043,16 @@
    },
    "weapons": [],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2954
+    "lod0": 29550,
+    "lod1": 7880
    },
    "bytes": {
-    "bone_golem.glb": 1409536,
-    "bone_golem_lod1.glb": 420120,
-    "bone_golem_team.png": 6194
+    "bone_golem.glb": 2941524,
+    "bone_golem_lod1.glb": 1058008,
+    "bone_golem_team.png": 110400,
+    "bone_golem_lod1_team.png": 18919
    },
-   "totalBytes": 1835850
+   "totalBytes": 4128851
   },
   "wraith_rider": {
    "kind": "mounted",
@@ -2111,6 +2150,7 @@
    "glb": "bone_drake.glb",
    "lod1": "bone_drake_lod1.glb",
    "tintMask": "bone_drake_team.png",
+   "lod1TintMask": "bone_drake_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -2171,23 +2211,25 @@
    },
    "weapons": [],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2954
+    "lod0": 29550,
+    "lod1": 7880
    },
    "bytes": {
-    "bone_drake.glb": 1088564,
-    "bone_drake_lod1.glb": 426716,
-    "bone_drake_team.png": 29774
+    "bone_drake.glb": 2572980,
+    "bone_drake_lod1.glb": 1111564,
+    "bone_drake_team.png": 215751,
+    "bone_drake_lod1_team.png": 50400
    },
-   "totalBytes": 1545054
+   "totalBytes": 3950695
   },
   "corpse_catapult": {
    "kind": "siege",
    "scale": 1,
-   "height": 5,
+   "height": 4.99,
    "glb": "corpse_catapult.glb",
    "lod1": "corpse_catapult_lod1.glb",
    "tintMask": "corpse_catapult_team.png",
+   "lod1TintMask": "corpse_catapult_lod1_team.png",
    "clips": {
     "idle": "idle",
     "attack": "fire",
@@ -2220,19 +2262,27 @@
    "nodes": [
     "frame",
     "arm",
+    "weight",
     "rope",
     "stone"
    ],
+   "fireTime": 0.417,
+   "release": [
+    0,
+    6.896,
+    -0.886
+   ],
    "tris": {
-    "lod0": 14806,
-    "lod1": 2984
+    "lod0": 11946,
+    "lod1": 2986
    },
    "bytes": {
-    "corpse_catapult.glb": 971856,
-    "corpse_catapult_lod1.glb": 277324,
-    "corpse_catapult_team.png": 8043
+    "corpse_catapult.glb": 1550604,
+    "corpse_catapult_lod1.glb": 178312,
+    "corpse_catapult_team.png": 33934,
+    "corpse_catapult_lod1_team.png": 2912
    },
-   "totalBytes": 1257223
+   "totalBytes": 1765762
   },
   "spear_levy": {
    "kind": "humanoid",
@@ -2605,6 +2655,7 @@
    "glb": "lord_sultana.glb",
    "lod1": "lord_sultana_lod1.glb",
    "tintMask": "lord_sultana_team.png",
+   "lod1TintMask": "lord_sultana_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -2667,22 +2718,19 @@
     {
      "node": "weapon_scimitar_R",
      "bone": "hand.R"
-    },
-    {
-     "node": "weapon_banner_sun_L",
-     "bone": "spine3"
     }
    ],
    "tris": {
-    "lod0": 14772,
-    "lod1": 2950
+    "lod0": 29560,
+    "lod1": 7888
    },
    "bytes": {
-    "lord_sultana.glb": 974284,
-    "lord_sultana_lod1.glb": 419176,
-    "lord_sultana_team.png": 32380
+    "lord_sultana.glb": 2046516,
+    "lord_sultana_lod1.glb": 876080,
+    "lord_sultana_team.png": 220485,
+    "lord_sultana_lod1_team.png": 84342
    },
-   "totalBytes": 1425840
+   "totalBytes": 3227423
   },
   "camel_archer": {
    "kind": "mounted",
@@ -2869,6 +2917,7 @@
    "glb": "war_elephant.glb",
    "lod1": "war_elephant_lod1.glb",
    "tintMask": "war_elephant_team.png",
+   "lod1TintMask": "war_elephant_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -2929,15 +2978,16 @@
    },
    "weapons": [],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2954
+    "lod0": 39038,
+    "lod1": 13915
    },
    "bytes": {
-    "war_elephant.glb": 994728,
-    "war_elephant_lod1.glb": 384428,
-    "war_elephant_team.png": 49792
+    "war_elephant.glb": 2511504,
+    "war_elephant_lod1.glb": 944292,
+    "war_elephant_team.png": 388787,
+    "war_elephant_lod1_team.png": 112955
    },
-   "totalBytes": 1428948
+   "totalBytes": 3957538
   },
   "sand_golem": {
    "kind": "large",
@@ -2946,6 +2996,7 @@
    "glb": "sand_golem.glb",
    "lod1": "sand_golem_lod1.glb",
    "tintMask": "sand_golem_team.png",
+   "lod1TintMask": "sand_golem_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -3006,15 +3057,16 @@
    },
    "weapons": [],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2954
+    "lod0": 29550,
+    "lod1": 7880
    },
    "bytes": {
-    "sand_golem.glb": 1051360,
-    "sand_golem_lod1.glb": 395656,
-    "sand_golem_team.png": 18874
+    "sand_golem.glb": 2449904,
+    "sand_golem_lod1.glb": 1088044,
+    "sand_golem_team.png": 224838,
+    "sand_golem_lod1_team.png": 31601
    },
-   "totalBytes": 1465890
+   "totalBytes": 3794387
   },
   "djinn": {
    "kind": "large",

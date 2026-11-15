@@ -4,7 +4,7 @@ import { FIELD_H, FIELD_W, mirrorPos, mirrorFacing } from './constants.ts';
 import { SLOT_UNLOCK_LEVEL } from './data/items.ts';
 import { canEquip, classError, classesOf } from './data/skills.ts';
 import { FACTIONS, FACTION_IDS } from './data/factions.ts';
-import { LORDS, LORD_IDS } from './data/lords.ts';
+import { LORDS, LORD_IDS, OSSUARY_KEEP_BONUS } from './data/lords.ts';
 import { UNITS } from './data/units.ts';
 import { modsOf, rollLoot } from './loot.ts';
 import { genTerrain } from './terrain.ts';
@@ -212,7 +212,7 @@ function setLord(s: MatchState, seat: Seat, lord: LordId): void {
   const p = s.players[seat];
   p.lord = lord;
   p.faction = LORDS[lord].faction;
-  if (lord === 'warden') { p.keepMax = KEEP_HP + WARDEN_KEEP_BONUS; p.keepHp = p.keepMax; }
+  if (lord === 'warden' || lord === 'ossuary') { p.keepMax = KEEP_HP + (lord === 'warden' ? WARDEN_KEEP_BONUS : OSSUARY_KEEP_BONUS); p.keepHp = p.keepMax; }
   const pos: Vec2 = seat === 0 ? [3999, 1200] : mirrorPos([3999, 1200]);
   p.squads = [{ id: s.nextId++, owner: seat, type: 'lord', level: 1, pos, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 0, spent: 0 }];
 }

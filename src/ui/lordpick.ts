@@ -1,11 +1,11 @@
 // Faction and Lord pick, one screen: three faction banners (name, blurb, colours, lineup), the
-// chosen faction's identity and mechanics, then its Lords (four for the Kingdom, one each for the
-// Covenant and the Caliphate) with the phase countdown. Choosing a banner sends {t:'pickFaction'}
+// chosen faction's identity and mechanics, then its four Lords (one per role: infantry, magic,
+// armour, fliers; FACTIONS[f].lords is in that order) with the phase countdown. Choosing a banner sends {t:'pickFaction'}
 // and can be changed until a Lord is picked; the Lord's card sends {t:'pickLord'}. Picks stay hidden
 // until both players have chosen; the reveal (yours vs theirs) plays as the match moves into round 1.
 import type { FactionId, LordId, UnitType } from '../sim/types.ts';
 import type { RoomView } from '../net/protocol.ts';
-import { LORDS } from '../sim/data/lords.ts';
+import { LORDS, LORD_ROLE, LORD_ROLE_NAME } from '../sim/data/lords.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { FACTIONS, FACTION_IDS, factionOfLord } from '../sim/data/factions.ts';
 import { unitSkills } from '../sim/data/skills.ts';
@@ -157,7 +157,7 @@ export class LordPickScreen {
     const s = soldierStats('lord', 1, id);
     return `<button class="lcard" data-lord="${id}" style="--hue:${LORD_HUE[id]}">
       ${lordPortrait(id)}
-      <div class="lc-name"><small>${esc(L.title)}</small><b>${esc(L.name)}</b><span class="lc-wpn">${icon(L.weapon)}${WEAPON_LABEL[L.weapon]}</span></div>
+      <div class="lc-name"><small>${esc(L.title)} <i class="lc-role">${esc(LORD_ROLE_NAME[LORD_ROLE[id]])}</i></small><b>${esc(L.name)}</b><span class="lc-wpn">${icon(L.weapon)}${WEAPON_LABEL[L.weapon]}</span></div>
       <div class="lc-sig"><small>Signature units</small><div>${L.signature.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('')}</div></div>
       <div class="lc-block"><small>Passive</small><p>${esc(L.passive)}</p></div>
       <div class="lc-block abil"><small>${icon('lightning')}${esc(L.abilityName)}</small><p>${esc(L.abilityText)}</p></div>

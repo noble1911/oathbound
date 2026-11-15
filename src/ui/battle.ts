@@ -14,7 +14,7 @@ import type { DecodedReplay, LordId, Replay, ReplayEvent, Seat } from '../sim/ty
 import { UNITS } from '../sim/data/units.ts';
 import type { FactionId } from '../sim/types.ts';
 import { decodeReplay } from '../sim/index.ts';
-import { LORDS } from '../sim/data/lords.ts';
+import { LORDS, LORD_ABILITY_IDS } from '../sim/data/lords.ts';
 import { LEGENDARIES } from '../sim/data/items.ts';
 import { sound } from '../audio.ts';
 import { playLordLine, voice } from '../audio/voice.ts';
@@ -58,9 +58,13 @@ const PROC: Record<string, { name: string; ic: string }> = {
   chain: { name: 'Stormcaller', ic: 'lightning' },
   reflect: { name: 'Mirror Aegis', ic: 'shield' },
 };
-const LORD_ABIL = new Set(['rally', 'meteor', 'bulwark', 'skyfall', 'necromancy', 'radiance']);
+const LORD_ABIL: ReadonlySet<string> = new Set(LORD_ABILITY_IDS);
 /** How the log words a Lord's ability when "casts X" would undersell it. */
-const ABIL_VERB: Record<string, string> = { necromancy: 'raises the dead', radiance: 'calls down Radiance' };
+export const ABIL_VERB: Record<string, string> = {
+  necromancy: 'raises the dead', radiance: 'calls down Radiance',
+  soul_reap: 'unleashes Soul Reaping', grave_taunt: 'bellows a Grave Taunt', plague_breath: 'dives with Plague Breath',
+  whirlwind: 'calls a Djinn Whirlwind', stampede: 'leads the Stampede', talon: 'strikes with her talons',
+};
 
 /** Each side's faction, read off its army (the Lord, else any soldier's unit type): picks the Keep the scene shows. */
 function replayFactions(soldiers: { side: 0 | 1; type: string; lord?: string }[]): [FactionId | null, FactionId | null] {
@@ -634,6 +638,8 @@ export class BattleScreen {
         const src = sol[e.src];
         // a Grave Acolyte's raise is also a 'necromancy' event: its log line comes from the 'summon' event
         if (LORD_ABIL.has(e.ability) && src && src.type !== 'lord') break;
+        // a Grave Taunt also marks each taunted soldier (radius 0): the Warden's own event is the one logged
+        if (e.ability === 'grave_taunt' && e.radius === 0) break;
         if (LORD_ABIL.has(e.ability) && src) {
           const lord = src.lord ?? 'marshal';
           const L = LORDS[lord];

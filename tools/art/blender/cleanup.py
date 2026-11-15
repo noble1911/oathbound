@@ -496,7 +496,7 @@ def grade(a, low):
     """Albedo / team-mask grading of the LOD0 bake, driven by assets.json `grade` (all optional):
       lift [gamma, gain]   brighten a dark TRELLIS bake (wyvern, dragon read near-black in the engine)
       sat  factor          saturation
-      fur  {to, val, sat, team, zmin, grey}  bright unsaturated non-metal texels (white fur) -> colour `to`,
+      fur  {to, val, sat, team, zmin, grey, region}  bright unsaturated non-metal texels (white fur) -> colour `to`,
            keeping the fur's shading; above zmin (fraction of the height: the mantle, not the boot trim) the
            pelt instead becomes a neutral grey with team mask `team`, so the unit shows its colour from behind
       mask_open k          drop team-mask blobs narrower than ~k texels (blue-white shadow speckle on white
@@ -525,6 +525,12 @@ def grade(a, low):
             metal = np.kron(m, np.ones((h // m.shape[0], w // m.shape[1]), f32))
         mx = rgb.max(2); mn = rgb.min(2); sat = (mx - mn) / (mx + 1e-6)
         sel = (mx > f.get('val', 0.5)) & (sat < f.get('sat', 0.25)) & (mask < 0.3) & (metal < 0.3)
+        if f.get('region'):
+            # `region` {ymin (m, +y = the unit's back), zmin, zmax (fractions of the height)}: only that part of the
+            # body, e.g. the back of a mantle, so a unit with no team cloth behind shows its colour to the RTS camera
+            R = f['region']; co = L.verts_np(low)
+            yy = L.raster_attr(low, co[:, 1], w, h); zz = L.raster_attr(low, co[:, 2] / H, w, h)
+            sel &= (yy >= R.get('ymin', -1e9)) & (zz >= R.get('zmin', -1e9)) & (zz <= R.get('zmax', 1e9))
         sel = L.box_blur(sel.astype(f32), 3) > 0.4
         if sel.any():
             lum = rgb.mean(2); ref = float(np.median(lum[sel]))
@@ -1098,9 +1104,6 @@ def unit_main(aid, a, yaw_override):
     highs = [h for _, _, h, _ in pieces]
     any_auth = any(au for *_, au in pieces)
     lows1 = [dup(lo, lo.name + '1') for lo in lows]       # LOD1 starts from the per-part LOD0s
-    for o in lows1:
-        if 'UVsrc' in o.data.uv_layers:
-            o.data.uv_layers.remove(o.data.uv_layers['UVsrc'])
 
     def join(objs, name):
         L.select_only(*objs); bpy.context.view_layer.objects.active = objs[0]
@@ -1110,54 +1113,60 @@ def unit_main(aid, a, yaw_override):
         return ob
     low = join(lows, aid)
     low['part_bones'] = bones
-    # one texel density over the whole unit: every part's layout is scaled as a BLOCK (x uv_boost: crew seen up
-    # close) and laid beside the others, so nothing overlaps except the exact instances inside authored parts;
-    # the single pack then keeps those stacked (`merge`), i.e. they go on sharing texels as authored
-    me = low.data
-    nl = len(me.loops)
-    uv = np.empty(nl * 2, np.float32); me.uv_layers.active.data.foreach_get('uv', uv); uv = uv.reshape(-1, 2).astype(np.float64)
-    me.calc_loop_triangles()
-    nt = len(me.loop_triangles)
-    tl = np.empty(nt * 3, np.int32); me.loop_triangles.foreach_get('loops', tl); tl = tl.reshape(-1, 3)
-    tp = np.empty(nt, np.int32); me.loop_triangles.foreach_get('polygon_index', tp)
-    ta = np.empty(nt, np.float32); me.loop_triangles.foreach_get('area', ta)
-    e1 = uv[tl[:, 1]] - uv[tl[:, 0]]; e2 = uv[tl[:, 2]] - uv[tl[:, 0]]
-    tu = 0.5 * np.abs(e1[:, 0] * e2[:, 1] - e1[:, 1] * e2[:, 0])
-    fk = get_attr(me, '_UVK', 'FACE')
-    fp = get_attr(me, '_PIECE', 'FACE').astype(np.int32)
-    lt = np.empty(len(me.polygons), np.int32); me.polygons.foreach_get('loop_total', lt)
-    lp = np.repeat(fp, lt)                               # piece index per loop
-    cursor = 0.0
-    for i in range(int(fp.max()) + 1):
-        tsel = fp[tp] == i; lsel = lp == i
-        if not lsel.any():
-            continue
-        dens = math.sqrt(max(float(tu[tsel].sum()), 1e-12) / max(float(ta[tsel].sum()), 1e-12))   # uv units per metre
-        k = float(fk[fp == i][0]) / dens
-        q = uv[lsel] * k
-        q[:, 0] += cursor - q[:, 0].min(); q[:, 1] -= q[:, 1].min()
-        cursor = q[:, 0].max() + 0.5
-        uv[lsel] = q
-    me.uv_layers.active.data.foreach_set('uv', uv.astype(np.float32).ravel())
-    me.attributes.remove(me.attributes['_UVK'])
-    me.uv_layers['UVMap'].active = True
-    L.select_only(low)
-    bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.select_all(action='SELECT')
-    # authored islands are not rotated: their tangent normal maps are copied texel for texel
-    pack_uv(0.0012 if cfg['tex'] >= 2048 else 0.003, merge=any_auth, rotate=not any_auth)
-    bpy.ops.object.mode_set(mode='OBJECT')
-    copies = []
-    for i, (pname, sp, high, authored) in enumerate(pieces):
-        if not authored:
-            continue
-        ob = dup(low, f'_copy_{pname}')
-        bm = bmesh.new(); bm.from_mesh(ob.data)
-        lay = bm.faces.layers.float.get('_PIECE')
-        bmesh.ops.delete(bm, geom=[f for f in bm.faces if int(round(f[lay])) != i], context='FACES')
-        bm.to_mesh(ob.data); bm.free()
-        copies.append((ob, high.data.materials[0]))
-    me.attributes.remove(me.attributes['_PIECE'])
-    me.uv_layers.remove(me.uv_layers['UVsrc'])
+    def layout(low, tex):
+        """Block-scale every piece to one texel density, pack once (stacked instances stay stacked), and return
+        the self-bake copy objects of the authored pieces [(object, source material)]."""
+        # one texel density over the whole unit: every part's layout is scaled as a BLOCK (x uv_boost: crew seen up
+        # close) and laid beside the others, so nothing overlaps except the exact instances inside authored parts;
+        # the single pack then keeps those stacked (`merge`), i.e. they go on sharing texels as authored
+        me = low.data
+        me.uv_layers['UVMap'].active = True
+        nl = len(me.loops)
+        uv = np.empty(nl * 2, np.float32); me.uv_layers.active.data.foreach_get('uv', uv); uv = uv.reshape(-1, 2).astype(np.float64)
+        me.calc_loop_triangles()
+        nt = len(me.loop_triangles)
+        tl = np.empty(nt * 3, np.int32); me.loop_triangles.foreach_get('loops', tl); tl = tl.reshape(-1, 3)
+        tp = np.empty(nt, np.int32); me.loop_triangles.foreach_get('polygon_index', tp)
+        ta = np.empty(nt, np.float32); me.loop_triangles.foreach_get('area', ta)
+        e1 = uv[tl[:, 1]] - uv[tl[:, 0]]; e2 = uv[tl[:, 2]] - uv[tl[:, 0]]
+        tu = 0.5 * np.abs(e1[:, 0] * e2[:, 1] - e1[:, 1] * e2[:, 0])
+        fk = get_attr(me, '_UVK', 'FACE')
+        fp = get_attr(me, '_PIECE', 'FACE').astype(np.int32)
+        lt = np.empty(len(me.polygons), np.int32); me.polygons.foreach_get('loop_total', lt)
+        lp = np.repeat(fp, lt)                               # piece index per loop
+        cursor = 0.0
+        for i in range(int(fp.max()) + 1):
+            tsel = fp[tp] == i; lsel = lp == i
+            if not lsel.any():
+                continue
+            dens = math.sqrt(max(float(tu[tsel].sum()), 1e-12) / max(float(ta[tsel].sum()), 1e-12))   # uv units per metre
+            k = float(fk[fp == i][0]) / dens
+            q = uv[lsel] * k
+            q[:, 0] += cursor - q[:, 0].min(); q[:, 1] -= q[:, 1].min()
+            cursor = q[:, 0].max() + 0.5
+            uv[lsel] = q
+        me.uv_layers.active.data.foreach_set('uv', uv.astype(np.float32).ravel())
+        me.attributes.remove(me.attributes['_UVK'])
+        me.uv_layers['UVMap'].active = True
+        L.select_only(low)
+        bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.select_all(action='SELECT')
+        # authored islands are not rotated: their tangent normal maps are copied texel for texel
+        pack_uv(0.0012 if tex >= 2048 else 0.003, merge=any_auth, rotate=not any_auth)
+        bpy.ops.object.mode_set(mode='OBJECT')
+        copies = []
+        for i, (pname, sp, high, authored) in enumerate(pieces):
+            if not authored:
+                continue
+            ob = dup(low, f'_copy_{pname}')
+            bm = bmesh.new(); bm.from_mesh(ob.data)
+            lay = bm.faces.layers.float.get('_PIECE')
+            bmesh.ops.delete(bm, geom=[f for f in bm.faces if int(round(f[lay])) != i], context='FACES')
+            bm.to_mesh(ob.data); bm.free()
+            copies.append((ob, high.data.materials[0]))
+        me.attributes.remove(me.attributes['_PIECE'])
+        me.uv_layers.remove(me.uv_layers['UVsrc'])
+        return copies
+    copies = layout(low, cfg['tex'])
     ray_highs = [h for _, _, h, au in pieces if not au] if copies else highs
     ext = a.get('cage', max(0.01, min(0.03, 0.012 * H)))
     with L.bake_device(f'cleanup {aid}'):
@@ -1168,7 +1177,14 @@ def unit_main(aid, a, yaw_override):
         # like everything else. Thin cloth first loses its lining faces and gets a slab towards the body; pieces
         # skinned with the body (caparison, bands) are fused into the body's hull, rigid ones get their own.
         highs1 = list(highs)
-        if any_auth:
+        b1 = a['lod1'] - sum(w['lod1'] for w in wl)
+        auth_tris = sum(L.tris(o) for o in lows1 if o['authored'])
+        keep_auth = any_auth and auth_tris <= 0.75 * b1   # a generous LOD1 keeps the authored pieces as they are (exact texel copy again)
+        if not keep_auth:
+            for o in lows1:
+                if 'UVsrc' in o.data.uv_layers:
+                    o.data.uv_layers.remove(o.data.uv_layers['UVsrc'])
+        if any_auth and not keep_auth:
             body1 = next((o for o in lows1 if not o['authored'] and not get_attr(o.data, '_PART').max() > 0), None)
             fuse = []
             for k, o in enumerate(list(lows1)):
@@ -1189,9 +1205,15 @@ def unit_main(aid, a, yaw_override):
                 body1 = join([body1] + fuse, body1.name)
                 for kk, vv in keepd.items():
                     body1[kk] = vv
-        b1 = a['lod1'] - sum(w['lod1'] for w in wl)
         t0 = [L.tris(o) for o in lows1]
+        if keep_auth:
+            b1 -= auth_tris; t0 = [0 if o['authored'] else t for o, t in zip(lows1, t0)]
         for o, t in zip(lows1, t0):
+            if keep_auth and o['authored']:
+                print(f'[cleanup] {o.name}: LOD1 keeps the authored piece ({L.tris(o)} tris)')
+                continue
+            pidx = float(get_attr(o.data, '_PIECE', 'FACE')[0]) if len(o.data.polygons) else 0.0
+            uvk = float(get_attr(o.data, '_UVK', 'FACE')[0]) if len(o.data.polygons) and '_UVK' in o.data.attributes else 1.0
             pv = get_attr(o.data, '_PART')
             part = float(pv.max()) if len(pv) else 0.0
             dsv = get_attr(o.data, '_DS', 'FACE')
@@ -1203,7 +1225,7 @@ def unit_main(aid, a, yaw_override):
             for attempt in range(5):                         # coarser voxels until the collapse reaches the budget
                 if not o['authored']:
                     rm = o.modifiers.new('rm', 'REMESH'); rm.mode = 'VOXEL'
-                    rm.voxel_size = dim / 150 * (1.5 ** attempt)
+                    rm.voxel_size = dim / (a.get('lod1_voxel_div') or (150 if a['lod1'] <= 4000 else 260)) * (1.5 ** attempt)   # a generous LOD1 (the low tier's hero mesh) keeps thin membranes
                     L.apply_mods(o); L.remove_floaters(o, 0.001)
                 for k in range(3):
                     n = decimate(o, budget)
@@ -1220,17 +1242,27 @@ def unit_main(aid, a, yaw_override):
                 o.data.polygons.foreach_set('material_index', np.full(len(o.data.polygons), mi, np.int32))
             for p in o.data.polygons:
                 p.use_smooth = True
+            if keep_auth:                                    # its own smart unwrap; the unit layout packs it with the authored pieces
+                for k in list(o.data.uv_layers):
+                    o.data.uv_layers.remove(k)
+                o.data.uv_layers.new(name='UVMap'); unwrap(o, 0.006)
+                o.data.uv_layers.new(name='UVsrc'); o.data.uv_layers['UVMap'].active = True
+                set_attr(o.data, '_PIECE', 'FACE', pidx); set_attr(o.data, '_UVK', 'FACE', uvk)
         l1 = join(lows1, f'{aid}_lod1')
         l1['part_bones'] = bones
-        for k in list(l1.data.uv_layers):
-            l1.data.uv_layers.remove(k)
-        if '_UVK' in l1.data.attributes:
-            l1.data.attributes.remove(l1.data.attributes['_UVK'])
-        if '_PIECE' in l1.data.attributes:
-            l1.data.attributes.remove(l1.data.attributes['_PIECE'])
-        l1.data.uv_layers.new(name='UVMap')
-        unwrap(l1, 0.006)
-        b1i, n1i, m1i, t1, c1 = bake_unit(highs1, l1, cfg['tex_lod1'], ext, any_auth)
+        if keep_auth:
+            copies1 = layout(l1, cfg['tex_lod1'])
+            b1i, n1i, m1i, t1, c1 = bake_unit(ray_highs, l1, cfg['tex_lod1'], ext, False, copies1)
+        else:
+            for k in list(l1.data.uv_layers):
+                l1.data.uv_layers.remove(k)
+            if '_UVK' in l1.data.attributes:
+                l1.data.attributes.remove(l1.data.attributes['_UVK'])
+            if '_PIECE' in l1.data.attributes:
+                l1.data.attributes.remove(l1.data.attributes['_PIECE'])
+            l1.data.uv_layers.new(name='UVMap')
+            unwrap(l1, 0.006)
+            b1i, n1i, m1i, t1, c1 = bake_unit(highs1, l1, cfg['tex_lod1'], ext, any_auth)
         for h in highs1:
             if h not in highs:
                 bpy.data.objects.remove(h, do_unlink=True)

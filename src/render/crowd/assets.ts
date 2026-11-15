@@ -252,7 +252,8 @@ export class UnitAssets {
 
   private async doUpgrade(arch: Archetype, modelId: string): Promise<boolean> {
     await this.manifestReady;
-    const e = this.entry(modelId, arch.key);
+    // the own model first; the newer Lords borrow the nearest existing one (Archetype.fallback) until theirs lands
+    const e = this.entry(modelId, arch.key, ...(arch.fallback ?? []));
     if (!e?.glb) return false;
     const t0 = performance.now();
     try {

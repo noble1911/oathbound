@@ -492,6 +492,17 @@ Team-coloured authored pieces of a hero (banners, shield faces) must be `parts` 
   (x `uv_boost`), packed once and baked in one pass from all the high meshes. LOD1 is rebuilt per piece (remesh at
   size / 150, authored pieces collapsed directly; the `lod1` budget is shared by triangle count), smart-projected
   and baked from the same high meshes at 512.
+* Authored pieces in the atlas: every piece's UV layout is scaled as a block to the unit's texel density and the
+  single pack keeps overlapping islands stacked (`merge_overlap`), so instances inside an authored part (mirrored
+  flanks, tassels, cloth linings) go on sharing texels. At LOD0 an authored piece is never ray-baked: its texels are
+  **copied** from its authoring UVs by a self-bake (`bake_unit(copies=)`; a ray cannot tell a cloth face from the
+  lining face lying in the same place), authored highs are left out of the ray bake (the body under a caparison
+  keeps its own skin) and authored islands are not rotated (tangent normal maps are copied as they are). LOD1 of
+  authored pieces is a voxel hull like every other piece: lining faces removed (`front_only`), a slab towards the
+  body, pieces skinned with the body fused into the body's hull, rigid ones their own hull.
+* `args.frame` on a builder part (`trappings_hook.py`) = `{"rig": true, "tilt": deg, "pivot": [x, y, z]}`: build the
+  part with the body in the rig frame of `creatures.json` (its `yaw` / `dx`) and / or pitched level about X through
+  `pivot` (the saddle of an upright wyvern / roc: tilt 50-60), then transform the part back.
 * Rigid pieces: the point attribute `_PART` (index + 1 into the object's `part_bones`) survives into the clean
   `.blend`; `rig.py: skin` (used by `creature.py` too) leaves those vertices out of the bone-heat proxy and
   weights them 100 % to their bone on both LODs. The bone must be a deform bone of the unit (`m_body`, `spine3`, ...).

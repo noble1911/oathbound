@@ -1,6 +1,7 @@
 // The server over real sockets, with the real v2 simulation (skipped while src/sim is not importable).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PlayerView, Vec2 } from '../src/sim/types.ts';
+import { FACTIONS, LORDS } from '../src/sim/index.ts';
 import type { RoomView } from '../src/net/protocol.ts';
 import { connect, makeRoom, sleep, type Client } from './server-helpers.ts';
 
@@ -54,11 +55,13 @@ describe('real sim', () => {
     // neither picks a Lord: the timer gives each a Lord of the faction they chose
     const p = await latestView(host, (r) => r.phase === 'planning');
     expect(p.view!.you!.faction).toBe('ashen');
-    expect(p.view!.you!.lord).toBe('lich');
+    // (any of the faction's four Lords, at random)
+    const myLord = p.view!.you!.lord!;
+    expect(FACTIONS.ashen.lords).toContain(myLord);
     expect(p.view!.enemy.faction).toBe('caliphate');
-    expect(p.view!.enemy.lord).toBe('sultana');
-    expect(p.view!.you!.unlocked).toEqual(['skeleton', 'grave_acolyte']);
-    expect(p.view!.you!.draftOptions).toEqual(['grave_knight', 'bone_archer', 'wraith_rider']);
+    expect(FACTIONS.caliphate.lords).toContain(p.view!.enemy.lord);
+    expect(p.view!.you!.unlocked).toEqual(LORDS[myLord].signature);
+    expect(p.view!.you!.draftOptions).toEqual(FACTIONS.ashen.basic.filter((u) => !LORDS[myLord].signature.includes(u)));
     for (const c of all) c.close();
   }, 15_000);
 

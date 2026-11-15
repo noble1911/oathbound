@@ -152,7 +152,7 @@ archive.org mirrors `sonniss-gdc-<year>-game-audio-bundle-normalized`. The exact
 
 ## Voices
 
-The six Lords speak: 18 short lines each (108 in all) (picked, the VS taunt, deploy, ready, the charge,
+The twelve Lords speak: 18 short lines each (216 in all) (picked, the VS taunt, deploy, ready, the charge,
 their ability, round won and lost, the keep under attack, legendary loot, match victory and defeat).
 
 - **Licence.** The Lord voices are outputs of **Breeze-TTS-2** (BreezeBlue, self-hosted in WSL), and fall
@@ -175,12 +175,13 @@ their ability, round won and lost, the keep under attack, legendary loot, match 
   ambience by half that) and the battle effects by 60 % of it. One line plays at a time: a higher
   priority cuts a lower one short, and anything else is dropped. Each (Lord, event) has a cooldown
   (deploy 4 s, keep 20 s, ability 6 s), and variants rotate without repeating. A Lord's lines are
-  fetched only once that Lord is in the match (150–360 KB per Lord; 1.46 MB for all six), and a line that has not
+  fetched only once that Lord is in the match (150–460 KB per Lord; about 3.6 MB for all twelve), and a line that has not
   arrived within 1.2 s is dropped.
 - **Test.** `tests/voice.test.ts` checks that every manifest line is shipped and the set stays under
-  2.3 MB.
+  4.6 MB.
 - **Checks.** Every take is scored by Whisper (small.en) against its script, plus pitch, duration and
-  clipping; `render.py verify` re-runs Whisper on the shipped clips. Of the 108 shipped clips, 103 match
+  clipping; `render.py verify` re-runs Whisper on the shipped clips. All 108 clips of the six newer Lords match their
+  script (render-time flags on 7 of them were pitch or length only, e.g. the Ossuary Warden's slow giant delivery). Of the first six Lords' 108 clips, 103 match
   the script. The other 5 are name or near-homophone misses ("Ione" as "I only", "Morthen" as "More than",
   "claw at" as "call it") or sub-second clips that Whisper mishears ("Placed" as "replaced", "Diving" as
   "Stiving"), all accepted by hand.
@@ -193,6 +194,12 @@ their ability, round won and lost, the keep under attack, legendary loot, match 
 | Skylady Ione | A young sky-rider captain: a bright, clear, energetic voice with a lively Irish accent. Fierce, quick and exhilarated | 53 |
 | Lich-Priest Morthen | An ancient undead priest: a dry, hollow, rasping voice, half-whispered yet resonant, cold and archaic. A faint crypt echo is added at build | 11 |
 | Sultana Zahira | A regal woman in her forties: a warm, rich, commanding mezzo with a light Arabic accent. Poised, proud and gracious | 53 |
+| Death Knight Vaelric | A cursed knight risen from the grave: a deep, iron-hard voice with a metallic rasp, as if from inside a closed helm; a hard northern English accent, slow and menacing | 37 |
+| Ossuary Warden Gorrath | A colossal giant of fused bone: an extremely deep, slow, cavernous bass, rumbling like grinding stone; short blunt words. A crypt echo is added at build | 67 |
+| Drake Rider Nyssara | An undead queen: a cold, silken, haunting low alto with a whispery chill and a refined eastern European accent; proud and cruel. A crypt echo is added at build | 41 |
+| Grand Vizier Kasim | An elderly court sorcerer: a thin, reedy, slightly nasal tenor with a Persian accent; sly, silky and theatrical | 11 |
+| Rajah Bahadur | A heavyset warlord in his sixties: a very deep, rumbling bass-baritone with a warm Indian accent; hearty and grand (the first design, a "booming, jovial" baritone, came out at 200 Hz and was redesigned) | 37 |
+| Roc Rider Amira | A young desert archer-warrior: a clear, keen, focused voice with a light Arabic accent; quick, calm and a little wry | 53 |
 
 ### Where the UI triggers each line
 
