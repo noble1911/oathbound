@@ -5,7 +5,7 @@
 // Coordinates are always field centimetres (see src/sim/types.ts): x in 0..8000, y in 0..12000,
 // facing as a 0..255 binary angle. The adapter turns the camera so the viewer's own Keep is at the
 // bottom of the screen (`setPerspective`).
-import type { DecodedReplay, LordId, Rarity, ReplayEvent, Seat, SkillEvent, SquadType, Terrain, Vec2 } from '../sim/types.ts';
+import type { DecodedReplay, LordId, Rarity, ReplayEvent, Seat, SkillEvent, SquadType, Terrain, Vec2, FactionId } from '../sim/types.ts';
 
 export type SceneMode = 'title' | 'lobby' | 'lordPick' | 'planning' | 'battle' | 'results';
 export type CameraMode = 'director' | 'free';
@@ -59,6 +59,8 @@ export interface SceneAdapter {
   setPerspective(seat: Seat | null): void;
   setTerrain(t: Terrain): void;
   setKeeps(hp: [number, number], max: [number, number]): void;
+  /** Each seat's faction (sim seats; null = not known yet): the renderer builds that faction's Keep and arrow towers. */
+  setFactions(f: [FactionId | null, FactionId | null]): void;
 
   // ---- planning
   /** Field cm under the pointer, or null when the pointer misses the field. */

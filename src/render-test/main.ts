@@ -113,6 +113,8 @@ const source = battle.source;
 const view = new BattleView(container, {
   quality: tier, terrain, keeps: battle.keeps, idleFps: Number(q.get('idle') ?? 0), seat: 0, pauseOnBlur: q.get('blur') !== '0',
   batterySaver: q.get('saver') === '1', fpsCap: Number(q.get('cap') ?? 0), artManifest: q.get('art') === '0' ? undefined : 'models/v2/manifest.json',
+  // &kf=ashen,caliphate: each seat's Keep (default: the Kingdom castle on both sides)
+  keepFactions: q.get('kf') ? (q.get('kf')!.split(',').concat(q.get('kf')!.split(',')).slice(0, 2) as ['kingdom', 'kingdom']) : undefined,
 });
 const fake = { decoded: battle.decoded, soldiers: battle.soldiers };
 // HUD insets (as the game's HUD sets them): &insets=top,bottom in CSS px

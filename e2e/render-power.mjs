@@ -12,7 +12,8 @@ const CHROME = [process.env.CHROME, 'C:/Program Files/Google/Chrome/Application/
 const THROTTLE = Number(process.env.THROTTLE || 4);
 const TIERS = (process.env.TIERS || 'low,medium,high,ultra,saver').split(',');
 /** REAL=big runs a real sim battle (fixture, ~250 soldiers) with the art pipeline's models. */
-const EXTRA = process.env.REAL ? `&real=${process.env.REAL}` : '';
+/** KF=ashen,caliphate picks each seat's faction Keep (default: the Kingdom castle on both sides). */
+const EXTRA = (process.env.REAL ? `&real=${process.env.REAL}` : '') + (process.env.KF ? `&kf=${process.env.KF}` : '');
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const errors = [];

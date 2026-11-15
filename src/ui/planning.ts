@@ -7,6 +7,7 @@
 // sell (press twice), Home reset the camera, Esc cancel. Spectators get a read-only version: both
 // Keeps, both last-round armies, no shop, no deploy badge.
 import type { Intent, Item, LordId, PlayerState, PlayerView, Seat, Slot, Squad, UnitType, Vec2 } from '../sim/types.ts';
+import { factionOfLord } from '../sim/data/factions.ts';
 import type { RoomView } from '../net/protocol.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { LORDS } from '../sim/data/lords.ts';
@@ -147,6 +148,10 @@ export class PlanningScreen {
     const mine = v.you ?? v.enemies?.[mySeat] ?? v.enemy;
     const foe = v.enemies?.[foeSeat] ?? v.enemy;
     this.scene.setKeeps(mySeat === 0 ? [mine.keepHp, foe.keepHp] : [foe.keepHp, mine.keepHp], mySeat === 0 ? [mine.keepMax, foe.keepMax] : [foe.keepMax, mine.keepMax]);
+    // each side's Keep is its faction's (the Lord implies it when no faction was picked explicitly)
+    const fMine = mine.faction ?? (mine.lord ? factionOfLord(mine.lord) : null);
+    const fFoe = foe.faction ?? (foe.lord ? factionOfLord(foe.lord) : null);
+    this.scene.setFactions(mySeat === 0 ? [fMine, fFoe] : [fFoe, fMine]);
     this.scene.showDeployZone(this.me && !this.me.ready ? mySeat : null);
     this.drawArmy();
 

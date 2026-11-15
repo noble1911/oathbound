@@ -1,4 +1,4 @@
-// Keep damage stages in the engine (stage0..3 of the art keep.glb), to check the cut caps / rubble shading.
+// Keep damage stages in the engine (stage0..3 of the faction keep_<faction>.glb), to check the cut caps / rubble shading.
 //   node e2e/anim-keep.mjs [tag]   -> e2e/shots/anim-audit/keep-<tag>.jpg   (starts and closes its own vite server)
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';

@@ -8,7 +8,7 @@ import { Director } from './camera/director.ts';
 import { UnitRenderer } from './crowd/units.ts';
 import { createHeroMaterial } from './crowd/vat.ts';
 import { archetypeFor } from './crowd/archetypes.ts';
-import { Battlefield, defaultTerrain } from './terrain/index.ts';
+import { Battlefield, defaultTerrain, type KeepArt, type KeepFaction } from './terrain/index.ts';
 import { Vfx } from './vfx/index.ts';
 import { SquadPlates, type PlateState } from './plates.ts';
 import { BattlePlayback, type NumberMode, type PlaybackHooks } from './battle-playback.ts';
@@ -25,6 +25,8 @@ export interface BattleViewOptions extends EngineOptions {
   seat?: 0 | 1;
   terrain?: Terrain;
   keeps?: KeepInfo[];
+  /** Each seat's faction: picks its Keep and arrow towers (default: the Kingdom's castle for both). */
+  keepFactions?: [KeepFaction, KeepFaction];
 }
 
 /** A squad as the planning screen knows it (sim `Squad` is compatible). */
@@ -77,7 +79,9 @@ export class BattleView {
   private playback: BattlePlayback | null = null;
   private army: { tf: SoldierTransforms; squads: number[]; ghosts: Set<number> } | null = null;
   private marchTick = 0;
-  private keepModel: THREE.Object3D | null = null;
+  private keepFactions: [KeepFaction, KeepFaction] = ['kingdom', 'kingdom'];
+  private keepArtLoads = new Map<string, Promise<KeepArt | null>>();
+  private hasArt = false;
   private artPropSet: Map<string, import('./crowd/assets.ts').PropAsset> | null = null;
   /** Art downloads so far: [{ model, ms, bytes }]. */
   get artLoads(): { model: string; ms: number; bytes: number }[] {
@@ -113,11 +117,11 @@ export class BattleView {
     this.camera.snap();
     if (opts.artManifest) {
       void this.units.assets.loadManifest(opts.artManifest);
-      // the keep is always on the field: fetch it right away (units load lazily per type present)
-      void this.units.assets.structure('keep').then((m) => {
-        this.keepModel = m;
-        if (m) this.field.setKeepModel(m);
-      });
+      // the keeps are always on the field: fetch them right away (units load lazily per type present)
+      this.hasArt = true;
+      if (opts.keepFactions) this.keepFactions = [...opts.keepFactions];
+      this.loadKeepArt();
+      this.engine.onQuality.add(() => this.loadKeepArt());
       // props (trees, rocks, ruins, bridge, towers, bushes, reeds) are always on the field
       void this.units.assets.props().then((p) => {
         this.artPropSet = p;
@@ -141,14 +145,49 @@ export class BattleView {
 
   setTerrain(t: Terrain, keeps?: KeepInfo[]): void {
     if (keeps) {
-      const km = this.keepModel;
       this.field.dispose();
       this.field = new Battlefield(this.engine, t, keeps);
-      if (km) this.field.setKeepModel(km);
+      this.loadKeepArt();
       if (this.artPropSet) this.field.setArtProps(this.artPropSet);
     } else this.field.setTerrain(t);
     this.syncKeeps();
     this.engine.wake();
+  }
+
+  /** Each seat's faction (engine seats: 0 = blue, near side): swaps in that faction's Keep and arrow towers. */
+  setKeepFactions(f: [KeepFaction, KeepFaction]): void {
+    if (f[0] === this.keepFactions[0] && f[1] === this.keepFactions[1]) return;
+    this.keepFactions = [f[0], f[1]];
+    this.loadKeepArt();
+  }
+
+  /**
+   * Fetch (once per faction) and apply the Keep art. The low tier loads only the LOD1 files; the
+   * others load both and switch by distance.
+   */
+  private loadKeepArt(): void {
+    if (!this.hasArt) return;
+    const low = this.engine.quality.tier === 'low';
+    const A = this.units.assets;
+    for (const seat of [0, 1] as const) {
+      const f = this.keepFactions[seat];
+      const key = `${f}|${low ? 'far' : 'full'}`;
+      let p = this.keepArtLoads.get(key);
+      if (!p) {
+        p = Promise.all([
+          low ? null : A.structure(`keep_${f}`),
+          A.structure(`keep_${f}`, true),
+          low ? null : A.structure(`arrow_tower_${f}`),
+          A.structure(`arrow_tower_${f}`, true),
+        ]).then(([near, far, towerNear, towerFar]): KeepArt | null => (near || far ? { faction: f, near, far, towerNear, towerFar } : null));
+        this.keepArtLoads.set(key, p);
+      }
+      void p.then((art) => {
+        // still the wanted faction and tier when it arrives?
+        if (this.keepFactions[seat] !== f || (this.engine.quality.tier === 'low') !== low) return;
+        this.field.setKeepArt(seat, art);
+      });
+    }
   }
 
   private syncKeeps(): void {

@@ -8,7 +8,7 @@ Review renders and the pilot write-up are in `docs/art-review/`.
 ## 1. Commands
 
 ```
-node tools/art/run.mjs militia,knight,keep              # every stage for these ids (+ held weapons, rider/mount parts)
+node tools/art/run.mjs militia,knight,keep_kingdom              # every stage for these ids (+ held weapons, rider/mount parts)
 node tools/art/run.mjs knight --from cleanup --to vat   # re-run part of the chain
 node tools/art/concept.mjs militia --n 4 --force        # more concept candidates only
 node tools/art/manifest.mjs                             # rebuild public/models/v2/manifest.json
@@ -100,11 +100,11 @@ override the defaults in `mesh.mjs` (the q8 set only ships the 512 flows); `BLEN
   can no longer ship as a rigid block.
 * **Siege** (rigid nodes, NLA clips `idle, fire, reload, hit, death`; manifest `fireTime` = projectile release):
   ballista `body`, `bolt`; trebuchet `frame`, `arm` (pivot at axle), `rope`, `stone`.
-* **Keep** `keep.glb`: root with children `stage0` (intact) .. `stage3` (ruin); show exactly one. Cuts are a
-  seeded noise surface (vertices above it removed, holes capped with `Rubble`), plus a rubble skirt.
+* **Keep** `keep_<faction>.glb` (+ `_lod1.glb`), one per faction (`kingdom`, `ashen`, `caliphate`): root with
+  children `stage0` (intact) .. `stage3` (ruin); show exactly one. Built from geometry, not TRELLIS: section 9.
 * **Props** (manifest `props`): static, one mesh, LOD0 + LOD1 (`<id>_lod1.glb`), 512² atlas (LOD1 256²),
-  origin at the base centre (rocks, ruins, arrow tower; vegetation and bridges are procedural, section 7). (The former art `bridge` spanned three.js **Z**, 8 m long x 4 m wide,
-  non-uniform fit); `arrow_tower` (7 m) carries a team-tinted banner.
+  origin at the base centre (rocks, ruins; vegetation and bridges are procedural, section 7). (The former art `bridge` spanned three.js **Z**, 8 m long x 4 m wide,
+  non-uniform fit.) Arrow towers are no longer props: `arrow_tower_<faction>` structures, section 9.
 * **Metalness**: TRELLIS paints stone and cloth with mid metalness; cleanup keeps metal only where the bake is
   clearly metal (`smoothstep(0.5, 0.8, m)`), so stone/wood/cloth are ~0.
 * **Squad albedo** is lifted (`rgb^0.8 * 1.1`, crowd atlas another `^0.85 * 1.08`) so units read at RTS distance.
@@ -246,7 +246,10 @@ Licences (all **CC0 1.0**, polyhaven.com): textures `sparse_grass`, `forest_leav
   stay procedural.
 * **Keep footprint contract**: the sim's siege constants (`KEEP_FRONT`, `KEEP_HALF_W`, `TOWER_FRONT` in
   `src/sim/battle.ts`) are measured from the art Keep as the renderer places it (front wall 3.4 m in front of
-  the sim keep point, 18.2 m wide). Re-measure them if `keep.glb` or `terrain/keep.ts` placement changes.
+  the sim keep point, 18.2 m wide). Every faction Keep is built to that footprint (x +-9.1 m, z +-9.4 m) and the
+  renderer uses one fixed body box for all of them (`ART_BOX` in `terrain/keep.ts`: the camera floor, the view
+  fades and the hit points never depend on a model's spires). Re-measure the constants if that box or the
+  placement in `terrain/keep.ts` changes.
 
 ## 8. Factions: the Ashen Covenant and the Sun Caliphate
 
@@ -346,3 +349,61 @@ Portraits: Ashen 558 KB, Caliphate 625 KB. Runtime = crowd GLB + VAT + tint mask
 * The elephant's howdah crew, the catapult's counterweight cage and every cape / mantle are rigid or skinned to the
   nearest bones; a caster's raised arm drags the mantle with it.
 * The corpse catapult's concept shows the arm released (counterweight down); it fires from that pose.
+
+## 9. Keeps and arrow towers (real geometry, tiling materials)
+
+The TRELLIS Keep (one blurry 1024 atlas on a 15k blob, the same castle for every faction) is gone. Each faction
+has its own Keep and arrow tower, modelled procedurally in headless Blender and textured with tiling CC0 scans.
+
+```
+node tools/art/keep.mjs [kingdom,ashen,caliphate] [--tex [--fetch]] [--noao]   # textures, geometry, pack, manifest
+python tools/art/keep_tex.py [--fetch]                                         # public/textures/keep/ only
+node e2e/keep-shots.mjs <tag> [factions]                                       # e2e/shots/keep-<tag>-<faction>-<cam>-s<stage>-<w>x<h>.png
+```
+
+| file | role |
+|---|---|
+| `tools/art/blender/keep_kit.py` | the architecture kit: gridded walls with real niches (arrow slits, arched windows, gates), round / faceted shafts, machicolated battlements (corbels, parapet, merlons: square, coped, stepped, spiked), coursed cone / hip roofs, domes, lathes, sweeps (ribs, horns), buttress extrusions, banners, flags, flames, rocks, rubble; vertex AO + weathering; the damage cut |
+| `tools/art/blender/keep_build.py` | the Kingdom design, the build / export loop; `keep_ashen.py`, `keep_caliphate.py`: the other two designs |
+| `tools/art/keep_tex.py` | grades the scans into one albedo strip + one normal strip per faction (8 layers of 512 px) and draws the banner |
+| `src/render/terrain/keep-art.ts` | texture arrays, the two materials, per-layer roughness / metalness / glow |
+| `src/render/terrain/keep.ts` | `Keep.useArt`: LODs, stages, fades, the ground-contact mesh |
+
+**Geometry contract.** `keep_<faction>.glb`: root -> `stage0..stage3`, each ONE mesh with two primitives, materials
+`keep` and `cloth` (untextured in the file). `arrow_tower_<faction>.glb`: one mesh, same two materials, about 3.9 m
+wide, arrow platform at 6 m (the shot leaves at 6.07 m), no stages. Both have a `_lod1.glb` (coarser grids, no
+single corbels / courtyard props / window bars). The model faces +Z, origin at the ground centre, the plinth
+reaches 1.8 m below ground.
+* `TEXCOORD_0` carries the material: `u = local u + 8 * layer + 4` (`|local u| < 4`), layers `0 wall, 1 trim,
+  2 roof, 3 wood, 4 metal, 5 accent, 6 floor, 7 plain, 8 glow` (glow = unlit emissive in the vertex colour:
+  windows, torches, soul-fire). UVs are world-scale (`TILE` metres per repeat), so the scans never stretch.
+* `COLOR_0` = tint x baked ambient occlusion (18 cosine rays per vertex against the model and the ground,
+  3.2 m) x weathering (large blotches, dirt and damp towards the ground, moss, soot under a break). Cloth: red =
+  sway weight.
+* `pack.mjs` packs these with `-kv -vt 16` (gltfpack drops the UVs of untextured materials otherwise, and its
+  default 12-bit UV grid smeared the textures on small faces).
+* **Damage stages.** Every part is a *piece*: small ones (merlons, corbels, banners, finials) vanish whole when
+  their anchor is above the stage's cut surface (noise + tilt + per-design dips and standing fragments), solid
+  masonry is bisected by a tilted plane and capped, hollow masses (towers, halls, roofs, domes: `hollow=(wall,
+  depth)`) get a wall-thick broken rim around a dark interior with fallen rubble. Rims are stepped down by whole
+  courses. Stage N = `cuts[N]` of the design + its `damage()` rubble.
+
+**Materials in the engine.** One draw for all masonry: a `MeshStandardMaterial` patched to sample two
+`sampler2DArray`s (albedo sRGB, normal) by layer, with per-layer roughness / metalness; the low tier compiles
+without the normal maps and never downloads them. A second draw for cloth: `<faction>_banner.webp` (RGB cloth,
+A = 128 + team mask x 127; `albedo *= mix(1, teamColor, mask)`), double-sided, swaying in the shared wind (it only
+moves while frames are drawn anyway). Each Keep and each arrow tower owns its material pair (they fade
+separately when they block the view); programs and textures are shared.
+* **LOD**: low loads only the `_lod1` files; the other tiers load both and switch at 92 m (back at 80 m), so
+  in planning the own Keep is LOD0 and the far one LOD1.
+* **Faction**: `BattleView.setKeepFactions([seat0, seat1])` (option `keepFactions`); the UI feeds it from the
+  match view (planning) and from the replay's army (battle) through `SceneAdapter.setFactions`. Until the files
+  arrive (or without a manifest) the procedural castle of `terrain/keep.ts` stands in.
+* **Ground contact**: a draped vertex-alpha mesh darkens the dirt towards the plinth and under each tower.
+
+Texture sources (all **CC0 1.0**, polyhaven.com; 1k maps graded by `keep_tex.py`): `medieval_blocks_03`,
+`sandstone_blocks_08`, `sandstone_blocks_05`, `stone_wall_04`, `grey_roof_tiles_02`, `metal_plate_02`,
+`rusty_metal_04`, `weathered_planks`, `medieval_wall_01`, `cobblestone_floor_08`. The Caliphate's glazed roof
+tile and star tilework are generated in `keep_tex.py`. Banner emblems and the three concept sheets
+(`docs/art-review/keep/`): Codex CLI / OpenAI image generation (outputs owned by the user per OpenAI terms).
+

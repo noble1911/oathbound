@@ -1581,32 +1581,6 @@
    },
    "totalBytes": 1561799
   },
-  "keep": {
-   "kind": "structure",
-   "scale": 1,
-   "height": 16,
-   "glb": "keep.glb",
-   "nodes": [
-    "stage0",
-    "stage1",
-    "stage2",
-    "stage3"
-   ],
-   "stages": "show exactly one child: stage0 intact .. stage3 ruin (HP thresholds are the client's call)",
-   "tris": {
-    "lod0": [
-     14774,
-     13911,
-     8417,
-     4438
-    ],
-    "lod1": null
-   },
-   "bytes": {
-    "keep.glb": 1296236
-   },
-   "totalBytes": 1296236
-  },
   "grave_knight": {
    "kind": "humanoid",
    "scale": 1,
@@ -3124,6 +3098,153 @@
     "djinn_team.png": 25060
    },
    "totalBytes": 2676063
+  },
+  "keep_kingdom": {
+   "kind": "structure",
+   "scale": 1,
+   "height": 16,
+   "glb": "keep_kingdom.glb",
+   "lod1": "keep_kingdom_lod1.glb",
+   "nodes": [
+    "stage0",
+    "stage1",
+    "stage2",
+    "stage3"
+   ],
+   "stages": "show exactly one child: stage0 intact .. stage3 ruin (HP thresholds are the client's call)",
+   "tris": {
+    "lod0": [
+     18994,
+     17248,
+     14285,
+     9732
+    ],
+    "lod1": [
+     7424,
+     6780,
+     5894,
+     4315
+    ]
+   },
+   "bytes": {
+    "keep_kingdom.glb": 1079816,
+    "keep_kingdom_lod1.glb": 494336
+   },
+   "totalBytes": 1574152
+  },
+  "arrow_tower_kingdom": {
+   "kind": "structure",
+   "scale": 1,
+   "height": 7.06,
+   "glb": "arrow_tower_kingdom.glb",
+   "lod1": "arrow_tower_kingdom_lod1.glb",
+   "tris": {
+    "lod0": 1156,
+    "lod1": 520
+   },
+   "bytes": {
+    "arrow_tower_kingdom.glb": 24156,
+    "arrow_tower_kingdom_lod1.glb": 13904
+   },
+   "totalBytes": 38060
+  },
+  "keep_ashen": {
+   "kind": "structure",
+   "scale": 1,
+   "height": 16,
+   "glb": "keep_ashen.glb",
+   "lod1": "keep_ashen_lod1.glb",
+   "nodes": [
+    "stage0",
+    "stage1",
+    "stage2",
+    "stage3"
+   ],
+   "stages": "show exactly one child: stage0 intact .. stage3 ruin (HP thresholds are the client's call)",
+   "tris": {
+    "lod0": [
+     22550,
+     21925,
+     19530,
+     15111
+    ],
+    "lod1": [
+     7766,
+     7186,
+     6783,
+     5428
+    ]
+   },
+   "bytes": {
+    "keep_ashen.glb": 1365436,
+    "keep_ashen_lod1.glb": 553460
+   },
+   "totalBytes": 1918896
+  },
+  "arrow_tower_ashen": {
+   "kind": "structure",
+   "scale": 1,
+   "height": 7.06,
+   "glb": "arrow_tower_ashen.glb",
+   "lod1": "arrow_tower_ashen_lod1.glb",
+   "tris": {
+    "lod0": 2082,
+    "lod1": 748
+   },
+   "bytes": {
+    "arrow_tower_ashen.glb": 39628,
+    "arrow_tower_ashen_lod1.glb": 18900
+   },
+   "totalBytes": 58528
+  },
+  "keep_caliphate": {
+   "kind": "structure",
+   "scale": 1,
+   "height": 16,
+   "glb": "keep_caliphate.glb",
+   "lod1": "keep_caliphate_lod1.glb",
+   "nodes": [
+    "stage0",
+    "stage1",
+    "stage2",
+    "stage3"
+   ],
+   "stages": "show exactly one child: stage0 intact .. stage3 ruin (HP thresholds are the client's call)",
+   "tris": {
+    "lod0": [
+     18434,
+     17104,
+     12021,
+     8396
+    ],
+    "lod1": [
+     9059,
+     8581,
+     5866,
+     3788
+    ]
+   },
+   "bytes": {
+    "keep_caliphate.glb": 1008820,
+    "keep_caliphate_lod1.glb": 543472
+   },
+   "totalBytes": 1552292
+  },
+  "arrow_tower_caliphate": {
+   "kind": "structure",
+   "scale": 1,
+   "height": 7.06,
+   "glb": "arrow_tower_caliphate.glb",
+   "lod1": "arrow_tower_caliphate_lod1.glb",
+   "tris": {
+    "lod0": 1218,
+    "lod1": 761
+   },
+   "bytes": {
+    "arrow_tower_caliphate.glb": 25572,
+    "arrow_tower_caliphate_lod1.glb": 18632
+   },
+   "totalBytes": 44204
   }
  },
  "props": {
@@ -3186,23 +3307,6 @@
     "ruins_column_lod1.glb": 53716
    },
    "totalBytes": 261060
-  },
-  "arrow_tower": {
-   "kind": "prop",
-   "height": 7,
-   "glb": "arrow_tower.glb",
-   "lod1": "arrow_tower_lod1.glb",
-   "tintMask": "arrow_tower_team.png",
-   "tris": {
-    "lod0": 3940,
-    "lod1": 1182
-   },
-   "bytes": {
-    "arrow_tower.glb": 260344,
-    "arrow_tower_lod1.glb": 75088,
-    "arrow_tower_team.png": 2111
-   },
-   "totalBytes": 337543
   }
  }
 }

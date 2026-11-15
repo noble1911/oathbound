@@ -13,7 +13,7 @@
 // mirror), so "my army is blue and at the bottom" holds for both seats. Everything crossing this
 // seam is mapped (`in*` towards the engine, `out*` back); the screens only ever see sim coordinates.
 import * as THREE from 'three';
-import type { DecodedReplay, ReplayEvent, Seat, SkillEvent, Terrain, Vec2 } from '../sim/types.ts';
+import type { DecodedReplay, FactionId, ReplayEvent, Seat, SkillEvent, Terrain, Vec2 } from '../sim/types.ts';
 import { sampleReplay, makeTransforms } from '../sim/index.ts';
 import { BattleView, replaySource, type ArmySquad } from '../render/index.ts';
 import type { CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual } from './scene-adapter.ts';
@@ -35,6 +35,8 @@ export class EngineScene implements SceneAdapter {
   private spectator = false;
   private mode: SceneMode = 'title';
   private terrainSeed = -1;
+  /** Each sim seat's faction (its Keep and arrow towers). */
+  private factions: [FactionId, FactionId] = ['kingdom', 'kingdom'];
   private army: SquadVisual[] = [];
   private ghosts: SquadVisual[] | null = null;
   private ghostIds = new Set<number>();
@@ -119,6 +121,7 @@ export class EngineScene implements SceneAdapter {
     this.flip = s === 1;
     // the engine always looks from seat 0's end; a seat-1 viewer's world is rotated instead
     this.syncHomeFar();
+    this.syncFactions();
     this.rebuild();
   }
 
@@ -127,6 +130,19 @@ export class EngineScene implements SceneAdapter {
     this.terrainSeed = t.seed;
     // the field is its own half-turn mirror, so the same features serve both viewers
     this.view.setTerrain(t);
+  }
+
+  setFactions(f: [FactionId | null, FactionId | null]): void {
+    const next: [FactionId, FactionId] = [f[0] ?? this.factions[0], f[1] ?? this.factions[1]];
+    if (next[0] === this.factions[0] && next[1] === this.factions[1]) return;
+    this.factions = next;
+    this.syncFactions();
+  }
+
+  /** The engine's seat 0 (blue, near side) is the viewer: hand each engine seat its sim seat's faction. */
+  private syncFactions(): void {
+    const f = this.factions;
+    this.view.setKeepFactions(this.flip ? [f[1], f[0]] : [f[0], f[1]]);
   }
 
   setKeeps(hp: [number, number], max: [number, number]): void {

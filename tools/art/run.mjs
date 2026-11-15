@@ -1,8 +1,8 @@
 // AI art pipeline driver. Stages per id (docs/ART.md):
 //   concept (Codex image gen + BiRefNet matte, WSL) -> mesh (TRELLIS.2) -> cleanup (Blender) ->
-//   build: rig.py (humanoids, golem) | creature.py (dragon, mounted units) | keep.py | siege.py ->
+//   build: rig.py (humanoids, golem) | creature.py (dragon, mounted units) | siege.py (faction Keeps: keep.mjs) ->
 //   vat (squads: crowd mesh + VAT) -> review renders -> manifest
-//   node tools/art/run.mjs militia,knight,keep [--from cleanup] [--to vat] [--n 2] [--force]
+//   node tools/art/run.mjs militia,knight,keep_kingdom [--from cleanup] [--to vat] [--n 2] [--force]
 // Dependencies (held weapons, rider/mount parts) are built first automatically. Stages run one at a time
 // (GPU jobs must not overlap on a 16 GB card).
 import { spawnSync } from 'node:child_process';
@@ -47,6 +47,14 @@ const deps = (i) => [...(assets[i]?.weapons ?? []).map((w) => w[0]), ...(assets[
 const ids = [];
 const visit = (i) => { if (ids.includes(i)) return; deps(i).forEach(visit); ids.push(i); };
 want.forEach(visit);
+// faction Keeps / arrow towers are built from geometry (no concept / mesh / cleanup): keep.mjs does their whole chain
+const keepIds = ids.filter((i) => assets[i]?.builder === 'keep_build.py');
+if (keepIds.length) {
+  const factions = [...new Set(keepIds.map((i) => i.replace(/^(keep|arrow_tower)_/, '')))];
+  run(process.execPath, [join(here, 'keep.mjs'), factions.join(',')], `keep ${factions}`);
+  for (const i of keepIds) ids.splice(ids.indexOf(i), 1);
+  if (!ids.length) process.exit(failed ? 1 : 0);
+}
 const composite = (a) => !!a.rider || a.id === 'dragon' || !!a.creature;   // `creature`: a standalone creature.py build (bone drake, war elephant)
 const need = (s) => STAGES.indexOf(s) >= from && STAGES.indexOf(s) <= to;
 const sourced = ids.filter((i) => !assets[i].rider && !assets[i].procedural);    // ids with their own concept + mesh
@@ -65,7 +73,6 @@ for (const id of ids) {
     if (a.builder) ok = blender(a.builder, [id], `${a.builder} ${id}`);     // per-asset builder (faction.py wraps rig.py / creature.py)
     else if (composite(a)) ok = blender('creature.py', [id], `creature ${id}`);
     else if (a.kind === 'humanoid' || (a.clipset && (a.style ?? 'character') === 'character')) ok = blender('rig.py', [id], `rig ${id}`);
-    else if (a.kind === 'structure') ok = blender('keep.py', [id], `keep ${id}`);
     else if (a.kind === 'siege') ok = blender('siege.py', [id], `siege ${id}`);
     if (!ok) continue;
   }

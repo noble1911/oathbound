@@ -35,7 +35,9 @@ for (const f of readdirSync(OUT).filter((x) => x.endsWith('.glb'))) {
   const out = join(OUT, f), raw = join(RAW, f);
   if (isPacked(out)) continue;                             // already packed (rebuilds write unpacked files)
   copyFileSync(out, raw);
-  const r = spawnSync('npx', ['-y', GLTFPACK, '-i', raw, '-o', out, '-cc', '-kn', '-km', '-ke', '-vtf'],
+  // faction Keeps / arrow towers have untextured materials (the renderer binds texture arrays; the layer rides in the UV): keep their UVs
+  const keepUv = /^(keep|arrow_tower)_/.test(id) ? ['-kv', '-vt', '16'] : [];
+  const r = spawnSync('npx', ['-y', GLTFPACK, '-i', raw, '-o', out, '-cc', '-kn', '-km', '-ke', '-vtf', ...keepUv],
     { shell: process.platform === 'win32', encoding: 'utf8' });
   if (r.status !== 0) { console.error(`${f}: gltfpack failed\n${r.stderr}`); copyFileSync(raw, out); continue; }
   before += statSync(raw).size; after += statSync(out).size;

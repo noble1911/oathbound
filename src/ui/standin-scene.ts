@@ -443,6 +443,10 @@ export class StandInScene implements SceneAdapter {
     this.rocks.instanceMatrix.needsUpdate = true;
   }
 
+  setFactions(): void {
+    // the stand-in draws one plain keep for every faction
+  }
+
   setKeeps(hp: [number, number], max: [number, number]): void {
     this.wake();
     this.keepHp = hp;

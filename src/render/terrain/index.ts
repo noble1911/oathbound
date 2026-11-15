@@ -18,15 +18,17 @@ import { Water } from './water.ts';
 import { Foliage } from './foliage.ts';
 import { Props } from './props.ts';
 import { bakeTreeShadow, bakedShadowUniforms } from './baked-shadow.ts';
-import { ArtProps, tintedPropMaterial } from './art-props.ts';
+import { ArtProps } from './art-props.ts';
 import { CanopyGrid } from './canopy.ts';
 import { loadGround, setGroundAnisotropy } from './env-textures.ts';
 import type { PropAsset } from '../crowd/assets.ts';
-import { Keep, keepMaterials, type KeepView } from './keep.ts';
+import { Keep, keepMaterials, type KeepArt, type KeepView } from './keep.ts';
+import { setKeepAnisotropy, setKeepGlowScale } from './keep-art.ts';
 import { ZONES, buildCurtain, overlayUniforms } from './overlay.ts';
 import { mulberry32 } from './noise.ts';
 
-export type { KeepView } from './keep.ts';
+export type { KeepArt, KeepView } from './keep.ts';
+export { KEEP_FACTIONS, type KeepFaction } from './keep-art.ts';
 export { WATER_LEVEL, TEAM_COLORS } from './layout.ts';
 
 export interface PlanningOverlay {
@@ -84,7 +86,8 @@ export class Battlefield {
       const keep = new Keep(e, this.hf, k, mats);
       this.keeps[k.seat] = keep;
       this.group.add(keep.group);
-      if (this.keepModel) keep.useModel(this.keepModel);
+      const art = this.keepArt[k.seat];
+      if (art) keep.useArt(art, e.quality.tier !== 'low');
     }
     if (this.art) this.buildArt();
     this.curtains = ZONES.map((z, i) => {
@@ -125,6 +128,9 @@ export class Battlefield {
     this.engine.markShadows();
     this.water.setReflection(q.waterReflection);
     setAnisotropy(this.tex, q.anisotropy);
+    setKeepAnisotropy(q.anisotropy);
+    setKeepGlowScale(q.post);
+    for (const k of this.keeps) k?.setArtNormals(q.tier !== 'low');
     this.engine.wake();
   }
 
@@ -146,7 +152,7 @@ export class Battlefield {
   raycast(ray: THREE.Ray): THREE.Vector3 | null {
     return this.hf.raycast(ray);
   }
-  private keepModel: THREE.Object3D | null = null;
+  private keepArt: (KeepArt | null)[] = [null, null];
   private art: Map<string, PropAsset> | null = null;
   private canopy = new CanopyGrid();
 
@@ -245,7 +251,6 @@ export class Battlefield {
     }
   }
   private artProps: ArtProps | null = null;
-  private towerGeo: THREE.BufferGeometry | null = null;
 
   /** Use the art pipeline's props (manifest `props`) instead of the procedural ones (kept across setTerrain). */
   setArtProps(art: Map<string, PropAsset>): void {
@@ -257,25 +262,13 @@ export class Battlefield {
     const art = this.art!;
     this.artProps?.dispose();
     this.artProps = new ArtProps({ engine: this.engine, hf: this.hf, props: this.props.group }, art);
-    const tower = art.get('arrow_tower');
-    if (tower) {
-      const b = tower.lod0.box;
-      if (!this.towerGeo) {
-        this.towerGeo = tower.lod0.geometry.clone().translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
-        this.towerGeo.computeBoundingSphere();
-      }
-      for (const k of this.keeps) {
-        if (!k) continue;
-        const mat = tintedPropMaterial(this.engine, tower.lod0.material, tower.tintMap, new THREE.Color(TEAM_COLORS[k.seat]));
-        k.useTowerModel(this.towerGeo, mat, b.max.y - b.min.y);
-      }
-    }
     this.applyQuality(this.engine.quality);
   }
-  /** Use the art keep (keep.glb) for both castles (kept across setTerrain). */
-  setKeepModel(model: THREE.Object3D | null): void {
-    this.keepModel = model;
-    for (const seat of [0, 1] as const) this.keep(seat).useModel(model);
+  /** A seat's Keep and arrow towers in its faction's art (kept across setTerrain); null = the procedural castle. */
+  setKeepArt(seat: 0 | 1, art: KeepArt | null): void {
+    if (this.keepArt[seat] === art) return;
+    this.keepArt[seat] = art;
+    this.keeps[seat]?.useArt(art, this.engine.quality.tier !== 'low');
     this.rebuildCanopy();
   }
 

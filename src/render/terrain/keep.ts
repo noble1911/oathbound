@@ -13,6 +13,7 @@ import { TEAM_COLORS } from './layout.ts';
 import { mulberry32, vnoise } from './noise.ts';
 import type { TerrainTextures } from './textures.ts';
 import { bare, boxPiece, boxUV, cylPiece, cylUV, merge, tint } from './build.ts';
+import { keepArtMaterials, setKeepNormals, type KeepFaction, type KeepMaterials } from './keep-art.ts';
 
 export interface KeepView {
   readonly seat: 0 | 1;
@@ -28,14 +29,45 @@ export interface KeepView {
   /** 0 intact … 4 destroyed. */
   setStage(stage: number): void;
   readonly stage: number;
-  /** Replace the procedural castle with the art keep (child nodes stage0..stage3). */
-  useModel(model: THREE.Object3D | null): void;
+  /** Replace the procedural castle and arrow towers with a faction's art (null: back to procedural). */
+  useArt(art: KeepArt | null, normals: boolean): void;
   /** World box of the castle body (walls / corner towers; not the arrow towers out in the field). */
   bodyBox(out?: THREE.Box3): THREE.Box3;
   /** Opacity of the castle body (0) or arrow tower i + 1: 1 = solid, < 1 = see-through ghost. */
   setFade(part: number, alpha: number): void;
-  /** Replace the procedural arrow towers with the art tower (geometry base at y=0, team material). */
-  useTowerModel(geometry: THREE.BufferGeometry | null, material: THREE.Material | null, height: number): void;
+}
+
+/** A faction's Keep art as loaded from the manifest (`keep_<faction>`, `arrow_tower_<faction>`). */
+export interface KeepArt {
+  faction: KeepFaction;
+  /** Roots with child nodes stage0..stage3 (show exactly one). `far` is LOD1; the low tier loads only that. */
+  near: THREE.Object3D | null;
+  far: THREE.Object3D | null;
+  towerNear: THREE.Object3D | null;
+  towerFar: THREE.Object3D | null;
+}
+
+/**
+ * The castle body as the camera, the fades and the hit points see it: the old Keep's box, whatever the
+ * model (spires and flags above 16 m never push the camera up; the sim's siege constants assume this footprint).
+ */
+const ART_BOX = new THREE.Box3(new THREE.Vector3(-9.13, 0, -9.44), new THREE.Vector3(9.13, 16, 9.44));
+/** Arrow-tower art height (the shot leaves at 86 % of it). */
+const ART_TOWER_H = 7.06;
+/** Beyond this distance (metres, with hysteresis) a Keep draws its LOD1. */
+const LOD_FAR = 92;
+const LOD_NEAR = 80;
+
+interface ArtLod {
+  root: THREE.Object3D;
+  stages: THREE.Object3D[];
+}
+interface ArtState {
+  faction: KeepFaction;
+  lods: ArtLod[];
+  mats: KeepMaterials;
+  towers: { lods: THREE.Object3D[]; mats: KeepMaterials }[];
+  lod: number;
 }
 
 type MatKey = 'stone' | 'roof' | 'cloth' | 'wood' | 'glow';
@@ -61,11 +93,15 @@ export class Keep implements KeepView {
   private team: THREE.Color;
   private gold = new THREE.Color('#d9a93a');
   private readonly engine: Engine;
-  private model: { root: THREE.Object3D; stages: THREE.Object3D[]; box: THREE.Box3 } | null = null;
+  private art: ArtState | null = null;
+  private readonly hf: Heightfield;
+  /** Soft occlusion the castle body and the towers lay on the ground around their feet (art only). */
+  private contact: THREE.Mesh | null = null;
 
   constructor(engine: Engine, hf: Heightfield, place: KeepPlace, mats: Record<MatKey, THREE.Material>) {
     this.seat = place.seat;
     this.engine = engine;
+    this.hf = hf;
     this.rnd = mulberry32(911 + place.seat);
     this.team = new THREE.Color(TEAM_COLORS[place.seat]);
     const cz = place.z - place.dir * 6;
@@ -382,99 +418,154 @@ export class Keep implements KeepView {
 
   // ---------------------------------------------------------------- API
 
-  private towerMeshes: THREE.Mesh[] = [];
   private towerBase: THREE.Vector3[] | null = null;
-  useTowerModel(geometry: THREE.BufferGeometry | null, material: THREE.Material | null, height: number): void {
-    for (const m of this.towerMeshes) this.group.remove(m);
-    this.towerMeshes = [];
-    this.towerBase ??= this.towers.map((t) => t.clone().setY(t.y - 7.6));
-    const art = !!(geometry && material);
-    for (const b of this.buckets) if (b.tower) b.mesh.visible = !art && this.stage >= b.show && this.stage < b.hide;
-    this.towerArt = art;
-    this.towerBase.forEach((base, i) => {
-      this.towers[i].copy(base).setY(base.y + (art ? height * 0.86 : 7.6));
-      if (!art) return;
-      // one material per tower, so each can fade on its own when it blocks the view
-      const tm = material!.clone();
-      tm.onBeforeCompile = material!.onBeforeCompile;
-      tm.customProgramCacheKey = material!.customProgramCacheKey;
-      this.engine.prepare(new THREE.Mesh(undefined, tm));
-      const m = new THREE.Mesh(geometry!, tm);
-      this.group.updateMatrixWorld();
-      m.position.copy(this.group.worldToLocal(base.clone()));
-      m.rotation.y = Math.PI; // art faces +Z; the castle's local front is -Z
-      m.castShadow = true;
-      m.receiveShadow = true;
-      m.name = `arrow-tower-${i}`;
-      this.group.add(m);
-      this.towerMeshes.push(m);
-    });
-    for (let i = 1; i <= this.towerMeshes.length; i++) this.applyFade(i);
-    this.engine.markShadows();
-    this.engine.wake();
-  }
-  private towerArt = false;
 
-  useModel(model: THREE.Object3D | null): void {
-    if (this.model) {
-      this.group.remove(this.model.root);
-      this.model = null;
+  useArt(art: KeepArt | null, normals: boolean): void {
+    const old = this.art;
+    if (old) {
+      for (const l of old.lods) this.group.remove(l.root);
+      for (const t of old.towers) {
+        for (const o of t.lods) this.group.remove(o);
+        t.mats.body.dispose();
+        t.mats.cloth.dispose();
+      }
+      old.mats.body.dispose();
+      old.mats.cloth.dispose();
+      this.art = null;
     }
-    if (model) {
-      const root = model.clone(true);
-      // the art faces +Z; the castle's local front is -Z
-      root.rotation.y = Math.PI;
-      const stages = [0, 1, 2, 3].map((i) => root.getObjectByName(`stage${i}`)).filter((o): o is THREE.Object3D => !!o);
-      root.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (m.isMesh) {
+    this.towerBase ??= this.towers.map((t) => t.clone().setY(t.y - 7.6));
+    const bodies = art ? [art.near, art.far].filter((o): o is THREE.Object3D => !!o) : [];
+    if (art && bodies.length) {
+      const dress = (src: THREE.Object3D, mats: KeepMaterials): THREE.Object3D => {
+        const root = src.clone(true);
+        root.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (!m.isMesh) return;
+          m.material = (m.material as THREE.Material).name === 'cloth' ? mats.cloth : mats.body;
           m.castShadow = true;
           m.receiveShadow = true;
-          // masonry is not metal: the generated MR maps read as near-black metal, so cap metalness
-          // per-keep copies: each castle fades on its own when it blocks the view
-          const own = (Array.isArray(m.material) ? m.material : [m.material]).map((src) => {
-            let c = this.modelMats.get(src);
-            if (!c) {
-              c = src.clone();
-              this.modelMats.set(src, c);
-            }
-            return c;
-          });
-          m.material = Array.isArray(m.material) ? own : own[0];
-          const mats = own;
-          for (const mat of mats as THREE.MeshStandardMaterial[]) {
-            if (!mat.isMeshStandardMaterial || mat.userData.obLifted) continue;
-            mat.userData.obLifted = true;
-            // the baked stone is dark and its MR map reads as near-black metal: no metal, rough
-            // stone, a lighter warm-grey albedo, a little more sky light in the shaded faces
-            mat.metalness = 0;
-            mat.metalnessMap = null;
-            mat.roughness = Math.max(mat.roughness, 0.85);
-            mat.color.setRGB(1.55, 1.5, 1.42);
-            mat.envMapIntensity = 1.5;
-          }
-        }
+        });
+        return root;
+      };
+      const mats = keepArtMaterials(this.engine, art.faction, this.team, normals);
+      const lods = bodies.map((src) => {
+        const root = dress(src, mats);
+        // the art faces +Z; the castle's local front is -Z
+        root.rotation.y = Math.PI;
+        const stages = [0, 1, 2, 3].map((i) => root.getObjectByName(`stage${i}`)).filter((o): o is THREE.Object3D => !!o);
+        this.group.add(root);
+        return { root, stages };
       });
-      this.group.add(root);
-      root.updateMatrixWorld(true);
-      if (stages[0]) stages.forEach((s, i) => (s.visible = i === 0));
-      const box = new THREE.Box3().setFromObject(stages[0] ?? root);
-      box.applyMatrix4(new THREE.Matrix4().copy(this.group.matrixWorld).invert());
-      this.engine.prepare(root);
-      this.model = { root, stages, box };
+      const towerSrc = [art.towerNear, art.towerFar].filter((o): o is THREE.Object3D => !!o);
+      this.group.updateMatrixWorld();
+      const towers = towerSrc.length
+        ? this.towerBase.map((base, i) => {
+            // one material pair per tower, so each can fade on its own when it blocks the view
+            const tm = keepArtMaterials(this.engine, art.faction, this.team, normals);
+            const at = this.group.worldToLocal(base.clone());
+            const tl = towerSrc.map((src) => {
+              const o = dress(src, tm);
+              o.position.copy(at);
+              o.rotation.y = Math.PI;
+              o.name = `arrow-tower-${i}`;
+              this.group.add(o);
+              return o;
+            });
+            return { lods: tl, mats: tm };
+          })
+        : [];
+      this.art = { faction: art.faction, lods, mats, towers, lod: -1 };
     }
+    const artTowers = !!this.art && this.art.towers.length > 0;
+    this.towerBase.forEach((base, i) => this.towers[i].copy(base).setY(base.y + (artTowers ? ART_TOWER_H * 0.86 : 7.6)));
+    if (this.art && !this.contact) {
+      this.contact = this.buildContact(artTowers ? this.towerBase : []);
+      this.group.add(this.contact);
+    }
+    if (this.contact) this.contact.visible = !!this.art;
     this.applyStage(false);
-    this.applyFade(0);
+    this.pickLod(true);
+    for (let i = 0; i <= this.towers.length; i++) this.applyFade(i);
     this.engine.markShadows();
     this.engine.wake();
   }
 
-  private modelMats = new Map<THREE.Material, THREE.Material>();
+  /**
+   * Ground contact: one draped, vertex-alpha mesh that darkens the dirt towards the plinth (and a
+   * small disc under each arrow tower), so the masonry sits in the ground instead of on it.
+   */
+  private buildContact(towers: THREE.Vector3[]): THREE.Mesh {
+    this.group.updateMatrixWorld();
+    const pos: number[] = [];
+    const col: number[] = [];
+    const idx: number[] = [];
+    const w = new THREE.Vector3();
+    const patch = (cx: number, cz: number, hx: number, hz: number, reach: number, n: number, round: boolean, k: number): void => {
+      const base = pos.length / 3;
+      const ex = hx + reach;
+      const ez = hz + reach;
+      for (let j = 0; j <= n; j++) {
+        for (let i = 0; i <= n; i++) {
+          const lx = cx + (i / n - 0.5) * 2 * ex;
+          const lz = cz + (j / n - 0.5) * 2 * ez;
+          w.set(lx, 0, lz).applyMatrix4(this.group.matrixWorld);
+          const ly = this.hf.ground(w.x, w.z) - this.position.y + 0.06;
+          const d = round ? Math.hypot(lx - cx, lz - cz) - hx : Math.hypot(Math.max(0, Math.abs(lx - cx) - hx), Math.max(0, Math.abs(lz - cz) - hz));
+          const t = Math.min(1, Math.max(0, 1 - d / reach));
+          pos.push(lx, ly, lz);
+          col.push(0.05, 0.04, 0.03, k * t * t * (3 - 2 * t));
+        }
+      }
+      for (let j = 0; j < n; j++) {
+        for (let i = 0; i < n; i++) {
+          const a = base + j * (n + 1) + i;
+          idx.push(a, a + n + 1, a + 1, a + 1, a + n + 1, a + n + 2);
+        }
+      }
+    };
+    patch(0, 0, 8.7, 9.0, 3.4, 22, false, 0.55);
+    for (const t of towers) {
+      const l = this.group.worldToLocal(t.clone());
+      patch(l.x, l.z, 1.7, 1.7, 1.8, 8, true, 0.5);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+    g.setIndex(idx);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    m.name = `keep-contact-${this.seat}`;
+    m.renderOrder = -1;
+    return m;
+  }
+
+  /** Normal maps on / off (tier change). */
+  setArtNormals(on: boolean): void {
+    const a = this.art;
+    if (!a) return;
+    for (const m of [a.mats, ...a.towers.map((t) => t.mats)]) setKeepNormals(this.engine, a.faction, m.body, on);
+  }
+
+  /** LOD0 near the camera, LOD1 far away (and always on the low tier, which loads nothing else). */
+  private pickLod(force = false): void {
+    const a = this.art;
+    if (!a) return;
+    let want = 0;
+    if (a.lods.length > 1) {
+      const d = this.engine.camera.position.distanceTo(this.position);
+      want = a.lod === 1 ? (d < LOD_NEAR ? 0 : 1) : d > LOD_FAR ? 1 : 0;
+    }
+    if (want === a.lod && !force) return;
+    a.lod = want;
+    a.lods.forEach((l, i) => (l.root.visible = i === want));
+    for (const t of a.towers) t.lods.forEach((o, i) => (o.visible = i === Math.min(want, t.lods.length - 1)));
+    this.engine.markShadows();
+  }
+
   private fades: number[] = [];
 
   bodyBox(out = new THREE.Box3()): THREE.Box3 {
     this.group.updateMatrixWorld();
-    if (this.model) return out.copy(this.model.box).applyMatrix4(this.group.matrixWorld);
+    if (this.art) return out.copy(ART_BOX).applyMatrix4(this.group.matrixWorld);
     return out.setFromCenterAndSize(new THREE.Vector3(this.position.x, this.position.y + 7, this.position.z), new THREE.Vector3(20, 14, 20));
   }
 
@@ -487,7 +578,8 @@ export class Keep implements KeepView {
   /** Push a part's stored opacity to its current materials (also after the art model / towers arrive). */
   private applyFade(part: number): void {
     const alpha = this.fades[part] ?? 1;
-    const mats: THREE.Material[] = part === 0 ? [...this.modelMats.values()] : this.towerMeshes[part - 1] ? [this.towerMeshes[part - 1].material as THREE.Material] : [];
+    const pair = part === 0 ? this.art?.mats : this.art?.towers[part - 1]?.mats;
+    const mats: THREE.Material[] = pair ? [pair.body, pair.cloth] : [];
     for (const m of mats) {
       // depth is still written: the ghost is one clean layer over whatever stands behind it
       const tr = alpha < 0.999;
@@ -528,9 +620,9 @@ export class Keep implements KeepView {
   }
 
   hitPoint(): THREE.Vector3 {
-    if (this.model) {
+    if (this.art) {
       // a random point on the front face of the art keep's current silhouette
-      const b = this.model.box;
+      const b = ART_BOX;
       const r = this.rnd;
       const hk = [1, 0.85, 0.6, 0.4, 0.25][this.stage] ?? 0.3;
       const lp = new THREE.Vector3(b.min.x + (b.max.x - b.min.x) * (0.15 + r() * 0.7), b.min.y + (b.max.y - b.min.y) * hk * (0.1 + r() * 0.8), b.min.z + r() * 1.5);
@@ -557,14 +649,16 @@ export class Keep implements KeepView {
   }
 
   private applyStage(animate: boolean): void {
-    if (this.model) {
+    if (this.art) {
       // sim stages 0..4 (intact, <75%, <50%, <25%, destroyed) -> art nodes stage0..stage3
       const node = [0, 1, 2, 2, 3][this.stage] ?? 3;
-      this.model.stages.forEach((s, i) => (s.visible = i === node));
+      for (const l of this.art.lods) l.stages.forEach((s, i) => (s.visible = i === node));
+      this.engine.markShadows();
     }
+    const artTowers = !!this.art && this.art.towers.length > 0;
     for (const b of this.buckets) {
       const vis = this.stage >= b.show && this.stage < b.hide;
-      if ((this.model && !b.tower) || (this.towerArt && b.tower)) {
+      if ((this.art && !b.tower) || (artTowers && b.tower)) {
         b.mesh.visible = false;
         b.falling = -1;
         continue;
@@ -582,6 +676,7 @@ export class Keep implements KeepView {
   /** Advance collapse animations; true while any is running. */
   update(dt: number): boolean {
     let busy = false;
+    this.pickLod();
     for (const b of this.buckets) {
       if (b.falling < 0) continue;
       b.falling += dt / 1.1;
@@ -597,6 +692,10 @@ export class Keep implements KeepView {
   }
 
   dispose(): void {
+    if (this.contact) {
+      this.contact.geometry.dispose();
+      (this.contact.material as THREE.Material).dispose();
+    }
     for (const b of this.buckets) b.mesh.geometry.dispose();
   }
 }

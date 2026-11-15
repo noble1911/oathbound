@@ -11,6 +11,8 @@
 // sees a prompt to accept a faster speed, and the requester's button waits. An AI opponent agrees at
 // once, so that press applies locally straight away. Spectators only follow. Offline nothing changes.
 import type { DecodedReplay, LordId, Replay, ReplayEvent, Seat } from '../sim/types.ts';
+import { UNITS } from '../sim/data/units.ts';
+import type { FactionId } from '../sim/types.ts';
 import { decodeReplay } from '../sim/index.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { LEGENDARIES } from '../sim/data/items.ts';
@@ -59,6 +61,20 @@ const PROC: Record<string, { name: string; ic: string }> = {
 const LORD_ABIL = new Set(['rally', 'meteor', 'bulwark', 'skyfall', 'necromancy', 'radiance']);
 /** How the log words a Lord's ability when "casts X" would undersell it. */
 const ABIL_VERB: Record<string, string> = { necromancy: 'raises the dead', radiance: 'calls down Radiance' };
+
+/** Each side's faction, read off its army (the Lord, else any soldier's unit type): picks the Keep the scene shows. */
+function replayFactions(soldiers: { side: 0 | 1; type: string; lord?: string }[]): [FactionId | null, FactionId | null] {
+  const out: [FactionId | null, FactionId | null] = [null, null];
+  for (const s of soldiers) {
+    if (out[s.side]) continue;
+    const lord = s.lord ? (LORDS as Record<string, { faction: FactionId } | undefined>)[s.lord] : undefined;
+    const unit = (UNITS as Record<string, { faction: FactionId } | undefined>)[s.type];
+    out[s.side] = lord?.faction ?? unit?.faction ?? null;
+    if (out[0] && out[1]) break;
+  }
+  return out;
+}
+
 
 export class BattleScreen {
   readonly root: HTMLElement;
@@ -135,6 +151,7 @@ export class BattleScreen {
     scene.setMode('battle');
     scene.setPerspective(info.seat);
     scene.setTerrain(replay.terrain);
+    scene.setFactions(replayFactions(replay.soldiers));
     // skip events already past when joining mid-battle (state only, no sound)
     while (this.ev < this.decoded.events.length && this.decoded.events[this.ev]!.tick * 50 <= this.t) this.apply(this.decoded.events[this.ev++]!, true);
     // the scene owns the clock; events come back as they fire

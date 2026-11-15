@@ -7,7 +7,7 @@
 //   crowd units: glb = single-primitive skinned LOD1 mesh with a `_vid` attribute; vat = VatMeta
 //   ('f16', normals octahedral-packed in pos.w, per-clip fps); tintMask = R channel at UV0.
 //   heroes / large / siege: skinned glb with clips mapped by `clips` {role: glbClipName}.
-//   structures (keep): glb with stage0..stage3 child nodes.
+//   structures (keep_<faction>, arrow_tower_<faction>): glb (+ lod1); Keeps have stage0..stage3 child nodes.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
@@ -310,15 +310,16 @@ export class UnitAssets {
     return out;
   }
 
-  /** Load a structure GLB (e.g. the keep) from the manifest; null if absent. */
-  async structure(id: string): Promise<THREE.Object3D | null> {
+  /** Load a structure GLB (a faction Keep, an arrow tower) from the manifest; `lod1` = its far / low-tier file. Null if absent. */
+  async structure(id: string, lod1 = false): Promise<THREE.Object3D | null> {
     await this.manifestReady;
-    const e = this.entry(id);
-    if (!e?.glb) return null;
+    const e = this.manifest?.[id];
+    const file = lod1 ? e?.lod1 : e?.glb;
+    if (!e || !file) return null;
     const t0 = performance.now();
     try {
-      const g = await this.loader.loadAsync(this.url(e.glb));
-      this.loads.push({ model: id, ms: Math.round(performance.now() - t0), bytes: e.totalBytes ?? 0 });
+      const g = await this.loader.loadAsync(this.url(file));
+      this.loads.push({ model: lod1 ? `${id}_lod1` : id, ms: Math.round(performance.now() - t0), bytes: (e as { bytes?: Record<string, number> }).bytes?.[file] ?? e.totalBytes ?? 0 });
       return g.scene;
     } catch (err) {
       console.warn(`art structure ${id}: ${(err as Error).message}`);

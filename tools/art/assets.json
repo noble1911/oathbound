@@ -341,11 +341,50 @@
    }
   },
   {
-   "id": "keep",
+   "id": "keep_kingdom",
    "kind": "structure",
    "height": 16,
-   "lod0": 15000,
-   "lod1": 4000,
+   "builder": "keep_build.py",
+   "squad": false,
+   "style": "object"
+  },
+  {
+   "id": "arrow_tower_kingdom",
+   "kind": "structure",
+   "height": 7.06,
+   "builder": "keep_build.py",
+   "squad": false,
+   "style": "object"
+  },
+  {
+   "id": "keep_ashen",
+   "kind": "structure",
+   "height": 16,
+   "builder": "keep_build.py",
+   "squad": false,
+   "style": "object"
+  },
+  {
+   "id": "arrow_tower_ashen",
+   "kind": "structure",
+   "height": 7.06,
+   "builder": "keep_build.py",
+   "squad": false,
+   "style": "object"
+  },
+  {
+   "id": "keep_caliphate",
+   "kind": "structure",
+   "height": 16,
+   "builder": "keep_build.py",
+   "squad": false,
+   "style": "object"
+  },
+  {
+   "id": "arrow_tower_caliphate",
+   "kind": "structure",
+   "height": 7.06,
+   "builder": "keep_build.py",
    "squad": false,
    "style": "object"
   },
@@ -572,15 +611,6 @@
    "lod0": 2500,
    "lod1": 700,
    "style": "object"
-  },
-  {
-   "id": "arrow_tower",
-   "kind": "prop",
-   "height": 7,
-   "lod0": 4000,
-   "lod1": 1200,
-   "style": "object",
-   "team": true
   },
   {
    "id": "grave_knight",
