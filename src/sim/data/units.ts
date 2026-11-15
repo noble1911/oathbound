@@ -155,7 +155,7 @@ const rows: Record<UnitType, Row> = {
   },
   war_elephant: {
     faction: 'caliphate', like: 'golem', minRound: 3,
-    name: 'War Elephant', role: 'Giant, howdah archers', cost: 400, squadSize: 1, tags: ['large', 'mounted'], weapon: 'fists', damageType: 'physical', projectile: 'none',
+    name: 'War Elephant', role: 'Giant, archer tower', cost: 400, squadSize: 1, tags: ['large', 'mounted'], weapon: 'fists', damageType: 'physical', projectile: 'none',
     hp: 2800, dmg: 75, attackTicks: 34, range: 280, speed: 12, radius: 170, armor: 25, magicResist: 0, splash: 300, traits: ['stomp', 'howdah'],
   },
   sand_golem: {
