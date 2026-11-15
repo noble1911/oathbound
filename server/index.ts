@@ -9,6 +9,9 @@
 // Served under a path by the games gateway (games.noblehaus.uk/oathbound/, prefix stripped), so
 // everything here is relative: the page at /, the socket at /ws.
 //
+// Battle playback speed is shared: a player's speed button is a request, the effective speed is the slowest
+// request of the human players online (AI seats agree to anything), and the battle timer follows it.
+//
 // Timers (ms) are env-overridable: LORD_PICK_MS, PLANNING_MS, LOOT_BONUS_MS, BATTLE_SLACK_MS, BATTLE_CAP_MS,
 // RESULTS_MS, DISCONNECT_GRACE_MS.
 
@@ -23,8 +26,8 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import * as sim from '../src/sim/index.ts';
 import type { BattleResult, BotStrategy, Intent, MatchState, PlayerView, Replay, Seat as SeatNo } from '../src/sim/types.ts';
 import {
-  AI_STRATEGY, TAKEOVER_STRATEGY, BATTLE_SLACK_MS, DISCONNECT_GRACE_MS, LOOT_BONUS_MS, LORD_PICK_MS, MAX_SPECTATORS, PLANNING_MS, RESULTS_MS,
-  type AiLevel, type ClientMsg, type RoomMode, type RoomPhase, type RoomView, type SeatInfo, type ServerMsg,
+  AI_STRATEGY, TAKEOVER_STRATEGY, BATTLE_SLACK_MS, isBattleSpeed, speedRank, speedRate, DISCONNECT_GRACE_MS, LOOT_BONUS_MS, LORD_PICK_MS, MAX_SPECTATORS, PLANNING_MS, RESULTS_MS,
+  type AiLevel, type BattleClock, type BattleSpeed, type ClientMsg, type RoomMode, type RoomPhase, type RoomView, type SeatInfo, type ServerMsg,
 } from '../src/net/protocol.ts';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..', process.env.DIST ?? 'dist');
@@ -173,7 +176,7 @@ export interface ServerOptions {
   lordPickMs?: number;
   planningMs?: number;
   lootBonusMs?: number;
-  /** Battle phase = replay duration + this (unless every player sent battleDone first). */
+  /** Battle phase = remaining replay playback at the shared speed + this (unless every player sent battleDone first). */
   battleSlackMs?: number;
   /** Hard cap on the battle phase (tests). Default: none. */
   battleCapMs?: number;
@@ -200,6 +203,10 @@ interface Member {
   graceEndsAt: number;
   rematch: boolean;
   done: boolean;
+  /** The playback speed this player asks for; carries over to the next battles of the match. */
+  speedPref: 1 | 2 | 4;
+  /** Asked to skip the current battle (reset when a battle starts). */
+  skipReq: boolean;
 }
 
 interface BattleNow {
@@ -208,6 +215,14 @@ interface BattleNow {
   /** JSON of the replay, serialised once per battle. */
   json: string;
   startedAt: number;
+  /** Replay length (ms). */
+  durationMs: number;
+  /** The shared timeline: replay position `anchorMs` at server time `anchorAt`, then `speed` from there. */
+  speed: BattleSpeed;
+  anchorMs: number;
+  anchorAt: number;
+  /** The requests last broadcast (to only send a speed message when something changed). */
+  reqSig: string;
 }
 
 interface Room {
@@ -335,10 +350,68 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
     }
   }
 
-  function battleMsg(b: BattleNow): string {
+  function battleMsg(room: Room, b: BattleNow): string {
     const now = Date.now();
+    const clock = clockOf(room, b, now);
     // the replay is serialised once per battle; only the envelope differs per send
-    return `{"t":"battle","startedAt":${b.startedAt},"offsetMs":${Math.max(0, now - b.startedAt)},"replay":${b.json}}`;
+    return `{"t":"battle","startedAt":${b.startedAt},"offsetMs":${clock.posMs},"clock":${JSON.stringify(clock)},"replay":${b.json}}`;
+  }
+
+  // ---------------------------------------------------------------- shared playback speed
+  //
+  // Each human player requests a speed; the effective speed is the slowest request among the human players who
+  // are online (an AI seat, or a player who is away, agrees to anything). Every change re-anchors the shared
+  // timeline (replay position at a server time) and re-times the battle phase to the remaining playback.
+
+  const requestOf = (m: Member): BattleSpeed => (m.skipReq ? 'skip' : m.speedPref);
+  /** The seats whose players vote on the speed. */
+  const voters = (room: Room): Member[] => room.seats.filter((m): m is Member => !!m && !isAi(m) && online(m));
+  /** The slowest request among the voters; `fallback` when nobody votes. */
+  function effectiveSpeed(room: Room, fallback: BattleSpeed): BattleSpeed {
+    const v = voters(room);
+    if (!v.length) return fallback;
+    return v.map(requestOf).reduce((a, b) => (speedRank(b) < speedRank(a) ? b : a));
+  }
+  /** Replay position (ms) on the shared timeline at server time `now`. */
+  function battlePos(b: BattleNow, now: number): number {
+    if (b.speed === 'skip') return b.durationMs;
+    return Math.min(b.durationMs, Math.round(b.anchorMs + Math.max(0, now - b.anchorAt) * speedRate(b.speed)));
+  }
+  function clockOf(room: Room, b: BattleNow, now: number): BattleClock {
+    const vote = new Set(voters(room));
+    const req = (m: Member | null) => (m && vote.has(m) ? requestOf(m) : null);
+    return { speed: b.speed, posMs: battlePos(b, now), serverNow: now, requests: [req(room.seats[0]), req(room.seats[1])] };
+  }
+  /** The battle phase ends after the remaining playback at the shared speed, plus the slack (and the cap). */
+  function timeBattle(room: Room, b: BattleNow): void {
+    const now = Date.now();
+    const left = b.speed === 'skip' ? 0 : (b.durationMs - battlePos(b, now)) / speedRate(b.speed);
+    const capLeft = battleCapMs - (now - b.startedAt);
+    setTimer(room, Math.max(0, Math.min(capLeft, Math.ceil(left) + battleSlackMs)), () => endBattle(room));
+  }
+  /**
+   * A request or a seat's voter status (disconnect, AI takeover, return) may have changed: recompute the effective
+   * speed; on a change re-anchor and re-time; broadcast the clock when the speed or any request changed.
+   */
+  function syncSpeed(room: Room): void {
+    const b = room.battle;
+    if (room.phase !== 'battle' || !b) return;
+    const now = Date.now();
+    const eff = b.speed === 'skip' ? 'skip' : effectiveSpeed(room, b.speed);
+    const changed = eff !== b.speed;
+    if (changed) {
+      b.anchorMs = battlePos(b, now);
+      b.anchorAt = now;
+      b.speed = eff;
+      timeBattle(room, b);
+    }
+    const clock = clockOf(room, b, now);
+    const sig = JSON.stringify(clock.requests);
+    if (!changed && sig === b.reqSig) return;
+    b.reqSig = sig;
+    const msg = JSON.stringify({ t: 'speed', clock } satisfies ServerMsg);
+    for (const m of members(room)) rawSend(m.ws, msg);
+    if (changed) pushRoom(room);
   }
 
   // ---------------------------------------------------------------- timers
@@ -453,13 +526,19 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
       system(room, 'The battle failed to simulate on the server; planning restarts.');
       return setTimer(room, planningMs, () => endPlanning(room, true));
     }
-    const b: BattleNow = { replay: out.replay, result: out.result, json: JSON.stringify(out.replay), startedAt: Date.now() };
+    const ticks = out.replay?.ticks ?? out.result?.ticks ?? 0;
+    for (const m of room.seats) if (m) (m.done = false), (m.skipReq = false);
+    const now = Date.now();
+    // the battle starts at the speed both players already asked for (requests carry over between rounds)
+    const b: BattleNow = {
+      replay: out.replay, result: out.result, json: JSON.stringify(out.replay), startedAt: now,
+      durationMs: ticks * TICK_MS, speed: effectiveSpeed(room, 1), anchorMs: 0, anchorAt: now, reqSig: '',
+    };
     room.battle = b;
     room.phase = 'battle';
-    for (const m of room.seats) if (m) m.done = false;
-    const ticks = out.replay?.ticks ?? out.result?.ticks ?? 0;
-    setTimer(room, Math.min(battleCapMs, ticks * TICK_MS + battleSlackMs), () => endBattle(room));
-    const msg = battleMsg(b);
+    b.reqSig = JSON.stringify(clockOf(room, b, now).requests);
+    timeBattle(room, b);
+    const msg = battleMsg(room, b);
     for (const m of members(room)) rawSend(m.ws, msg);
     pushRoom(room);
   }
@@ -531,7 +610,7 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
   }
 
   function newMember(room: Room, name: string, seat: SeatNo | null, bot = false): Member {
-    return { id: room.nextId++, name, token: bot ? '' : token(), ws: null, goneAt: 0, seat, bot, botControlled: false, graceTimer: null, graceEndsAt: 0, rematch: false, done: false };
+    return { id: room.nextId++, name, token: bot ? '' : token(), ws: null, goneAt: 0, seat, bot, botControlled: false, graceTimer: null, graceEndsAt: 0, rematch: false, done: false, speedPref: 1, skipReq: false };
   }
 
   const stopGrace = (m: Member) => {
@@ -556,8 +635,10 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
     } else if (hadGrace) system(room, `${m.name} reconnected.`);
     pickHost(room);
     welcome(room, m);
+    // a returning player votes on the speed again (their request was kept)
+    syncSpeed(room);
     pushRoom(room);
-    if (room.phase === 'battle' && room.battle) rawSend(ws, battleMsg(room.battle));
+    if (room.phase === 'battle' && room.battle) rawSend(ws, battleMsg(room, room.battle));
   }
 
   /** The host is the first connected human player (the creator while they're here). */
@@ -595,6 +676,8 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
     }
     pickHost(room);
     if (!humansOnline(room) && !room.emptySince) room.emptySince = Date.now();
+    // a player who is away no longer holds the speed back
+    syncSpeed(room);
     pushRoom(room);
     advance(room);
   }
@@ -605,6 +688,7 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
     m.botControlled = true;
     system(room, text);
     runBots(room);
+    syncSpeed(room);
     pushRoom(room);
     advance(room);
   }
@@ -700,6 +784,18 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
         if (!room || !m || room.phase !== 'battle' || m.seat === null) return;
         m.done = true;
         return advance(room);
+      }
+      case 'speed': {
+        const { room, m } = c;
+        if (!room || !m) return;
+        if (m.seat === null) return reject('spectators cannot change the speed');
+        const speed = msg.speed;
+        if (!isBattleSpeed(speed)) return reject('bad speed');
+        if (room.phase !== 'battle' || !room.battle) return reject('no battle is playing');
+        if (room.battle.speed === 'skip') return; // already skipped: nothing left to change
+        if (speed === 'skip') m.skipReq = true;
+        else (m.speedPref = speed), (m.skipReq = false);
+        return syncSpeed(room);
       }
       case 'rematch': {
         const { room, m } = c;

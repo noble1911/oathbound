@@ -2,7 +2,7 @@
 // (src/ui/local.ts) implement it; both report back through `AppHandlers` with the same RoomView
 // snapshots (src/net/protocol.ts), so every screen runs unchanged offline.
 import type { Intent, Replay, Seat } from '../sim/types.ts';
-import type { RoomView } from '../net/protocol.ts';
+import type { BattleClock, BattleSpeed, RoomView } from '../net/protocol.ts';
 
 export interface Backend {
   readonly online: boolean;
@@ -10,6 +10,8 @@ export interface Backend {
   swapSeats(): void;
   intent(i: Intent): void;
   battleDone(): void;
+  /** Online: request a shared playback speed (both players must agree). Absent offline (speed is local). */
+  speed?(s: BattleSpeed): void;
   rematch(): void;
   chat(text: string): void;
   leave(): void;
@@ -19,7 +21,7 @@ export interface Backend {
 
 export interface AppHandlers {
   onRoom(room: RoomView, mySeat: Seat | null): void;
-  onBattle(replay: Replay, offsetMs: number): void;
+  onBattle(replay: Replay, offsetMs: number, clock?: BattleClock): void;
   onRejected(error: string): void;
   onChat(seat: Seat | null, name: string, text: string, system: boolean): void;
 }

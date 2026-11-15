@@ -4,6 +4,8 @@ import net from 'node:net';
 import WebSocket from 'ws';
 
 const calls: string[] = [];
+/** The fake replay's length in ticks (50 ms each). */
+const mock = { ticks: 10 };
 vi.mock('../src/sim/index.ts', () => {
   type P = { seat: number; lord: string | null; ready: boolean; lootOffer: unknown; squads: { type: string; pos: number[] }[]; lastArmy: unknown };
   type S = { round: number; phase: string; players: P[]; winner: unknown; overReason?: string };
@@ -40,7 +42,7 @@ vi.mock('../src/sim/index.ts', () => {
       calls.push('forceReady');
       for (const p of s.players) p.ready = true;
     },
-    simulateBattle: (s: S) => ({ replay: { v: 2, round: s.round, ticks: 10, blob: 'x'.repeat(50_000) }, result: { round: s.round, ticks: 10 } }),
+    simulateBattle: (s: S) => ({ replay: { v: 2, round: s.round, ticks: mock.ticks, blob: 'x'.repeat(50_000) }, result: { round: s.round, ticks: mock.ticks } }),
     applyBattle: (s: S) => {
       calls.push('applyBattle');
       for (const p of s.players) p.lastArmy = p.squads.map((q) => ({ ...q }));
@@ -387,4 +389,135 @@ describe('phase machine (fake sim)', () => {
     expect(guest.raw.join('\n')).toMatch(/dragon/);
     for (const c of [...all, spec]) c.close();
   });
+});
+
+describe('shared battle speed (fake sim)', () => {
+  type C = Awaited<ReturnType<typeof connect>>;
+  /** Start a pvp (or vsAI) match and play into the first battle. */
+  async function toBattle(host: C, guest: C | null): Promise<void> {
+    host.send({ t: 'start' });
+    host.send({ t: 'intent', intent: { t: 'pickLord', lord: 'marshal' } });
+    guest?.send({ t: 'intent', intent: { t: 'pickLord', lord: 'archmage' } });
+    await host.wait('room', (m) => m.room.phase === 'planning');
+    host.send({ t: 'intent', intent: { t: 'ready' } });
+    guest?.send({ t: 'intent', intent: { t: 'ready' } });
+  }
+  const leftOf = (r: { phaseEndsAt: number; serverNow: number }) => r.phaseEndsAt - r.serverNow;
+
+  it('the effective speed is the slowest request; every request is broadcast (prompt data) to players and spectators', async () => {
+    mock.ticks = 400; // 20 s: the battle outlasts the test
+    const { host, guest, all, code } = await makeRoom(url);
+    const spec = await connect(url);
+    spec.send({ t: 'join', code, name: 'Watcher' });
+    await spec.wait('welcome');
+    await toBattle(host, guest);
+    const b = await host.wait('battle');
+    expect(b.clock).toMatchObject({ speed: 1, posMs: b.offsetMs, requests: [1, 1] });
+    expect((await spec.wait('battle')).clock.requests).toEqual([1, 1]);
+    // host asks for 2x: nothing speeds up, but everyone hears the request (the guest's prompt)
+    host.send({ t: 'speed', speed: 2 });
+    for (const c of [host, guest, spec]) expect((await c.wait('speed')).clock).toMatchObject({ speed: 1, requests: [2, 1] });
+    // the guest asks for 4x: the slower of the two (2x) wins
+    guest.send({ t: 'speed', speed: 4 });
+    for (const c of [host, guest, spec]) expect((await c.wait('speed')).clock).toMatchObject({ speed: 2, requests: [2, 4] });
+    // the battle phase is re-timed to the remaining playback at 2x
+    const s2 = await host.wait('room', (m) => m.room.phase === 'battle' && leftOf(m.room) < 15_000);
+    expect(leftOf(s2.room)).toBeLessThanOrEqual(20_000 / 2 + 300);
+    // either player asking for slower drops it at once
+    host.send({ t: 'speed', speed: 1 });
+    for (const c of [host, guest, spec]) expect((await c.wait('speed')).clock).toMatchObject({ speed: 1, requests: [1, 4] });
+    // spectators and junk are refused; the same request again is not re-broadcast
+    spec.send({ t: 'speed', speed: 4 });
+    expect((await spec.wait('rejected')).error).toMatch(/spectators/);
+    host.send({ t: 'speed', speed: 3 as never });
+    expect((await host.wait('rejected')).error).toMatch(/bad speed/);
+    host.send({ t: 'speed', speed: 1 });
+    await sleep(100);
+    expect(guest.inbox.some((m) => m.t === 'speed')).toBe(false);
+    // skip needs both too, and then shortens the server's wait to the slack
+    host.send({ t: 'speed', speed: 'skip' });
+    // (the slower of skip and 4x is 4x)
+    expect((await guest.wait('speed')).clock).toMatchObject({ speed: 4, requests: ['skip', 4] });
+    guest.send({ t: 'speed', speed: 'skip' });
+    const sk = await spec.wait('speed', (m) => m.clock.speed === 'skip');
+    expect(sk.clock.posMs).toBe(400 * 50);
+    const r = await host.wait('room', (m) => m.room.phase === 'battle' && leftOf(m.room) <= 300);
+    expect(r.room.phaseEndsAt).toBeGreaterThan(0);
+    await host.wait('room', (m) => m.room.phase === 'results', 2000);
+    // outside a battle a speed request is refused
+    host.send({ t: 'speed', speed: 2 });
+    expect((await host.wait('rejected')).error).toMatch(/no battle/);
+    for (const c of [...all, spec]) c.close();
+    mock.ticks = 10;
+  }, 15_000);
+
+  it('the vs-AI seat agrees at once: the human request is the speed', async () => {
+    mock.ticks = 400;
+    const { host, all } = await makeRoom(url, 'vsAI', 'easy');
+    await toBattle(host, null);
+    const b = await host.wait('battle');
+    expect(b.clock).toMatchObject({ speed: 1, requests: [1, null] });
+    host.send({ t: 'speed', speed: 4 });
+    expect((await host.wait('speed')).clock).toMatchObject({ speed: 4, requests: [4, null] });
+    host.send({ t: 'speed', speed: 'skip' });
+    expect((await host.wait('speed')).clock).toMatchObject({ speed: 'skip', requests: ['skip', null] });
+    await host.wait('room', (m) => m.room.phase === 'results', 2000);
+    for (const c of all) c.close();
+    mock.ticks = 10;
+  }, 10_000);
+
+  it('the battle timer follows the shared speed, and requests carry over to the next battle', async () => {
+    mock.ticks = 60; // 3 s of replay; slack 300 ms
+    const { host, guest, all } = await makeRoom(url);
+    await toBattle(host, guest);
+    await host.wait('battle');
+    const at1 = await host.wait('room', (m) => m.room.phase === 'battle');
+    expect(leftOf(at1.room)).toBeGreaterThan(3000);
+    const t0 = Date.now();
+    host.send({ t: 'speed', speed: 4 });
+    guest.send({ t: 'speed', speed: 4 });
+    await host.wait('speed', (m) => m.clock.speed === 4);
+    const at4 = await host.wait('room', (m) => m.room.phase === 'battle' && leftOf(m.room) < 2000);
+    // (3000 - elapsed) / 4 + 300
+    expect(leftOf(at4.room)).toBeLessThanOrEqual(1050);
+    // nobody sends battleDone: the re-timed timer ends the battle well before the 1x deadline
+    await host.wait('room', (m) => m.room.phase === 'results', 3000);
+    expect(Date.now() - t0).toBeLessThan(2500);
+    // round 2 starts at the speed both asked for
+    await host.wait('room', (m) => m.room.phase === 'planning' && m.room.view!.round === 2);
+    host.send({ t: 'intent', intent: { t: 'ready' } });
+    guest.send({ t: 'intent', intent: { t: 'ready' } });
+    const b2 = await guest.wait('battle', (m) => m.replay.round === 2);
+    expect(b2.clock).toMatchObject({ speed: 4, requests: [4, 4] });
+    const r2 = await guest.wait('room', (m) => m.room.phase === 'battle' && m.room.view!.round === 2);
+    expect(leftOf(r2.room)).toBeLessThanOrEqual(3000 / 4 + 300);
+    for (const c of all) c.close();
+    mock.ticks = 10;
+  }, 15_000);
+
+  it('a disconnected player stops holding the speed back; on return they get the current speed and position', async () => {
+    mock.ticks = 400;
+    const { host, guest, all, code } = await makeRoom(url);
+    await toBattle(host, guest);
+    await host.wait('battle');
+    host.send({ t: 'speed', speed: 4 });
+    guest.send({ t: 'speed', speed: 2 });
+    await host.wait('speed', (m) => m.clock.speed === 2 && m.clock.requests[1] === 2);
+    const tok = guest.token;
+    guest.close();
+    // the guest is away: the host's 4x is the speed (the guest does not vote while gone, nor once the AI plays)
+    expect((await host.wait('speed', (m) => m.clock.requests[1] === null)).clock.speed).toBe(4);
+    await host.wait('room', (m) => !!m.room.seats[1]?.botControlled, 2000);
+    await sleep(100);
+    const back = await connect(url);
+    back.send({ t: 'join', code, name: 'Guest', token: tok });
+    const b = await back.wait('battle');
+    // their 2x request was kept: back to 2x, from where the 4x timeline had got to
+    expect(b.clock).toMatchObject({ speed: 2, requests: [4, 2] });
+    expect(b.offsetMs).toBe(b.clock.posMs);
+    expect(b.offsetMs).toBeGreaterThan(1000);
+    expect((await host.wait('speed', (m) => m.clock.requests[1] === 2)).clock.speed).toBe(2);
+    for (const c of [...all, back]) c.close();
+    mock.ticks = 10;
+  }, 10_000);
 });

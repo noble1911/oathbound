@@ -9,7 +9,7 @@
 import './style.css';
 import type { Intent, LordId, Replay, Seat, UnitType } from './sim/types.ts';
 import { Net, type NetStatus } from './net/client.ts';
-import type { AiLevel, ClientMsg, RoomView } from './net/protocol.ts';
+import type { AiLevel, BattleClock, ClientMsg, RoomView } from './net/protocol.ts';
 import { LORDS } from './sim/data/lords.ts';
 import { UNITS } from './sim/data/units.ts';
 import { itemName } from './sim/loot.ts';
@@ -72,6 +72,8 @@ class App {
   private prevPhase = '';
   /** ?dev=results: don't wait for playback. */
   skipPlayback = false;
+  /** Online: the newest shared battle clock and when (performance.now()) it arrived. */
+  private battleClock: { clock: BattleClock; at: number } | null = null;
   private autoStarted = false;
   private chip: LoadChip | null = null;
   private coach: Coach | null = null;
@@ -206,7 +208,8 @@ class App {
     this.local = null;
     const net = new Net({
       onRoom: (room, seat) => this.onRoom(room, seat),
-      onBattle: (r, off) => this.onBattle(r, off),
+      onBattle: (r, off, clock) => this.onBattle(r, off, clock),
+      onSpeed: (clock) => this.onSpeed(clock),
       onRejected: (e) => this.rejected(e),
       onChat: (seat, name, text, system) => this.shell.message(seat, name, text, system, !system && seat === this.seat && seat !== null),
       onError: (e) => {
@@ -225,6 +228,7 @@ class App {
       swapSeats: () => net.swapSeats(),
       intent: (i) => (this.note(i), net.intent(i)),
       battleDone: () => net.battleDone(),
+      speed: (s) => net.speed(s),
       rematch: () => net.rematch(),
       chat: (t) => net.chat(t),
       // the `leave` message gives the seat up, and the client forgets it (no rejoin on reload)
@@ -363,14 +367,25 @@ class App {
     }
   }
 
-  onBattle(replay: Replay, offsetMs: number): void {
+  /** Online: the shared playback speed or a request changed. */
+  onSpeed(clock: BattleClock): void {
+    const at = performance.now();
+    this.battleClock = { clock, at };
+    if (this.screen instanceof BattleScreen) this.screen.applyClock(clock, at);
+  }
+
+  onBattle(replay: Replay, offsetMs: number, clock?: BattleClock, at = performance.now()): void {
+    if (clock && (!this.battleClock || this.battleClock.clock.serverNow < clock.serverNow)) this.battleClock = { clock, at };
     if (!this.scene) {
       // a rejoin mid-battle before the renderer is up: play from where the battle will be by then
       const t0 = performance.now();
       this.setWait('Raising the battlefield…');
-      void this.sceneReady.then(() => this.onBattle(replay, offsetMs + (performance.now() - t0)));
+      void this.sceneReady.then(() => this.onBattle(replay, offsetMs + (performance.now() - t0), clock, at));
       return;
     }
+    // online, the speed is shared (both players must agree); offline it is the player's own
+    const sync = clock && this.battleClock && this.backend?.speed ? this.backend.speed.bind(this.backend) : null;
+    const shared = sync && this.battleClock ? { clock: this.battleClock.clock, at: this.battleClock.at, request: sync } : undefined;
     const room = this.room;
     const v = room?.view;
     const me = this.seat;
@@ -384,7 +399,7 @@ class App {
     this.overlay?.dispose();
     this.overlay = null;
     this.show(null);
-    const b = new BattleScreen(ui, this.scene, replay, offsetMs, { seat: me, names, lords }, () => {
+    const b = new BattleScreen(ui, this.scene, replay, offsetMs, { seat: me, names, lords, shared }, () => {
       const stats = b.stats();
       const pov = (me ?? 0) as Seat;
       const report: BattleReport = { round: replay.round, stats, decoded: b.decoded, hints: battleHints(stats, pov, { gold: goldHeld }), me: pov, spectator: me === null, names };

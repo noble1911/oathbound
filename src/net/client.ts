@@ -10,6 +10,8 @@
  *     onRoom(room: RoomView, mySeat: Seat | null) {},  // every change; room.view = MY filtered PlayerView (null in lobby)
  *     onBattle(replay: Replay, offsetMs: number) {},   // once per battle; start playback at offsetMs (0, or >0 when
  *                                                      //   joining/rejoining mid-battle). Call net.battleDone() at the end.
+ *                                                      //   clock = the shared playback timeline (speed, requests).
+ *     onSpeed(clock: BattleClock) {},                  // the shared playback speed or a player's request changed
  *     onRejected(error: string) {},                    // an intent/command was refused (toast it)
  *     onChat(seat: Seat | null, name: string, text: string, system: boolean) {},
  *                                                      //   system = server notice, e.g. "Bob disconnected: the AI takes over in 60 s"
@@ -25,6 +27,7 @@
  *   net.swapSeats()                          // host, lobby: swap seat 0 <-> seat 1
  *   net.intent(i: Intent)                    // players: {t:'pickLord'} in lordPick; deploy/move/.../ready in planning
  *   net.battleDone()                         // playback finished or skipped
+ *   net.speed(s: 1 | 2 | 4 | 'skip')         // players, battle: request a playback speed (both players must agree)
  *   net.rematch()                            // phase 'over': vote for a rematch (same seats)
  *   net.chat(text)
  *   net.leave()                              // give up the seat and close
@@ -42,13 +45,14 @@
  */
 
 import type { Intent, Replay, Seat } from '../sim/types.ts';
-import type { AiLevel, ClientMsg, RoomMode, RoomView, ServerMsg } from './protocol.ts';
+import type { AiLevel, BattleClock, BattleSpeed, ClientMsg, RoomMode, RoomView, ServerMsg } from './protocol.ts';
 
 export type NetStatus = 'connecting' | 'open' | 'closed';
 
 export interface NetHandlers {
   onRoom(room: RoomView, mySeat: Seat | null): void;
-  onBattle(replay: Replay, offsetMs: number): void;
+  onBattle(replay: Replay, offsetMs: number, clock?: BattleClock): void;
+  onSpeed(clock: BattleClock): void;
   onRejected(error: string): void;
   onChat(seat: Seat | null, name: string, text: string, system: boolean): void;
   onError(error: string): void;
@@ -142,6 +146,7 @@ export class Net {
   swapSeats(): void { this.send({ t: 'swapSeats' }); }
   intent(i: Intent): void { this.send({ t: 'intent', intent: i }); }
   battleDone(): void { this.send({ t: 'battleDone' }); }
+  speed(s: BattleSpeed): void { this.send({ t: 'speed', speed: s }); }
   rematch(): void { this.send({ t: 'rematch' }); }
   chat(text: string): void { this.send({ t: 'chat', text }); }
 
@@ -264,7 +269,9 @@ export class Net {
         this.spectator = m.room.me.spectator;
         return this.handlers.onRoom(m.room, this.seat);
       case 'battle':
-        return this.handlers.onBattle(m.replay, m.offsetMs);
+        return this.handlers.onBattle(m.replay, m.offsetMs, m.clock);
+      case 'speed':
+        return this.handlers.onSpeed(m.clock);
       case 'rejected':
         return this.handlers.onRejected(m.error);
       case 'chat':

@@ -138,7 +138,18 @@ try {
   await sleep(6000);
   await shot(a, 'battle-A');
   await shot(s, 'battle-spectator');
+  // shared speed: A asks for 2x, B is prompted, A waits; B accepts and all three play at 2x
+  check(await s.evaluate(() => document.querySelector('.b-ctrl')?.classList.contains('ro')), 'the spectator\'s speed controls are read-only');
+  await a.click('.speed button[data-s="2"]');
+  check(await waitFor(b, () => { const n = document.querySelector('.b-ask'); return !!n && !n.hidden && /speed up to 2×/.test(n.textContent); }), 'B is asked: the opponent wants 2×');
+  check(await waitFor(a, () => { const n = document.querySelector('.b-ask.wait'); return !!n && !n.hidden && !!document.querySelector('.speed button.pending[data-s="2"]'); }), 'A waits for the opponent');
+  await sleep(400);
+  await shot(b, 'speed-prompt-B');
+  await b.click('.b-ask button[data-accept="2"]');
+  for (const [p, who] of [[a, 'A'], [b, 'B'], [s, 'the spectator']]) check(await waitFor(p, () => !!document.querySelector('.speed button.on[data-s="2"]') && document.querySelector('.b-ask').hidden), `${who} plays at 2×`);
+  // skip needs both as well
   await a.click('.skip');
+  check(await waitFor(b, () => /skip/.test(document.querySelector('.b-ask')?.textContent ?? '')), 'B is asked to skip');
   await b.click('.skip');
   check(await waitFor(a, () => ['results', 'over'].includes(window.__ob.app.room?.phase)), 'results after both skip');
   await sleep(1500);

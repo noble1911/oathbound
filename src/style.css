@@ -766,6 +766,25 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .b-ctrl { position: absolute; right: 1rem; bottom: 1rem; display: flex; gap: 0.6rem; align-items: center; padding: 0.6rem; }
 .b-ctrl .skip kbd { margin-left: 0.2rem; font-size: 0.62rem; }
 .b-ctrl .seg button { min-height: 2.1rem; }
+/* shared speed (online): the request I am waiting on carries my livery; spectators only follow */
+.b-ctrl .seg button.pending { color: var(--me-hi); box-shadow: inset 0 -3px 0 var(--me); }
+.b-ctrl .skip.pending { color: var(--me-hi); }
+.b-ctrl.ro .seg.speed button, .b-ctrl.ro .skip { color: var(--slate-400); cursor: not-allowed; }
+.b-ctrl.ro .seg.speed button.on { color: var(--iron-900); background: var(--slate-400); }
+/* the opponent's speed-up prompt / my waiting note: a stone plaque above the controls, never blocking */
+.b-ask { position: absolute; right: 1rem; bottom: 5.4rem; max-width: min(31rem, calc(100vw - 2rem)); display: flex; align-items: center; gap: 0.7rem; padding: 0.15rem 0.4rem; border: solid transparent; border-width: 0.5rem 0.75rem; border-image: url('/ui/kit/btn-stone.webp') 26 40 fill / 0.5rem 0.75rem; color: var(--steel-100); filter: drop-shadow(0 0.3rem 0.6rem rgba(0, 0, 0, 0.6)); animation: drop 0.22s ease-out; }
+.b-ask[hidden] { display: none; }
+.b-ask > .ico { width: 1.5rem; height: 1.5rem; flex: none; color: var(--me-hi); }
+.b-ask span { display: grid; gap: 0.1rem; min-width: 0; }
+.b-ask b { font: 600 1.05rem/1.15 var(--serif); color: #fff; }
+.b-ask small { color: var(--steel-200); font-size: 0.78rem; }
+.b-ask .btn { flex: none; white-space: nowrap; }
+.b-ask .btn kbd { margin-left: 0.35rem; font-size: 0.62rem; }
+.b-ask.wait { color: var(--steel-200); }
+.b-ask.wait .dots { flex: none; color: var(--me-hi); margin: 0 0 0 0.2rem; }
+@media (max-width: 640px) {
+  .b-ask { left: 1rem; right: 1rem; max-width: none; }
+}
 
 /* ------------------------------------------------------------ battle inspector (src/ui/inspector.ts)
    A stone panel docked right, clear of the fight: who the squad is, how it is doing, what it can do. */

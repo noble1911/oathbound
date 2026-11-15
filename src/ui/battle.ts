@@ -5,6 +5,11 @@
 // Click any squad (or a log entry) to inspect it; Shift+click a second to compare; Tab cycles; Esc
 // closes (src/ui/inspector.ts). Battle audio is driven from the same events (src/audio.ts). The
 // clients never simulate: playback only. Power: the HUD and the inspector tick at 4 Hz, never per frame.
+//
+// Online the speed (and Skip) is shared (`BattleInfo.shared`): a press is a request to the server, the
+// playback follows the server's BattleClock (the slowest request of the two players), the other player
+// sees a prompt to accept a faster speed, and the requester's button waits. An AI opponent agrees at
+// once, so that press applies locally straight away. Spectators only follow. Offline nothing changes.
 import type { DecodedReplay, LordId, Replay, ReplayEvent, Seat } from '../sim/types.ts';
 import { decodeReplay } from '../sim/index.ts';
 import { LORDS } from '../sim/data/lords.ts';
@@ -25,11 +30,21 @@ import { SKILLS } from '../sim/data/skills.ts';
 import { replaySquads } from '../sim/stats.ts';
 import { skillGlyph } from './items.ts';
 import type { SkillId } from '../sim/types.ts';
+import { speedRank, type BattleClock, type BattleSpeed } from '../net/protocol.ts';
+
+/** Online playback: the shared clock (and when it arrived, performance.now()) and how to ask for a speed. */
+export interface SharedSpeed {
+  clock: BattleClock;
+  at: number;
+  request(s: BattleSpeed): void;
+}
 
 export interface BattleInfo {
   seat: Seat | null;
   names: [string, string];
   lords: [LordId | null, LordId | null];
+  /** Online: the shared speed. Absent offline (the speed is the player's own). */
+  shared?: SharedSpeed;
 }
 
 const PROC: Record<string, { name: string; ic: string }> = {
@@ -82,8 +97,12 @@ export class BattleScreen {
     this.info = info;
     this.onDone = onDone;
     this.decoded = decodeReplay(replay);
-    this.t = Math.max(0, offsetMs);
     this.end = replay.ticks * 50;
+    this.shared = info.shared ?? null;
+    const sc = this.shared?.clock;
+    // online: start where the shared timeline is now, at its speed
+    this.t = sc ? this.clockPos(sc, this.shared!.at) : Math.max(0, offsetMs);
+    if (sc) this.speed = sc.speed === 'skip' ? 4 : sc.speed;
     this.keepHp = [replay.keeps[0].hpBefore, replay.keeps[1].hpBefore];
     for (const s of replay.soldiers) {
       this.squadSide.set(s.squad, s.side);
@@ -94,10 +113,11 @@ export class BattleScreen {
       <div class="b-tally"></div>
       <div class="b-feed"></div>
       <div class="b-ctrl panel">
-        <div class="seg speed">${[1, 2, 4].map((s) => `<button data-s="${s}" data-tip="Playback speed [${s === 1 ? '1' : s === 2 ? '2' : '4'}]">${s}×</button>`).join('')}</div>
+        <div class="seg speed">${[1, 2, 4].map((s) => `<button data-s="${s}" data-tip="${this.speedTip(info, `Playback speed [${s}]`)}">${s}×</button>`).join('')}</div>
         <div class="seg cam"><button data-c="director" data-tip="Cinematic director camera [C]">${icon('camera')}Director</button><button data-c="free" data-tip="Free RTS camera: WASD / drag / wheel [C]">${icon('move')}Free</button></div>
-        <button class="btn skip" data-tip="Jump to the result [End]">${icon('skip')}Skip<kbd>End</kbd></button>
+        <button class="btn skip" data-tip="${this.speedTip(info, 'Jump to the result [End]')}">${icon('skip')}Skip<kbd>End</kbd></button>
       </div>
+      <div class="b-ask" role="status" aria-live="polite" hidden></div>
       <div class="b-banner"></div>
     </div>`);
     ui.appendChild(this.root);
@@ -139,14 +159,26 @@ export class BattleScreen {
       this.syncControls();
     };
     this.syncControls();
-    this.root.querySelectorAll<HTMLElement>('.speed button').forEach((b) => b.addEventListener('click', () => this.setSpeed(Number(b.dataset.s))));
+    this.root.querySelectorAll<HTMLElement>('.speed button').forEach((b) => b.addEventListener('click', () => this.setSpeed(Number(b.dataset.s) as 1 | 2 | 4)));
     this.root.querySelectorAll<HTMLElement>('.cam button').forEach((b) => b.addEventListener('click', () => this.setCam(b.dataset.c as CameraMode)));
-    $(this.root, '.skip').addEventListener('click', () => this.skip());
+    $(this.root, '.skip').addEventListener('click', () => this.askSkip());
+    const ask = $(this.root, '.b-ask');
+    ask.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('button[data-accept]');
+      if (!b) return;
+      const s = b.dataset.accept === 'skip' ? 'skip' : (Number(b.dataset.accept) as 1 | 2 | 4);
+      if (s === 'skip') this.askSkip();
+      else this.setSpeed(s);
+    });
+    if (this.shared) {
+      this.root.querySelector('.b-ctrl')!.classList.toggle('ro', info.seat === null);
+      this.root.querySelectorAll<HTMLElement>('.speed button, .skip').forEach((b) => info.seat === null && b.setAttribute('aria-disabled', 'true'));
+    }
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest?.('input, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
       if (document.querySelector('.rules-veil, .dialog-veil')) return;
       const k = e.key.toLowerCase();
-      if (e.key === '1' || e.key === '2' || e.key === '4') this.setSpeed(Number(e.key));
+      if (e.key === '1' || e.key === '2' || e.key === '4') this.setSpeed(Number(e.key) as 1 | 2 | 4);
       else if (k === 'c' || k === 'home') {
         // one owner for the camera keys: the rig never sees them (it used to flip the mode back)
         e.preventDefault();
@@ -155,7 +187,7 @@ export class BattleScreen {
         this.setCam(k === 'home' || now !== 'director' ? 'director' : 'free');
       } else if (e.key === 'End' && !this.finished) {
         e.preventDefault();
-        this.skip();
+        this.askSkip();
       } else if (e.key === 'Tab') {
         e.preventDefault();
         this.insp.cycle(e.shiftKey ? -1 : 1);
@@ -189,6 +221,132 @@ export class BattleScreen {
     // the HUD clock ticks at 4 Hz (no per-frame DOM work)
     this.clock = setInterval(() => this.tickClock(), 250);
     this.tickClock();
+    if (this.shared) {
+      this.applyClock(this.shared.clock, this.shared.at);
+      // carry this player's usual speed into the match (the server keeps it for the next rounds)
+      const me = info.seat;
+      const want = Number(store.get('bspeed') ?? '1');
+      const has = me === null ? null : this.shared.clock.requests[me];
+      if (has !== null && has !== 'skip' && (want === 2 || want === 4 || want === 1) && want !== has && !this.finished) this.request(want as 1 | 2 | 4);
+    }
+  }
+
+  // ---------------------------------------------------------------- shared speed (online)
+
+  private shared: SharedSpeed | null = null;
+  private sclock: BattleClock | null = null;
+  /** My own request while it is ahead of the server's answer. */
+  private myReq: BattleSpeed | null = null;
+  private askFor: BattleSpeed | null = null;
+
+  private speedTip(info: BattleInfo, own: string): string {
+    if (!info.shared) return own;
+    return info.seat === null ? "Spectators follow the players' speed" : `${own}. Both commanders must agree`;
+  }
+
+  /** Replay position (ms) on a shared clock at local time `at` (performance.now() when it arrived). */
+  private clockPos(c: BattleClock, at: number): number {
+    if (c.speed === 'skip') return this.end;
+    return Math.min(this.end, c.posMs + Math.max(0, performance.now() - at) * c.speed);
+  }
+
+  private oppSeat(): Seat | null {
+    return this.info.seat === null ? null : ((1 - this.info.seat) as Seat);
+  }
+
+  /** The opponent does not vote (AI seat, or away): a request is the effective speed at once. */
+  private oppAgrees(): boolean {
+    const o = this.oppSeat();
+    return o !== null && !!this.sclock && this.sclock.requests[o] === null;
+  }
+
+  /** Ask the server for a speed; an AI opponent agrees at once, so apply it locally too (feels like offline). */
+  private request(s: BattleSpeed): void {
+    if (!this.shared || this.info.seat === null || this.finished) return;
+    this.myReq = s;
+    this.shared.request(s);
+    if (this.oppAgrees() && this.sclock) {
+      const c: BattleClock = { ...this.sclock, speed: s, posMs: this.pb.timeMs, requests: [...this.sclock.requests] as BattleClock['requests'] };
+      c.requests[this.info.seat] = s;
+      this.applyClock(c, performance.now(), true);
+    } else this.renderAsk();
+  }
+
+  /**
+   * The server's shared clock: follow its speed, catch up when this playback fell behind the timeline
+   * (never jump back: events already shown stay shown), and show the prompt / the waiting state.
+   */
+  applyClock(c: BattleClock, at: number, local = false): void {
+    if (!this.shared) return;
+    this.sclock = c;
+    const me = this.info.seat;
+    if (!local && me !== null && c.requests[me] !== null) this.myReq = c.requests[me];
+    if (this.finished) return this.renderAsk();
+    if (c.speed === 'skip') {
+      this.renderAsk();
+      return this.skip();
+    }
+    this.speed = c.speed;
+    this.pb.speed = c.speed;
+    const target = this.clockPos(c, at);
+    if (!local && target - this.pb.timeMs > 400) this.catchUp(target);
+    this.syncControls();
+    this.renderAsk();
+  }
+
+  /** Jump forward to `ms`, settling the events in between quietly (seek fires none). */
+  private catchUp(ms: number): void {
+    if (ms >= this.end) return this.skip();
+    const evs = this.decoded.events;
+    while (this.ev < evs.length && evs[this.ev]!.tick * 50 <= ms) this.apply(evs[this.ev++]!, true);
+    this.pb.seek(ms);
+    this.t = ms;
+    this.runCasts(true);
+    this.renderTop();
+    this.renderTally();
+  }
+
+  /** The opponent's prompt ("wants to speed up to 2×", one-click accept) or my "waiting for …" state. */
+  private renderAsk(): void {
+    const box = this.root.querySelector<HTMLElement>('.b-ask');
+    if (!box) return;
+    const c = this.sclock;
+    const me = this.info.seat;
+    const opp = this.oppSeat();
+    let html = '';
+    let ask: BattleSpeed | null = null;
+    if (c && me !== null && opp !== null && !this.finished) {
+      const theirs = c.requests[opp];
+      const mine = this.myReq ?? c.requests[me];
+      const eff = c.speed;
+      const name = esc(this.info.names[opp]);
+      if (theirs !== null && speedRank(theirs) > speedRank(eff) && (mine === null || speedRank(mine) < speedRank(theirs))) {
+        ask = theirs;
+        const what = theirs === 'skip' ? 'skip to the result' : `speed up to ${theirs}×`;
+        html = `${icon(theirs === 'skip' ? 'skip' : 'speed')}<span><b>Your opponent wants to ${what}</b><small>${name} is waiting for you</small></span>`
+          + `<button class="btn primary" data-accept="${theirs}">${theirs === 'skip' ? 'Skip' : `Accept ${theirs}×`}<kbd>${theirs === 'skip' ? 'End' : theirs}</kbd></button>`;
+      } else if (mine !== null && speedRank(mine) > speedRank(eff) && c.requests[opp] !== null) {
+        html = `<i class="dots"></i><span><b>Waiting for opponent…</b><small>${mine === 'skip' ? 'You asked to skip' : `You asked for ${mine}×`}: ${name} must agree</small></span>`;
+      }
+    }
+    if (ask !== null && ask !== this.askFor) sound.open();
+    this.askFor = ask;
+    box.classList.toggle('wait', !!html && ask === null);
+    if (box.innerHTML !== html) box.innerHTML = html;
+    box.hidden = !html;
+    // my own buttons: the one I asked for waits
+    const pend = html && ask === null ? (this.myReq ?? null) : null;
+    this.root.querySelectorAll<HTMLElement>('.speed button').forEach((b) => b.classList.toggle('pending', pend !== null && Number(b.dataset.s) === pend));
+    this.root.querySelector('.skip')?.classList.toggle('pending', pend === 'skip');
+  }
+
+  /** Skip: offline at once; online a request (both players must agree). */
+  private askSkip(): void {
+    if (this.finished) return;
+    if (!this.shared) return this.skip();
+    if (this.info.seat === null) return;
+    sound.click();
+    this.request('skip');
   }
 
   private mySeat(): Seat {
@@ -264,7 +422,13 @@ export class BattleScreen {
   }
   private insetSig = '';
 
-  private setSpeed(s: number): void {
+  private setSpeed(s: 1 | 2 | 4): void {
+    if (this.shared) {
+      if (this.info.seat === null || this.finished) return;
+      store.set('bspeed', String(s));
+      sound.click();
+      return this.request(s);
+    }
     this.speed = s;
     this.pb.speed = s;
     store.set('bspeed', String(s));
@@ -579,6 +743,7 @@ export class BattleScreen {
     this.banner(title, end === 'stalemate' ? 'Neither army could harm the other' : r.timeout ? 'Time is up: 1:30' : 'The field falls silent', won === null ? 'neutral' : won ? 'good' : 'bad');
     this.root.classList.add('over');
     $(this.root, '.skip').setAttribute('disabled', '');
+    this.renderAsk();
     // the last numbers of the fight (the 4 Hz clock has stopped)
     this.insp.update();
     setTimeout(() => this.done(), skipped ? 900 : 2200);

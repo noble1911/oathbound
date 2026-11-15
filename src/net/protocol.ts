@@ -40,6 +40,37 @@ export interface SeatInfo {
   rematch: boolean;
 }
 
+/**
+ * Battle playback speed. 'skip' = jump to the result. Ordered 1 < 2 < 4 < 'skip' (see speedRank).
+ *
+ * Online, playback speed is shared: each human player *requests* a speed ({t:'speed'}), and the effective speed
+ * is the slowest request among the human players who are online (AI seats and disconnected players agree to
+ * anything). So it only goes up when both agree, and drops as soon as either asks for slower. The server
+ * broadcasts every change as a BattleClock; everyone (players and spectators) plays the replay on that one
+ * timeline, and the server's battle timer follows it.
+ */
+export type BattleSpeed = 1 | 2 | 4 | 'skip';
+export const BATTLE_SPEEDS: readonly BattleSpeed[] = [1, 2, 4, 'skip'];
+export const speedRank = (s: BattleSpeed): number => (s === 'skip' ? 3 : s === 4 ? 2 : s === 2 ? 1 : 0);
+/** Playback rate of a speed ('skip' has none: playback jumps to the end). */
+export const speedRate = (s: BattleSpeed): number => (s === 'skip' ? Infinity : s);
+export const isBattleSpeed = (s: unknown): s is BattleSpeed => s === 1 || s === 2 || s === 4 || s === 'skip';
+
+/** The shared battle timeline: playback position = posMs + (t - serverNow) * speed, capped at the replay's end. */
+export interface BattleClock {
+  /** The effective speed. */
+  speed: BattleSpeed;
+  /** Replay position (ms) at `serverNow`. */
+  posMs: number;
+  /** Server epoch ms this clock was computed at. */
+  serverNow: number;
+  /**
+   * Each seat's request; null = the seat does not vote (empty, AI-played, or its player is disconnected).
+   * A request faster than `speed` is waiting for the other player.
+   */
+  requests: [BattleSpeed | null, BattleSpeed | null];
+}
+
 export interface SpectatorInfo { id: number; name: string; connected: boolean }
 
 export interface RoomView {
@@ -84,6 +115,11 @@ export type ClientMsg =
   | { t: 'intent'; intent: Intent }
   /** I finished watching (or skipped) the battle playback. */
   | { t: 'battleDone' }
+  /**
+   * Players only, phase 'battle': my playback speed request (see BattleSpeed). Numeric requests carry over to the
+   * next battles of the match; 'skip' holds for this battle only. Spectators are refused.
+   */
+  | { t: 'speed'; speed: BattleSpeed }
   /** Players only, phase 'over': vote for a rematch; when every human player has, a new match starts with the same seats. */
   | { t: 'rematch' }
   | { t: 'chat'; text: string }
@@ -108,10 +144,12 @@ export type ServerMsg =
   | { t: 'room'; room: RoomView }
   /**
    * The battle replay, once per battle (again on join/rejoin mid-battle). startedAt = server epoch ms when
-   * playback began; offsetMs = how far into the playback the server already was when it sent this (0 when
-   * the battle starts) — seek to it.
+   * playback began; offsetMs = the replay position the shared timeline was at when it sent this (0 when the
+   * battle starts; speed-aware) — seek to it. clock = the shared timeline (current speed and requests).
    */
-  | { t: 'battle'; replay: Replay; startedAt: number; offsetMs: number }
+  | { t: 'battle'; replay: Replay; startedAt: number; offsetMs: number; clock: BattleClock }
+  /** The shared playback speed or a player's request changed (phase 'battle'). */
+  | { t: 'speed'; clock: BattleClock }
   /** An intent or command that was refused. */
   | { t: 'rejected'; error: string }
   /** seat null + system true = a server notice ("Bob disconnected: the AI takes over in 60 s"). */
@@ -128,7 +166,10 @@ export const LORD_PICK_MS = 30_000;
 export const PLANNING_MS = 120_000;
 /** Added to planning when a loot pick is pending. */
 export const LOOT_BONUS_MS = 15_000;
-/** The battle phase ends when every player sent battleDone, or after the replay's duration + this. */
+/**
+ * The battle phase ends when every player sent battleDone, or after the replay's remaining playback (at the
+ * shared speed; none once both skip) + this. Re-timed on every speed change.
+ */
 export const BATTLE_SLACK_MS = 10_000;
 export const RESULTS_MS = 6_000;
 /** A disconnected player's seat is played by the bot after this long (until they rejoin). */
