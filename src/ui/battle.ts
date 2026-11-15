@@ -248,7 +248,8 @@ export class BattleScreen {
 
   /** Keep the fight out from under the HUD: the top bar and tally, the controls, and the inspector when open. */
   private syncInsets(): void {
-    const top = this.tally.getBoundingClientRect().bottom;
+    // the slim top HUD: the plaques' bottom edge (the tally tucks under the medallion on narrow screens)
+    const top = Math.max(this.root.querySelector('.topbar')?.getBoundingClientRect().bottom ?? 0, this.tally.getBoundingClientRect().bottom);
     const ctrl = $(this.root, '.b-ctrl').getBoundingClientRect();
     const dock = this.insp.root.classList.contains('min') ? 0 : this.insp.dockWidth();
     const next = `${Math.round(top)}/${Math.round(innerHeight - ctrl.top)}/${dock}`;

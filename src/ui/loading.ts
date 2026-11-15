@@ -119,9 +119,16 @@ export class LoadChip {
     this.label.textContent = t + '…';
   }
 
+  private stallT: ReturnType<typeof setTimeout> | null = null;
+
   private render(s: LoadState): void {
     this.label.textContent = this.text + '…';
-    if (s.active > 0) {
+    const f0 = s.active > 0 ? loadFraction(s) : 1;
+    // A request whose body is never fully read (e.g. a cached response the loader drops) can leave
+    // `active` above zero forever: treat "all bytes in" as done, and give up after 4 s of no progress.
+    if (this.stallT) clearTimeout(this.stallT);
+    this.stallT = s.active > 0 ? setTimeout(() => this.render({ ...loadState(), active: 0 }), 4000) : null;
+    if (s.active > 0 && !(f0 !== null && f0 >= 0.999)) {
       // brief fetches (a cached model) never flash the chip
       if (!this.showT && !this.root.classList.contains('on')) this.showT = setTimeout(() => ((this.showT = null), loadState().active > 0 && this.root.classList.add('on')), 350);
       const f = loadFraction(s);
@@ -139,6 +146,7 @@ export class LoadChip {
   dispose(): void {
     this.off();
     if (this.showT) clearTimeout(this.showT);
+    if (this.stallT) clearTimeout(this.stallT);
     this.root.remove();
   }
 }

@@ -100,12 +100,12 @@ try {
   await sleep(600);
   await shot('plan-r1');
   // ---- planning layout + framing
-  const audit = await layoutAudit(p, ['.topbar', '.res', '.stash', '.deploy-badge', '.ready-box', '.shell .corner', '.notices', '.coach', '.ucard']);
+  const audit = await layoutAudit(p, ['.tb-side.me', '.tb-mid', '.tb-side.foe', '.r-gold', '.r-army', '.r-ghost', '.stash', '.deploy-badge', '.ready-box', '.shell .corner', '.notices', '.coach', '.ucard']);
   const bad = audit.filter((x) => !/OVERLAP \.shell \.corner x \.coach/.test(x));
   check(bad.length === 0, `planning layout clean ${JSON.stringify(bad.slice(0, 6))}`);
   check((await p.$$('.r-deploy')).length === 0 && (await p.$$('.deploy-badge')).length === 1, '"Deploys left" shown once');
   const zone = await p.evaluate(() => { const s = window.__ob.app.scene; const pts = { fl: [300, 3900], fr: [7700, 3900], ml: [300, 2200], mr: [7700, 2200], bc: [4000, 1300], lord: window.__ob.app.room.view.you.squads[0].pos }; const o = {}; for (const k in pts) o[k] = s.toScreen(pts[k], 0); return o; });
-  const hud = { top: (await rect('.res')).b, bottom: (await rect('.bottom')).y };
+  const hud = { top: Math.max((await rect('.res')).b, (await rect('.topbar')).b), bottom: (await rect('.bottom')).y };
   const vis = (q) => q && q.x >= 0 && q.x <= W && q.y >= hud.top - 2 && q.y <= hud.bottom + 2;
   console.log(`     zone corners ${JSON.stringify(Object.fromEntries(Object.entries(zone).map(([k, v]) => [k, v && [Math.round(v.x), Math.round(v.y)]])))} hud ${JSON.stringify(hud)}`);
   check(vis(zone.lord) && vis(zone.fl) && vis(zone.fr), 'default framing: Lord and the zone front inside the HUD insets');

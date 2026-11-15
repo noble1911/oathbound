@@ -143,8 +143,12 @@ Don't
 
 ## Battle HUD and inspector
 
-- The battle HUD is stone: the lintel (Keep bars, round, the clock with its `/ 1:30` limit), a tally
-  plaque with the two shields, the controls bottom right, and the **battle log bottom left** (newest
+- **No top bar.** Two slim corner plaques (portrait, name and Lord on one line, a thin Keep bar) and
+  a centre medallion (round, clock, phase) float over the field under a soft vignette. Nothing spans
+  the width and nothing is taller than `--hud-h` (3rem: 63px at 1080p). In planning, gold and army
+  sit left of the medallion and the intel label right of it; below 4:3 they tuck under it.
+- The battle HUD is stone: those plaques (the clock shows its `/ 1:30` limit), a tally
+  plaque with the two shields beside the medallion, the controls bottom right, and the **battle log bottom left** (newest
   at the bottom; entries are clickable). The engine is told the HUD insets, so the director frames
   the fight clear of them.
 - The **inspector** (`src/ui/inspector.ts`, data in `src/ui/inspect-data.ts`) is a stone panel docked
