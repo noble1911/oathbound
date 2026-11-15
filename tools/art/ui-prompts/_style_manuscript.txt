@@ -1,4 +1,4 @@
-Portrait style (chosen 2026-11-14): a medieval illuminated manuscript miniature, as in a 14th-century book of hours:
+SUPERSEDED on 2026-11-15 by _style_woodcut.txt (kept for the record). Portrait style (chosen 2026-11-14): a medieval illuminated manuscript miniature, as in a 14th-century book of hours:
 egg tempera on vellum, burnished gold-leaf background with tooled patterns, flat stylised perspective, fine black
 outlines, ultramarine and vermilion pigments, an ornate decorated border with vine scrolls, slightly aged and cracked
 parchment. Not a modern digital painting. Generated with the Codex image tool, using the previous portrait as a

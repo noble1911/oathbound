@@ -5,8 +5,12 @@
 //   node e2e/anim-audit.mjs <tag> [unit,unit,...] [--clips idle,move,...] [--views side,rts]
 // Starts its own vite dev server (no HMR, no file watching, closed at the end) unless BASE is set.
 // Env: BASE, CHROME, TILE (300), FRAMES (8). Writes e2e/shots/anim-audit/<tag>/<unit>-{side-a,side-b,rts}.jpg
+// Remodel: SET=new audits the staged models (STAGE dir, default art-work/stage_v2, laid over public/models/v2),
+// SET=old the models from before the remodel (art-work/backup_v2/pre_remodel); see e2e/remodel-lib.mjs.
+//   SET=old node e2e/anim-audit.mjs v3-old lord_marshal ; SET=new node e2e/anim-audit.mjs v3-new lord_marshal
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
+import { startServer, manifestParam } from './remodel-lib.mjs';
 
 const CHROME = [process.env.CHROME, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].filter(Boolean).find((p) => fs.existsSync(p));
 const TILE = Number(process.env.TILE || 300);
@@ -32,6 +36,9 @@ const UNITS = {
   spear_levy: { type: 'spear_levy', dist: 4.8 }, scimitar: { type: 'scimitar', dist: 4.8 }, camel_archer: { type: 'camel_archer', dist: 7.4 }, mamluk: { type: 'mamluk', dist: 6.2 },
   djinn_binder: { type: 'djinn_binder', dist: 4.8 }, sun_priest: { type: 'sun_priest', dist: 4.6 }, djinn: { type: 'djinn', dist: 9 }, war_elephant: { type: 'war_elephant', dist: 14 },
   sand_golem: { type: 'sand_golem', dist: 11 }, lord_sultana: { type: 'lord', lord: 'sultana', dist: 6.5 },
+  // Lords whose models ship ahead of the sim (archetypes keyed by model id)
+  lord_deathknight: { type: 'lord', lord: 'deathknight', dist: 5.8 }, lord_ossuary: { type: 'lord', lord: 'ossuary', dist: 8.5 }, lord_drakerider: { type: 'lord', lord: 'drakerider', dist: 12 },
+  lord_vizier: { type: 'lord', lord: 'vizier', dist: 6 }, lord_rajah: { type: 'lord', lord: 'rajah', dist: 6 }, lord_rocrider: { type: 'lord', lord: 'rocrider', dist: 12 },
 };
 const want = (args[1] && !args[1].startsWith('--') ? args[1] : Object.keys(UNITS).join(',')).split(',');
 const SHEETS = [['side-a', ['idle', 'move', 'run', 'hit', 'victory', 'reload']], ['side-b', ['attack', 'attack2', 'cast', 'death']]];
@@ -41,7 +48,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let server = null;
 let BASE = process.env.BASE;
-if (!BASE) {
+const SET = process.env.SET;                       // old | new: a model set served by e2e/remodel-lib.mjs
+if (!BASE && SET) {
+  const srv = await startServer({ port: 5187 });
+  server = { close: srv.close };
+  BASE = srv.base;
+} else if (!BASE) {
   const { createServer } = await import('vite');
   server = await createServer({ logLevel: 'error', server: { port: 5187, host: '127.0.0.1', hmr: false, watch: { ignored: ['**/*'] } } });
   await server.listen();
@@ -52,7 +64,7 @@ try {
   const page = await browser.newPage();
   await page.setViewport({ width: TILE, height: TILE });
   page.on('pageerror', (e) => console.log('page error:', e.message));
-  await page.goto(`${BASE}render-test.html?real=all&tier=high&ui=0&blur=0&mode=planning`, { waitUntil: 'load', timeout: 180000 });
+  await page.goto(`${BASE}render-test.html?real=all&tier=high&ui=0&blur=0&mode=planning${SET ? manifestParam(SET) : ''}`, { waitUntil: 'load', timeout: 180000 });
   await page.waitForFunction(() => window.__rt?.ready, { timeout: 180000 });
   await sleep(1500);
   await page.evaluate(() => {

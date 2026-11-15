@@ -779,7 +779,7 @@ def wing_team(m0, info, strength):
     return strength * k
 
 
-def unit_atlas(uid, parts, extra):
+def unit_atlas(uid, parts, extra, lod=''):
     """One material + one team mask for the whole unit. parts = [(LOD0 object, asset id)]; rider and mount were
     baked to separate atlases, and the renderer has a single `tintMask` per unit sampled at UV0 -- so mounted
     heroes shipped with no team colour at all. The atlases are packed side by side, UVs remapped, and the masks
@@ -788,14 +788,16 @@ def unit_atlas(uid, parts, extra):
     sizes = [tuple(i[0].size) for i in imgs]
     masks = []
     for (o, pid), (w, h) in zip(parts, sizes):
-        mp = L.WORK / 'clean' / f'{pid}_team.png'
+        mp = L.WORK / 'clean' / f'{pid}{lod}_team.png'
         m = L.load_gray(mp, w, h) if mp.exists() else np.zeros((h, w), np.float32)
         if extra.get(pid) is not None:
             m = np.maximum(m, extra[pid])
         masks.append(m)
-    out = L.WORK / 'clean' / f'{uid}_unit_team.png'
+    out = L.WORK / 'clean' / f'{uid}{lod}_unit_team.png'
+    hero = max(sizes[0]) >= 2048                             # hero tier (remodel v3): 1024-class mask instead of 256
     if len(parts) == 1:
-        L.save_gray(masks[0], out, 256, 256)
+        ms = 1024 if hero else 256 if not lod else max(128, sizes[0][0] // 2)
+        L.save_gray(masks[0], out, ms, ms)
         parts[0][0]['team_frac'] = L.set_team_attr(parts[0][0], masks[0])
         return
     W = sum(w for w, _ in sizes); H = max(h for _, h in sizes)
@@ -815,8 +817,10 @@ def unit_atlas(uid, parts, extra):
         L.np_img(img, a); img.pack()
         return img
     mdiv = sizes[0][0] // imgs[0][2].size[0]
-    base = canvas(0, f'{uid}_base', 1, False); nrm = canvas(1, f'{uid}_normal', 1, True); mr = canvas(2, f'{uid}_mr', mdiv, True)
-    mat = L.build_material(f'{uid}_mat', base, nrm, mr)
+    base = canvas(0, f'{uid}{lod}_base', 1, False); nrm = canvas(1, f'{uid}{lod}_normal', 1, True); mr = canvas(2, f'{uid}{lod}_mr', mdiv, True)
+    mat = L.build_material(f'{uid}{lod}_mat', base, nrm, mr)
+    culled = all(o.data.materials[0].use_backface_culling for o, _ in parts)
+    mat.use_backface_culling = culled                      # v3 parts are closed, single-sided; v2 bakes stay double-sided
     mask = np.zeros((H, W), np.float32)
     x = 0
     for (o, pid), (w, h), m in zip(parts, sizes, masks):
@@ -826,10 +830,13 @@ def unit_atlas(uid, parts, extra):
         uv = uv.reshape(-1, 2)
         uv[:, 0] = (uv[:, 0] * w + x) / W; uv[:, 1] = uv[:, 1] * h / H
         me.uv_layers.active.data.foreach_set('uv', uv.ravel())
+        two = len(me.materials) > 1                         # slot 1 = double-sided cloth primitive (cleanup.py parts)
         me.materials.clear(); me.materials.append(mat)
+        if two:
+            me.materials.append(L.double_sided(mat, f'{uid}{lod}_cloth'))
         mask[:h, x:x + w] = m
         x += w
-    L.save_gray(mask, out, W // 4, H // 4)
+    L.save_gray(mask, out, W // (2 if (hero or lod) else 4), H // (2 if (hero or lod) else 4))
     for o, _ in parts:
         o['team_frac'] = L.set_team_attr(o, mask)
     print(f'[creature] unit atlas {W}x{H}, team mask {out.name}')
@@ -906,6 +913,10 @@ def main():
             bpy.data.actions.remove(act)
     wings = wing_team(m0, info, cfg['team_wings']) if cfg.get('team_wings') and info['wings'] else None
     unit_atlas(uid, [(m0, mount_id)] + [(o, rider_id) for o in meshes0[1:]], {mount_id: wings})
+    if (L.WORK / 'clean' / f'{mount_id}_lod1_team.png').exists() and not a.get('squad'):
+        # hero tier: the low graphics tier draws LOD1, which has its own atlases -> one atlas + one mask there too
+        wings1 = wing_team(m1, info, cfg['team_wings']) if cfg.get('team_wings') and info['wings'] else None
+        unit_atlas(uid, [(m1, mount_id)] + [(o, rider_id) for o in meshes1[1:]], {mount_id: wings1}, lod='_lod1')
     cr = Creature(rig, info, cfg, mount_id, flier)
     # ---- clips
     impact = int(round(a.get('impact', 0.42) * FPS))

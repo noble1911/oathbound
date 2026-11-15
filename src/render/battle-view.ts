@@ -105,6 +105,10 @@ export class BattleView {
         material.roughnessMap = sm.roughnessMap ?? null;
         material.metalnessMap = sm.metalnessMap ?? null;
         material.normalMap = sm.normalMap ?? null;
+        // authored cloth (capes, banners, caparisons: a material whose name contains `cloth`, exported double-sided) is
+        // drawn from both sides. Every other material stays single-sided even when the file says doubleSided (the
+        // Blender exporter flags every material that way), so closed bodies never pay for their back faces.
+        if (sm.side === THREE.DoubleSide && /cloth/i.test(sm.name)) material.side = THREE.DoubleSide;
       }
       return { material, uniforms };
     });

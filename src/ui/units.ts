@@ -7,7 +7,7 @@ import type { SquadSheet, StatKey, StatLine } from '../sim/sheet.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { esc } from './dom.ts';
-import { art } from './art.ts';
+import { art, glyphVars } from './art.ts';
 import { icon } from './icons.ts';
 import { cooldownText, skillGlyph } from './items.ts';
 import { costTier, counters, dps, soldierStats, tagsOf, TAG_LABEL, unitName, WEAPON_LABEL, RARITY_CSS, SLOTS } from './gamedata.ts';
@@ -28,17 +28,24 @@ const TRAIT_TEXT: Record<string, string> = {
 
 export const LORD_HUE: Record<LordId, string> = { marshal: '#b98a2e', archmage: '#6a4fb0', warden: '#3f7a48', skylady: '#3f86c4', lich: '#4fbf7a', sultana: '#2fa7a0' };
 
-/** A crest portrait: tier-coloured shield with the weapon glyph. */
+/**
+ * A crest: the woodcut portrait in a shield. It also carries the unit's battlefield glyph (class `gl` + sprite
+ * variables); the stylesheet swaps to the glyph, in a round disc, wherever a crest is drawn too small for a
+ * portrait to read (`.crest.sm` and a few compact surfaces: see "glyph crests" in style.css).
+ */
 export function crest(t: SquadType, lord?: LordId | null, size: 'sm' | 'md' | 'lg' = 'md'): string {
-  const img = art(t === 'lord' ? `lord_${lord ?? 'marshal'}` : `unit_${t}`);
+  const id = t === 'lord' ? `lord_${lord ?? 'marshal'}` : `unit_${t}`;
+  const img = art(id);
+  const g = glyphVars(id);
+  const gl = g ? ' gl' : '';
   if (t === 'lord') {
     const L = LORDS[lord ?? 'marshal'];
-    if (img) return `<div class="crest ${size} lord art" style="--hue:${LORD_HUE[L.id]};--img:url(${img})"><i class="crest-crown">${icon('crown')}</i></div>`;
-    return `<div class="crest ${size} lord" style="--hue:${LORD_HUE[L.id]}">${icon(L.weapon)}<i class="crest-crown">${icon('crown')}</i></div>`;
+    if (img) return `<div class="crest ${size} lord art${gl}" style="--hue:${LORD_HUE[L.id]};--img:url(${img});${g}"><i class="crest-crown">${icon('crown')}</i></div>`;
+    return `<div class="crest ${size} lord${gl}" style="--hue:${LORD_HUE[L.id]};${g}">${icon(L.weapon)}<i class="crest-crown">${icon('crown')}</i></div>`;
   }
   const d = UNITS[t];
-  if (img) return `<div class="crest ${size} art ${TIER_CLASS[costTier(d.cost)]}" style="--img:url(${img})"></div>`;
-  return `<div class="crest ${size} ${TIER_CLASS[costTier(d.cost)]}">${icon(d.weapon)}</div>`;
+  if (img) return `<div class="crest ${size} art ${TIER_CLASS[costTier(d.cost)]}${gl}" style="--img:url(${img});${g}"></div>`;
+  return `<div class="crest ${size} ${TIER_CLASS[costTier(d.cost)]}${gl}" style="${g}">${icon(d.weapon)}</div>`;
 }
 
 export function tagIcons(t: SquadType, lord?: LordId | null): string {

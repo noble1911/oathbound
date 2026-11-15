@@ -49,11 +49,24 @@ export const LORD_KEEP_DMG = 60;
 export function income(round: number): number {
   return round <= 1 ? START_GOLD : Math.min(500, 200 + 25 * round);
 }
-export function levelUpCost(type: UnitType, level: number): number {
-  return UNITS[type].cost * level;
+/**
+ * A level-up costs the same at every level: LEVEL_COST_PCT percent of the unit's cost. (It used to be unit cost x
+ * level, which made a level 2-5x less gold-efficient than a new squad, so nobody levelled; see
+ * docs/reviews/POSITIONING-AND-ECONOMY.md section 6.) A Lv5 squad costs 2.4x its base price in all.
+ */
+export const LEVEL_COST_PCT = 40;
+/** What each squad level adds to every soldier (percent of the Lv1 value): life and damage. */
+export const LEVEL_HP_PCT = 25;
+export const LEVEL_DMG_PCT = 20;
+export function levelUpCost(type: UnitType, _level: number): number {
+  return Math.trunc((UNITS[type].cost * LEVEL_COST_PCT) / 100);
 }
+/**
+ * Selling in the round of purchase is an undo: nothing has happened since, so everything spent on the squad (its
+ * cost and any level-ups) comes back. A squad deployed in an earlier round refunds nothing.
+ */
 export function sellRefund(sq: Squad, round: number): number {
-  return sq.deployedRound === round ? Math.floor(sq.spent / 2) : 0;
+  return sq.deployedRound === round ? sq.spent : 0;
 }
 export function lordLevelForXp(xp: number): number {
   let l = 1;
@@ -83,16 +96,27 @@ export function suddenDeathPct(round: number): number {
   return round >= SUDDEN_DEATH_ROUND ? 100 + SUDDEN_DEATH_PCT * (round - SUDDEN_DEATH_ROUND + 1) : 100;
 }
 /**
- * Total keep damage dealt by `seat`'s survivors (DESIGN §1). `won` (a wipe or a points win) adds
- * KEEP_DMG_BASE_PER_ROUND x round; `timeout` = a points draw, half the survivors' damage. Everything is scaled by the
- * sudden-death multiplier of the round. The rule is the same for both seats and does not look at who is ahead.
+ * The round bonus is paid in proportion to the winning margin (points, 0..100): a win by ROUND_BONUS_FULL_MARGIN points
+ * or more earns all of it, a narrow win a share. A close round is decided by fine details nobody can plan for, so it
+ * should not pay like a clear one (docs/reviews/POSITIONING-AND-ECONOMY.md section 7).
  */
-export function keepDamageOf(squads: Squad[], survivorIds: number[], round: number, won: boolean, timeout: boolean): number {
+export const ROUND_BONUS_FULL_MARGIN = 40;
+export function roundBonus(round: number, margin: number): number {
+  const m = Math.max(0, Math.min(ROUND_BONUS_FULL_MARGIN, Math.trunc(margin)));
+  return Math.trunc((KEEP_DMG_BASE_PER_ROUND * round * m) / ROUND_BONUS_FULL_MARGIN);
+}
+/**
+ * Total keep damage dealt by `seat`'s survivors (DESIGN §1). `won` (a wipe or a points win) adds the round bonus,
+ * KEEP_DMG_BASE_PER_ROUND x round scaled by the winning `margin` (points; the default pays it in full);
+ * `timeout` = a points draw, half the survivors' damage. Everything is scaled by the sudden-death multiplier of the
+ * round. The rule is the same for both seats and does not look at who is ahead.
+ */
+export function keepDamageOf(squads: Squad[], survivorIds: number[], round: number, won: boolean, timeout: boolean, margin = ROUND_BONUS_FULL_MARGIN): number {
   let d = 0;
   for (const sq of squads) if (survivorIds.includes(sq.id)) d += squadKeepDamage(sq);
   const sd = suddenDeathPct(round);
   if (timeout) return Math.trunc((Math.trunc(d / 2) * sd) / 100);
-  return won ? Math.trunc(((d + KEEP_DMG_BASE_PER_ROUND * round) * sd) / 100) : 0;
+  return won ? Math.trunc(((d + roundBonus(round, margin)) * sd) / 100) : 0;
 }
 
 /** Keep HP as an integer percentage of its maximum. */

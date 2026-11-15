@@ -10,7 +10,7 @@ import type { Intent, Item, LordId, PlayerState, PlayerView, Seat, Slot, Squad, 
 import { factionOfLord } from '../sim/data/factions.ts';
 import type { RoomView } from '../net/protocol.ts';
 import { UNITS } from '../sim/data/units.ts';
-import { LORDS } from '../sim/data/lords.ts';
+import { LORDS, lordAuraRing } from '../sim/data/lords.ts';
 import { inDeployZone, levelUpCost, sellRefund, ARMY_CAP, MAX_SQUAD_LEVEL, LORD_XP_LEVELS, MAX_LORD_LEVEL, overlappingSquad, freeSpotNear } from '../sim/match.ts';
 import { SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
 import { sound } from '../audio.ts';
@@ -26,10 +26,30 @@ import { squadSkills } from '../sim/data/skills.ts';
 import { defaultFacing, dps, rarityRank, SHOP_KEYS, SLOT_LABEL, SLOTS, slotOpen, soldierStats, unitName, allItems } from './gamedata.ts';
 import { niceError, TopBar } from './hud.ts';
 import { DraftModal, LootModal } from './loot.ts';
+import { frontLine, groupPlace, itemsKey, marchFoes, marchOf, mirrorPlace, planMoves, snapPos, syncBySpeed, type March, type MarchFoe, type Placed } from './timing.ts';
+import type { TimingSpec } from './scene-adapter.ts';
 
 type Drag =
   | { kind: 'place'; unit: UnitType; facing: number; fromShop: boolean; moved: boolean; pos: Vec2 | null; rot: Vec2 | null }
-  | { kind: 'move'; id: number; facing: number; start: [number, number]; moved: boolean; pos: Vec2 | null; rot: Vec2 | null };
+  | { kind: 'move'; id: number; facing: number; start: [number, number]; moved: boolean; pos: Vec2 | null; rot: Vec2 | null }
+  /**
+   * Several selected squads at once: `grab` is the ground under the press, `delta` how far the group has
+   * moved, `steps` how far it has turned about its centroid (right-drag or Q/E). `base` is where each
+   * squad stood when the drag began; `out` the settled spots shown while dragging.
+   */
+  | { kind: 'group'; ids: number[]; start: [number, number]; grab: Vec2; moved: boolean; delta: Vec2; steps: number; rot: { from: number; at: number } | null; base: Map<number, Placed>; out: Map<number, Placed> | null; pos: Vec2 | null; turnOnly: boolean; hit: number };
+
+/** One undoable planning action: `undo` sends the intents that revert it (false: nothing left to revert). */
+interface UndoEntry {
+  label: string;
+  at: number;
+  undo: () => boolean;
+  /** Same key, moments apart (a few Q/E presses): one undo step. */
+  key?: string;
+}
+const UNDO_MAX = 24;
+/** Group turn per Q/E press (binary angle: 16 = 22.5 degrees). */
+const TURN_STEP = 16;
 
 const GHOST_TIP = 'The red ghosts on the far half are where the enemy army stood in the last battle. You never see what they are doing now. Hover or click one to read it.';
 const GHOST_TIP_NONE = 'From round 2 you always see where the enemy army stood in the last battle.';
@@ -56,6 +76,7 @@ export class PlanningScreen {
   private shop: HTMLElement;
   private panel: HTMLElement;
   private stash: HTMLElement;
+  private tools: HTMLElement;
   private readyBox: HTMLElement;
   private notices: HTMLElement;
   private hint: HTMLElement;
@@ -63,10 +84,27 @@ export class PlanningScreen {
   private view: PlayerView | null = null;
   private me: PlayerState | null = null;
   private seat: Seat = 0;
-  private selected: number | null = null;
+  /** My selected squads (one, several, or none). */
+  private sel = new Set<number>();
+  /** The one selected squad of mine, when exactly one is selected (level up, sell, equip-on-click). */
+  private get selected(): number | null {
+    return this.sel.size === 1 ? this.sel.values().next().value! : null;
+  }
   private ghostSel: number | null = null;
   private drag: Drag | null = null;
-  private pending: { id: number; pos: Vec2; facing: number } | null = null;
+  /** Where my squads are shown until the server's snapshot catches up with the moves just sent. */
+  private pend = new Map<number, Placed>();
+  /** This planning phase's undoable actions (newest last). */
+  private undos: UndoEntry[] = [];
+  /** Box selection in progress (screen px). */
+  private box: { x: number; y: number; add: boolean; el: HTMLElement | null } | null = null;
+  /** The march preview: full routes for every squad (T), or tags only. */
+  private routesOn = store.get('plan.routes') === '1';
+  private marchCache = new Map<string, March>();
+  private foes: MarchFoe[] = [];
+  private foesKey = '';
+  private front = 0;
+  private timingKey = '';
   private loot: LootModal | null = null;
   private draft: DraftModal | null = null;
   private lootSeen = '';
@@ -99,6 +137,13 @@ export class PlanningScreen {
       </div>
       <div class="notices"></div>
       <aside class="sqpanel panel"></aside>
+      <div class="ptools" role="toolbar" aria-label="Formation">
+        <button class="btn pt pt-undo" disabled>${icon('undo')}<small>Undo</small></button>
+        <button class="btn pt pt-mirror" data-tip="Mirror your whole formation left to right">${icon('mirror')}<small>Mirror</small></button>
+        <button class="btn pt pt-sync">${icon('sync')}<small>Sync</small></button>
+        <button class="btn pt pt-timing" aria-pressed="false" data-tip="March routes: every squad's path, with the seconds to the river and to where the enemy's front stood last round [T]. The seconds under each plate are always on.">${icon('route')}<small>Routes</small></button>
+        <button class="btn pt pt-snap" aria-pressed="false">${icon('grid')}<small>Snap</small></button>
+      </div>
       <aside class="stash panel"><header>${icon('bag')}<b>Stash</b><small></small></header><div class="stash-grid"></div><p class="stash-hint">Drag items onto a squad or its slots. Drag here to unequip.</p></aside>
       <div class="bottom">
         <div class="deploy-badge" data-tip="New squads you may still deploy this round. Levelling up and equipping are unlimited."><small>Deploys left</small><b>2</b><span>of 2 this round</span></div>
@@ -113,6 +158,12 @@ export class PlanningScreen {
     this.shop = $(this.root, '.shop');
     this.panel = $(this.root, '.sqpanel');
     this.stash = $(this.root, '.stash');
+    this.tools = $(this.root, '.ptools');
+    $(this.tools, '.pt-undo').addEventListener('click', () => this.undo());
+    $(this.tools, '.pt-mirror').addEventListener('click', () => this.mirror());
+    $(this.tools, '.pt-sync').addEventListener('click', () => this.syncSpeed());
+    $(this.tools, '.pt-timing').addEventListener('click', () => this.toggleRoutes());
+    $(this.tools, '.pt-snap').addEventListener('click', () => this.toggleSnap());
     this.readyBox = $(this.root, '.ready-box');
     this.notices = $(this.root, '.notices');
     this.hint = $(this.root, '.phint');
@@ -138,9 +189,21 @@ export class PlanningScreen {
     const foeSeat = (1 - mySeat) as Seat;
     this.names = [room.seats[mySeat]?.name ?? (spect ? 'South' : 'You'), room.seats[foeSeat]?.name ?? (spect ? 'North' : 'Rival')];
     this.root.classList.toggle('spectating', spect);
-    if (this.pending && this.me && this.me.squads.some((s) => s.id === this.pending!.id && s.pos[0] === this.pending!.pos[0] && s.pos[1] === this.pending!.pos[1])) this.pending = null;
-    if (this.pending && newRound) this.pending = null;
-    if (this.selected !== null && !this.me?.squads.some((s) => s.id === this.selected)) this.select(null);
+    if (newRound) {
+      // undo, optimistic moves and the selection belong to one planning phase
+      this.pend.clear();
+      this.undos = [];
+      if (this.sel.size > 1) this.sel.clear();
+    }
+    for (const [id, p] of this.pend) {
+      const sq = this.me?.squads.find((s) => s.id === id);
+      if (!sq || (sq.pos[0] === p.pos[0] && sq.pos[1] === p.pos[1] && sq.facing === p.facing)) this.pend.delete(id);
+    }
+    const gone = [...this.sel].filter((id) => !this.me?.squads.some((s) => s.id === id));
+    if (gone.length) {
+      for (const id of gone) this.sel.delete(id);
+      this.select(this.sel.size === 1 ? this.selected : null, false, [...this.sel]);
+    }
 
     this.scene.setPerspective(v.seat);
     this.scene.setTerrain(v.terrain);
@@ -257,10 +320,19 @@ export class PlanningScreen {
     this.backend.intent(i);
   }
 
+  /** The server refused an intent: the action just recorded for undo did not happen, and shown moves snap back. */
   rejected(e: string): void {
+    const last = this.undos[this.undos.length - 1];
+    if (last && performance.now() - last.at < 1500) this.undos.pop();
+    this.pend.clear();
+    this.refuse(e);
+    this.syncRange();
+  }
+
+  /** Refused here, before anything was sent. */
+  private refuse(e: string): void {
     sound.error();
     toast(niceError(e), 'bad');
-    this.pending = null;
     if (/deploy/.test(e)) this.shake('.deploy-badge');
     if (/gold/.test(e)) this.shake('.r-gold');
     this.drawArmy();
@@ -276,10 +348,20 @@ export class PlanningScreen {
 
   // ---------------------------------------------------------------- scene
 
+  /** My squads as drawn: a group being dragged where it would land, moves just sent where they will be. */
   private squadsShown(): Squad[] {
     const me = this.me;
     if (!me) return [];
-    return me.squads.map((s) => (this.pending && s.id === this.pending.id ? { ...s, pos: this.pending.pos, facing: this.pending.facing } : s));
+    const live = this.drag?.kind === 'group' && this.drag.moved ? this.drag.out : null;
+    return me.squads.map((s) => {
+      const p = live?.get(s.id) ?? this.pend.get(s.id);
+      return p ? { ...s, pos: p.pos, facing: p.facing } : s;
+    });
+  }
+
+  /** Where one of my squads stands as far as the player can tell (pending moves included). */
+  private shownSquad(id: number | null): Squad | null {
+    return id === null ? null : (this.squadsShown().find((s) => s.id === id) ?? null);
   }
 
   private drawArmy(): void {
@@ -293,7 +375,14 @@ export class PlanningScreen {
     }
     const ghosts = this.me && v.enemy.lastArmy ? v.enemy.lastArmy.map((s) => visual(s, v.enemy.lord)) : null;
     this.scene.setGhosts(ghosts);
-    this.scene.setSelected(this.selected ?? this.ghostSel);
+    this.syncSelection();
+    this.renderTiming();
+    this.renderTools();
+  }
+
+  private syncSelection(): void {
+    if (this.ghostSel !== null || !this.scene.setSelection) this.scene.setSelected(this.selected ?? this.ghostSel);
+    else this.scene.setSelection([...this.sel]);
   }
 
   /** Tab / Shift+Tab: select the next / previous of my squads (the Lord first, then left to right, front to back). */
@@ -474,26 +563,75 @@ export class PlanningScreen {
     return null;
   }
 
-  private select(id: number | null, ghost = false): void {
+  /** Select one squad (`ghost`: one of the enemy's last-round army), several of mine (`many`), or none. */
+  private select(id: number | null, ghost = false, many?: number[]): void {
     if (ghost) {
       this.ghostSel = id;
-      this.selected = null;
+      this.sel.clear();
     } else {
-      this.selected = id;
       this.ghostSel = null;
+      this.sel = new Set(many ?? (id === null ? [] : [id]));
     }
-    this.scene.setSelected(id);
-    const watched = !this.me ? this.shown(id) : null;
-    const sq = watched ? watched.sq : ghost ? this.ghost(id) : this.squad(id);
-    if (sq) {
-      const s = soldierStats(sq.type, sq.level, sq.type === 'lord' ? (watched ? watched.lord : ghost ? this.view!.enemy.lord : this.me!.lord) : null);
-      this.scene.setRange({ pos: sq.pos, range: s.range, minRange: s.minRange, enemy: watched ? sq.owner !== this.seat : ghost });
-    } else this.scene.setRange(null);
+    this.syncSelection();
+    this.syncRange();
     this.renderPanel();
+    this.renderTools();
+    this.renderTiming();
+  }
+
+  /** The range ring (and a Lord's aura ring) of the one selected squad, where it is shown. */
+  private syncRange(): void {
+    const watched = !this.me ? this.shown(this.ghostSel) : null;
+    const ghost = this.ghostSel !== null;
+    const sq = watched ? watched.sq : ghost ? this.ghost(this.ghostSel) : this.shownSquad(this.selected);
+    if (!sq) return this.scene.setRange(null);
+    const lord = sq.type === 'lord' ? (watched ? watched.lord : ghost ? this.view!.enemy.lord : this.me!.lord) : null;
+    const s = soldierStats(sq.type, sq.level, lord);
+    const aura = lord ? lordAuraRing(LORDS[lord].ability) : null;
+    this.scene.setRange({ pos: sq.pos, range: s.range, minRange: s.minRange, enemy: watched ? sq.owner !== this.seat : ghost, aura });
+  }
+
+  /**
+   * Several squads selected: a compact list (fastest to the river first) with what the group can do
+   * together; a row selects that squad alone. No level-up or sell here: those are one squad at a time.
+   */
+  private renderGroupPanel(): void {
+    const me = this.me!;
+    const shown = this.squadsShown().filter((q) => this.sel.has(q.id));
+    const rows = shown.map((q) => ({ q, m: this.march(q) })).sort((a, b) => (a.m.river?.sec ?? 1e9) - (b.m.river?.sec ?? 1e9) || a.q.id - b.q.id);
+    const melee = rows.filter((r) => r.q.type !== 'lord' && !r.m.ranged);
+    const times = melee.map((r) => r.m.river?.sec).filter((x): x is number => x !== undefined);
+    const spread = times.length >= 2 ? Math.max(...times) - Math.min(...times) : null;
+    const lord = me.lord;
+    const html = `
+      <header class="sp-h"><div class="sp-t"><small>Selection</small><b>${rows.length} squads</b><span class="sp-gsum">${melee.length} melee · ${rows.length - melee.length} ranged or Lord</span></div><button class="icon close" data-tip="Deselect [Esc]">${icon('close')}</button></header>
+      <div class="sp-acts grp"><button class="btn primary g-sync" ${me.ready || melee.length < 2 ? 'disabled' : ''} data-tip="Stagger the selected melee squads in depth so they reach the river together: the slowest at the front edge, the fast ones held back.">${icon('sync')}<span>Sync by speed</span></button><button class="btn g-turn" ${me.ready ? 'disabled' : ''} data-tip="Turn the group a quarter about its centre [Shift+E]">${icon('rotate')}<span>Turn</span></button></div>
+      ${spread !== null ? `<p class="sp-gnote ${spread <= 1 ? 'good' : ''}">${spread <= 1 ? `Melee reaches the river together, ${Math.max(...times).toFixed(1)} s in` : `Melee reaches the river <b>${spread.toFixed(1)} s</b> apart (${Math.min(...times).toFixed(1)} to ${Math.max(...times).toFixed(1)} s)`}</p>` : ''}
+      <div class="sp-sec"><small>March · to the river</small><ul class="sp-glist">${rows
+        .map(({ q, m }) => `<li data-id="${q.id}" data-tip="Select only this squad">${crest(q.type, q.type === 'lord' ? lord : null, 'sm')}<span class="gl-n">${esc(unitName(q.type, q.type === 'lord' ? lord : null))}</span><small class="gl-l">${q.type === 'lord' ? '' : `Lv ${q.level}`}</small><small class="gl-s">${m.speed.toFixed(1)} m/s</small><b class="gl-t">${m.river ? `${m.river.sec.toFixed(1)} s` : m.hold ? `hold ${m.hold.sec.toFixed(1)} s` : '–'}</b></li>`)
+        .join('')}</ul></div>
+      <p class="sp-hint">Drag one to move them all · right-drag or <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>Shift</kbd>-click add or remove · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</p>`;
+    if (this.panel.dataset.grp === html) return;
+    this.panel.dataset.grp = html;
+    this.panel.innerHTML = html;
+    this.panel.querySelector('.close')!.addEventListener('click', () => this.select(null));
+    this.panel.querySelector('.g-sync')?.addEventListener('click', () => this.syncSpeed());
+    this.panel.querySelector('.g-turn')?.addEventListener('click', () => this.turnSelection(-64));
+    this.panel.querySelectorAll<HTMLElement>('.sp-glist li').forEach((li) =>
+      li.addEventListener('click', () => {
+        sound.click();
+        this.select(Number(li.dataset.id));
+      }),
+    );
   }
 
   private renderPanel(): void {
     const me = this.me;
+    if (me && this.sel.size > 1) {
+      this.root.classList.add('has-sel');
+      return this.renderGroupPanel();
+    }
+    delete this.panel.dataset.grp;
     // spectators select squads of either last-round army (read-only, like a ghost)
     const watched = !me ? this.shown(this.ghostSel) : null;
     const ghost = this.ghostSel !== null;
@@ -529,7 +667,7 @@ export class PlanningScreen {
       actions = `<div class="sp-acts">
         <button class="btn primary lvl" ${can ? '' : 'disabled'} data-tip="${maxed ? 'Max level' : `+25% life, +20% damage${opens} [U]${whyNot ? '. ' + whyNot : ''}`}">
           ${icon('up')}<span>${maxed ? 'Max level' : `Level ${sq.level + 1}`}</span>${maxed ? '' : `<em>${icon('gold')}${cost}</em>`}</button>
-        <button class="btn danger sell ${armed ? 'armed' : ''}" ${me.ready ? 'disabled' : ''} data-tip="${refund ? 'Refunds 50% (only in the round it was deployed). Items go to your stash.' : 'No refund: this squad was deployed in an earlier round. Items go to your stash.'} Press twice to confirm. [Del]">${icon('sell')}<span>${armed ? 'Confirm sell' : 'Sell'}</span><em>${refund ? `+${refund}` : '0'}</em></button>
+        <button class="btn danger sell ${armed ? 'armed' : ''}" ${me.ready ? 'disabled' : ''} data-tip="${refund ? 'Refunds 100%: a sale in the round it was deployed is an undo. Items go to your stash.' : 'No refund: this squad was deployed in an earlier round. Items go to your stash.'} Press twice to confirm. [Del]">${icon('sell')}<span>${armed ? 'Confirm sell' : 'Sell'}</span><em>${refund ? `+${refund}` : '0'}</em></button>
       </div>`;
     }
     const slots = SLOTS.map((slot) => {
@@ -563,7 +701,7 @@ export class PlanningScreen {
       <details class="sp-sec st-d" ${statsOpen ? 'open' : ''}><summary><span data-tip="Stats of one soldier, after level and items">Stats${!isLord ? ` · squad DPS ${squadDps}` : ''}</span><span class="sp-brief">${brief}</span></summary>${sheet ? sheetStats(sheet) : statBlock(sq.type, sq.level, lord)}</details>
       ${isLord ? `<div class="sp-sec lt"><div class="lt-pass"><small>Passive</small>${esc(LORDS[lord!].passive)}</div><div class="lt-abil"><small>${esc(LORDS[lord!].abilityName)}</small>${esc(LORDS[lord!].abilityText)}</div></div>` : ''}
       ${def ? `<div class="sp-sec ctr-d"><small>Counters</small>${countersBlock(def.id)}</div>` : ''}
-      ${!ghost && me ? '<p class="sp-hint">Drag on the field to move · <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turn the squad</p>' : ''}`;
+      ${!ghost && me ? `${this.marchLine(sq)}<p class="sp-hint">Drag on the field to move · <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>Shift</kbd>-click another to group</p>` : ''}`;
     this.panel.querySelector('.close')!.addEventListener('click', () => this.select(null));
     this.panel.querySelector('.lvl')?.addEventListener('click', () => this.levelUp());
     this.panel.querySelector('.sell')?.addEventListener('click', () => this.sell());
@@ -586,6 +724,17 @@ export class PlanningScreen {
       const it = sq.items[slot];
       if (it) tip(slotEl, () => itemTooltip(it, { hint: ghost || !me ? undefined : 'Drag to another squad or to the stash', on: { type: sq.type, lord } }));
     });
+  }
+
+  /** One line on the squad panel: its march speed and when it reaches the river and the enemy's front. */
+  private marchLine(sq: Squad): string {
+    if (!this.view) return '';
+    const m = this.march(this.shownSquad(sq.id) ?? sq);
+    const parts = [`${m.speed.toFixed(1)} m/s${m.flier ? ', flies' : ''}`];
+    if (m.river) parts.push(`river <b>${m.river.sec.toFixed(1)} s</b>`);
+    if (m.front) parts.push(`their front ${m.front.sec.toFixed(1)} s`);
+    else if (m.hold) parts.push(`in range ${m.hold.sec.toFixed(1)} s`);
+    return `<p class="sp-march" data-tip="The march if the enemy stood where it stood last round: open-ground speed, then seconds to the river and to the enemy's last front line (terrain, crossings and the squad's target included). Press T for every route.">${icon('route')}<span>${parts.join(' · ')}</span></p>`;
   }
 
   private levelUp(): void {
@@ -643,6 +792,269 @@ export class PlanningScreen {
     });
   }
 
+  // ---------------------------------------------------------------- formation tools, undo
+
+  /** Grid snap in cm (0 = off; 50 or 100), shared with the settings popover. */
+  private snapStep(): number {
+    const v = Number(store.get('plan.snap') ?? 0);
+    return v === 50 || v === 100 ? v : 0;
+  }
+
+  private toggleSnap(): void {
+    const on = this.snapStep();
+    const last = Number(store.get('plan.snapLast') ?? 100) === 50 ? 50 : 100;
+    store.set('plan.snap', String(on ? 0 : last));
+    if (on) store.set('plan.snapLast', String(on));
+    sound.click();
+    toast(on ? 'Grid snap off' : `Grid snap ${last === 50 ? '0.5' : '1'} m`, 'info', 1300);
+    this.renderTools();
+    if (this.drag) this.preview();
+  }
+
+  private toggleRoutes(): void {
+    this.routesOn = !this.routesOn;
+    store.set('plan.routes', this.routesOn ? '1' : '0');
+    sound.click();
+    this.renderTools();
+    this.renderTiming();
+  }
+
+  private pushUndo(label: string, undo: () => boolean, key?: string): void {
+    this.undos.push({ label, at: performance.now(), undo, key });
+    if (this.undos.length > UNDO_MAX) this.undos.shift();
+    this.renderTools();
+  }
+
+  /**
+   * Move squads to `targets`: the intents go out in an order the server accepts one by one (see
+   * planMoves), the squads are drawn there at once, and (unless this is itself an undo) the old spots
+   * are remembered.
+   */
+  private moveSquads(targets: Map<number, Placed>, label: string | null): boolean {
+    const me = this.me;
+    if (!me || me.ready) return false;
+    const shown = this.squadsShown();
+    const before = new Map<number, Placed>();
+    for (const id of targets.keys()) {
+      const sq = shown.find((q) => q.id === id);
+      if (sq) before.set(id, { pos: sq.pos, facing: sq.facing });
+    }
+    const intents = planMoves(shown, targets, this.seat);
+    if (!intents.length) return false;
+    if (label) {
+      const key = label + ':' + [...before.keys()].sort((a, b) => a - b).join(',');
+      const last = this.undos[this.undos.length - 1];
+      // turning the same squads a few steps in a row is one action to undo
+      if (last && last.key === key && /^turn/.test(label) && performance.now() - last.at < 2500) last.at = performance.now();
+      else this.pushUndo(label, () => this.moveSquads(new Map([...before].filter(([id]) => this.squad(id))), null), key);
+    }
+    for (const [id, t] of targets) if (before.has(id)) this.pend.set(id, t);
+    this.drawArmy();
+    this.syncRange();
+    for (const i of intents) this.intent(i);
+    return true;
+  }
+
+  private undo(): void {
+    const me = this.me;
+    if (!me) return;
+    if (me.ready) return this.refuse('You are Ready: un-ready to make changes');
+    if (this.drag) this.endDrag();
+    const e = this.undos.pop();
+    if (!e) {
+      sound.error();
+      toast('Nothing to undo this round', 'info', 1500);
+    } else if (!e.undo()) toast(`Nothing left to undo for: ${e.label}`, 'info', 1800);
+    else {
+      sound.click();
+      toast(`Undone: ${e.label}`, 'info', 1300);
+    }
+    this.renderTools();
+  }
+
+  /** Remember a deploy: undoing it sells the new squad in the same round (a refund). */
+  private undoDeploy(u: UnitType): void {
+    const before = new Set(this.me?.squads.map((s) => s.id) ?? []);
+    const round = this.round;
+    this.pushUndo(`deploy ${UNITS[u].name}`, () => {
+      const sq = this.me?.squads.find((s) => !before.has(s.id) && s.type === u && s.deployedRound === round);
+      if (!sq) return false;
+      this.pend.delete(sq.id);
+      if (this.sel.has(sq.id)) {
+        this.sel.delete(sq.id);
+        this.select(this.sel.size === 1 ? this.selected : null, false, [...this.sel]);
+      }
+      sound.coin();
+      this.intent({ t: 'sell', squad: sq.id });
+      return true;
+    });
+  }
+
+  /** Remember an item move: `from` / `to` are squads (null = the stash). */
+  private undoItem(item: Item, from: number | null, to: number | null): void {
+    const prev = to !== null ? (this.squad(to)?.items[item.slot]?.id ?? null) : null;
+    this.pushUndo(to === null ? 'unequip' : 'equip', () => {
+      const me = this.me;
+      if (!me) return false;
+      const out: Intent[] = [];
+      if (to === null) {
+        if (from === null || !this.squad(from)) return false;
+        out.push({ t: 'equip', item: item.id, squad: from });
+      } else {
+        out.push(from === null || !this.squad(from) ? { t: 'unequip', item: item.id } : { t: 'moveItem', item: item.id, squad: from });
+        if (prev !== null && this.squad(to)) out.push({ t: 'equip', item: prev, squad: to });
+      }
+      sound.equip();
+      for (const i of out) this.intent(i);
+      return true;
+    });
+  }
+
+  /** Mirror the whole army left-right inside the zone. */
+  private mirror(): void {
+    const me = this.me;
+    if (!me || me.ready) return;
+    if (this.drag) this.endDrag();
+    const shown = this.squadsShown();
+    if (!shown.length) return;
+    if (this.moveSquads(mirrorPlace(shown, this.seat), 'mirror formation')) {
+      sound.drop();
+      toast('Formation mirrored', 'info', 1200);
+    }
+  }
+
+  /**
+   * Sync by speed: the selected melee squads (all of them when fewer than two are selected) are staggered
+   * in depth so they reach the river together, the slowest at the front edge.
+   */
+  private syncSpeed(): void {
+    const me = this.me;
+    const v = this.view;
+    if (!me || !v || me.ready) return;
+    if (this.drag) this.endDrag();
+    const shown = this.squadsShown();
+    const melee = (sq: Squad) => sq.type !== 'lord' && !this.march(sq).ranged;
+    const picked = this.sel.size >= 2 ? shown.filter((q) => this.sel.has(q.id)) : shown;
+    const group = picked.filter(melee);
+    if (group.length < 2) return this.refuse(this.sel.size >= 2 ? 'Sync needs two or more melee squads in the selection' : 'Sync needs two or more melee squads');
+    const ids = new Set(group.map((q) => q.id));
+    const r = syncBySpeed(group, shown.filter((q) => !ids.has(q.id)), this.seat, me.lord, v.terrain, this.foes, this.snapStep());
+    if (!r) return this.refuse('No room to stagger them');
+    if (!this.moveSquads(r.spots, 'sync by speed')) {
+      toast(`Already in step: they reach the river at ${r.sec.toFixed(1)} s`, 'info', 1800);
+      return;
+    }
+    sound.drop();
+    const late = r.early.map((x) => `${unitName(group.find((q) => q.id === x.id)!.type, me.lord)} (${x.sec.toFixed(1)} s early)`);
+    if (late.length) toast(`Staggered for the river at ${r.sec.toFixed(1)} s. Too fast to hold back far enough: ${late.join(', ')}. Keep them on the back edge.`, 'info', 3600);
+    else toast(`${group.length} melee squads now reach the river together, ${r.sec.toFixed(1)} s in`, 'good', 2200);
+    this.select(null, false, group.map((q) => q.id));
+  }
+
+  /** Turn the selected group (or squad) a step about its centroid, now. */
+  private turnSelection(steps: number): void {
+    const me = this.me;
+    if (!me || me.ready || !this.sel.size) return;
+    const shown = this.squadsShown();
+    const group = shown.filter((q) => this.sel.has(q.id));
+    if (group.length === 1) {
+      const sq = group[0]!;
+      this.moveSquads(new Map([[sq.id, { pos: sq.pos, facing: (sq.facing + steps + 256) & 255 }]]), 'turn');
+      return;
+    }
+    const out = groupPlace(group, shown.filter((q) => !this.sel.has(q.id)), this.seat, [0, 0], steps, this.snapStep());
+    if (!out) return this.refuse('No room to turn the group here');
+    this.moveSquads(out, 'turn group');
+  }
+
+  /** The formation bar: undo, mirror, sync, timing routes, grid snap. */
+  private renderTools(): void {
+    const me = this.me;
+    const bar = this.tools;
+    if (!me) {
+      bar.classList.add('hidden');
+      return;
+    }
+    const snap = this.snapStep();
+    const key = [this.undos.length, this.undos[this.undos.length - 1]?.label, me.ready, this.routesOn, snap, this.sel.size].join('|');
+    if (bar.dataset.key === key) return;
+    bar.dataset.key = key;
+    const last = this.undos[this.undos.length - 1];
+    const b = (sel: string) => $<HTMLButtonElement>(bar, sel);
+    b('.pt-undo').disabled = !last || me.ready;
+    b('.pt-undo').dataset.tip = last ? `Undo: ${last.label} [Ctrl+Z]` : 'Undo the last move, turn, deploy or equip of this round [Ctrl+Z]';
+    b('.pt-mirror').disabled = me.ready;
+    b('.pt-sync').disabled = me.ready;
+    b('.pt-sync').dataset.tip = `Sync by speed: stagger ${this.sel.size >= 2 ? 'the selected' : 'all your'} melee squads in depth so they reach the river together. The slowest stands at the front edge; the fast ones are held back.`;
+    b('.pt-timing').classList.toggle('on', this.routesOn);
+    b('.pt-timing').setAttribute('aria-pressed', String(this.routesOn));
+    b('.pt-snap').classList.toggle('on', !!snap);
+    b('.pt-snap').setAttribute('aria-pressed', String(!!snap));
+    $(bar, '.pt-snap small').textContent = snap ? `${snap / 100} m` : 'Snap';
+    b('.pt-snap').dataset.tip = snap ? `Grid snap is on (${snap / 100} m): squads land on the grid, so a formation can be rebuilt exactly [G]` : 'Snap placement to a grid, so a formation can be rebuilt exactly [G]. Settings picks 0.5 m or 1 m.';
+  }
+
+  // ---------------------------------------------------------------- march preview
+
+  /** The march of one of my squads (cached by type, level, items and spot). */
+  private march(sq: Pick<Squad, 'type' | 'level' | 'items' | 'pos'>): March {
+    const me = this.me!;
+    const v = this.view!;
+    const fk = `${v.round}:${v.terrain.seed}:${me.lord}:${(v.enemy.lastArmy ?? []).map((s) => `${s.type}${s.pos[0]},${s.pos[1]}`).join(';')}`;
+    if (fk !== this.foesKey) {
+      this.foesKey = fk;
+      this.foes = marchFoes(v.enemy.lastArmy, v.enemy.lord);
+      this.front = frontLine(this.seat, this.foes);
+      this.marchCache.clear();
+    }
+    const key = `${sq.type}|${sq.level}|${itemsKey(sq.items)}|${sq.pos[0]},${sq.pos[1]}`;
+    let m = this.marchCache.get(key);
+    if (!m) {
+      if (this.marchCache.size > 600) this.marchCache.clear();
+      m = marchOf(sq, me.lord, this.seat, v.terrain, this.foes, this.front);
+      this.marchCache.set(key, m);
+    }
+    return m;
+  }
+
+  /**
+   * The march preview: a seconds-to-the-river tag under every plate of mine, and full routes (with the
+   * river and enemy-front times) for everything when T is on, or for what is being dragged or placed.
+   * Sent to the scene only when something it shows changed.
+   */
+  private renderTiming(): void {
+    const me = this.me;
+    if (!me || !this.view || !this.scene.setTiming) return;
+    const d = this.drag;
+    const shown = this.squadsShown();
+    const moving = !!d && (d.kind === 'place' ? d.moved || !d.fromShop : d.moved);
+    const hot = new Set<number>(d?.kind === 'group' && d.moved ? d.ids : d?.kind === 'move' && d.moved ? [d.id] : []);
+    const spec: TimingSpec = { tags: [], routes: [] };
+    const route = (m: March, isHot: boolean) => {
+      const marks: TimingSpec['routes'][number]['marks'] = [];
+      if (m.river) marks.push({ pos: m.river.pos, text: `${m.river.sec.toFixed(1)}s` });
+      if (m.front) marks.push({ pos: m.front.pos, text: `${m.front.sec.toFixed(1)}s`, dim: true });
+      else if (m.hold) marks.push({ pos: m.hold.pos, text: `in range ${m.hold.sec.toFixed(1)}s`, dim: true });
+      spec.routes.push({ pts: m.pts, hot: isHot, marks });
+    };
+    for (const sq of shown) {
+      // the single squad being dragged is drawn as the preview, where it would land
+      const pos = d?.kind === 'move' && d.id === sq.id && d.moved ? this.dragSpot : sq.pos;
+      if (!pos) continue;
+      const m = this.march({ ...sq, pos });
+      const sec = m.river?.sec ?? m.hold?.sec ?? null;
+      if (sec !== null) spec.tags.push({ id: sq.id, pos, text: m.river ? `${sec.toFixed(1)}s` : `hold ${sec.toFixed(1)}s`, hot: hot.has(sq.id) });
+      if (this.routesOn || hot.has(sq.id)) route(m, hot.has(sq.id));
+    }
+    if (d?.kind === 'place' && moving && this.dragSpot) route(this.march({ type: d.unit, level: 1, items: { weapon: null, armor: null, relic: null }, pos: this.dragSpot }), true);
+    const key = JSON.stringify(spec);
+    if (key === this.timingKey) return;
+    this.timingKey = key;
+    this.scene.setTiming(spec.tags.length || spec.routes.length ? spec : null);
+  }
+  /** Where the single squad being dragged or placed would land (null: nowhere legal). */
+  private dragSpot: Vec2 | null = null;
+
   // ---------------------------------------------------------------- input
 
   private bind(): void {
@@ -665,6 +1077,7 @@ export class PlanningScreen {
     on(window, 'pointermove', (e: PointerEvent) => this.move(e));
     on(window, 'pointerup', (e: PointerEvent) => this.up(e));
     on(window, 'keydown', (e: KeyboardEvent) => this.key(e), { capture: true });
+    on(window, 'oathbound:snap', () => this.renderTools());
     on(c, 'pointerleave', () => {
       if (!this.drag && !this.itemDrag) {
         this.scene.setHovered(null);
@@ -721,11 +1134,22 @@ export class PlanningScreen {
     }
     const d = this.drag;
     if (e.button === 2 && d) {
-      // right-drag aims the squad (and not the camera)
+      // right-drag aims the squad, or turns the group about its centre (and not the camera)
       e.stopPropagation();
-      d.rot = d.pos;
+      if (d.kind === 'group') this.startTurn(d, e);
+      else d.rot = d.pos;
       this.scene.setInputLocked(true);
       return;
+    }
+    if (e.button === 2 && !d && e.target === this.scene.canvas && !this.me.ready) {
+      // right-drag on a selected squad of mine turns the selection
+      const hit = this.scene.squadAt(e.clientX, e.clientY);
+      if (hit && !hit.ghost && this.sel.has(hit.id)) {
+        e.stopPropagation();
+        const g = this.groupDrag(hit.id, e, true);
+        if (g) this.startTurn(g, e);
+        return;
+      }
     }
     if (e.button !== 0) return;
     if (d?.kind === 'place' && !d.fromShop) {
@@ -738,30 +1162,99 @@ export class PlanningScreen {
     if (hit && !hit.ghost) {
       const sq = this.squad(hit.id);
       if (!sq) return;
+      if (e.shiftKey) {
+        // Shift-click adds a squad to the selection, or takes it out
+        const next = new Set(this.sel);
+        if (next.has(sq.id)) next.delete(sq.id);
+        else next.add(sq.id);
+        sound.click();
+        this.select(null, false, [...next]);
+        return;
+      }
       this.scene.setInputLocked(true);
-      this.drag = { kind: 'move', id: sq.id, facing: sq.facing, start: [e.clientX, e.clientY], moved: false, pos: sq.pos, rot: null };
+      if (this.sel.size > 1 && this.sel.has(sq.id)) {
+        this.groupDrag(sq.id, e, false);
+        return;
+      }
+      const shown = this.shownSquad(sq.id) ?? sq;
+      this.drag = { kind: 'move', id: sq.id, facing: shown.facing, start: [e.clientX, e.clientY], moved: false, pos: shown.pos, rot: null };
       return;
     }
     if (hit?.ghost) {
       this.pendingClick = { x: e.clientX, y: e.clientY, ghost: hit.id };
       return;
     }
+    if (e.target === this.scene.canvas && this.boxable(e)) {
+      // empty ground in my zone: a box selection (a plain click still deselects)
+      this.box = { x: e.clientX, y: e.clientY, add: e.shiftKey, el: null };
+      return;
+    }
     this.pendingClick = { x: e.clientX, y: e.clientY, ghost: null };
   }
   private pendingClick: { x: number; y: number; ghost: number | null } | null = null;
 
-  /** Keep a left press from the camera: while placing, or when it lands on one of my squads. */
+  /** A left press on empty ground inside my deploy zone starts a box selection (instead of a camera pan). */
+  private boxable(e: PointerEvent): boolean {
+    const g = this.scene.groundAt(e.clientX, e.clientY);
+    return !!g && inDeployZone(this.seat, g);
+  }
+
+  /** Start dragging the selection (`turn`: a right-drag that only turns it). `hitId` is the squad pressed. */
+  private groupDrag(hitId: number, e: PointerEvent, turn: boolean): Extract<Drag, { kind: 'group' }> | null {
+    const shown = this.squadsShown();
+    const ids = shown.filter((q) => this.sel.has(q.id)).map((q) => q.id);
+    if (!ids.length) return null;
+    const base = new Map<number, Placed>();
+    for (const q of shown) if (this.sel.has(q.id)) base.set(q.id, { pos: q.pos, facing: q.facing });
+    const grab = this.scene.groundAt(e.clientX, e.clientY) ?? base.get(hitId)!.pos;
+    const g: Extract<Drag, { kind: 'group' }> = { kind: 'group', ids, start: [e.clientX, e.clientY], grab, moved: false, delta: [0, 0], steps: 0, rot: null, base, out: null, pos: grab, turnOnly: turn, hit: hitId };
+    this.drag = g;
+    this.scene.setInputLocked(true);
+    return g;
+  }
+
+  /** The group's centre as it is shown now (moved by the drag so far). */
+  private groupCentre(d: Extract<Drag, { kind: 'group' }>): Vec2 {
+    let x = 0;
+    let y = 0;
+    for (const p of d.base.values()) {
+      x += p.pos[0];
+      y += p.pos[1];
+    }
+    return [x / d.base.size + d.delta[0], y / d.base.size + d.delta[1]];
+  }
+
+  private startTurn(d: Extract<Drag, { kind: 'group' }>, e: PointerEvent): void {
+    const g = this.scene.groundAt(e.clientX, e.clientY);
+    const c = this.groupCentre(d);
+    d.rot = { from: g ? ANG(g[0] - c[0], g[1] - c[1]) : 0, at: d.steps };
+  }
+
+  /** Re-place the dragged group for its current offset and turn, and show it there. */
+  private placeGroup(d: Extract<Drag, { kind: 'group' }>): void {
+    const shown = this.me!.squads;
+    const bodies = d.ids.map((id) => ({ id, type: shown.find((q) => q.id === id)!.type, pos: d.base.get(id)!.pos, facing: d.base.get(id)!.facing }));
+    const others = this.squadsShown().filter((q) => !d.base.has(q.id));
+    d.out = groupPlace(bodies, others, this.seat, d.delta, d.steps, this.snapStep());
+    this.hint.innerHTML = `${d.out ? '' : '<b class="bad">No room for the group here</b> · '}<b>${d.ids.length} squad${d.ids.length > 1 ? 's' : ''}</b> · <kbd>Q</kbd><kbd>E</kbd> or right-drag turn the group · <kbd>Esc</kbd> cancel`;
+    this.hint.classList.add('on');
+    this.drawArmy();
+  }
+
+  /** Keep a left press from the camera: while placing, on one of my squads, or on empty ground in my zone (box select). */
   private claims(e: PointerEvent): boolean {
-    if (!this.me || this.me.ready && !this.drag) return false;
+    if (!this.me) return false;
     if (this.drag) return true;
     const hit = this.scene.squadAt(e.clientX, e.clientY);
-    return !!hit && !hit.ghost;
+    if (hit) return !hit.ghost && (!this.me.ready || e.shiftKey);
+    return this.boxable(e);
   }
 
   private move(e: PointerEvent): void {
     this.pointer(e);
     if (this.itemDrag) return this.moveItem(e);
     const d = this.drag;
+    if (this.box) return this.moveBox(e);
     const g = this.scene.groundAt(e.clientX, e.clientY);
     if (!d) {
       // hover
@@ -771,11 +1264,26 @@ export class PlanningScreen {
       const watched = !this.me && hit ? this.shown(hit.id) : null;
       const sq = watched ? watched.sq : hit ? (hit.ghost ? this.ghost(hit.id) : this.squad(hit.id)) : null;
       const ro = !!watched || !!hit?.ghost;
-      showTipAt(e.clientX, e.clientY, sq ? squadTooltip(sq, sq.type === 'lord' ? (watched ? watched.lord : hit!.ghost ? this.view!.enemy.lord : this.me?.lord ?? null) : null, { ghost: !!hit?.ghost, hint: ro ? undefined : this.me?.ready ? 'You are Ready: un-ready to move it' : 'Click to select · drag to move' }) : null);
+      const hint = this.me?.ready ? 'You are Ready: un-ready to move it' : this.sel.size > 1 && hit && this.sel.has(hit.id) ? 'Drag to move the selection · right-drag to turn it' : 'Click to select · Shift-click to add · drag to move';
+      showTipAt(e.clientX, e.clientY, sq ? squadTooltip(sq, sq.type === 'lord' ? (watched ? watched.lord : hit!.ghost ? this.view!.enemy.lord : this.me?.lord ?? null) : null, { ghost: !!hit?.ghost, hint: ro ? undefined : hint }) : null);
       this.scene.canvas.style.cursor = sq ? (ro ? 'help' : 'grab') : '';
       return;
     }
     showTipAt(0, 0, null);
+    if (d.kind === 'group') {
+      if (!d.moved && Math.hypot(e.clientX - d.start[0], e.clientY - d.start[1]) < 6) return;
+      d.moved = true;
+      if (g) {
+        if (d.rot) {
+          const c = this.groupCentre(d);
+          if (Math.hypot(g[0] - c[0], g[1] - c[1]) > 150) d.steps = (d.rot.at + ANG(g[0] - c[0], g[1] - c[1]) - d.rot.from + 512) & 255;
+        } else if (!d.turnOnly) {
+          d.delta = [g[0] - d.grab[0], g[1] - d.grab[1]];
+          d.pos = g;
+        }
+      }
+      return this.placeGroup(d);
+    }
     if (d.rot && g) {
       // aiming: facing points from the anchor towards the pointer
       const dx = g[0] - d.rot[0];
@@ -784,20 +1292,61 @@ export class PlanningScreen {
     } else {
       if (d.kind === 'move' && !d.moved && Math.hypot(e.clientX - d.start[0], e.clientY - d.start[1]) < 6) return;
       if (d.kind === 'move' || this.overCanvas) d.moved = true;
-      if (g) d.pos = g;
+      if (g) d.pos = inDeployZone(this.seat, g) ? snapPos(g, this.snapStep(), this.seat) : g;
     }
     if (d.kind === 'move') this.scene.setHidden(d.id);
     this.preview();
   }
 
+  /** The selection box follows the pointer (a DOM rectangle: nothing is drawn by the renderer). */
+  private moveBox(e: PointerEvent): void {
+    const b = this.box!;
+    if (!b.el) {
+      if (Math.hypot(e.clientX - b.x, e.clientY - b.y) < 6) return;
+      b.el = el('<div class="selbox"></div>');
+      this.root.appendChild(b.el);
+      showTipAt(0, 0, null);
+    }
+    const x0 = Math.min(b.x, e.clientX);
+    const y0 = Math.min(b.y, e.clientY);
+    b.el.style.cssText = `left:${x0}px;top:${y0}px;width:${Math.abs(e.clientX - b.x)}px;height:${Math.abs(e.clientY - b.y)}px`;
+  }
+
+  private endBox(e: PointerEvent): void {
+    const b = this.box!;
+    this.box = null;
+    if (!b.el) {
+      // a plain click on empty ground
+      if (!b.add) this.select(null);
+      return;
+    }
+    b.el.remove();
+    const x0 = Math.min(b.x, e.clientX), x1 = Math.max(b.x, e.clientX);
+    const y0 = Math.min(b.y, e.clientY), y1 = Math.max(b.y, e.clientY);
+    const inBox = this.squadsShown().filter((q) => {
+      // the squad's feet or its plate inside the box
+      for (const h of [0, 3]) {
+        const p = this.scene.toScreen(q.pos, h);
+        if (p && p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) return true;
+      }
+      return false;
+    });
+    const next = new Set(b.add ? this.sel : []);
+    for (const q of inBox) next.add(q.id);
+    if (inBox.length) sound.click();
+    this.select(null, false, [...next]);
+  }
+
   private preview(): void {
     const d = this.drag;
     const me = this.me;
-    if (!d || !me) return this.scene.setPreview(null);
+    if (!d || !me || d.kind === 'group') return;
     const overCanvas = this.overCanvas;
     if (!d.pos || !overCanvas) {
+      this.dragSpot = null;
       this.scene.setPreview(null);
       this.scene.setRange(null);
+      this.renderTiming();
       return;
     }
     const type = d.kind === 'place' ? d.unit : this.squad(d.id)!.type;
@@ -807,11 +1356,13 @@ export class PlanningScreen {
     const why = !inZone ? 'Outside your deploy zone' : !at ? 'No room here: each squad needs its own ground' : d.kind === 'place' ? this.blocked(d.unit) : null;
     const valid = !why;
     const pos = at ?? d.pos;
+    this.dragSpot = at;
     this.scene.setPreview({ type, lord: type === 'lord' ? me.lord : null, seat: this.seat, pos, facing: d.facing, valid });
     const s = soldierStats(type, lvl, me.lord);
-    this.scene.setRange({ pos, range: s.range, minRange: s.minRange });
+    this.scene.setRange({ pos, range: s.range, minRange: s.minRange, aura: type === 'lord' && me.lord ? lordAuraRing(LORDS[me.lord].ability) : null });
     this.hint.innerHTML = `${valid ? '' : `<b class="bad">${esc(why ?? '')}</b> · `}<kbd>Q</kbd><kbd>E</kbd> or right-drag turn the squad · <kbd>Esc</kbd> cancel`;
     this.hint.classList.add('on');
+    this.renderTiming();
   }
 
   /**
@@ -822,8 +1373,9 @@ export class PlanningScreen {
   private spot(type: Squad['type'], pos: Vec2, ignoreId: number): Vec2 | null {
     const me = this.me;
     if (!me || !inDeployZone(this.seat, pos)) return null;
-    if (!overlappingSquad(me.squads, type, pos, ignoreId)) return pos;
-    const near = freeSpotNear(me.squads, this.seat, type, pos, ignoreId);
+    const squads = this.squadsShown();
+    if (!overlappingSquad(squads, type, pos, ignoreId)) return pos;
+    const near = freeSpotNear(squads, this.seat, type, pos, ignoreId);
     return near && Math.hypot(near[0] - pos[0], near[1] - pos[1]) <= 900 ? near : null;
   }
 
@@ -831,6 +1383,7 @@ export class PlanningScreen {
 
   private up(e: PointerEvent): void {
     if (this.itemDrag) return this.dropItem(e);
+    if (this.box && e.button === 0) return this.endBox(e);
     const d = this.drag;
     const pc = this.pendingClick;
     this.pendingClick = null;
@@ -842,6 +1395,28 @@ export class PlanningScreen {
           this.select(pc.ghost, true);
         } else this.select(null);
       }
+      return;
+    }
+    if (d.kind === 'group') {
+      if (e.button === 2) {
+        d.rot = null;
+        // a right-drag that only turned the selection ends with the button
+        if (!d.turnOnly) return;
+      } else if (e.button !== 0) return;
+      if (!d.moved) {
+        if (!d.turnOnly) {
+          // a click on one squad of the selection selects just that squad
+          sound.click();
+          this.select(d.hit);
+        }
+      } else if (d.out) {
+        // end the drag first: while it lasts the group is drawn (and counted) where it would land
+        const out = d.out;
+        this.endDrag();
+        if (this.moveSquads(out, d.turnOnly || (d.delta[0] === 0 && d.delta[1] === 0) ? 'turn group' : `move ${d.ids.length} squads`)) sound.drop();
+        return;
+      } else this.refuse('No room for the group there');
+      this.endDrag();
       return;
     }
     if (e.button === 2) {
@@ -856,13 +1431,13 @@ export class PlanningScreen {
         sound.click();
         this.select(d.id);
       } else if (d.pos && onCanvas) {
-        const at = this.spot(this.squad(d.id)?.type ?? 'lord', d.pos, d.id);
-        if (!inDeployZone(this.seat, d.pos)) this.rejected('outside deploy zone');
-        else if (!at) this.rejected('No room there: each squad needs its own ground');
+        const sq = this.squad(d.id);
+        const at = this.spot(sq?.type ?? 'lord', d.pos, d.id);
+        if (!inDeployZone(this.seat, d.pos)) this.refuse('outside deploy zone');
+        else if (!at) this.refuse('No room there: each squad needs its own ground');
         else {
           sound.drop();
-          this.pending = { id: d.id, pos: at, facing: d.facing };
-          this.intent({ t: 'move', squad: d.id, pos: at, facing: d.facing });
+          this.moveSquads(new Map([[d.id, { pos: at, facing: d.facing }]]), `move ${sq ? unitName(sq.type, this.me?.lord ?? null) : 'squad'}`);
           this.select(d.id);
         }
       }
@@ -891,11 +1466,12 @@ export class PlanningScreen {
       if (/gold/i.test(why)) this.shake('.r-gold');
       return;
     }
-    if (!inDeployZone(this.seat, pos)) return this.rejected('outside deploy zone');
+    if (!inDeployZone(this.seat, pos)) return this.refuse('outside deploy zone');
     const at = this.spot(u, pos, -1);
-    if (!at) return this.rejected('No room there: each squad needs its own ground');
+    if (!at) return this.refuse('No room there: each squad needs its own ground');
     sound.deploy();
     playLordLine(this.me?.lord, 'deploy', { delay: 0.15 });
+    this.undoDeploy(u);
     this.intent({ t: 'deploy', unit: u, pos: at, facing });
   }
 
@@ -918,27 +1494,29 @@ export class PlanningScreen {
   private endDrag(): void {
     if (this.drag?.kind === 'move') this.scene.setHidden(null);
     this.drag = null;
+    this.dragSpot = null;
     this.scene.setPreview(null);
     this.scene.setInputLocked(false);
     this.hint.classList.remove('on');
     this.shop.querySelectorAll('.ucard.arming').forEach((c) => c.classList.remove('arming'));
-    const sq = this.squad(this.selected);
-    if (sq) {
-      const s = soldierStats(sq.type, sq.level, this.me?.lord);
-      this.scene.setRange({ pos: this.pending?.id === sq.id ? this.pending.pos : sq.pos, range: s.range, minRange: s.minRange });
-    } else this.scene.setRange(null);
+    this.syncRange();
     this.drawArmy();
   }
 
   private cancelDrag(): void {
     if (this.drag) this.endDrag();
+    if (this.box) {
+      this.box.el?.remove();
+      this.box = null;
+    }
     this.cancelItem();
   }
 
   private key(e: KeyboardEvent): void {
     if ((e.target as HTMLElement)?.closest?.('input, textarea')) return;
     if (document.querySelector('.rules-veil, .dialog-veil, .report-veil')) return;
-    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase()) || ((e.key === 'q' || e.key === 'e') && !this.drag)) this.cameraTouched = true;
+    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase()) && !e.ctrlKey && !e.metaKey) this.cameraTouched = true;
+    if ((e.key === 'q' || e.key === 'e') && !this.drag && !e.shiftKey) this.cameraTouched = true;
     if (!this.me) {
       // spectators: only the camera and deselect
       if (e.key === 'Escape') this.select(null, true);
@@ -953,7 +1531,19 @@ export class PlanningScreen {
       return;
     }
     const k = e.key.toLowerCase();
-    if (e.key === ' ') {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && k === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.undo();
+    } else if (mod && k === 'a') {
+      // select my whole army
+      e.preventDefault();
+      e.stopPropagation();
+      if (!this.drag) this.select(null, false, this.me.squads.map((s) => s.id));
+    } else if (mod || e.altKey) {
+      return;
+    } else if (e.key === ' ') {
       e.preventDefault();
       this.toggleReady();
     } else if (e.key === 'Tab') {
@@ -971,25 +1561,28 @@ export class PlanningScreen {
       e.stopPropagation();
       this.cameraTouched = false;
       this.scene.resetCamera?.();
-    } else if ((k === 'q' || k === 'e') && (this.drag || (e.shiftKey && this.selected !== null))) {
-      // Q/E turn the squad only while it is being placed or dragged, or with Shift on the selected
-      // squad. Otherwise the key is left for the camera, which turns the view.
+    } else if ((k === 'q' || k === 'e') && (this.drag || (e.shiftKey && this.sel.size > 0))) {
+      // Q/E turn the squad (or the group, about its centre) only while it is being placed or dragged,
+      // or with Shift on the selection. Otherwise the key is left for the camera, which turns the view.
       e.stopPropagation();
-      const step = k === 'q' ? 16 : -16;
-      if (this.drag) {
-        this.drag.facing = (this.drag.facing + step + 256) & 255;
+      const step = k === 'q' ? TURN_STEP : -TURN_STEP;
+      const d = this.drag;
+      if (d?.kind === 'group') {
+        d.steps = (d.steps + step + 256) & 255;
+        if (d.rot) d.rot.at = (d.rot.at + step + 256) & 255;
+        d.moved = true;
+        this.placeGroup(d);
+      } else if (d) {
+        d.facing = (d.facing + step + 256) & 255;
         this.preview();
-      } else {
-        const sq = this.squad(this.selected);
-        if (sq && this.me && !this.me.ready) {
-          const f = ((this.pending?.id === sq.id ? this.pending.facing : sq.facing) + step + 256) & 255;
-          const pos = this.pending?.id === sq.id ? this.pending.pos : sq.pos;
-          this.pending = { id: sq.id, pos, facing: f };
-          this.drawArmy();
-          this.intent({ t: 'move', squad: sq.id, pos, facing: f });
-        }
-      }
-    } else if (SHOP_KEYS.includes(e.key) && this.me && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      } else this.turnSelection(step);
+    } else if (k === 't' && !e.shiftKey) {
+      e.stopPropagation();
+      this.toggleRoutes();
+    } else if (k === 'g' && !e.shiftKey) {
+      e.stopPropagation();
+      this.toggleSnap();
+    } else if (SHOP_KEYS.includes(e.key) && this.me) {
       const u = this.shopUnits()[SHOP_KEYS.indexOf(e.key)];
       if (u) {
         e.stopPropagation(); // - and = also zoom the camera
@@ -1065,11 +1658,12 @@ export class PlanningScreen {
       const sel = this.squad(this.selected);
       if (d.from === null && sel && me) {
         const no = this.refusal(d.item, sel);
-        if (no) this.rejected(no);
+        if (no) this.refuse(no);
         else if (slotOpen(sel, d.item.slot)) {
           sound.equip();
+          this.undoItem(d.item, null, sel.id);
           this.intent({ t: 'equip', item: d.item.id, squad: sel.id });
-        } else this.rejected(slotLockText(d.item.slot));
+        } else this.refuse(slotLockText(d.item.slot));
       }
       this.cancelItem();
       return;
@@ -1084,6 +1678,7 @@ export class PlanningScreen {
       if (slotEl) target = Number(slotEl.dataset.squad);
       else if (under?.closest('.stash') && d.from !== null) {
         sound.equip();
+        this.undoItem(d.item, d.from, null);
         this.intent({ t: 'unequip', item: d.item.id });
       }
     }
@@ -1091,10 +1686,11 @@ export class PlanningScreen {
       const sq = this.squad(target);
       // refused here with the reason, rather than sent for the server to refuse
       const no = sq ? this.refusal(d.item, sq) : null;
-      if (no) this.rejected(no);
-      else if (sq && !slotOpen(sq, d.item.slot)) this.rejected(slotLockText(d.item.slot));
+      if (no) this.refuse(no);
+      else if (sq && !slotOpen(sq, d.item.slot)) this.refuse(slotLockText(d.item.slot));
       else if (sq) {
         sound.equip();
+        this.undoItem(d.item, d.from, target);
         this.intent({ t: d.from === null ? 'equip' : 'moveItem', item: d.item.id, squad: target });
         if (this.selected === null) this.select(target);
       }
@@ -1138,6 +1734,8 @@ export class PlanningScreen {
     this.scene.showDeployZone(null);
     this.scene.setGhosts(null);
     this.scene.setPointerClaim(null);
+    this.scene.setTiming?.(null);
+    this.scene.setSelection?.([]);
     this.scene.setInsets({ top: 0, bottom: 0 });
     showTipAt(0, 0, null);
     this.root.remove();

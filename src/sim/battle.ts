@@ -12,14 +12,14 @@
 import { CELL, FIELD_H, FIELD_W, GRID_W, KEYFRAME_TICKS, MARCH_TICKS, MAX_BATTLE_TICKS } from './constants.ts';
 import {
   ARCHMAGE_MAGIC_PCT, LICH_DMG_PCT, LORDS, LORD_LEVEL_DMG, LORD_LEVEL_HP, METEOR_BASE, METEOR_PER_LEVEL, NECRO_BASE, NECRO_LEVELS_PER, NECRO_RANGE,
-  RADIANCE_BASE, RADIANCE_PER_LEVEL, RADIANCE_RANGE, RALLY_PCT, SULTANA_HASTE_PCT, SULTANA_HOLY, SUN_PRIEST_HOLY,
+  RADIANCE_BASE, RADIANCE_PER_LEVEL, RADIANCE_RANGE, RALLY_PCT, RALLY_RANGE, BULWARK_RANGE, METEOR_REACH, LORD_TRIGGER_RANGE, SULTANA_HASTE_PCT, SULTANA_HOLY, SUN_PRIEST_HOLY,
 } from './data/lords.ts';
 import { ABILITY_CD, SKILLS, SKILL_START_CD, canEquip, skillNum } from './data/skills.ts';
 import { UNITS } from './data/units.ts';
 import { FACTION_POWER, LORD_POWER, UNIT_POWER } from './data/balance.ts';
 import { angleOf, icos, idiv, isin, isqrt } from './fixed.ts';
 import { modsOf, type ItemMods } from './loot.ts';
-import { keepDamageOf } from './match.ts';
+import { LEVEL_DMG_PCT, LEVEL_HP_PCT, keepDamageOf } from './match.ts';
 import {
   ABILITY_CODES, ARC_CODES, EK, FrameEncoder, KEEP_SRC_BASE, PROJ_CODES, REPLAY_VERSION, REVIVE_CODES, SKILL_CODES, STAT_CAUSES, TALLY_TICKS, WEAPON_CODES,
   encodeEvents, keepSource, toBase64,
@@ -44,8 +44,8 @@ const PROJ_SPEED: Partial<Record<ProjectileKind, number>> = { arrow: 160, bolt: 
 const PROJ_ARC: Partial<Record<ProjectileKind, ArcType>> = { arrow: 'arc', bolt: 'line', stone: 'high_arc', fireball: 'line', firebreath: 'line', tower_arrow: 'arc', lightning: 'line' };
 const BASE_CRIT = 5;
 const CRIT_MULT = 150;
-const LEVEL_HP = 25;
-const LEVEL_DMG = 20;
+const LEVEL_HP = LEVEL_HP_PCT;
+const LEVEL_DMG = LEVEL_DMG_PCT;
 const AGGRO = 1400;
 const BUCKET = 400;
 const BW = FIELD_W / BUCKET, BH = FIELD_H / BUCKET;
@@ -79,6 +79,7 @@ export const POINTS_MARGIN = 5;
 const LORD_POINTS_BASE = 300, LORD_POINTS_PER_LEVEL = 30;
 
 const TRIANGLE: Partial<Record<WeaponKind, WeaponKind>> = { sword: 'axe', axe: 'lance', lance: 'sword' };
+
 
 // ---------------------------------------------------------------- internal types
 
@@ -697,10 +698,10 @@ class Battle {
       const L = LORDS[b.lord!];
       const enemySide = (1 - b.side) as Seat;
       let nearEnemy = false;
-      this.near(enemySide, s.x, s.y, 2500, () => { nearEnemy = true; });
+      this.near(enemySide, s.x, s.y, LORD_TRIGGER_RANGE, () => { nearEnemy = true; });
       if (L.ability === 'rally' || L.ability === 'bulwark') {
         if (!nearEnemy) continue;
-        const r = L.ability === 'rally' ? 2000 : 1200;
+        const r = L.ability === 'rally' ? RALLY_RANGE : BULWARK_RANGE;
         const dur = L.ability === 'rally' ? 200 : 120;
         this.near(b.side, s.x, s.y, r, (o) => this.queuedBuffs.push({ sol: o, kind: L.ability as 'rally' | 'bulwark', until: this.t + dur, pct: 0 }));
         this.emitAbility(s.i, -1, L.ability, s.x, s.y, r, dur);
@@ -709,7 +710,7 @@ class Battle {
       } else if (L.ability === 'meteor') {
         // Densest enemy cluster within 40 m.
         let best: Sol | null = null, bestN = 0;
-        this.near(enemySide, s.x, s.y, 4000, (e) => {
+        this.near(enemySide, s.x, s.y, METEOR_REACH, (e) => {
           let n = 0;
           this.near(enemySide, e.x, e.y, 1000, () => { n++; });
           if (n > bestN || (n === bestN && best && e.key < best.key)) { best = e; bestN = n; }
@@ -1814,7 +1815,7 @@ class Battle {
       if (this.winner !== null && this.winner !== side) continue;
       // A points win counts in full (survivors + the round bonus); a draw: both sides' survivors deal half.
       const dmg = this.winner === side
-        ? keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, true, false)
+        ? keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, true, false, this.score[side] - this.score[1 - side])
         : keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, false, true);
       this.keepDamage[(1 - side) as Seat] = dmg;
       if (dmg > 0) this.hitKeep((1 - side) as Seat, keepSource((1 - side) as Seat, 2), dmg, true);
@@ -1834,7 +1835,7 @@ class Battle {
     const loserSide = (1 - w) as Seat;
     const ids = this.survivorIds(w);
     this.survivors[w] = ids;
-    const dmg = keepDamageOf(this.st.players[w].squads, ids, this.st.round, true, false);
+    const dmg = keepDamageOf(this.st.players[w].squads, ids, this.st.round, true, false, this.score[w] - this.score[loserSide]);
     this.keepDamage[loserSide] = dmg;
     this.marching = true;
     this.marchDue = this.t + MARCH_TICKS;
@@ -2065,4 +2066,4 @@ export function simulateBattle(state: MatchState, opts: SimulateOptions = {}): B
   return b.output();
 }
 
-export { T_FLIER, GRID_W, CELL };
+export { T_FLIER, T_LARGE, GRID_W, CELL, AGGRO };

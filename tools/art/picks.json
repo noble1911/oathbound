@@ -2,5 +2,14 @@
  "tree_oak_b": 1,
  "grave_knight": 0,
  "scimitar": 0,
- "mamluk_horse": 0
+ "mamluk_horse": 2,
+ "wyvern_mount": 2,
+ "pegasus_mount": 2,
+ "war_elephant": 1,
+ "war_elephant_howdah": 0,
+ "war_elephant_crew": 0,
+ "lord_ossuary": 1,
+ "horse": 3,
+ "skeletal_horse": 2,
+ "camel": 2
 }

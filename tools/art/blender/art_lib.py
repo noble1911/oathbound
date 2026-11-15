@@ -14,7 +14,8 @@ from mathutils import Matrix, Vector
 ROOT = Path(__file__).resolve().parents[3]
 ART = ROOT / 'tools' / 'art'
 WORK = ROOT / 'art-work'
-OUT = ROOT / 'public' / 'models' / 'v2'
+OUT = Path(os.environ['ART_OUT']).resolve() if os.environ.get('ART_OUT') else ROOT / 'public' / 'models' / 'v2'   # `run.mjs --stage` sets ART_OUT = art-work/stage_v2
+GPU_LOCK = WORK / 'fx_gpu.lock'
 
 
 def argv():
@@ -28,6 +29,40 @@ def assets():
 
 def clear():
     bpy.ops.wm.read_factory_settings(use_empty=True)
+
+
+class bake_device:
+    """`with L.bake_device('cleanup x'):` picks the Cycles device for a bake under the one-GPU-job rule. If
+    art-work/fx_gpu.lock is free it is taken (released on exit) and Cycles runs on the GPU; if another job holds
+    it (the TRELLIS queue hands the lock straight to its next run, so waiting would starve) the bake runs on the
+    CPU: an emission / normal bake at 2 samples takes a few minutes there. ART_BAKE=cpu|gpu|wait forces a mode."""
+    def __init__(self, purpose):
+        self.purpose = purpose; self.held = False
+
+    def __enter__(self):
+        import time
+        mode = os.environ.get('ART_BAKE', 'auto')
+        if mode == 'cpu':
+            bpy.context.scene.cycles.device = 'CPU'; print('[bake] CPU (ART_BAKE=cpu)'); return self
+        while mode == 'wait' and GPU_LOCK.exists():
+            time.sleep(10)
+        if mode != 'gpu':
+            try:
+                fd = os.open(str(GPU_LOCK), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, (f'tools/art blender bake: {self.purpose} (pid {os.getpid()}, ' + time.strftime('%Y-%m-%dT%H:%M:%S') + ')' + chr(10)).encode())
+                os.close(fd); self.held = True
+            except FileExistsError:
+                bpy.context.scene.cycles.device = 'CPU'
+                print('[bake] GPU lock held by:', GPU_LOCK.read_text().strip(), '-> baking on the CPU')
+                return self
+        print('[bake] device', use_gpu())
+        return self
+
+    def __exit__(self, *exc):
+        if self.held and GPU_LOCK.exists():
+            GPU_LOCK.unlink()
+        self.held = False
+        return False
 
 
 def use_gpu():
@@ -263,6 +298,39 @@ def build_material(name, base, normal=None, mr=None, rough=0.7, metal=0.0, emiss
     return m
 
 
+def double_sided(mat, name=None):
+    """The double-sided twin of a unit material (same textures; glTF doubleSided = true), named `<id>_cloth`: the
+    renderer draws a hero material double-sided only if its name contains `cloth` (parts with `cloth_material`)."""
+    name = name or mat.name.replace('_mat', '') + '_cloth'
+    if name in bpy.data.materials:
+        return bpy.data.materials[name]
+    m = mat.copy(); m.name = name
+    m.use_backface_culling = False
+    return m
+
+
+def dup_flip(ob, attr='_DS'):
+    """Two-sided thin cloth without a second material: faces whose face attribute `attr` is > 0.5 are duplicated
+    with flipped winding (same UVs, own vertices and so own normals). Removes the attribute. -> faces added."""
+    me = ob.data
+    if attr not in me.attributes:
+        return 0
+    bm = bmesh.new(); bm.from_mesh(me)
+    lay = bm.faces.layers.float.get(attr)
+    faces = [f for f in bm.faces if f[lay] > 0.5] if lay else []
+    n = len(faces)
+    if n:
+        ret = bmesh.ops.duplicate(bm, geom=faces)
+        new = [e for e in ret['geom'] if isinstance(e, bmesh.types.BMFace)]
+        bmesh.ops.reverse_faces(bm, faces=new)
+        bm.to_mesh(me)
+    bm.free()
+    if attr in me.attributes:
+        me.attributes.remove(me.attributes[attr])
+    me.update()
+    return n
+
+
 def resized_copy(img, size, name):
     c = img.copy()
     c.name = name
@@ -270,10 +338,21 @@ def resized_copy(img, size, name):
     return c
 
 
+WEBP_QUALITY = 88     # assets.json `webp_q` (set by the build scripts through webp_quality()): a busy 2048 atlas at 88
+                      # (bone_golem) packs to 3.7 MB, over the ~3 MB hero budget
+
+
+def webp_quality(aid):
+    """The WebP quality for an asset's GLBs (assets.json `webp_q`, default 88)."""
+    global WEBP_QUALITY
+    WEBP_QUALITY = int(assets().get(aid, {}).get('webp_q', 88))
+    return WEBP_QUALITY
+
+
 def export_glb(path, objs, anims=False, extra=None):
     select_only(*objs)
     kw = dict(filepath=str(path), export_format='GLB', use_selection=True, export_apply=False,
-              export_yup=True, export_image_format='WEBP', export_image_quality=88,
+              export_yup=True, export_image_format='WEBP', export_image_quality=WEBP_QUALITY,
               export_materials='EXPORT', export_normals=True, export_texcoords=True,
               export_tangents=False, export_attributes=True, export_vertex_color='NONE',
               export_animations=anims, export_extras=True)

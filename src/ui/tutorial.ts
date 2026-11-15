@@ -9,6 +9,7 @@
 // screen with no modal open: "Finish tutorial" (back to the title) or "Keep playing" (the match
 // goes on without the coach).
 import type { RoomView } from '../net/protocol.ts';
+import type { UnitType } from '../sim/types.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
 import { levelUpCost, MAX_SQUAD_LEVEL } from '../sim/match.ts';
@@ -32,7 +33,7 @@ interface Step {
 }
 
 /** The numbered steps of the guided match ("n / 13"); anything else is an unnumbered reminder. */
-const MAIN = ['lord', 'draft1', 'deploy', 'deploys', 'ready', 'battle', 'results', 'draft2', 'loot', 'equip', 'level', 'ghosts', 'finish'];
+const MAIN = ['lord', 'draft1', 'deploy', 'deploys', 'ready', 'battle', 'results', 'draft2', 'loot', 'equip', 'level', 'timing', 'ghosts', 'finish'];
 /** Taught once: these do not come back in later rounds. */
 const ONCE = new Set(['battle', 'results']);
 const MODALS = '.modal, .reveal, .dialog-veil, .rules-veil, .report-veil';
@@ -116,7 +117,7 @@ export class Coach {
       if (me.lootOffer) return { id: 'loot-n', target: '.loot-n', title: 'Spoils are waiting', text: 'Click <b>Spoils of War</b> to claim an item.' };
       if (me.stash.length && !this.seen.has('equip-done')) {
         if (has('.planning.item-dragging')) return { id: 'equip', target: '.stash', title: 'Drop it on a squad', text: 'Release the item over a squad on the field, or over a slot in its panel.' };
-        return { id: 'equip', target: '.stash', title: 'Equip your loot', text: `<b>Drag the item</b> from your stash onto a squad or your Lord. Squads carry a Weapon from level 1, Armor from level ${armor}; your Lord has all three slots.` };
+        return { id: 'equip', target: '.stash', title: 'Equip your loot', text: `<b>Drag the item</b> from your stash onto a squad or your Lord. Squads carry a Weapon and Armor from level ${armor}, a Relic from level ${SLOT_UNLOCK_LEVEL.relic}; your Lord has all three slots.` };
       }
       if (!army.length && canDeploy) return { id: 'deploy', slot: shopSlot, target: '.ucard:not(.off)', title: 'Deploy a squad', text: 'These are your unit types. <b>Drag a card onto your half of the field</b> (inside the glowing border), or press <kbd>1</kbd> and click the ground. <kbd>Q</kbd> <kbd>E</kbd> turn it while you place.' };
       const up = army.find((s) => s.level < MAX_SQUAD_LEVEL && me.gold >= levelUpCost(s.type as never, s.level));
@@ -124,13 +125,17 @@ export class Coach {
       // round 2 teaches levelling up before anything else is bought (the tutorial match pays for it)
       const teach = round >= 2 && !this.seen.has('level-done');
       const levelStep = (): Step => {
-        if (has('.sqpanel .lvl')) return { id: 'level', target: '.sqpanel .lvl', title: 'Level up', text: `Press <b>Level up</b> <kbd>U</kbd>: +25% life and +20% damage for the whole squad, and level ${armor} opens its Armor slot. Levelling is unlimited, unlike deploying.` };
+        if (has('.sqpanel .lvl')) return { id: 'level', target: '.sqpanel .lvl', title: 'Level up', text: `Press <b>Level up</b> <kbd>U</kbd>: +25% life and +20% damage for the whole squad, and level ${SLOT_UNLOCK_LEVEL.relic} opens its Relic slot. Levelling is unlimited, unlike deploying.` };
         const lead = !teach ? 'No deploys left, but gold remains.' : grant ? `Gold also makes the squads you have stronger, and the tutorial has added <b>${grant} gold</b> to try it.` : 'Gold also makes the squads you have stronger.';
         return { id: 'level', title: teach ? 'Level up a squad' : 'Spend what is left', text: `${lead} <b>Click one of your squads</b> on the field (or press <kbd>Tab</kbd>), then <b>Level up</b> <kbd>U</kbd>.` };
       };
       if (up && teach) return levelStep();
       if (canDeploy) return { id: 'deploys', slot: shopSlot, target: '.deploy-badge', title: `${left} deploy${left === 1 ? '' : 's'} left`, text: `You may add up to <b>${me.deployLimit} new squad${me.deployLimit === 1 ? '' : 's'}</b> this round, so every one counts. Put tough units in front and archers or mages behind them. <b>Your army is permanent</b>: it comes back every round.` };
       if (up) return levelStep();
+      // two melee squads of different speeds: time to teach the stagger
+      const melee = army.map((s) => UNITS[s.type as UnitType]).filter((d) => d && d.range <= 400 && !d.tags.includes('flier'));
+      if (round >= 2 && new Set(melee.map((d) => d.speed)).size >= 2 && !this.seen.has('timing-done'))
+        return { id: 'timing', target: '.pt-sync', title: 'Time the charge', text: 'The seconds under each plate are when that squad reaches the river. <b>Slow tanks in front, fast units held back</b>, so they all hit together instead of one by one. Press <b>Sync</b> to stagger your melee squads by speed, or <kbd>T</kbd> to see every route.' };
       if (round >= 2 && v?.enemy.lastArmy && !this.seen.has('ghosts-done')) return { id: 'ghosts', target: '.r-ghost', title: 'Know your enemy', text: 'The <b>red ghosts</b> on the far half show where the enemy stood last round. They are always shown from round 2; you never see what the enemy does now. Hover one to read it, plan against it, then press Ready.' };
       return { id: 'ready', target: '.ready-btn', title: 'Ready', text: 'Happy with your army? Press <b>Ready</b> <kbd>Space</kbd>. The battle starts when both commanders are ready.' };
     }
@@ -217,6 +222,7 @@ export class Coach {
       this.root.classList.add('pop');
       sound.hover();
       if (s.id === 'ghosts') setTimeout(() => this.seen.add('ghosts-done'), 12000);
+      if (s.id === 'timing') setTimeout(() => this.seen.add('timing-done'), 14000);
     } else {
       // the same step, live numbers
       if ($(this.root, '.coach-t').textContent !== s.title) $(this.root, '.coach-t').textContent = s.title;

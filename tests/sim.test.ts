@@ -109,7 +109,9 @@ describe('match rules', () => {
     expect(s.players[1].deployLimit).toBe(2);
     expect(income(2)).toBe(250);
     expect(income(20)).toBe(500);
-    expect(levelUpCost('knights', 2)).toBe(400);
+    // A level-up costs the same at every level: LEVEL_COST_PCT of the unit's cost.
+    expect(levelUpCost('knights', 1)).toBe(80);
+    expect(levelUpCost('knights', 4)).toBe(80);
   });
 
   it('lord pick phase', () => {
@@ -153,7 +155,7 @@ describe('match rules', () => {
     expect(applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [500, 1200] })).toEqual({ ok: false, error: 'army cap reached' });
   });
 
-  it('sell refunds 50% only in the round deployed; level-ups and the item slot rules', () => {
+  it('sell refunds everything (an undo) only in the round deployed; level-ups and the item slot rules', () => {
     const s = newMatch(7, ['warden', 'marshal']);
     const p = s.players[0];
     applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [4000, 2000] });
@@ -161,9 +163,9 @@ describe('match rules', () => {
     expect(applyIntent(s, 0, { t: 'sell', squad: p.squads[0].id }).ok).toBe(false); // the Lord
     expect(applyIntent(s, 0, { t: 'levelUp', squad: sq.id }).ok).toBe(true);
     expect(sq.level).toBe(2);
-    expect(p.gold).toBe(0);
+    expect(p.gold).toBe(300 - 150 - 60);
     expect(applyIntent(s, 0, { t: 'sell', squad: sq.id }).ok).toBe(true);
-    expect(p.gold).toBe(150);
+    expect(p.gold).toBe(300); // the cost and the level-up, in full
     expect(p.deploysUsed).toBe(0);
     applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [4000, 2000] });
     applyIntent(s, 0, { t: 'ready' });
@@ -173,14 +175,14 @@ describe('match rules', () => {
     nextRound(s);
     const sq2 = p.squads[1];
     const before = p.gold;
-    // Items: weapon at Lv1, armor at Lv3, relic at Lv5; Lord has all.
+    // Items: weapon and armor at Lv1, relic at Lv3; Lord has all.
     const mk = (slot: Item['slot'], id: number): Item => {
       const it = rollItem(new Rng(id), id, 2, 'magic');
       return { ...it, slot, base: slot === 'weapon' ? 'steel_blade' : slot === 'armor' ? 'mail_hauberk' : 'oath_ring' };
     };
     p.stash.push(mk('weapon', 900), mk('armor', 901), mk('relic', 902));
     expect(applyIntent(s, 0, { t: 'equip', item: 900, squad: sq2.id }).ok).toBe(true);
-    expect(applyIntent(s, 0, { t: 'equip', item: 901, squad: sq2.id }).ok).toBe(false);
+    expect(applyIntent(s, 0, { t: 'equip', item: 902, squad: sq2.id }).ok).toBe(false);
     expect(applyIntent(s, 0, { t: 'equip', item: 902, squad: p.squads[0].id }).ok).toBe(true); // Lord relic
     expect(applyIntent(s, 0, { t: 'moveItem', item: 902, squad: sq2.id }).ok).toBe(false);
     expect(applyIntent(s, 0, { t: 'moveItem', item: 900, squad: p.squads[0].id }).ok).toBe(true);

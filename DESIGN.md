@@ -50,8 +50,13 @@ which units to unlock, what to deploy and where, which item to take and who wear
   - A lost round costs keep life and nothing else is handed out for it: no catch-up gold, no better loot (§0).
 - **Keep damage:** every surviving squad marches on the enemy Keep and attacks it on screen.
   - A wipe: the winner deals the sum of each surviving squad's `keepDamage` (its cost tier × its level factor, see §3),
-    plus 50 × the round number as a base.
-  - A points win counts in full: the winner's survivors deal their `keepDamage` plus the round base; the loser's deal none.
+    plus the **round bonus**.
+  - The round bonus is 70 × the round number, **paid in proportion to the winning margin**: a win by 40 points or more
+    (the winner's points minus the loser's; a wipe's loser has 0) earns all of it, a win by 10 points a quarter
+    (`roundBonus`, `ROUND_BONUS_FULL_MARGIN`). Close rounds are decided by fine details nobody can plan for, so a narrow
+    win should not pay like a clear one. The survivors' own `keepDamage` is never scaled.
+  - A points win counts in full: the winner's survivors deal their `keepDamage` plus the round bonus for its margin; the
+    loser's deal none.
   - A points draw: both sides deal half damage from their survivors.
   - **Sudden death:** from round 8, all keep damage grows by 25% per round (round 8 ×1.25, round 9 ×1.5, ...), so
     late matches resolve (`suddenDeathPct`).
@@ -73,8 +78,12 @@ which units to unlock, what to deploy and where, which item to take and who wear
 - **Deployment limit (the per-round unit limit):** you may *deploy at most 2 new squads per round*, the same for both players. Only choices change it: your Lord's passive (Marshal makes it 3) and an "of Command" relic you picked. Upgrades and equipping have no limit.
 - **Army cap:** 16 squads.
 - **Unit unlocks (no random drafts):** you start with your Lord's 2 signature units. Every round, round 1 included, you may unlock **any one** locked unit whose `minRound` has come: in round 1 any unit of the basic pool, from round 2 any unit at all (the Dragon from round 5). It is a free strategic choice from the full list, the same rule for both players (`unlockOptions`; `PlayerState.draftOptions` holds that list). This is the Mechabellum-style counter-picking arms race, without the luck of the draw.
-- **Squad level-ups:** gold upgrades a squad from Lv1 to Lv5. The cost is `unitCost × level`. Each level gives +25% HP and +20% damage, and Lv2 and Lv4 open item slots.
-- Selling a squad refunds 50% (only during the planning phase of the round it was deployed; otherwise nothing).
+- **Squad level-ups:** gold upgrades a squad from Lv1 to Lv5. Every level costs the same, **40% of the unit's cost**
+  (`LEVEL_COST_PCT`; a Lv5 squad costs 2.6× its price in all). Each level gives +25% HP and +20% damage, and Lv3 opens
+  the relic slot. Levelling is a real alternative to recruiting: a new squad is more raw power, a level is cheaper,
+  needs no deployment and no army slot, and makes a squad's items count for more.
+- **Selling** in the round a squad was deployed is an undo: it refunds everything spent on it (its cost and any
+  level-ups). A squad deployed in an earlier round refunds nothing.
 - Squads can be moved freely within your half during planning, every round.
 - Squads may not overlap: each has a ground footprint (its formation's half-extent plus a body radius,
   `squadFootprint`), and a deploy or move onto another of your squads is refused ("overlaps another squad").
@@ -159,7 +168,7 @@ match start, then one of its Lords. Either player can pick any faction, includin
 | Skeleton Spearmen (`skeleton`) | 10 | 100 | infantry | Pikemen | chaff; ×2 against mounted, braces against charges |
 | Grave Knights (`grave_knight`) | 4 | 200 | infantry | Knights | heavy armour (55%); drains 10% of its damage as life |
 | Bone Archers (`bone_archer`) | 9 | 100 | ranged | Archers | 24 m bows; ×1.25 against fliers |
-| Wraith Riders (`wraith_rider`) | 4 | 200 | mounted | Cavaliers | charge and raid the backline; **ethereal**: 45% less physical damage, 10% more magic damage; spectral steeds are not `mounted`, so anti-cavalry bonuses miss them (a braced spear wall still stops the charge) |
+| Wraith Riders (`wraith_rider`) | 4 | 200 | mounted | Cavaliers | charge and raid the backline; **ethereal**: 45% less physical damage, 40% more magic damage; spectral steeds are not `mounted`, so anti-cavalry bonuses miss them (a braced spear wall still stops the charge) |
 | Grave Acolytes (`grave_acolyte`) | 3 | 200 | caster | Mages | 18 m soul bolts that drain 30% as life; **raise the fallen** as skeletons (3 + squad level per battle) |
 | Bone Drake (`bone_drake`) | 1 | 300 | flier | Wyvern | Large flier, 2 m sweep; arrows rattle through its ribs (40% armour), magic is the answer |
 | Corpse Catapult (`corpse_catapult`) | 1 | 300 | siege | Trebuchet | 55 m, 5 m splash; **plague**: hits fester for 4 damage a second over 3 s |
@@ -185,7 +194,7 @@ Each side can raise a given corpse once; Lords and Large units leave no usable c
 | Sand Golem (`sand_golem`) | 1 | 300 | giant | Golem | Large; **regenerates 1.5% of its life a second** |
 
 Lord: the **Sultana** (`sultana`, model `lord_sultana`), a sun-banner commander. Sunlight burns the dead: her blade and her
-Radiance deal 25% more to the undead (Ashen units, the Lich-Priest, raised skeletons).
+Radiance deal 50% more to the undead (Ashen units, the Lich-Priest, raised skeletons; `SULTANA_HOLY`).
 
 Future work: a second Lord for each new faction, and one or two faction-flavoured item skills.
 
@@ -220,7 +229,7 @@ exactly the same items** (`rollLoot`, seeded by the match and the round only), a
 | Rare | yellow | 3–4 (or 2–3 and an active skill) |
 | Legendary | orange | 2 affixes + 1 legendary power |
 
-- **Slots:** a squad has Weapon at Lv1, Armor at Lv2 and Relic at Lv4. The Lord has all three from the start. An item applies to *every soldier in the squad*.
+- **Slots:** a squad has Weapon and Armor from Lv1 and Relic from Lv3. The Lord has all three from the start. An item applies to *every soldier in the squad*.
 - **Bases** (by slot):
   - Weapon: e.g. "Steel Blade" with implicit +10% dmg, "Ironbark Bow" with +10% range.
   - Armor: "Mail Hauberk" with +12% HP, "Warded Robe" with +20% magic resist.

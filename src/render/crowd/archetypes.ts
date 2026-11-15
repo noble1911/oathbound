@@ -57,6 +57,10 @@ const looks: Record<string, HumanLook> = {
   djinn_binder: base({ body: 'robe', helmet: 'hat', weapon: 'staff', glow: '#9fd8ff', glowStrength: 7, cloth: '#f2efe6', trim: '#2fb7b0', skin: SKIN[1] }),
   sun_priest: base({ body: 'robe', helmet: 'none', weapon: 'staff', glow: '#ffe9a0', glowStrength: 7, cloth: '#f7f3e8', trim: '#e6b84a', skin: SKIN[1] }),
   lord_sultana: base({ body: 'plate', helmet: 'crown', weapon: 'sword', cape: true, metal: '#d9b25a', trim: '#2fb7b0', cloth: '#f2efe6', skin: SKIN[1], glowStrength: 3 }),
+  // stand-ins of the six Lords whose models ship ahead of the sim (see ARCHETYPES)
+  lord_deathknight: base({ body: 'plate', helmet: 'greathelm', weapon: 'axe2h', cape: true, metal: '#6f6658', cloth: '#5d5a56', glow: '#5fe08a', glowStrength: 4, bulk: 1.2 }),
+  lord_vizier: base({ body: 'robe', helmet: 'hat', weapon: 'staff', glow: '#9fd8ff', glowStrength: 8, cloth: '#f2efe6', trim: '#2fb7b0', skin: SKIN[1] }),
+  lord_rajah: base({ body: 'plate', helmet: 'crown', weapon: 'sword', shield: 'round', cape: true, metal: '#d9b25a', trim: '#2fb7b0', cloth: '#f2efe6', skin: SKIN[1], bulk: 1.2 }),
 };
 
 function human(key: string, render: 'crowd' | 'hero', o: Partial<Archetype> = {}, scale = 1): Archetype {
@@ -173,6 +177,27 @@ export const ARCHETYPES: Record<string, Archetype> = {
     walkSpeed: 1.59, runSpeed: 3, runAbove: 99, flyHeight: 0, muzzle: 3.0, chest: 2.6, scale: 1, attackImpact: 0.5, dust: 1.8,
   },
   lord_sultana: human('lord_sultana', 'hero', { dust: 0.3, walkSpeed: 1.13, runSpeed: 3.8, runAbove: 2.2 }, 1.22),
+  // ---------------------------------------------------------------- Lords whose art ships ahead of the sim
+  // Keyed by model id only (not in LORD_KEY: the sim does not know them yet), so `showArmy` / a replay row with
+  // `modelId: 'lord_<id>'` can already display them (e2e/model-compare.mjs, e2e/anim-audit.mjs).
+  // walkSpeed / runSpeed are placeholders: set them from tools/art/blender/anim_audit.py once the models are built.
+  lord_deathknight: human('lord_deathknight', 'hero', { dust: 0.3, walkSpeed: 1.0, runSpeed: 3.0, runAbove: 1.9 }, 1.25),
+  lord_ossuary: {
+    key: 'lord_ossuary', render: 'hero', build: () => buildGolem('lord_ossuary'),
+    walkSpeed: 1.4, runSpeed: 3, runAbove: 99, flyHeight: 0, muzzle: 2.4, chest: 2.0, scale: 1, attackImpact: 0.5, dust: 1.0,
+  },
+  lord_drakerider: {
+    key: 'lord_drakerider', render: 'hero',
+    build: () => buildDragon('lord_drakerider', { scale: 1.4, body: '#d9d4c2', belly: '#b9b29c', wing: '#77736c', glow: '#5fe08a', rider: riderLook({ weapon: 'lance', helmet: 'crown', metal: '#8a7a55' }) }),
+    walkSpeed: 3, runSpeed: 6, runAbove: 4.5, flyHeight: 7.5, muzzle: 2.4, chest: 1.8, scale: 1, attackImpact: 0.45, dust: 0,
+  },
+  lord_vizier: human('lord_vizier', 'hero', { attackImpact: 0.45, muzzle: 2.4, walkSpeed: 1.1, runSpeed: 3.6, runAbove: 2.2, dust: 0.1 }, 1.22),
+  lord_rajah: human('lord_rajah', 'hero', { dust: 0.4, walkSpeed: 1.0, runSpeed: 3.2, runAbove: 2.0 }, 1.25),
+  lord_rocrider: {
+    key: 'lord_rocrider', render: 'hero',
+    build: () => buildDragon('lord_rocrider', { scale: 1.4, body: '#c9a04a', belly: '#e9d9a8', wing: '#d9b25a', rider: riderLook({ weapon: 'bow', helmet: 'cap', metal: '#d9b25a' }) }),
+    walkSpeed: 3, runSpeed: 6, runAbove: 4.5, flyHeight: 7.5, muzzle: 2.4, chest: 1.8, scale: 1, attackImpact: 0.64, dust: 0,
+  },
 };
 
 const LORD_KEY: Record<string, string> = { marshal: 'lord_marshal', archmage: 'lord_archmage', warden: 'lord_warden', skylady: 'lord_skylady', lich: 'lord_lich', sultana: 'lord_sultana' };

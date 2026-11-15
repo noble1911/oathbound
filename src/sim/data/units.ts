@@ -88,8 +88,8 @@ const rows: Record<UnitType, Row> = {
     // Spectral steeds are not flesh: the riders do not carry the 'mounted' tag, so anti-cavalry bonuses miss them
     // (a braced spear wall still stops their charge).
     name: 'Wraith Riders', role: 'Spectral flanker', cost: 200, squadSize: 4, tags: [], weapon: 'sword', damageType: 'physical', projectile: 'none',
-    // Ethereal: blades pass through them (45% armor), magic bites deeper (-10% resistance).
-    hp: 330, dmg: 32, attackTicks: 22, range: 160, speed: 30, radius: 70, armor: 45, magicResist: -10, traits: ['charge', 'raider'],
+    // Ethereal: blades pass through them (45% armor), magic bites deeper (-40% resistance).
+    hp: 330, dmg: 32, attackTicks: 22, range: 160, speed: 30, radius: 70, armor: 45, magicResist: -40, traits: ['charge', 'raider'],
   },
   grave_acolyte: {
     faction: 'ashen', like: 'mages', basic: true,

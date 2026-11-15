@@ -1,0 +1,217 @@
+{
+ "unit_militia": {
+  "faction": "kingdom",
+  "role": "chaff",
+  "prompt": "ROLE light infantry: one foot soldier striding in side profile facing right, short weapon raised, small round shield. Here: a militia footman in a kettle helmet with a short sword and a round shield."
+ },
+ "unit_pikemen": {
+  "faction": "kingdom",
+  "role": "spear",
+  "prompt": "ROLE spearman: one stocky foot soldier standing, seen from the front, a shield on one arm and a very tall THICK upright spear with a big leaf-shaped head held at his side, the spear taller than himself; the vertical spear beside the figure is the dominant shape. Here: a pikeman in a kettle helmet and breastplate with a small round shield and a very long pike with a small pennant."
+ },
+ "unit_berserkers": {
+  "faction": "kingdom",
+  "role": "melee",
+  "prompt": "ROLE shock infantry: one foot warrior in side profile facing right, lunging, a big weapon swung overhead, no shield. Here: a bare-chested berserker with a wolf pelt swinging a big two-handed axe overhead."
+ },
+ "unit_archers": {
+  "faction": "kingdom",
+  "role": "ranged",
+  "prompt": "ROLE archer: one archer in side profile facing right at full draw; the big curved bow and the arrow are the dominant shape. Here: a hooded longbow archer at full draw."
+ },
+ "unit_knights": {
+  "faction": "kingdom",
+  "role": "heavy",
+  "prompt": "ROLE heavy infantry: one armoured warrior seen from the FRONT, standing square behind a large shield that covers his body, sword upright beside it. Here: a knight in a great helm behind a kite shield with a crown emblem."
+ },
+ "unit_cavaliers": {
+  "faction": "kingdom",
+  "role": "cavalry",
+  "prompt": "ROLE cavalry: one rider on a galloping mount in side profile facing right, lance levelled forward; the four-legged mount is the dominant shape. Here: a lancer in a plumed helmet on a barded warhorse."
+ },
+ "unit_mages": {
+  "faction": "kingdom",
+  "role": "caster",
+  "prompt": "ROLE caster: one robed, hooded figure in side profile facing right raising a staff, a large flame or star burst at the tip of the staff. Here: a battle mage in a pointed hood raising a staff with a fireball."
+ },
+ "unit_clerics": {
+  "faction": "kingdom",
+  "role": "healer",
+  "prompt": "ROLE healer: one robed figure seen from the FRONT with both arms raised, a large radiant sun-disc halo with rays behind the head. Here: a cleric priestess with arms raised under a radiant halo."
+ },
+ "unit_pegasus": {
+  "faction": "kingdom",
+  "role": "flier",
+  "prompt": "ROLE flier: one winged creature seen from the front with both wings spread wide and high; the pair of wings is the dominant shape. Here: a winged horse (pegasus) rearing with a small knight rider and lance."
+ },
+ "unit_ballista": {
+  "faction": "kingdom",
+  "role": "siege",
+  "prompt": "ROLE siege engine: one wheeled wooden war machine in side profile, no people; the machine frame and throwing arm are the dominant shape. Here: a ballista: a giant wheeled crossbow loaded with a huge bolt."
+ },
+ "unit_trebuchet": {
+  "faction": "kingdom",
+  "role": "siege",
+  "prompt": "ROLE siege engine: one wheeled wooden war machine in side profile, no people; the machine frame and throwing arm are the dominant shape. Here: a trebuchet: a tall A-frame with a long throwing arm, sling and counterweight box."
+ },
+ "unit_golem": {
+  "faction": "kingdom",
+  "role": "giant",
+  "prompt": "ROLE giant: one enormous hulking figure seen from the FRONT, tiny head, huge shoulders and fists hanging low, filling the whole icon as a massive block. Here: a stone golem built of big square boulders with a rune on its chest."
+ },
+ "unit_wyvern": {
+  "faction": "kingdom",
+  "role": "flier",
+  "prompt": "ROLE flier: one winged creature seen from the front with both wings spread wide and high; the pair of wings is the dominant shape. Here: a two-legged wyvern with bat wings spread, long neck and barbed tail, a small rider with an axe."
+ },
+ "unit_dragon": {
+  "faction": "kingdom",
+  "role": "flier",
+  "prompt": "ROLE flier: one winged creature seen from the front with both wings spread wide and high; the pair of wings is the dominant shape. Here: a great dragon with wings spread, horned head turned to the side breathing a jet of fire."
+ },
+ "lord_marshal": {
+  "faction": "kingdom",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Marshal Aldric: a bearded general in plate armour holding a big kite shield with a lion on one side and a tall BANNER on a pole on the other; the flying banner is the dominant shape."
+ },
+ "lord_archmage": {
+  "faction": "kingdom",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Archmage Sefa: a sorceress with long braids, both arms raised, a huge blazing METEOR fireball with a tail above her and an open book floating before her; the meteor is the dominant shape."
+ },
+ "lord_warden": {
+  "faction": "kingdom",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Warden Hrolf: a very broad northern lord in a helm with two big HORNS, holding a huge double-bladed great AXE across his body; the horns and the wide axe blades are the dominant shape."
+ },
+ "lord_skylady": {
+  "faction": "kingdom",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Skylady Ione, a young woman knight in a winged helm, feathered wings behind her."
+ },
+ "unit_skeleton": {
+  "faction": "ashen",
+  "role": "spear",
+  "prompt": "ROLE spearman: one stocky foot soldier standing, seen from the front, a shield on one arm and a very tall THICK upright spear with a big leaf-shaped head held at his side, the spear taller than himself; the vertical spear beside the figure is the dominant shape. Here: a skeleton spearman in a dented helmet with a teardrop shield."
+ },
+ "unit_grave_knight": {
+  "faction": "ashen",
+  "role": "heavy",
+  "prompt": "ROLE heavy infantry: one armoured warrior seen from the FRONT, standing square behind a large shield that covers his body, sword upright beside it. Here: a full-length undead grave knight in a crested great helm with two green glowing eyes, standing behind a big teardrop shield, sword upright; chunky simple shapes, no small bones or ribs."
+ },
+ "unit_bone_archer": {
+  "faction": "ashen",
+  "role": "ranged",
+  "prompt": "ROLE archer: one archer in side profile facing right at full draw; the big curved bow and the arrow are the dominant shape. Here: a full-length hooded skeleton archer in a ragged cloak at full draw, a chunky solid cloaked body (not a thin stick skeleton), big longbow, one green eye."
+ },
+ "unit_wraith_rider": {
+  "faction": "ashen",
+  "role": "cavalry",
+  "prompt": "ROLE cavalry: one rider on a galloping mount in side profile facing right, lance levelled forward; the four-legged mount is the dominant shape. Here: a hooded wraith on a skeletal horse trailing green ghost-flame."
+ },
+ "unit_grave_acolyte": {
+  "faction": "ashen",
+  "role": "caster",
+  "prompt": "ROLE caster: one robed, hooded figure in side profile facing right raising a staff, a large flame or star burst at the tip of the staff. Here: a hooded skull-faced necromancer raising a skull-topped staff with green soul-fire."
+ },
+ "unit_bone_drake": {
+  "faction": "ashen",
+  "role": "flier",
+  "prompt": "ROLE flier: one winged creature seen from the front with both wings spread wide and high; the pair of wings is the dominant shape. Here: a skeletal dragon with tattered bone wings spread and green fire in its ribcage."
+ },
+ "unit_corpse_catapult": {
+  "faction": "ashen",
+  "role": "siege",
+  "prompt": "ROLE siege engine: one wheeled wooden war machine in side profile, no people; the machine frame and throwing arm are the dominant shape. Here: a catapult built of giant bones with a skull cage as counterweight."
+ },
+ "unit_bone_golem": {
+  "faction": "ashen",
+  "role": "giant",
+  "prompt": "ROLE giant: one enormous hulking figure seen from the FRONT, tiny head, huge shoulders and fists hanging low, filling the whole icon as a massive block. Here: a bone golem built of huge ribs and bones with green soul-fire in its ribcage chest."
+ },
+ "lord_lich": {
+  "faction": "ashen",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Morthen the Lich-Priest: a thin robed skeleton priest in a tall spiked crown holding up a big LANTERN on a chain at arm length with a large green flame inside; the raised lantern and tall crown are the dominant shape, lopsided silhouette."
+ },
+ "lord_deathknight": {
+  "faction": "ashen",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Lord Vaelric the Death Knight: an armoured knight in a flat-topped great helm with one green eye slit, both hands on the pommel of a HUGE greatsword standing point-down in front of him, as tall as he is; a narrow, tall, symmetrical silhouette dominated by the sword, simple solid shapes, no ribs or small bones."
+ },
+ "lord_ossuary": {
+  "faction": "ashen",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Gorrath the Ossuary Warden: an enormously wide hulking giant, tiny horned skull head sunk between massive shoulders, a huge rectangular TOWER SHIELD covering half his body on one side, a green flame in his chest; a very wide square silhouette dominated by the shield, simple solid shapes."
+ },
+ "lord_drakerider": {
+  "faction": "ashen",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Queen Nyssara the Drake Rider: a small crowned queen with a long lance RIDING on the back of a skeletal dragon with two big tattered WINGS spread wide, seen from the side facing right; the wings and the rider on top are the dominant shape, simple solid shapes."
+ },
+ "unit_spear_levy": {
+  "faction": "caliphate",
+  "role": "spear",
+  "prompt": "ROLE spearman: one stocky foot soldier standing, seen from the front, a shield on one arm and a very tall THICK upright spear with a big leaf-shaped head held at his side, the spear taller than himself; the vertical spear beside the figure is the dominant shape. Here: a turbaned desert spearman with a round sun shield."
+ },
+ "unit_scimitar": {
+  "faction": "caliphate",
+  "role": "melee",
+  "prompt": "ROLE shock infantry: one foot warrior in side profile facing right, lunging, a big weapon swung overhead, no shield. Here: a turbaned guard with a spired helmet swinging a big curved scimitar overhead."
+ },
+ "unit_camel_archer": {
+  "faction": "caliphate",
+  "role": "ranged",
+  "prompt": "ROLE archer: one archer in side profile facing right at full draw; the big curved bow and the arrow are the dominant shape. Here: an archer at full draw riding a one-humped CAMEL in side profile (mounted archer: the bow and the camel hump and long neck must both read)."
+ },
+ "unit_mamluk": {
+  "faction": "caliphate",
+  "role": "cavalry",
+  "prompt": "ROLE cavalry: one rider on a galloping mount in side profile facing right, lance levelled forward; the four-legged mount is the dominant shape. Here: a lancer in a spired helmet on an armoured horse with a caparison."
+ },
+ "unit_djinn_binder": {
+  "faction": "caliphate",
+  "role": "caster",
+  "prompt": "ROLE caster: one robed, hooded figure in side profile facing right raising a staff, a large flame or star burst at the tip of the staff. Here: a bearded sorcerer in a large turban raising a staff, a swirl of smoke rising from the staff tip."
+ },
+ "unit_sun_priest": {
+  "faction": "caliphate",
+  "role": "healer",
+  "prompt": "ROLE healer: one robed figure seen from the FRONT with both arms raised, a large radiant sun-disc halo with rays behind the head. Here: a veiled sun priestess with arms raised under a radiant sun disc."
+ },
+ "unit_djinn": {
+  "faction": "caliphate",
+  "role": "flier",
+  "prompt": "ROLE flier: one winged creature seen from the front with both wings spread wide and high; the pair of wings is the dominant shape. Here: a floating muscular djinn with crossed arms whose lower body is a swirling tail of smoke (no wings: the curling smoke tail is the dominant shape)."
+ },
+ "unit_war_elephant": {
+  "faction": "caliphate",
+  "role": "giant",
+  "prompt": "ROLE giant: one enormous hulking figure seen from the FRONT, tiny head, huge shoulders and fists hanging low, filling the whole icon as a massive block. Here: a war elephant seen from the front with big ears, tusks and a howdah tower on its back."
+ },
+ "unit_sand_golem": {
+  "faction": "caliphate",
+  "role": "giant",
+  "prompt": "ROLE giant: one enormous hulking figure seen from the FRONT, tiny head, huge shoulders and fists hanging low, filling the whole icon as a massive block. Here: a sand golem of stacked sandstone blocks with a sun disc in its chest, sand pouring from its fists."
+ },
+ "lord_sultana": {
+  "faction": "caliphate",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Sultana Zahira, a queen in a sun-ray crown over a veil, a scimitar beside her."
+ },
+ "lord_vizier": {
+  "faction": "caliphate",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Grand Vizier Kasim: an old long-bearded sorcerer in a big turban holding out an oil LAMP from which a large DJINN of smoke with a head and arms rises and looms above him; the smoke djinn is the dominant shape."
+ },
+ "lord_rajah": {
+  "faction": "caliphate",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Rajah Bahadur the Elephant Lord: a crowned warlord with a curved sword sitting on top of the HEAD of a war elephant seen from the front, big ears, trunk and two large tusks; the elephant head is the dominant shape."
+ },
+ "lord_rocrider": {
+  "faction": "caliphate",
+  "role": "lord",
+  "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Amira Falconheart, a veiled warrior woman in a feathered diadem crown, the hooked beak and wings of a giant bird behind her."
+ }
+}

@@ -486,7 +486,8 @@ squad-level target hand-offs.
 ## Appendix: reproducing the numbers
 
 All scripts are analysis only and are not imported by the game. `tools/review/botx.ts` is a copy of `src/sim/bot.ts` with internals
-exported and two knobs (`noLevel`, `noLayout`); re-copy it if the bot changes. Runs use the worker pool (`availableParallelism() − 4`
+exported and knobs (`noLevel`, `noLayout`; since the follow-up pass also `bias`, `sync`, `from`). Regenerate it with
+`node tools/review/mkbotx.ts` whenever the bot changes. Runs use the worker pool (`availableParallelism() − 4`
 threads). The times are on a 20-thread machine.
 
 | Section | Command | Size | Time |
@@ -509,3 +510,41 @@ Seeds are fixed in each script (`--seed0` overrides), so re-runs give the same n
   The direction and size still show where the skill is.
 - The 1,500-battle tables have about ±2.5 points of noise on win%, and the 600-match tables about ±4.
 - The "hard river" test patches `MOVE_PCT` in-process only. The flow field still prices the water as today.
+
+---
+
+## What changed after the review (2026-11-15)
+
+The balancing items were implemented and re-tuned. The full tables are in `docs/BALANCE.md` ("Current report").
+The planning-UX items (timing preview, multi-select, undo, grid snap) are separate work.
+
+| Item | Change | Before → after |
+|---|---|---|
+| Same-round sell | refunds everything spent (an undo); later rounds still refund nothing | 50% → 100% |
+| Round bonus | 70 × round × min(1, margin / 40) (`roundBonus`) | share of all keep damage 48.7% → 35.9%; in close rounds 63.2% → 27.2%; a close win deals 621 → 410 (any win 719 → 733) |
+| Match length | no change to the base or sudden death was needed | Hard 8.41 → 8.49 rounds (0.0% past 12); Normal 8.57 → 8.83 (1.4% past 12) |
+| Close-round chaos | no sim change kept (below) | 10 cm nudge flips 25.9% → 25.0% of close battles (all battles 10.7% → 9.4%); target < 10% **not met** |
+| Levelling | a flat 40% of unit cost per level; armour slot at Lv1, relic at Lv3; Hard and Normal weigh a level against each buy | level-ups 6.1% → 26.8% of Hard's spend (Normal 20.2%); `tall` 17.2% → 43.4%, `wide` 47.7% → 50.0% (6.6 apart, target about ±5); idle stash items at round 8 2.17 → 0.04 |
+| Speed stagger | Hard staggers its melee by speed; Normal does it at half strength when it deploys | the `sync` exploit against Hard 73.7% → 48.5%; the stagger is worth +15.5 points to Hard |
+| Ranged on hills or forest | tried for Hard | 50.3 ± 2.8% head-to-head: not kept |
+
+**Why the chaos target was not met.** Sticky soldier targets, macro-target hysteresis, squad-level focus, a slower
+retarget, and removing or softening the straggler gate all left the close-battle flip rate within noise of 26%
+(23–33%). The decisive measurement is a **1 cm** nudge of the whole army: it flips 28% of close battles, as many as
+10 cm or 1 m do. Close battles are saturated chaos: any perturbation randomises them, so no local tie-break can make
+them reproducible. What the pass could change is what such a flip costs, and the margin-scaled bonus cut that by a
+third. A real fix needs outcomes that depend less on single kills (smoother damage, or wider points draws), which is a
+design change. `chaos.ts` now also prints the 1 cm row and the mean change in the keep-damage swing.
+
+**Other balance moves this needed.**
+- The stagger helps slow armies most (Warden and Lich +35 points against the old Hard, the Archmage +3), so factions,
+  Lords and units were re-tuned on Hard and Normal together.
+- Wraith Riders take 40% more magic damage (was 10%), and the Sultana deals +50% to the undead (was +25%). These two
+  levers work on Ashen vs Caliphate only: Hard and Normal had pulled that pairing in opposite directions.
+- Normal's faction preferences were adjusted, and it skips clerics in its first squads.
+
+**Tested but deferred.** A Hard that levels nothing before round 4 wins 56–58% against the shipped Hard, and it would
+bring tall and wide closer. But it moved the Hard faction table by up to 18 points, so it needs its own re-tune.
+
+Scripts: `tools/review/mkbotx.ts` regenerates `botx.ts` from `src/sim/bot.ts` (its knobs are `noLevel`, `noLayout`,
+`bias`, `sync` and `from`). `matches.ts` has a `lateLevel4` variant.

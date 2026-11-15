@@ -21,7 +21,7 @@ export { ANIM_STATES, EVENT_KINDS } from './types.ts';
 
 export {
   newMatch, applyIntent, applyBattle, nextRound, viewFor, allReady, forceReady,
-  income, deployZone, inDeployZone, levelUpCost, sellRefund, keepDamageOf, squadKeepDamage, lordLevelForXp,
+  income, deployZone, inDeployZone, levelUpCost, sellRefund, keepDamageOf, roundBonus, ROUND_BONUS_FULL_MARGIN, squadKeepDamage, lordLevelForXp,
   START_GOLD, KEEP_HP, ARMY_CAP, BASE_DEPLOY_LIMIT, MAX_SQUAD_LEVEL, MAX_LORD_LEVEL, LORD_XP_LEVELS,
   roundOutcome, roundOutcomeText, comebackFor, keepPct, usableSlots, slotOpen, squadFootprint, overlappingSquad, freeSpotNear,
   CATCHUP_GOLD, CATCHUP_PER_ROUND, CATCHUP_PER_DEFICIT, UNDERDOG_DEFICIT,

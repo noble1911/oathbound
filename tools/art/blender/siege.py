@@ -262,10 +262,98 @@ def build_trebuchet(body, H, lod):
     return [body, arm, rope, stone], anim, {'fireTime': round(12 / FPS, 3)}
 
 
+def strip(parts, lens, out, kit, spec=None):
+    """SIEGE_STRIP=out.png: side-on EEVEE tiles of clip poses (`SIEGE_POSES` = 'fire:0,fire:6,...'), team cloth in blue."""
+    import os
+    import trappings as TR
+    import trappings_lib as T
+    poses = [p.split(':') for p in (os.environ.get('SIEGE_POSES') or 'idle:0,fire:5,fire:10,fire:14,fire:24,reload:30,hit:2,death:35').split(',')]
+    for o in parts[:1]:
+        TR.tint_preview(o)
+    co = np.concatenate([np.array([o.matrix_world @ v.co for v in o.data.vertices]) for o in parts])
+    lo, hi = co.min(0), co.max(0)
+    me = bpy.data.meshes.new('_bb'); me.from_pydata([tuple(lo - (0, 2.5, 0)), tuple(hi + (0, 1.5, 3.0))], [], [])
+    bb = bpy.data.objects.new('_bb', me); bpy.context.scene.collection.objects.link(bb)
+    tiles = []
+    yaw = float(os.environ.get('SIEGE_YAW', -62))
+    for k, (cl, fr) in enumerate(poses):
+        for o in parts:
+            for tr in o.animation_data.nla_tracks:
+                tr.mute = tr.name != cl
+        bpy.context.scene.frame_set(int(fr))
+        f = str(out).replace('.png', f'_{k}.png')
+        TR.render_views(f, [bb], views=[(yaw, 10)], res=(640, 640))
+        tiles.append(T.load_px(f)); os.remove(f)
+    for o in parts:
+        for tr in o.animation_data.nla_tracks:
+            tr.mute = False
+    bpy.context.scene.frame_set(0)
+    bpy.data.objects.remove(bb, do_unlink=True)
+    sheet = np.concatenate(tiles, 1)
+    img = bpy.data.images.new('_s', sheet.shape[1], sheet.shape[0]); img.pixels.foreach_set(sheet.ravel())
+    img.filepath_raw = str(out); img.file_format = 'PNG'; img.save(); bpy.data.images.remove(img)
+    for o in list(bpy.data.objects):
+        if o.name.startswith('_pv'):
+            bpy.data.objects.remove(o, do_unlink=True)
+
+
+def authored(aid, a):
+    """Authored engines (assets.json `authored: true`): geometry + atlas from siege_kit.py, no TRELLIS mesh.
+    Writes <id>.glb / <id>_lod1.glb to art_lib.OUT when `ART_OUT` (run.mjs --stage) is set, else to
+    art-work/stage_v2/ (never straight into public/models/v2), the team masks and facts to art-work/clean/."""
+    import os
+    import siege_kit as SK
+    out = L.OUT if os.environ.get('ART_OUT') or os.environ.get('SIEGE_PUBLIC') else L.WORK / 'stage_v2'
+    out.mkdir(parents=True, exist_ok=True); (L.WORK / 'clean').mkdir(parents=True, exist_ok=True)
+    facts = dict(id=aid, height=a['height'], clips={}, authored=True)
+    for lod, name in ((False, aid), (True, f'{aid}_lod1')):
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        bpy.context.scene.render.fps = FPS
+        r = SK.build(aid, lod)
+        nodes = r['nodes']
+        root = bpy.data.objects.new(aid, None); bpy.context.scene.collection.objects.link(root)
+        parts = [nodes[n] for n in r['order']]
+        for n in r['order']:
+            if nodes[n].parent is None:
+                nodes[n].parent = root
+        bpy.context.view_layer.update()
+        for cname, n in r['lens'].items():
+            clip(parts, cname, lambda o, nn, c=cname: r['anim'](o.name, c, nn, key, o), n)
+            facts['clips'][cname] = dict(duration=round((n - 1) / FPS, 3), loop=cname == 'idle')
+        facts['fireTime'] = round(r['fire_frame'] / FPS, 3)
+        facts['nodes'] = list(r['order'])
+        kit = r['kit']
+        L.save_gray(kit.team, L.WORK / 'clean' / (f'{aid}_lod1_team.png' if lod else f'{aid}_team.png'), *((256, 256) if lod else (1024, 1024)))
+        co = np.concatenate([np.array([o.matrix_world @ v.co for v in o.data.vertices]) for o in parts])
+        if not lod:
+            facts['bounds'] = [co.min(0).round(3).tolist(), co.max(0).round(3).tolist()]
+            facts['team_frac'] = max(0.01, float((kit.team > 0.5).mean()))
+            facts['atlas'] = int(parts[0]['atlas']); facts['texel'] = round(float(parts[0]['texel']), 1)
+            facts['height'] = round(float(co[:, 2].max()), 2)             # the real rest height (pennants included)
+            if r.get('release'):
+                # where the projectile leaves the engine, model space (Blender: -Y forward, Z up): the renderer's `muzzle` height
+                facts['release'] = [round(float(x), 3) for x in r['release']]
+            if r.get('throw_top'):
+                facts['throw_top'] = r['throw_top']
+        L.export_glb(out / f'{name}.glb', [root] + parts, anims=True,
+                     extra=dict(export_animation_mode='NLA_TRACKS', export_anim_single_armature=False,
+                                export_optimize_animation_keep_anim_object=True, export_optimize_animation_size=False))
+        facts['tris_lod1' if lod else 'tris_lod0'] = sum(L.tris(p) for p in parts)
+        if not lod and os.environ.get('SIEGE_STRIP'):           # review: poses of the clips, straight from the build scene
+            strip(parts, r['lens'], os.environ['SIEGE_STRIP'], kit)
+        if not lod and os.environ.get('SIEGE_BLEND'):
+            bpy.ops.wm.save_as_mainfile(filepath=os.environ['SIEGE_BLEND'], compress=True)
+    facts['clips_custom'] = {'idle': 'idle', 'attack': 'fire', 'reload': 'reload', 'hit': 'hit', 'death': 'death'}
+    (L.WORK / 'clean' / f'{aid}.json').write_text(json.dumps(facts, indent=1))
+    print('[siege] authored', aid, 'tris', facts['tris_lod0'], facts['tris_lod1'], 'atlas', facts['atlas'], 'bounds', facts['bounds'], '->', out)
+
+
 def main():
     aid = L.argv()[0]
     a = L.assets()[aid]
     H = a['height']
+    if a.get('authored'):
+        return authored(aid, a)
     bpy.ops.wm.open_mainfile(filepath=str(L.WORK / 'blend' / f'{aid}_clean.blend'))
     bpy.context.scene.render.fps = FPS
     l0 = bpy.data.objects[aid]; l1 = bpy.data.objects[f'{aid}_lod1']

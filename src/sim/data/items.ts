@@ -30,7 +30,7 @@ export const LEGENDARY_MIN_ROUND = 3;
 export const LEGENDARY_EVERY = 3;
 
 /** Squad level at which each slot opens (the Lord has all three from the start). */
-export const SLOT_UNLOCK_LEVEL: Record<Slot, number> = { weapon: 1, armor: 2, relic: 4 };
+export const SLOT_UNLOCK_LEVEL: Record<Slot, number> = { weapon: 1, armor: 1, relic: 3 };
 
 export const BASES: Record<BaseId, BaseDef> = {
   steel_blade: { id: 'steel_blade', name: 'Steel Blade', slot: 'weapon', implicit: 'vicious', lo: 8, hi: 12 },

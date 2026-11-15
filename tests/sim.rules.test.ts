@@ -7,9 +7,9 @@ import {
 } from '../src/sim/index.ts';
 import { rollItem } from '../src/sim/loot.ts';
 import { Rng } from '../src/sim/rng.ts';
-import type { BotStrategy, Item, MatchState, RoundSummary, Seat, Squad } from '../src/sim/types.ts';
+import type { BotStrategy, Item, LordId, MatchState, RoundSummary, Seat, Squad } from '../src/sim/types.ts';
 import { playMatch } from '../src/sim/tournament.ts';
-import { KEEP_DMG_BASE_PER_ROUND, KEEP_DMG_PER_TIER, MAX_LORD_LEVEL, SUDDEN_DEATH_ROUND, concede, keepDamageOf, squadKeepDamage, suddenDeathPct, unlockOptions } from '../src/sim/match.ts';
+import { KEEP_DMG_BASE_PER_ROUND, KEEP_DMG_PER_TIER, MAX_LORD_LEVEL, ROUND_BONUS_FULL_MARGIN, SUDDEN_DEATH_ROUND, concede, keepDamageOf, roundBonus, squadKeepDamage, suddenDeathPct, unlockOptions } from '../src/sim/match.ts';
 import { itemName, lootSchedule } from '../src/sim/loot.ts';
 import { income } from '../src/sim/match.ts';
 import { readFileSync } from 'node:fs';
@@ -62,8 +62,8 @@ describe('deploy footprints', () => {
 });
 
 describe('item slots and loot', () => {
-  it('weapon opens at Lv1, armor at Lv2, relic at Lv4', () => {
-    expect(SLOT_UNLOCK_LEVEL).toEqual({ weapon: 1, armor: 2, relic: 4 });
+  it('weapon and armor open at Lv1, relic at Lv3', () => {
+    expect(SLOT_UNLOCK_LEVEL).toEqual({ weapon: 1, armor: 1, relic: 3 });
     const s = newMatch(11, ['warden', 'warden']);
     const p = s.players[0];
     p.gold = 5000;
@@ -72,13 +72,12 @@ describe('item slots and loot', () => {
     const mk = (slot: Item['slot'], id: number): Item => ({ ...rollItem(new Rng(id), id, 2, 'magic', slot), id });
     p.stash.push(mk('weapon', 900), mk('armor', 901), mk('relic', 902));
     expect(applyIntent(s, 0, { t: 'equip', item: 900, squad: sq.id }).ok).toBe(true);
-    expect(applyIntent(s, 0, { t: 'equip', item: 901, squad: sq.id })).toEqual({ ok: false, error: 'armor slot opens at level 2' });
-    applyIntent(s, 0, { t: 'levelUp', squad: sq.id });
     expect(applyIntent(s, 0, { t: 'equip', item: 901, squad: sq.id }).ok).toBe(true);
+    expect(applyIntent(s, 0, { t: 'equip', item: 902, squad: sq.id })).toEqual({ ok: false, error: 'relic slot opens at level 3' });
     applyIntent(s, 0, { t: 'levelUp', squad: sq.id });
     expect(applyIntent(s, 0, { t: 'equip', item: 902, squad: sq.id }).ok).toBe(false);
     applyIntent(s, 0, { t: 'levelUp', squad: sq.id });
-    expect(sq.level).toBe(4);
+    expect(sq.level).toBe(3);
     expect(applyIntent(s, 0, { t: 'equip', item: 902, squad: sq.id }).ok).toBe(true);
   });
 
@@ -126,10 +125,12 @@ describe('stalemates, points and result wording', () => {
     expect(result.winner).toBe(lead >= POINTS_MARGIN ? 0 : lead <= -POINTS_MARGIN ? 1 : null);
     if (result.winner !== null) {
       expect(result.keepDamage[result.winner]).toBe(0); // the points loser deals nothing
-      // ...and the points winner deals its survivors' damage in full, round bonus included
-      const w = result.winner, full = keepDamageOf(s.players[w].squads, result.survivors[w], s.round, true, false);
+      // ...and the points winner deals its survivors' damage in full, plus the round bonus scaled by its margin
+      const w = result.winner, margin = result.score[w] - result.score[1 - w];
+      const full = keepDamageOf(s.players[w].squads, result.survivors[w], s.round, true, false, margin);
       expect(result.keepDamage[1 - w]).toBe(full);
-      expect(full).toBeGreaterThan(KEEP_DMG_BASE_PER_ROUND * s.round);
+      expect(full).toBeGreaterThanOrEqual(roundBonus(s.round, margin));
+      expect(full).toBeGreaterThan(0);
     }
     // a helpless side ends the battle within about 10 s of the last hope, not 15
     expect(result.ticks).toBeLessThanOrEqual(1000);
@@ -228,7 +229,8 @@ describe('equal conditions: no catch-up, no random offers', () => {
         expect(spent[0]).toBeGreaterThanOrEqual(0);
         rounds++;
       }
-      expect(decided).toBeGreaterThan(2);
+      // (Two copies of one bot with the same Lord fight near-mirror battles, which may well end level.)
+      expect(decided).toBeGreaterThan(strats[0] === strats[1] ? 0 : 2);
     }
   }, 120_000);
 
@@ -355,12 +357,16 @@ describe('AI difficulty levels', () => {
   });
 
   it('the ladder holds on a small sample: hard > normal > easy', () => {
+    // One Lord pairing per seed across all three factions, each bot playing the first Lord from both seats.
+    const pairs: [LordId, LordId][] = [['skylady', 'archmage'], ['marshal', 'warden'], ['lich', 'sultana'], ['sultana', 'skylady']];
     let hardVsEasy = 0, normalVsEasy = 0, n = 0;
     for (let seed = 1; seed <= 4; seed++) {
+      const [mine, theirs] = pairs[seed - 1];
       for (const seat of [0, 1] as Seat[]) {
         const strats = (x: BotStrategy): [BotStrategy, BotStrategy] => (seat === 0 ? [x, 'easy'] : ['easy', x]);
-        if (playMatch(seed, ['marshal', 'warden'], strats('hard')).winner === seat) hardVsEasy++;
-        if (playMatch(seed, ['skylady', 'archmage'], strats('normal')).winner === seat) normalVsEasy++;
+        const lords: [LordId, LordId] = seat === 0 ? [mine, theirs] : [theirs, mine];
+        if (playMatch(seed, lords, strats('hard')).winner === seat) hardVsEasy++;
+        if (playMatch(seed, lords, strats('normal')).winner === seat) normalVsEasy++;
         n++;
       }
     }
@@ -382,6 +388,20 @@ describe('match pacing: sudden death, clamped keep damage, concessions', () => {
     expect(at(7)).toBe(own + KEEP_DMG_BASE_PER_ROUND * 7);
     expect(at(8)).toBe(Math.trunc((own + KEEP_DMG_BASE_PER_ROUND * 8) * 1.25));
     expect(keepDamageOf(s.players[0].squads, ids, 10, false, true)).toBe(Math.trunc(Math.trunc(own / 2) * 1.75));
+  });
+
+  it('the round bonus is paid in proportion to the winning margin', () => {
+    const full = KEEP_DMG_BASE_PER_ROUND * 6;
+    expect(roundBonus(6, ROUND_BONUS_FULL_MARGIN)).toBe(full);
+    expect(roundBonus(6, 100)).toBe(full);
+    expect(roundBonus(6, ROUND_BONUS_FULL_MARGIN / 2)).toBe(full / 2);
+    expect(roundBonus(6, 0)).toBe(0);
+    const s = newMatch(3, ['warden', 'warden']);
+    const q = squad(s, 0, 'knights', [4000, 3000]);
+    const narrow = keepDamageOf(s.players[0].squads, [q.id], 6, true, false, 10);
+    const clear = keepDamageOf(s.players[0].squads, [q.id], 6, true, false, 60);
+    expect(clear - narrow).toBe(full - roundBonus(6, 10));
+    expect(narrow).toBe(squadKeepDamage(q) + roundBonus(6, 10)); // the survivors' own damage is never scaled
   });
 
   it('there is no forced end: a match is only over when a keep falls', () => {

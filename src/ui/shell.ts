@@ -73,6 +73,7 @@ export class Shell {
         <label class="ck"><input type="checkbox" class="saver-ck"><span>Battery saver (30 fps, lowest quality, no idle motion)</span></label>
         <label class="ck"><input type="checkbox" class="fs-ck"><span>Full screen <kbd>F</kbd></span></label>
         <h4>Game</h4>
+        <div class="set-row"><span>Placement grid <kbd>G</kbd></span><span class="seg snap">${[0, 50, 100].map((v) => `<button data-snap="${v}">${v ? `${v / 100} m` : 'Off'}</button>`).join('')}</span></div>
         <div class="set-acts">
           <button class="btn rules-set">${icon('tome')}<span>How to play</span><kbd>F1</kbd></button>
           <button class="btn danger leave-set">${icon('flag')}<span>Leave match</span></button>
@@ -117,6 +118,18 @@ export class Shell {
         e.preventDefault();
         sound.click();
         this.onQuality?.(b.dataset.q as QualityChoice);
+        this.syncGraphics();
+      }),
+    );
+    this.root.querySelectorAll<HTMLElement>('.snap button').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        sound.click();
+        const v = Number(b.dataset.snap);
+        store.set('plan.snap', String(v));
+        if (v) store.set('plan.snapLast', String(v));
+        // the planning screen's formation bar shows the snap too
+        window.dispatchEvent(new Event('oathbound:snap'));
         this.syncGraphics();
       }),
     );
@@ -207,6 +220,8 @@ export class Shell {
     this.root.querySelectorAll<HTMLElement>('.fps button').forEach((b) => b.classList.toggle('on', !!g && Number(b.dataset.fps) === g.fpsCap));
     $<HTMLInputElement>(this.root, '.saver-ck').checked = !!g?.batterySaver;
     $<HTMLInputElement>(this.root, '.fs-ck').checked = !!document.fullscreenElement;
+    const snap = Number(store.get('plan.snap') ?? 0);
+    this.root.querySelectorAll<HTMLElement>('.snap button').forEach((b) => b.classList.toggle('on', Number(b.dataset.snap) === snap));
     const note = $(this.root, '.q-note');
     note.textContent = !g ? 'The battlefield is still loading.' : g.batterySaver ? 'Battery saver is on: it overrides the quality tier.' : g.choice === 'auto' ? `Auto picked ${g.tier} for this device.` : '';
   }

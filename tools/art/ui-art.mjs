@@ -1,3 +1,5 @@
+// NOTE (2026-11-15): unit, Lord and item art is now the woodcut set made by tools/art/ui-woodcut.mjs (see
+// ui-prompts/_style_woodcut.txt); the per-id prompts were rewritten for it. Use this script only for the key art.
 // UI 2D art via the Codex CLI's image generation: Lord portraits, item base icons, unit card art and
 // the title key art. Prompts: tools/art/ui-prompts/<id>.txt + _style.txt. Raw PNGs land in
 // art-work/ui/ (gitignored); tools/art/ui-webp.py writes the WebPs the client loads from public/ui/.

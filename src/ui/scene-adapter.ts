@@ -38,6 +38,16 @@ export interface RangeSpec {
   range: number;
   minRange: number;
   enemy?: boolean;
+  /** A Lord's ability reach (cm) and its name, drawn as a second ring in the owner's livery. */
+  aura?: { radius: number; label: string } | null;
+}
+
+/** The planning march preview (src/ui/timing.ts): plate tags, and route lines with their time marks. */
+export interface TimingSpec {
+  /** A small seconds tag under a squad's plate (`pos` is the squad's field position). */
+  tags: { id: number; pos: Vec2; text: string; hot?: boolean }[];
+  /** Field-cm polylines; `marks` are labels along them (the river, the enemy front). */
+  routes: { pts: Vec2[]; hot?: boolean; marks: { pos: Vec2; text: string; dim?: boolean }[] }[];
 }
 
 export interface ScreenPoint { x: number; y: number }
@@ -74,6 +84,10 @@ export interface SceneAdapter {
   setGhosts(squads: SquadVisual[] | null): void;
   setPreview(p: PreviewSpec | null): void;
   setSelected(id: number | null): void;
+  /** Several of my squads selected at once (each gets the selected plate and a footprint ring). */
+  setSelection?(ids: number[]): void;
+  /** The march preview; null clears it. Drawn only when it changes (render on demand). */
+  setTiming?(t: TimingSpec | null): void;
   setHovered(id: number | null): void;
   setRange(r: RangeSpec | null): void;
   /** Hide one squad while it is being dragged (its preview shows instead). */

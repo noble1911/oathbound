@@ -9,8 +9,10 @@ import { UNITS } from '../sim/data/units.ts';
 import { SLOT_UNLOCK_LEVEL, LEGENDARY_EVERY } from '../sim/data/items.ts';
 import { lootSchedule } from '../sim/loot.ts';
 import type { Rarity } from '../sim/types.ts';
-import { ARMY_CAP, BASE_DEPLOY_LIMIT, KEEP_HP, MAX_SQUAD_LEVEL, START_GOLD, income } from '../sim/match.ts';
+import { ARMY_CAP, BASE_DEPLOY_LIMIT, KEEP_HP, LEVEL_COST_PCT, MAX_SQUAD_LEVEL, START_GOLD, deployZone, income } from '../sim/match.ts';
+import { RIVER_Y0 } from '../sim/terrain.ts';
 import { LORDS } from '../sim/data/lords.ts';
+import { TICK_HZ } from '../sim/constants.ts';
 import { sound } from '../audio.ts';
 import { $, el, esc, store } from './dom.ts';
 import { icon } from './icons.ts';
@@ -46,6 +48,31 @@ const roster = (): UnitType[] => FACTIONS[codexFaction()].units;
 /** What that roster is measured against: the enemy's units once their faction is known, else every faction's. */
 const foes = (): UnitType[] => { const e = factionContext().enemy; return e ? FACTIONS[e].units : FACTION_IDS.flatMap((f) => FACTIONS[f].units); };
 const names = (l: UnitType[], n = 3): string => l.slice(0, n).map((u) => UNITS[u].name).join(', ');
+/** March speed in m/s (the sim's speed is cm per tick). */
+const mps = (u: UnitType): number => (UNITS[u].speed * TICK_HZ) / 100;
+/** The codex faction's slowest and fastest melee units on the ground, for the timing lesson. */
+function timingPair(): { slow: UnitType; fast: UnitType } | null {
+  const melee = roster().filter((u) => UNITS[u].range <= 400 && !UNITS[u].tags.includes('flier'));
+  if (melee.length < 2) return null;
+  const by = [...melee].sort((a, b) => UNITS[a].speed - UNITS[b].speed);
+  return { slow: by[0]!, fast: by[by.length - 1]! };
+}
+function timingSection(): string {
+  const p = timingPair();
+  // from the front edge of a deploy zone to the river's near bank
+  const gap = (RIVER_Y0 - deployZone(0).y1) / 100;
+  const ex = p
+    ? `${esc(UNITS[p.slow].name)} march at <b>${mps(p.slow).toFixed(1)} m/s</b> and ${esc(UNITS[p.fast].name)} at <b>${mps(p.fast).toFixed(1)} m/s</b>. Side by side on the front edge, ${gap.toFixed(0)} m from the river, the ${esc(UNITS[p.fast].name)} get there ${(gap / mps(p.slow) - gap / mps(p.fast)).toFixed(0)} s sooner and fight alone.`
+    : 'Fast squads that start beside slow ones arrive alone and fight alone.';
+  return `<h3>Timing the charge</h3>
+        <p class="lead"><b>Slow tanks in front, fast units held back</b>, so they all hit together.</p>
+        <p>${ex} Put the slowest melee squad at the front edge of your zone and the faster ones deeper, until they reach the river at the same moment. Then your tanks take the first blows, and the hard hitters arrive while the enemy is still busy with them.</p>
+        <ul class="rl-list">
+          <li>The seconds under each squad's plate are when it reaches the river. Press <kbd>T</kbd> for every route, with the time to where the enemy's front stood last round.</li>
+          <li><b>Sync</b> (on the formation bar, or with several squads selected) staggers your melee squads for you, slowest in front.</li>
+          <li>Ranged squads stop as soon as their target is in range: keep them behind the line, not in step with it.</li>
+        </ul>`;
+}
 const scope = (): string => {
   const e = factionContext().enemy;
   return `<p class="rl-scope">${icon('flag')}Showing <b>${esc(FACTIONS[codexFaction()].name)}</b>${e && e !== codexFaction() ? ` against <b>${esc(FACTIONS[e].name)}</b>` : ''}. The other factions are under <i>Factions</i>.</p>`;
@@ -175,7 +202,7 @@ function page(id: TabId): string {
         <div class="rl-flow">
           <div class="rl-step"><i>1</i><b>Plan</b><p>Both commanders plan in secret, at the same time. Deploy up to <b>${deployText().n}</b> a round on your half${deployLimit() ? '' : ` (${marshalBonus()})`}, level squads up, equip loot. Press <kbd>Space</kbd> when ready.</p></div>
           <div class="rl-step"><i>2</i><b>Battle</b><p>The armies fight on their own: no orders. A battle ends when one army is wiped out, or after <b>1:30</b>.</p></div>
-          <div class="rl-step"><i>3</i><b>Siege</b><p>The winner's <b>surviving squads march on the enemy Keep</b>. Costlier and higher-level survivors hit harder, and later rounds add more.</p></div>
+          <div class="rl-step"><i>3</i><b>Siege</b><p>The winner's <b>surviving squads march on the enemy Keep</b>. Costlier and higher-level survivors hit harder, and later rounds add more. A narrow win adds less than a clear one.</p></div>
           <div class="rl-step"><i>4</i><b>Spoils</b><p>Pick <b>1 item of 3</b> and unlock <b>a new unit type</b>. Then plan again.</p></div>
         </div>
         <ul class="rl-list">
@@ -224,7 +251,8 @@ function page(id: TabId): string {
         <ul class="rl-list">
           <li>Deploy anywhere in your zone (the glowing border). Each squad needs its own ground.</li>
           <li>Squads march straight at the enemy: a tank in front of archers keeps the archers alive.</li>
-        </ul>`;
+        </ul>
+        ${timingSection()}`;
     case 'loot':
       return `<h3>Loot</h3>
         <p class="lead">After every round you choose <b>1 item of 3</b>: a weapon, an armor and a relic. An item works on <b>every soldier</b> of the squad that carries it.</p>
@@ -239,7 +267,7 @@ function page(id: TabId): string {
           <div class="rl-slot lord"><i>${icon('crown')}</i><b>Your Lord</b><small>all three, always</small></div>
         </div>
         <ul class="rl-list">
-          <li><b>Level up a squad with gold</b> (unit cost × its level, up to level ${MAX_SQUAD_LEVEL}): <b>+25% life and +20% damage</b> per level, and more item slots.</li>
+          <li><b>Level up a squad with gold</b> (${LEVEL_COST_PCT}% of the unit's cost for every level, up to level ${MAX_SQUAD_LEVEL}): <b>+25% life and +20% damage</b> per level, and level ${relic} opens the Relic slot. A level needs no deployment and no army slot.</li>
           <li>Your Lord levels from <b>kills</b>, not gold.</li>
           <li>Drag items between squads and the stash freely while planning. Any squad can carry any item, but <b>greyed lines do nothing</b> there: range on a melee squad, damage on healers.</li>
         </ul>`;
@@ -255,7 +283,7 @@ function page(id: TabId): string {
           <li>Unspent gold <b>carries over</b>.</li>
           <li><b>${deployText().n} per round</b>${deployText().note}. Levelling up and equipping are unlimited.</li>
           <li>Army cap: <b>${ARMY_CAP} squads</b>, not counting your Lord.</li>
-          <li>Selling refunds <b>half</b>, but only in the round the squad was deployed. Its items return to your stash.</li>
+          <li>Selling in the round the squad was deployed is an <b>undo</b>: it refunds everything you spent on it. A squad from an earlier round refunds nothing. Its items return to your stash.</li>
         </ul>
         <h3>Equal terms</h3>
         <ul class="rl-list">
@@ -273,6 +301,9 @@ function page(id: TabId): string {
           <dt><kbd>Home</kbd></dt><dd>Reset the camera</dd>
           <dt><kbd>Space</kbd></dt><dd>Ready / un-ready</dd>
           <dt><kbd>Tab</kbd></dt><dd>Select your next squad (<kbd>Shift</kbd>+<kbd>Tab</kbd>: the previous one)</dd>
+          <dt>Drag on your ground</dt><dd>Box-select squads (<kbd>Shift</kbd>-click adds or removes one; <kbd>Ctrl</kbd>+<kbd>A</kbd> all). Drag one of them to move the group; right-drag or <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turns it</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt><dd>Undo the last move, turn, deploy or equip of this round</dd>
+          <dt><kbd>T</kbd> <kbd>G</kbd></dt><dd>March routes and timings · placement grid snap</dd>
           <dt><kbd>U</kbd></dt><dd>Level up the selected squad</dd>
           <dt><kbd>Del</kbd></dt><dd>Sell the selected squad (press twice)</dd>
           <dt><kbd>C</kbd></dt><dd>Battle camera: director / free</dd>

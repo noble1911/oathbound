@@ -13,7 +13,8 @@ const THROTTLE = Number(process.env.THROTTLE || 4);
 const TIERS = (process.env.TIERS || 'low,medium,high,ultra,saver').split(',');
 /** REAL=big runs a real sim battle (fixture, ~250 soldiers) with the art pipeline's models. */
 /** KF=ashen,caliphate picks each seat's faction Keep (default: the Kingdom castle on both sides). */
-const EXTRA = (process.env.REAL ? `&real=${process.env.REAL}` : '') + (process.env.KF ? `&kf=${process.env.KF}` : '');
+/** MANIFEST=models/v2-old/manifest.json measures another model set (served by e2e/remodel-lib.mjs: e2e/power-ab.mjs). */
+const EXTRA = (process.env.REAL ? `&real=${process.env.REAL}` : '') + (process.env.KF ? `&kf=${process.env.KF}` : '') + (process.env.MANIFEST ? `&manifest=${process.env.MANIFEST}` : '');
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const errors = [];

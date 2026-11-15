@@ -16,7 +16,9 @@ import * as THREE from 'three';
 import type { DecodedReplay, FactionId, ReplayEvent, Seat, SkillEvent, Terrain, Vec2 } from '../sim/types.ts';
 import { sampleReplay, makeTransforms } from '../sim/index.ts';
 import { BattleView, replaySource, type ArmySquad } from '../render/index.ts';
-import type { CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual } from './scene-adapter.ts';
+import type { CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual, TimingSpec } from './scene-adapter.ts';
+import { squadFootprint } from '../sim/match.ts';
+import { PlanOverlay } from './plan-overlay.ts';
 import { flipFacing, flipPos, flippedSource } from './flip.ts';
 
 const PREVIEW_ID = -77;
@@ -43,6 +45,11 @@ export class EngineScene implements SceneAdapter {
   private preview: PreviewSpec | null = null;
   private hidden: number | null = null;
   private selected: number | null = null;
+  /** Several of my squads selected (multi-select): plates marked, footprint rings drawn. */
+  private selection: number[] = [];
+  private timing: TimingSpec | null = null;
+  private aura: RangeSpec | null = null;
+  private overlay: PlanOverlay;
   private hovered: number | null = null;
   private zoneSeat: Seat | null = null;
   private ring: THREE.Mesh;
@@ -67,6 +74,7 @@ export class EngineScene implements SceneAdapter {
     };
     this.ring = mk('#ffd77a', 0.985);
     this.minRing = mk('#ff6a5a', 0.975);
+    this.overlay = new PlanOverlay(this.view.engine.scene, (x, z) => this.view.field.heightAt(x, z));
     this.view.camera.onUserControl = () => this.mode === 'battle' && this.onCameraMode?.('free');
     this.view.camera.onReturnToDirector = () => this.mode === 'battle' && this.onCameraMode?.('director');
   }
@@ -109,7 +117,11 @@ export class EngineScene implements SceneAdapter {
         this.resetCamera();
       }
     }
-    if (m !== 'planning') this.setRange(null);
+    if (m !== 'planning') {
+      this.setRange(null);
+      this.setSelection([]);
+      this.setTiming(null);
+    }
     this.view.engine.wake();
   }
 
@@ -175,13 +187,13 @@ export class EngineScene implements SceneAdapter {
    */
   squadAt(x: number, y: number): { id: number; ghost: boolean } | null {
     const direct = this.view.pickSquad(x, y);
-    if (direct !== null && direct !== PREVIEW_ID && direct !== this.hidden) return { id: direct, ghost: this.ghostIds.has(direct) };
+    if (direct !== null && direct > PREVIEW_ID && direct !== this.hidden) return { id: direct, ghost: this.ghostIds.has(direct) };
     const boxes = new Map<number, { x0: number; y0: number; x1: number; y1: number }>();
     const eng = this.view.engine;
     for (const s of this.view.units.slots) {
       if (!s.visible || s.deadAt >= 0) continue;
       const id = s.header.squad;
-      if (id === PREVIEW_ID) continue;
+      if (id <= PREVIEW_ID) continue;
       const top = Math.max(1.2, s.arch.chest * 1.7);
       // from the ground under the model (where its plate, ring and shadow sit) up to its head: an
       // airborne squad picks both at its ground position and where it is drawn
@@ -250,7 +262,80 @@ export class EngineScene implements SceneAdapter {
 
   setSelected(id: number | null): void {
     this.selected = id;
+    this.selection = id === null || !this.army.some((s) => s.id === id) ? [] : [id];
     this.highlight();
+    this.syncRings();
+  }
+
+  setSelection(ids: number[]): void {
+    this.selection = ids;
+    this.selected = ids.length === 1 ? ids[0]! : null;
+    this.highlight();
+    this.syncRings();
+  }
+
+  /** A footprint ring under every selected squad of mine, where it is drawn (a dragged one follows its preview). */
+  private syncRings(): void {
+    const list: { pos: [number, number]; r: number }[] = [];
+    if (this.mode === 'planning' && !this.view.battle)
+      for (const id of this.selection) {
+        const s = this.army.find((q) => q.id === id);
+        if (!s || s.id === this.hidden) continue;
+        const p = this.inPos(s.pos);
+        list.push({ pos: [p[0], p[1]], r: squadFootprint(s.type) });
+      }
+    this.overlay.setRings(list);
+    this.view.engine.wake();
+  }
+
+  setTiming(t: TimingSpec | null): void {
+    this.timing = t;
+    const routes = (t?.routes ?? []).map((r) => ({
+      hot: r.hot,
+      pts: r.pts.map((p) => this.inPos(p) as [number, number]),
+      marks: r.marks.map((m) => ({ pos: this.inPos(m.pos) as [number, number], text: m.text, dim: m.dim })),
+    }));
+    this.overlay.setRoutes(routes);
+    this.layoutTags();
+    this.view.engine.wake();
+  }
+
+  /**
+   * Plate tags hang just under each squad's plate: the plate floats over the centroid of the squad's
+   * models (src/render/plates.ts), so the tag does too once the models are placed; until then (and for
+   * the squad being dragged) over its ground position.
+   */
+  private layoutTags(): void {
+    const tags = this.timing?.tags ?? [];
+    const out: { pos: THREE.Vector3; text: string; hot: boolean }[] = [];
+    if (tags.length && this.mode === 'planning' && !this.view.battle) {
+      const acc = new Map<number, { x: number; y: number; z: number; n: number; top: number }>();
+      for (const s of this.view.units.slots) {
+        if (!s.visible || s.deadAt >= 0) continue;
+        const id = s.header.squad;
+        let a = acc.get(id);
+        if (!a) acc.set(id, (a = { x: 0, y: 0, z: 0, n: 0, top: 0 }));
+        a.x += s.pos.x;
+        a.y += s.pos.y;
+        a.z += s.pos.z;
+        a.n++;
+        a.top = Math.max(a.top, s.arch.render === 'hero' ? 3.4 : 2.5);
+      }
+      for (const t of tags) {
+        const a = t.id === this.hidden ? null : acc.get(t.id);
+        let v: THREE.Vector3;
+        if (a && a.n) v = new THREE.Vector3(a.x / a.n, a.y / a.n + a.top, a.z / a.n);
+        else {
+          const p = this.inPos(t.pos);
+          const x = p[0] / 100 - 40;
+          const z = 60 - p[1] / 100;
+          v = new THREE.Vector3(x, this.view.field.heightAt(x, z) + 2.5, z);
+        }
+        out.push({ pos: v, text: t.text, hot: !!t.hot });
+      }
+    }
+    this.overlay.setTags(out);
+    this.overlay.layoutLabels();
   }
 
   setHovered(id: number | null): void {
@@ -263,6 +348,7 @@ export class EngineScene implements SceneAdapter {
     const h: Record<number, 'hover' | 'selected' | 'invalid'> = {};
     if (this.hovered !== null) h[this.hovered] = 'hover';
     if (this.selected !== null) h[this.selected] = 'selected';
+    for (const id of this.selection) h[id] = 'selected';
     if (this.preview) h[PREVIEW_ID] = this.preview.valid ? 'selected' : 'invalid';
     return h;
   }
@@ -287,6 +373,9 @@ export class EngineScene implements SceneAdapter {
       if (p) add({ id: PREVIEW_ID, type: p.type, lord: p.lord, owner: p.seat, pos: p.pos, facing: p.facing, level: 1 });
       const ghostOwners = this.ghosts?.length ? [this.inSeat(this.ghosts[0]!.owner)] : [];
       this.view.showArmy(list, { ghostOwners, highlight: this.highlights() });
+      // the overlays that sit on squads follow where they are drawn now
+      this.syncRings();
+      if (this.timing?.tags.length) this.layoutTags();
     });
   }
 
@@ -304,6 +393,12 @@ export class EngineScene implements SceneAdapter {
       (this.ring.material as THREE.MeshBasicMaterial).color.set(r.enemy ? '#ff6a5a' : '#ffd77a');
       place(this.ring, Math.max(150, r.range));
       if (r.minRange) place(this.minRing, r.minRange);
+    }
+    const aura = r?.aura ? { pos: this.inPos(r.pos) as [number, number], radius: r.aura.radius, label: r.aura.label } : null;
+    if (aura || this.aura?.aura) {
+      this.aura = r;
+      this.overlay.setAura(aura);
+      this.overlay.layoutLabels();
     }
     this.view.engine.wake();
   }
@@ -445,6 +540,7 @@ export class EngineScene implements SceneAdapter {
   }
 
   dispose(): void {
+    this.overlay.dispose();
     this.view.dispose();
   }
 }

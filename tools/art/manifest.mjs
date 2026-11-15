@@ -5,9 +5,10 @@
 import { copyFileSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FILES } from './files.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const OUT = join(root, 'public/models/v2');
+const OUT = process.env.ART_OUT ? join(root, process.env.ART_OUT) : join(root, 'public/models/v2');   // ART_OUT: the stage (run.mjs --stage)
 const CLEAN = join(root, 'art-work/clean');
 const assets = JSON.parse(readFileSync(join(root, 'tools/art/assets.json'), 'utf8')).assets;
 const size = (f) => (existsSync(join(OUT, f)) ? statSync(join(OUT, f)).size : 0);
@@ -45,6 +46,10 @@ for (const a of assets) {
     e.glb = `${id}.glb`;
     if (existsSync(join(OUT, `${id}_lod1.glb`))) e.lod1 = `${id}_lod1.glb`;
     if (existsSync(join(OUT, `${id}_team.png`))) e.tintMask = `${id}_team.png`;
+    // LOD1 has its own atlas, so its own mask: the low tier draws `lod1` of a heavy hero only if `lod1TintMask` is there
+    const l1u = join(CLEAN, `${id}_lod1_unit_team.png`);
+    const l1m = existsSync(l1u) ? l1u : join(CLEAN, `${id}_lod1_team.png`);
+    if (e.lod1 && f.team_frac > 0 && existsSync(l1m)) { copyFileSync(l1m, join(OUT, `${id}_lod1_team.png`)); e.lod1TintMask = `${id}_lod1_team.png`; }
   }
   if (f.clips) {
     const cs = a.clipset ?? 'sword';
@@ -57,12 +62,18 @@ for (const a of assets) {
   }
   if (f.clips_custom) e.clips = f.clips_custom;
   if (f.nodes) e.nodes = f.nodes;
+  // siege: seconds into the fire clip at which the projectile leaves (the renderer falls back to 25 % of the clip),
+  // and where it leaves the engine [x right, y up, z forward] (archetype `muzzle` = release[1])
+  if (f.fireTime !== undefined) e.fireTime = f.fireTime;
+  if (f.release) e.release = [f.release[0], f.release[2], -f.release[1]];
   if (f.stage_tris) {
     e.nodes = ['stage0', 'stage1', 'stage2', 'stage3'];
     e.stages = 'show exactly one child: stage0 intact .. stage3 ruin (HP thresholds are the client\'s call)';
   }
+  if (f.tex) e.tex = f.tex;
   e.tris = f.stage_tris ? { lod0: f.stage_tris[id], lod1: f.stage_tris[`${id}_lod1`] ?? null } : { lod0: f.tris_lod0 ?? null, lod1: f.tris_lod1 ?? null };
-  const files = readdirSync(OUT).filter((x) => x.startsWith(`${id}.`) || x.startsWith(`${id}_`));
+  // exact names: a prefix test counted djinn_binder's files into djinn
+  const files = FILES(id).filter((x) => existsSync(join(OUT, x)));
   e.bytes = Object.fromEntries(files.map((x) => [x, size(x)]));
   e.totalBytes = files.reduce((t, x) => t + size(x), 0);
   if (a.kind === 'prop') { delete e.scale; out.props[id] = e; } else out.models[id] = e;
@@ -83,5 +94,5 @@ if (onlyArg > 0 && existsSync(mf)) {
 writeFileSync(mf, JSON.stringify(out, null, 1));
 let total = 0;
 for (const x of readdirSync(OUT)) total += size(x);
-console.log(`manifest: ${Object.keys(out.models).length} models + ${Object.keys(out.props).length} props, public/models/v2 total ${(total / 1e6).toFixed(2)} MB`);
+console.log(`manifest: ${Object.keys(out.models).length} models + ${Object.keys(out.props).length} props, ${process.env.ART_OUT ?? 'public/models/v2'} total ${(total / 1e6).toFixed(2)} MB`);
 for (const [k, e] of [...Object.entries(out.models), ...Object.entries(out.props)]) console.log(`  ${k.padEnd(14)} tris ${JSON.stringify(e.tris)}  ${(e.totalBytes / 1e6).toFixed(2)} MB`);

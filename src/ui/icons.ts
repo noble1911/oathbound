@@ -62,6 +62,10 @@ const P: Record<string, string> = {
   undo: '<path d="M9 7L4 12l5 5" /><path d="M4 12h10a6 6 0 010 12" transform="translate(0 -3.5)" />',
   chart: '<path d="M4 20V4M4 20h16M8 16v-5M12 16V7M16 16v-8" />',
   spectate: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />',
+  grid: '<path d="M4 4h16v16H4zM4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16" />',
+  mirror: '<path d="M12 3v18" stroke-dasharray="2 2.4" /><path d="M9 7l-6 5 6 5zM15 7l6 5-6 5z" fill="currentColor" fill-opacity=".3" />',
+  route: '<circle cx="6" cy="19" r="2" /><path d="M7.6 17.6c4-3.6-1.6-6.6 3-10.2 2.4-1.9 5.4-2.4 8.4-3.4" stroke-dasharray="2.4 2.2" /><path d="M16 3l3.4 1-1.2 3.2" />',
+  sync: '<path d="M20 3v18" /><path d="M3 7h12M7 12h8M10 17h5" /><path d="M13 5l2 2-2 2M13 10l2 2-2 2M13 15l2 2-2 2" />',
 };
 
 export type IconName = keyof typeof P | string;

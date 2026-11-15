@@ -1,1 +1,1 @@
-Unit card miniature of a bone golem, a hulking giant built of hundreds of stitched ribs and huge bones bound with bronze bands, a small skull head, green soul-fire glowing in its rib-cage chest, enormous bony fists, centred, filling the frame, three-quarter view.
+Unit portrait of a bone golem seen from the front: a hulking giant built of stitched ribs and huge bones, a small skull head sunk between massive shoulders, green soul-fire glowing in its ribcage chest, enormous bony fists. It fills the frame as a massive block.

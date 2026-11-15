@@ -27,9 +27,9 @@ blender -b --factory-startup --python tools/art/blender/cleanup.py -- berserker 
 | stage | script | runs on | in -> out |
 |---|---|---|---|
 | concept | `concept.mjs` -> `matte.py` | Codex CLI `codex exec` (ChatGPT image generation, prompt on stdin) + WSL venv (BiRefNet matte) | `prompts/<id>.txt` + `prompts/_style_{character,object}.txt` -> `art-work/concepts/<id>/cand_<k>.png`, `_cut.png` (RGBA), `sheet.jpg`, `pick.json` |
-| mesh | `mesh.mjs` | trellis-cpp 0.8.1 (Vulkan) + TRELLIS.2 q8 GGUF, `--res 512 --seed 42` | picked cut-out -> `art-work/mesh/<id>.glb` (~140k tris, 1024 atlas) |
-| cleanup | `blender/cleanup.py` | Blender 5.2 + Cycles GPU | weld, drop floaters (<0.2 % faces), yaw-align, ground, scale, voxel remesh (size/300), quadric decimate LOD0/LOD1, Smart-UV, bake basecolour + tangent normal + MR from the 140k mesh, team mask -> `art-work/blend/<id>_clean.blend`; props: final GLBs |
-| build | `blender/rig.py` humanoids + golem; `blender/creature.py` dragon + mounted/flier units (joint layout per mount in `creatures.json`); `blender/keep.py`; `blender/siege.py` | Blender | GLBs in `public/models/v2/` |
+| mesh | `mesh.mjs` | trellis-cpp 0.8.1 (Vulkan) + TRELLIS.2 q8 GGUF 1024 flows, `--res 1024 --atlas 4096 --steps 16 --seed 42`, one run per part (weapons / props 512); GPU lock + queue (section 10) | picked cut-out -> `art-work/mesh/<id>.glb` (~280k tris, 4096 atlas; v2 runs are kept in `art-work/mesh/v1/`) |
+| cleanup | `blender/cleanup.py` | Blender 5.2 + Cycles (GPU when `art-work/fx_gpu.lock` is free, else CPU) | weld, drop floaters (<0.2 % faces), yaw-align, ground, scale, voxel remesh (hero tier ~1 cm, squads size/300), quadric decimate LOD0/LOD1, **box-projection unwrap** (LOD1: Smart-UV), bake basecolour + tangent normal + MR from the TRELLIS mesh(es), unsharp, team mask -> `art-work/blend/<id>_clean.blend`; props: final GLBs. Hero tier: the body + `parts` (TRELLIS pieces and authored trappings) into one 2048 atlas (section 10) |
+| build | `blender/rig.py` humanoids + golem; `blender/creature.py` dragon + mounted/flier units (joint layout per mount in `creatures.json`); `blender/keep.py`; `blender/siege.py` | Blender | GLBs in `public/models/v2/` (`--stage`: `art-work/stage_v2/`, shipped by `ship.mjs`) |
 | vat | `blender/vat.py` | Blender | squads: crowd mesh `<id>_lod1.glb` + `<id>.vat.json` / `.vat.pos.bin` + `<id>_lod1_tint.png` |
 | review | `blender/render_review.py`, `blender/vat_check.py` | Blender EEVEE | re-imports the shipped files -> `docs/art-review/<id>.png`, `<id>_vat.png` (committed as JPEG to keep the repo small) |
 | pack | `pack.mjs` | node + `npx gltfpack@0.22.0` | meshopt-compresses every GLB except squad crowd meshes (originals in `art-work/unpacked/`) |
@@ -188,7 +188,8 @@ Runtime files (committed, loaded by `src/render/vfx/atlas.ts`):
 
 Build: `python tools/vfx/build_atlas.py` (Pillow + numpy) packs the sources in `art-work/vfx/` (git-ignored):
 it lowers the black floor, re-centres every flipbook frame, feathers the cell borders and draws the four
-procedural sprites. Squad-plate portraits reuse `public/ui/unit_*.webp` / `lord_*.webp`; damage-number
+procedural sprites. Squad plates sample role glyphs from `public/ui/plates.webp` (index `plates.json`, built by
+`tools/art/glyph-atlas.py`; see docs/UI-STYLE.md); damage-number
 glyphs are drawn on a canvas at startup (Cinzel, falling back to Georgia).
 
 | asset | source | licence |
@@ -255,8 +256,8 @@ Licences (all **CC0 1.0**, polyhaven.com): textures `sparse_grass`, `forest_leav
 
 Approved concept art: `docs/art-review/factions/{ashen,sun}_{1_lineup,2_battlefield}.png`. Review sheets:
 `docs/art-review/<id>.jpg` (+ `<id>_vat.jpg` for squads). In-engine line-ups: `node e2e/faction-shots.mjs` ->
-`e2e/shots/faction-{ashen,caliphate}-*.png`. Portraits: `node tools/art/ui-factions.mjs` (manuscript style, the
-concept as a reference image) -> `public/ui/unit_<id>.webp` (320) / `lord_<id>.webp` (512).
+`e2e/shots/faction-{ashen,caliphate}-*.png`. Portraits: `node tools/art/ui-woodcut.mjs portrait` (woodcut style, docs/UI-STYLE.md)
+-> `public/ui/unit_<id>.webp` (320) / `lord_<id>.webp` (512).
 
 | id | kind | path | clipset / builder | notes |
 |---|---|---|---|---|
@@ -407,3 +408,234 @@ Texture sources (all **CC0 1.0**, polyhaven.com; 1k maps graded by `keep_tex.py`
 tile and star tilework are generated in `keep_tex.py`. Banner emblems and the three concept sheets
 (`docs/art-review/keep/`): Codex CLI / OpenAI image generation (outputs owned by the user per OpenAI terms).
 
+
+## 10. Remodel v3: hybrid TRELLIS-1024 bodies + authored parts
+
+The War Elephant A/B test (`art-work/elephant-ab/`) showed that the v2 blur came mostly from how TRELLIS was run and
+unwrapped, and that the best result is a hybrid: **organic forms** (bodies, heads, anatomy, riders, mounts) from
+TRELLIS pushed hard, **designed / hard-surface parts** (cloth, heraldry, barding, howdahs, shields, banners, siege)
+from scripted Blender geometry with flat Codex art. Everything below is in `tools/art/`; `npm run art -- <ids>` is
+still the entry point.
+
+```
+npm run art -- lord_marshal --stage                    # every stage, outputs to art-work/stage_v2/ (nothing shipped yet)
+npm run art -- war_elephant --from cleanup --stage     # re-run from the cleanup (meshes exist)
+node tools/art/mesh.mjs --queue art-work/remodel/gpu_queue.txt   # the GPU queue (TRELLIS 1024, one job at a time)
+blender -b --factory-startup --python tools/art/blender/compare_review.py -- out.jpg art-work/unpacked/<id>.glb art-work/unpacked/stage/<id>.glb [yaws] [zoom]
+node tools/art/ship.mjs lord_marshal,war_elephant [--dry]   # stage -> public/models/v2 + manifest entries (after review)
+node tools/art/aset.mjs <id[,id]> key=<json> ...       # targeted assets.json edit (--new <id> appends an entry)
+```
+
+### What changed against v2
+
+| step | v2 | v3 |
+|---|---|---|
+| TRELLIS | q8 512 flows, `--res 512`, one run for the whole unit | q8 1024 flows (`E:/local/red-portal-ai/trellis2-q8-1024`), `--res 1024 --atlas 4096 --steps 16`, **one run per separable part** from a clean concept of that part alone (weapons / props stay at 512) |
+| LOD0 mesh | voxel remesh at size / 300, 15k triangles | ~1 cm voxel remesh (size / 450, clamped 0.6-2 cm), about 30k triangles for a Lord, 39k for the elephant |
+| unwrap (LOD0, every tier) | smart project: thousands of crumbs on a bumpy TRELLIS surface, a third of the atlas lost to margins | **box projection** along the dominant axis of a smoothed normal field (`cleanup.py: unwrap_box`): a few hundred large islands at one texel density; only polygons that still overlap inside an island are smart-projected. The biggest single fix. LOD1 and the crowd atlas keep smart project (3k / 1.5k triangles: no crumbs there) |
+| atlas (hero tier) | 1024 base + normal, 512 MR; LOD1 512 | **2048** base + normal, 1024 MR; LOD1 baked on its own from the high meshes at **512** (256 MR) |
+| albedo | as baked | light unsharp mask before the team key (`unsharp` [radius px, amount]: [2, 0.6] at 2048, [1, 0.35] at 512, none on 256 weapons) |
+| team mask (hero tier) | 256 | **1024**, keyed per asset with a tight hue window (`team_hue`, `team_sat`, `team_val`) |
+| material | every GLB `doubleSided: true` (Blender's default, so the renderer cannot trust the flag) | hero-tier units: ONE single-sided material (`doubleSided: false`). Thin cloth: `two_sided` duplicates + flips its faces after the bake (no extra draw); a large piece can instead take `cloth_material` = a second material `<id>_cloth` (the renderer draws materials whose name contains `cloth` double-sided; +1 draw) |
+| LOD1 team mask | none (LOD1 of a hero had no usable mask) | `<id>_lod1_team.png` (256) + manifest `lod1TintMask`: the low graphics tier draws `<id>_lod1.glb` of heroes above 20k triangles. Mounted heroes: `creature.py` packs one LOD1 atlas + mask as it does for LOD0. `grade` lift / sat also applies to the hero LOD1 atlas |
+| GPU | Cycles on the GPU, no coordination | `art_lib.bake_device`: takes `art-work/fx_gpu.lock` when it is free, otherwise bakes on the **CPU** (about 1-3 min per hero; the TRELLIS queue hands the lock from run to run, so waiting would starve). `ART_BAKE=cpu|gpu|wait` forces a mode |
+| output | written straight into `public/models/v2` | `--stage` (env `ART_OUT`) writes GLBs, masks, VAT files and a `manifest.json` to `art-work/stage_v2/` (a junction to E:); `ship.mjs` copies reviewed ids over and merges only their manifest entries |
+
+### Tiers (`cleanup.py: tier`, `tex_cfg`)
+
+| tier | who | LOD0 atlas | LOD1 atlas | team mask | unsharp |
+|---|---|---|---|---|---|
+| `hero` | not `squad`, not `part`, not a weapon / prop: Lords, large units, heroes. Rider / mount parts of a hero unit say `"tier": "hero"` | 2048 (MR 1024) | 512 (MR 256) | 1024 | [2, 0.6] |
+| `squad` | `squad: true` and `part: true` assets | 512 (MR 256) | 256 | 256 | [1, 0.35] |
+| `prop` / `weapon` | by kind | 512 / 256 | 256 | 256 | [1, 0.35] / none |
+
+Hero-tier assets go through `cleanup.py: unit_main` (parts, one joined bake); the other tiers keep the v2 flow
+(`make_lod`) with the box unwrap and the unsharp mask on LOD0.
+
+### New `assets.json` keys (all optional)
+
+| key | on | meaning (default) |
+|---|---|---|
+| `tier` | any | `hero` / `squad` (see above) |
+| `tex`, `tex_lod1`, `mask`, `unsharp` | any | override the tier's texture sizes / sharpening (a mounted hero: mount 2048, rider `tex` 1024) |
+| `mesh` `{res, atlas, steps, seed}` | any | TRELLIS settings (`mesh.mjs`; 1024 / 4096 / 16 / 42, weapons and props 512) |
+| `voxel_div` | any | remesh voxel = largest dimension / N (hero: 450 with the voxel clamped to 0.6-2 cm; squads 300) |
+| `direct` | hero, part | try quadric collapse without the remesh first (thin hard-surface detail; open shells may miss the budget, then it remeshes) |
+| `cage` | hero | bake cage extrusion in metres (1.2 % of the height, clamped 1-3 cm) |
+| `team_val` | any | minimum value of the team-cloth key (0.10) |
+| `fix_yaw`, `align` | any, part | degrees added after the automatic yaw alignment; `align: false` skips the alignment |
+| `body_height`, `feet_span`, `fore_y` | hero body | the animal's own height without its trappings; scale so fore and hind feet stand `feet_span` apart with the fore feet at y = `fore_y` (matches the joints in `creatures.json`) |
+| `body` | hero | `false`: no TRELLIS body, the unit is only its `parts` (fully authored units) |
+| `skin` | rigged | `"solid"`: bone heat on a filled voxel hull first (elephant: the plain proxy left legs unweighted) |
+| `parts` | hero | the extra pieces of the unit, see below |
+| `authored` | weapon / part | no concept / TRELLIS mesh / cleanup of its own (built by a trappings builder) |
+
+`parts` entries: `{ "name", "id": <part asset id> | "builder": <trappings builder> + "args": {...}, "height" (overrides the
+part asset's), "pos": [x, y, z] / "yaw" / "scale" or "instances": [{pos, yaw, scale}, ...] (Blender metres, the unit faces
+-Y), "bone": <bone the piece follows rigidly; omitted = skinned with the body>, "lod0" (triangles per instance),
+"uv_boost" (texel density factor, e.g. 1.3 for crew seen up close), "direct", "two_sided", "cloth_material", "voxel_div" }`.
+Team-coloured authored pieces of a hero (banners, shield faces) must be `parts` on a `bone`, not `weapons`: meshes under a
+`weapon_*` node get no tint mask in the renderer. Authored weapons without team colour stay weapons (`procedural: true`
++ `trap`, built by `proc_weapon.py` from the same kit).
+
+* A part **id** is an ordinary assets.json entry (`"part": true`, `"kind": "part"` or its real kind for the yaw rule)
+  with its own prompt, concept and TRELLIS mesh; `run.mjs` adds it to the concept + mesh stages of its unit and never
+  cleans or builds it on its own.
+* A part **builder** is an authored piece: `trappings.build(name, args, ctx)` (`tools/art/blender/trappings.py`,
+  contract in its docstring and in `trappings_hook.py`) returns one mesh in unit space with clean UVs, a material
+  whose Base Color is the flat art, and optionally `team_image` (its own team mask) / `double_sided` (= `two_sided`). `ctx` =
+  `{id, unit, asset, body (the oriented TRELLIS body, for draping), height, parts}`. Authored pieces are both the bake
+  source and the low mesh: their UV islands are packed into the unit atlas with everything else, their texels skip
+  the hue map / unsharp / hue key, their metalness is taken as authored, and their team mask replaces the key there.
+* Assembly (`unit_main`): every piece gets its own LOD0 (TRELLIS: remesh + collapse to its `lod0`; the body gets
+  `lod0` minus weapons and parts) and its own box unwrap; all pieces are joined, brought to one texel density
+  (x `uv_boost`), packed once and baked in one pass from all the high meshes. LOD1 is rebuilt per piece (remesh at
+  size / 150, authored pieces collapsed directly; the `lod1` budget is shared by triangle count), smart-projected
+  and baked from the same high meshes at 512.
+* Rigid pieces: the point attribute `_PART` (index + 1 into the object's `part_bones`) survives into the clean
+  `.blend`; `rig.py: skin` (used by `creature.py` too) leaves those vertices out of the bone-heat proxy and
+  weights them 100 % to their bone on both LODs. The bone must be a deform bone of the unit (`m_body`, `spine3`, ...).
+
+### Staging and shipping
+
+`run.mjs --stage` sets `ART_OUT=art-work/stage_v2` for every stage: `art_lib.OUT`, `pack.mjs` (originals to
+`art-work/unpacked/stage/`), `manifest.mjs` (a manifest of the staged ids only) and the review renders
+(`art-work/review/stage/<id>.png`). Intermediates (`art-work/blend`, `art-work/clean`) are shared with unstaged
+builds. `ship.mjs <ids>` backs the files it replaces up to `art-work/backup_v2/pre_remodel/` (once: the first
+version is kept), copies `<id>.glb`, `<id>_lod1.glb`, `<id>_team.png`, `<id>_lod1_team.png` and the VAT files that exist in the stage,
+removes shipped files the stage no longer has, and merges the ids' manifest entries; no other entry is touched.
+
+### Budgets
+
+Hero / large / Lord: LOD0 about 30k triangles (39k for the elephant with howdah and crew), one 2048 atlas, about
+2-3 MB packed; LOD1 <= 3k triangles with a 512 atlas, 0.4-0.9 MB. Squads: unchanged per-instance cost (<= 1.5k
+triangle crowd mesh, 512 atlas, 256 tint).
+
+### Validation builds (staged, 11-15)
+
+| id | parts | tris LOD0 / LOD1 | textures | packed GLB / LOD1 | cleanup + build |
+|---|---|---|---|---|---|
+| `lord_marshal` | body (TRELLIS 1024) + sword (512) | 29548 / 2951 | 2048 base + normal, 1024 MR, mask 1024; LOD1 512 / 256, mask 256 | 1.87 / 0.40 MB (v2: 0.82 / 0.36) | 63 s + 10 s, CPU bake |
+| `war_elephant` | body + howdah + 2 crew (`m_body`), the A/B test's candidate A through the real pipeline | 38906 / 2933 | same | 2.99 / 0.40 MB (v2: 0.99 / 0.38; candidate A: 38906 tris, 3.01 MB) | 170 s + 28 s, CPU bake |
+
+Review sheets: `art-work/review/stage/<id>_cmp.jpg` (old | new, `compare_review.py`), `art-work/review/stage/<id>.png`.
+Known limits: a hole in a TRELLIS shell (the Marshal's cape at the left shoulder) bakes the surface behind it into a
+patch; `two_sided` adds the duplicated faces on top of the triangle budget; a mounted hero's atlas is the mount's
+2048 next to the rider's 1024 (3072 x 2048, not a power of two).
+
+### 10.x Authored trappings and siege (scripted Blender, no image-to-3D)
+
+Designed and hard-surface parts (cloth, heraldry, barding, howdahs, shields, banners, siege) are built as real
+geometry with clean UVs and **flat Codex art copied at native resolution** (no ray bake, CPU only).
+
+```
+node tools/art/flat.mjs shield_sun,banner_sun [--force] | --all        # prompts/flat/<name>.txt -> art-work/flat/<name>.png
+blender -b --factory-startup --python tools/art/blender/trappings.py -- sheet <out_dir> [label,...]     # every builder, 4 views + atlas
+blender -b --factory-startup --python tools/art/blender/trappings.py -- test <builder> '<args json>' out.png ['<body json>']
+blender -b --factory-startup --python tools/art/blender/trappings.py -- unit parts.json out.png '<body json>' ['<views json>']
+blender -b --factory-startup --python tools/art/blender/siege.py -- ballista        # authored engines (assets.json `authored: true`)
+blender -b --factory-startup --python tools/art/blender/proc_weapon.py -- weapon_shield_rajah    # authored weapons
+```
+`body json` = `{"glb": path, "height": m, "feet_span": m, "fore_y": m, "yaw": deg}` (placed as cleanup places a mount) or
+`{"blend": path, "object": name}`. `SIEGE_STRIP=out.png [SIEGE_POSES=fire:0,fire:10,...] [SIEGE_YAW=-62]` renders clip
+poses from the siege build scene. Review sheets: `art-work/remodel/review/trappings/`.
+
+| file | role |
+|---|---|
+| `tools/art/blender/trappings_lib.py` | geometry helpers with authoring UVs (grid sheets, tubes, lathes, boxes, beams, spheres), `Drape` (taut cloth / ring bands / projection on a body BVH, or on a parametric barrel), `plate_grid` (a quad grid that follows the silhouette of art isolated on black), texture sources, and the composer `Kit` |
+| `tools/art/blender/trappings.py` | the contract (`build(name, args, ctx)`), the builders, the test harness |
+| `tools/art/blender/siege_kit.py` | the three engines on the same kit; `siege.py: authored()` exports them |
+| `tools/art/flat.mjs`, `tools/art/prompts/flat/*.txt` | flat art generation (Codex CLI; no matte) |
+
+**How a part is textured.** Every piece carries authoring UVs and a *source*: an image source (flat art, UV 0..1 over
+the image) or a tile source (UV in metres; CC0 scans from `art-work/keep/src/` for wood / iron, numpy tiles for
+cloth, leather, bronze, gold, bone, rope, scales). `Kit.finish()` finds the UV islands, sizes each from its real
+surface size x the wanted texels per metre (x the piece weight), packs them (guillotine), and **resamples the
+source into each rectangle** (mip-matched, tiles wrap with a random offset and a small brightness jitter per island),
+writing basecolour, a tangent normal map from the source height, roughness / metal and the team mask in one pass.
+Instances (mirrored flanks, repeated tassels and panels, the flipped back faces of thin cloth) share texels.
+A strip longer than the atlas is squeezed along its length only. Metalness is capped at 0.3 (no environment map).
+
+**Team cloth.** Flat art paints team cloth **vivid magenta** in every faction; `key_team` (hue 0.80-0.99, sat > 0.45)
+neutralises it to light grey (keeping the weave shading) and writes the mask, so the mask edge is as sharp as the
+art. Tile `cloth_team` is team cloth by construction. The object gets `team_image` (same UVs) and a `_TEAM` vertex
+attribute; cleanup ORs the image into the unit mask.
+
+**Contract** (top of `trappings.py`, used by `cleanup.py` `parts` through `trappings_hook.py`):
+`build(name, args, ctx) -> one mesh object` in unit space (drape builders are already in place on `ctx['body']`) or
+in the weapon frame (hand-held builders: +Z long axis, face -Y, grip at the origin); one `UVMap`, one material in the
+`art_lib.build_material` layout (base, normal, MR), custom props `team_image`, `texel`, `atlas`, `double_sided` (always
+0: thin cloth has flipped back faces instead). `ctx = {id, asset, body, faction}`; faction = `args.faction`,
+`ctx.faction`, else from the asset `hue_map` (Ashen / Caliphate), else Kingdom. Common args: `tex` (atlas cap),
+`texel` (px per metre, default 700), `metal_max`, `name`.
+
+| builder | what | main args (all optional) |
+|---|---|---|
+| `caparison` | draped cloth over back and flanks, 3:2 flat-art panel up from the hem, team cloth to the spine, tassels | `y0`, `y1`, `hem` (z), `drop`, `off`, `cols`, `rows_top`, `rows_low`, `art`, `hem_shape` straight / scallop / tatter / dags, `wave`, `flare`, `tassels`, `barrel` |
+| `barding` | scale / plate sheets over shoulders and haunches | `ranges` [[ya, yb]], `hem`, `hem_shape`, `tile`, `tint` |
+| `band` | ornamental or leather bands around neck, barrel, legs | `rings` [{c0, c1, nseg, mirror, off, start_r}], `art` (3-strip band image) or `tile`, `tassels` |
+| `saddle` | seat with pommel and cantle, saddle cloth with a trim band, girth, stirrups | `y`, `length`, `width`, `cloth_drop`, `cloth`, `trim`, `girth`, `stirrups` |
+| `chamfron` | head plate from flat art projected on the head | `origin`, `down`, `ray`, `height`, `width`, `off`, `art`, `nu`, `nv` |
+| `howdah` | floor, panelled walls, rails, posts with finials, team swags, skirt band, tassels, optional tented canopy | `half_w`, `y0`, `y1`, `z`, `wall`, `panel`, `swags`, `skirt`, `canopy`, `canopy_h` |
+| `shield` | flat heraldic face (its silhouette is the outline), domed, wooden back, metal rim, strap | `kind` kite / round / grave / sun / tower, `art`, `height`, `bulge`, `thick`, `nu`, `nv` |
+| `banner` | pole, finial, crossbar, hanging flat-art cloth (both sides) | `length`, `grip_at`, `cloth` [w, h], `art`, `tail`, `tatter`, `wave` |
+| `pennant` | flying team pennant on a pole | `pole`, `size`, `tail`, `dir` |
+| `quiver`, `lance` | leather quiver with arrows; shaft + steel head, optional vamplate and team pennon | `length`, `radius`, `head`, `vamplate`, `pennon` |
+
+Looks per faction (`trappings.LOOK`): Kingdom = oak, steel, gold trim, lion / fleur-de-lis art; Ashen Covenant = dark
+timber, corroded bronze with verdigris, bone, tattered cloth; Sun Caliphate = dark wood, burnished gold, turquoise,
+sun art. Flat art in `art-work/flat/`: `caparison_{sun,kingdom,ashen}`, `band_{sun,kingdom,ashen}`,
+`chamfron_{sun,kingdom,ashen}`, `howdah_panel_sun`, `shield_{kingdom_kite,kingdom_round,grave,sun,tower_ossuary}`,
+`banner_{sun,kingdom,ashen}`, `tile_bone`, `skull_front` (a missing file becomes a grey checker, the build goes on).
+
+**Authored weapons.** `proc_weapon.py` (assets with `procedural: true`) builds shields and banners from the kit:
+`trap: [builder, args]` in assets.json, or by id (`weapon_shield_*ossuary*` = tower, `*rajah*` / `*sun*` = sun,
+`*grave*`, `*round*`, `*kite*`; `weapon_banner_*` = banner); `length` is the shield height / pole length.
+Hero weapons are not team-tinted by the renderer, so a hero shield whose field must show the team colour should be
+a unit `part` (with `bone`), not a weapon.
+
+**Siege.** `ballista`, `trebuchet`, `corpse_catapult` have `authored: true`: no concept / mesh / cleanup; `siege.py`
+builds LOD0 and LOD1 from `siege_kit.py` (the same engine with coarser lathes, fewer spokes, no lashings) and writes
+`<id>.glb`, `<id>_lod1.glb` to `ART_OUT` (`run.mjs --stage`; without it to `art-work/stage_v2/`, never straight into
+`public/models/v2`), `art-work/clean/<id>_team.png` (1024), `<id>_lod1_team.png` (256) and the facts. All nodes of an
+engine share one material (2048 atlas, LOD1 512). Clips are unchanged in name and length (`idle, fire, reload, hit,
+death`); new child nodes animate with them (the renderer plays clips by node name and addresses none itself):
+* ballista: `body`, `bolt`, + `arm_l`, `arm_r` (the bow arms spring forward 0.2 rad on `fire`, shiver on `hit`,
+  let go on `death` and are drawn back during `reload`), `string_l`, `string_r` (children of the arms, rotate and
+  stretch so the string stays attached). Torsion frame with rope skeins and iron washers, bolt trough, windlass with
+  ratchet and draw rope. 2.56 x 2.9 m, 2.18 m to the pennant tip (the sim radius is 1.1 m); the bolt lies at
+  1.15 m = the archetype's `muzzle`. `fireTime` 0.125 s (frame 3: the string has driven the bolt 1.9 m out).
+* trebuchet / corpse catapult: `frame`, `arm`, `rope`, `stone`, + `weight` (the counterweight, hinged on the short
+  arm, counter-rotates to stay plumb, sways in `idle`, swings after the drop and on `hit`). **Ready pose = arm up and
+  back at 35 degrees with the loaded sling hanging from the tip** (the tall silhouette the RTS camera knows, like the
+  model it replaces); `fire` is the last 90 degrees of the throw, over the top, the sling lags, comes into line at the
+  release (frame 10) and whips over the front; `reload` winds the arm back with the sling hanging plumb, and a new
+  shot appears in the pouch. Trebuchet 3.2 x 4.9 m footprint, rest height 5.98 m (manifest `height`), release point
+  8.3 m up and 1.1 m in front of the axle; `fireTime` 0.417 s (frame 10 of 40). The corpse catapult is the same
+  builder at 5/6 with the Ashen look: bowed, knobbed bones of varying size and tint lashed with sinew to dark timber,
+  a spine and ribs over the trough, skulls on the skid ends and frame tops, corroded bronze with verdigris, a cage of
+  skulls with soul-fire as the counterweight (its green light painted onto the surroundings), tattered team rags on
+  the braces, a skull as the shot; rest height 4.99 m.
+* **Detail** (`siege_kit.Eng`): every timber has end-grain caps (growth rings, checks), iron straps carry bolt heads
+  on three faces, wheels have tyre nails, fittings are bolted plates; LOD1 drops the caps, bolts, lashings, ribs and
+  rags and uses coarser lathes (2.1-3k tris).
+* **Weathering** (`siege_weather.py`, CPU, about 1 min per engine; `SIEGE_NOWEATHER=1` skips it): the rest pose is
+  baked with Cycles on the CPU into the kit's atlas -- AO (engine + ground), world position, world normal, a
+  Bevel-node edge mask and bevelled normals -- and graded in numpy: contact darkening and crevice dirt, mud thrown up
+  from the ground, sun-bleached tops and darker undersides, a world-space tone field so no two beams match, rust
+  (Ashen: verdigris) on the iron with streaks on the timber below it, bone mottling, worn pale timber / bright metal
+  edges, rounded-edge normals (the beams are plain boxes) combined with the kit's detail normals, then an exposure
+  step that brings the timber's median luminance to that of the art it replaces (0.29, Ashen 0.25: the engine lights
+  art albedo darkly). Instances that share texels are baked once. MR is written at half size.
+* `siege.py` writes `height` (the real rest height), `release` (projectile release point, Blender model space) and
+  `fireTime` to the facts; `manifest.mjs` passes `fireTime` and `release` ([x, y up, z forward]) through.
+
+| engine | tris LOD0 / LOD1 | textures LOD0 (LOD1) | packed GLB LOD0 / LOD1 | team mask |
+|---|---|---|---|---|
+| ballista | 5292 / 2112 | base + normal 2048, MR 1024 (512, 256) | 1.47 / 0.19 MB | 1024 (LOD1 256) |
+| trebuchet | 6922 / 2342 | same | 1.42 / 0.19 MB | same |
+| corpse catapult | 11946 / 2986 | same | 1.55 / 0.18 MB | same |
+
+Licences: flat art = Codex CLI / OpenAI image generation (outputs owned by the user per OpenAI terms); wood and iron
+tiles = CC0 Poly Haven `weathered_planks`, `dark_wooden_planks`, `metal_plate_02`, `rusty_metal_04`; all geometry and
+the other tiles are ours.

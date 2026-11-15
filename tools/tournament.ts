@@ -86,7 +86,8 @@ async function main(): Promise<void> {
     const b = readBalance();
     const step = (wr: number, k: number): number => Math.max(-0.08, Math.min(0.08, k * (0.5 - wr)));
     const what = tuneWhat === 'both' ? ['units', 'lords'] : tuneWhat.split(',');
-    if (what.includes('units')) for (const [u, wr] of Object.entries(rep.units)) if (b.units[u] !== undefined) b.units[u] = Math.max(70, Math.min(150, Math.round(b.units[u] * (1 + step(wr, 0.5)))));
+    // Units seen in fewer than 100 round-winner samples are left alone: their rate is mostly noise.
+    if (what.includes('units')) for (const [u, wr] of Object.entries(rep.units)) if (b.units[u] !== undefined && (rep.unitSamples?.[u] ?? 0) >= 100) b.units[u] = Math.max(70, Math.min(150, Math.round(b.units[u] * (1 + step(wr, 0.5)))));
     if (what.includes('factions')) {
       // Faction multipliers (per mille; small steps: 1% of power is worth about 7 points) follow the faction's win rate against the other two; Lords are then tuned towards the
       // average of their own faction's Lords (a single-Lord faction leaves its Lord alone).

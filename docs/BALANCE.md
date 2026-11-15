@@ -4,7 +4,158 @@ The numbers come from `node tools/tournament.ts --seeds 3 --best`. That run has 
 
 To re-tune, run `node tools/tournament.ts --seeds 1 --tune N`. It rewrites the multipliers in `src/sim/data/balance.ts`.
 
-## Current report: equal-level balance first
+## Current report: after the positioning-and-economy pass (2026-11-15)
+
+This pass worked through the balancing items of `docs/reviews/POSITIONING-AND-ECONOMY.md`: a full refund for a
+same-round sale, a round bonus scaled by the winning margin, flat level-up costs with earlier item slots, bots that
+level, and Hard's speed stagger. Every figure below is from the final build. Hard vs Hard and Normal vs Normal are
+`node tools/tournament.ts --strats hard --seeds 200` (and `--strats normal`): 6000 matches, n = 1600 per Kingdom
+pairing and 400 for Ashen vs Caliphate (about ±2.5 and ±5 points).
+
+### Rule changes (DESIGN §1, §2, §5)
+
+| Rule | Before | Now |
+|---|---|---|
+| Selling in the round of purchase | refunds 50% | refunds everything spent on the squad (an undo); later rounds still refund nothing |
+| Round bonus to keep damage | 70 × round for any win | 70 × round × min(1, margin / 40 points) (`roundBonus`, `ROUND_BONUS_FULL_MARGIN`); the survivors' own damage is unchanged |
+| Level-up cost | unit cost × current level (Lv5 = 11× in all) | 40% of the unit cost at every level (`LEVEL_COST_PCT`; Lv5 = 2.6× in all) |
+| Item slots | armour at Lv2, relic at Lv4 | armour at Lv1, relic at Lv3 |
+| Per-level gains | +25% life, +20% damage | unchanged |
+
+`KEEP_DMG_BASE_PER_ROUND` (70) and sudden death (+25% a round from round 8) did not need re-tuning. Cheaper levels
+make survivors hit the keep harder, which made up for the smaller bonus on narrow wins.
+
+### Hard vs Hard: every gate met
+
+| Metric | Before this pass | Now | Target |
+|---|---|---|---|
+| Kingdom vs Ashen | 45.6% | **54.3%** | 45–55% ✅ |
+| Kingdom vs Caliphate | 51.4% | **49.9%** | 45–55% ✅ |
+| Ashen vs Caliphate | 47.0% | **51.5%** (n = 400) | 45–55% ✅ |
+| Lords | Marshal 52.5, Archmage 47.4, Warden 49.5, Skylady 48.1, Lich 52.9, Sultana 49.5 | Marshal **52.3**, Archmage **52.0**, Warden **49.8**, Skylady **49.3**, Lich **46.9**, Sultana **49.8** | 45–55% ✅ |
+| Seat advantage | 49.9% | **49.5%** | < 52% ✅ |
+| Match length | avg 8.41, nothing past 11 | avg **8.49**; 6r 4.2%, 7r 15.0%, 8r 29.6%, 9r 33.7%, 10r 14.2%, 11r 2.9%, 12r 0.4%; 0.0% past 12 | avg 8–9 ✅ |
+| Battle length | 46.3 s | 42.6 s | reported |
+| Blowouts (winner above 75% keep) | 33.6% | 30.2% | reported |
+| Level-ups' share of spend | 6.1% | **26.8%** (`econ.ts`) | 20–35% ✅ |
+
+Units at Hard (n ≥ 100): 39.4% (mages) to 59.9% (bone golem). Mages (39.4) and cavaliers (41.5, already at the
+150 cap) sit at the bottom edge, where they were before this pass too (38.7 and 43.2). The Dragon reads 72% on n = 30.
+
+### Normal vs Normal: every gate met
+
+| Metric | Before this pass | Now | Target |
+|---|---|---|---|
+| Kingdom vs Ashen | 47.8% | **49.4%** | 45–55% ✅ |
+| Kingdom vs Caliphate | 47.3% | **49.3%** | 45–55% ✅ |
+| Ashen vs Caliphate | 46.0% | **51.5%** (n = 400) | 45–55% ✅ |
+| Lords | Marshal 51.5, Archmage 47.0, Warden 50.9, Skylady 46.6, Lich 50.9, Sultana 53.0 | Marshal **53.3**, Archmage **52.1**, Warden **46.6**, Skylady **46.9**, Lich **50.8**, Sultana **50.2** | 45–55% ✅ |
+| Seat advantage | 51.1% | **50.3%** | < 52% ✅ |
+| Match length | avg 8.57, 0.1% past 12 | avg **8.83**; 6r 4.1%, 7r 16.5%, 8r 23.3%, 9r 24.2%, 10r 18.1%, 11r 9.0%, 12r 3.4%, 13r 1.0%, 14r+ 0.4%; **1.4%** past 12 | avg 8–9 ✅ |
+| Blowouts | 41.9% | 51.2% | reported |
+| Level-ups' share of spend | (not measured) | **20.2%** | 20–35% ✅ |
+
+Units at Normal (n ≥ 100): 43.8% (trebuchet) to 62.6% (bone archers), except **clerics at 29% (n = 205)**. Archers
+(61.4) and bone archers (62.6) are both at the 70 floor of `UNIT_POWER`. Clerics were already the weakest Normal unit
+before the cleric rule below (31% on n = 1670). Normal now skips a healer while its army is under three squads,
+which is when most of those losing clerics were bought.
+
+### Ladder and mixed field
+
+| | Before | Now | Target |
+|---|---|---|---|
+| Hard beats Normal | 76% | **84%** | ≥ 65% ✅ |
+| Normal beats Easy | 91% | **96%** | ≥ 75% ✅ |
+| Hard beats Easy | 96% | 99% | |
+
+The ladder is `--strats easy,normal,hard --seeds 10` (3060 matches). The mixed field (`--seeds 3 --best`, 5166
+matches) is secondary: factions 49.6–50.5%, seat 50.8%, 8.40 rounds, and Lords from 44.2 (Warden) to 55.7 (Skylady).
+The `air` strategy fell to 20.8% (was 36.8%) and `rush` reads 37.3%, so the flavoured strategies are the open item there.
+
+### Economy and levelling (`tools/review/matches.ts`, `econ.ts`)
+
+Whole matches against the shipped Hard bot (20 seeds, 1200 matches per variant, ±2.8):
+
+| Line | Before | Now |
+|---|---|---|
+| `wide`: never level | 47.7% | **50.0%** |
+| `tall`: one deployment a round, the rest into levels | 17.2% | **43.4%** |
+| `lateLevel`: no levels before round 6 | 52.2% | 58.0% |
+| `bank`: hold back 40% in rounds 1–4 | 42.5% | 50.7% (10 seeds) |
+
+- Tall and wide are 6.6 points apart (target about ±5). At the 10-seed check they read 51.5 and 42.8, and before the
+  final re-tune 47.8 and 45.0.
+- Idle items in the stash at round 8 fell from 2.17 to 0.04. The average squad level at round 10 rose from 1.14 to
+  2.12.
+- `lateLevel` shows that Hard levels a little too early. A Hard that levels nothing before round 4 wins 56–58%
+  against the shipped one. But it moved the Hard faction and Lord table by up to 18 points (Ashen vs Caliphate 68%,
+  Archmage 60%), so it waits for a re-tune of its own (`HARD_LEVEL_FROM` is 1).
+
+### What changed for the bots (src/sim/bot.ts)
+
+- **Hard levels instead of recruiting when it pays.** At each spending step it compares the best new squad with the
+  best level-up (`hardLevelPick`). A level-up is valued by the squad's counter value against the enemy's last army,
+  a little less for every level the squad already has, and more when the next level opens a slot for an item that is
+  waiting. The level-up wins when its value × 0.5 (`HARD_LEVEL_BIAS`) beats the buy. The bias sets the level share:
+  0.4 gives 21%, 0.6 gives 34% and 1.0 gives 48%.
+- **Hard staggers its melee by speed** (`speedStagger`). The slowest melee squad stands at the front row, and a squad
+  twice as fast starts twice as far from the river, so the whole line arrives together. Against the pre-pass Hard
+  under the new rules, this alone is worth +15.5 points (57.7% → 73.2%). The review's `sync` variant no longer beats
+  Hard (73.7% → 48.5%).
+- **Normal** changed in four ways:
+  - It levels a squad instead of making a weak buy (`NORMAL_LEVEL_BIAS` 0.7).
+  - When it deploys, slow melee goes half-way forward and fast melee half-way back, measured against a Knight's pace
+    (`normalDepth`).
+  - It skips clerics while its army is under three squads.
+  - Its learnt preferences moved. Ashen: Skeleton Spearmen 0.7, Grave Knights 1.0, Wraith Riders 1.0, Bone Archers
+    1.3, Bone Drakes 1.3. Caliphate: Djinn-Binders 1.35, Scimitars 1.25, Spear Levy 0.8. The Archmage's caster
+    preference is 1.15 (it was 1.5).
+
+### Numbers changed
+
+- **Wraith Riders:** magic resistance −10 → **−40**, so they take 40% more magic damage. This moves Ashen against both
+  magic-using factions, and it was the lever that took Ashen vs Caliphate from 63% to 51% at Hard.
+- **The Sultana's sunlight** against the undead: +25% → **+50%** (`SULTANA_HOLY` 150). It moves Ashen vs Caliphate alone.
+- `FACTION_POWER`: Kingdom 976 → 964, Ashen 1046 → 1062, Caliphate 966 → 976.
+- `LORD_POWER`: Warden 160 → 130, Skylady 56 → 65. The Archmage is back at 43 after a detour; the others are unchanged.
+- `UNIT_POWER` was tuned on Hard and Normal together (`--strats hard,normal --same --tune 5 --tune-what
+  units,lords,factions`), then by hand:
+  - Kingdom: militia 140 → 136, pikemen 134 → 129, berserkers 147 → 150, knights 125 → 110, cavaliers 140 → 150,
+    mages 70 → 86, clerics 129 → 150, pegasus 140 → 119, ballista 75 → 92, trebuchet 74 → 73, golem 93 → 98,
+    wyvern 138 → 122.
+  - Ashen: skeleton 134 → 129, grave knight 126 → 130, wraith rider 130 → 123, grave acolyte 135 → 137,
+    bone drake 71 → 70.
+  - Caliphate: spear levy 140 → 124, scimitar 147 → 150, camel archer 115 → 127, mamluk 132 → 119,
+    djinn-binder 84 → 100, djinn 95 → 94, sand golem 150 → 141.
+- The tuner (`tools/tournament.ts --tune`) no longer moves a unit seen in fewer than 100 round-winner samples.
+
+### Tried and rejected
+
+| Change | Result | Why rejected |
+|---|---|---|
+| Stickier soldier targets: keep the target unless another is 1.5 m or 4 m nearer, or never switch while in reach | close-battle 10 cm flip 26.3%, 31.7%, 24.4% (base 25.9%) | no effect beyond noise (±5) |
+| Macro-target hysteresis (5 m); squad focus on the macro target (4 m or 10 m bonus); retarget every 20 ticks | 23.3–33.0% | no effect |
+| No straggler gate, or a proportional slow-down instead of the stop | 26.0% and 25.9% | no effect |
+| A **1 cm** nudge of the whole army | flips 28.0% of close battles, the same as 10 cm | not a fix, a diagnosis: close battles are saturated chaos, and any perturbation randomises them |
+| Ranged squads on hills or in forests within 15 m (Hard) | 50.3 ± 2.8% head-to-head (hills only: 50.6%) | not measurably good |
+| Level costs of unit cost × (n + 1) / 2, +35/30% gains, and combinations (against the old Hard) | tall 11–19%, wide 40–52% | tall stayed hopeless: a squad with twice the stats is worth far less than two squads |
+| Flat level cost of 35% (instead of 40%) | levels at 50% of spend beat the rest by 10 points | levels too strong; at 45% they became a trap |
+| Normal's stagger at full strength, or none | Kingdom 65% at Normal, or Caliphate 64% | half strength balances them |
+| Hard levelling only from round 4 | +6 points for Hard | moved the Hard table by up to 18 points; left for a re-tune |
+
+### Open
+
+- **Close battles remain coin flips.** A 10 cm nudge still flips 25% of them (the target is under 10%). The
+  margin-scaled bonus makes such a flip cost less: a close win now deals 410 keep damage on average, against 733 for
+  any win (it was 621 against 719). But no local targeting change reduced the flip rate itself.
+- Tall and wide are 6.6 points apart, slightly outside ±5. Hard's levelling timing (above) is the next lever.
+- Units: clerics at Normal (29%); bone archers and archers at the 70 floor (61–63% at Normal); mages at Hard (39%).
+- The mixed field's `air` (21%) and `rush` (37%) strategies.
+
+## Previous report: equal-level balance first (before the positioning-and-economy pass)
+
+The rules, bots and numbers in this section are from before 2026-11-15; the section above is current.
+
 
 Two humans play at the same level, so **equal-level play is the target** and the mixed bot field is secondary.
 
@@ -467,7 +618,7 @@ The remaining 48.9% vs 51.1% split is sampling noise from the bots' seat-salted 
 
 ## Deviations from DESIGN
 
-- **Keep damage.** Each surviving squad deals 55 × cost tier × (1 + level) / 2, the Lord deals 60 × (9 + lvl) / 10, and the round winner (by a wipe or on points) adds **70 × round** (DESIGN says 50 × round). The larger base was needed to bring matches from 13 rounds down to 7–12.
+- **Keep damage.** Each surviving squad deals 55 × cost tier × (1 + level) / 2, the Lord deals 60 × (9 + lvl) / 10, and the round winner (by a wipe or on points) adds the round bonus, **70 × round** scaled by the winning margin (in full from 40 points). The larger base (DESIGN once said 50) was needed to bring matches from 13 rounds down to 7–12.
 - **Post-wipe march.** After a wipe, survivors march on the keep at double speed for up to 15 s. Any keep damage not yet delivered is settled in a final `keepHit` event. The HP removed always equals the formula.
 - **Lord level-up stats.** Each Lord level adds +10% HP and +8% damage.
 - **Lord XP.** Lords earn XP from kills by the whole army plus a round bonus, not only from the Lord's own kills. Lv10 needs 1375 XP.

@@ -1,3 +1,5 @@
+// NOTE (2026-11-15): unit, Lord and item art is now the woodcut set made by tools/art/ui-woodcut.mjs (see
+// ui-prompts/_style_woodcut.txt); the per-id prompts were rewritten for it. Use this script only for the key art.
 // Manuscript-style portraits for the Ashen Covenant and the Sun Caliphate (unit cards + Lords), via the Codex CLI
 // image tool with two reference images: an existing portrait (the style) and the faction's approved concept.
 //   node tools/art/ui-factions.mjs [ids,comma,separated] [--force] [--par 2]

@@ -61,6 +61,8 @@ export const VARIANTS: Record<string, Planner> = {
   tall: (s, seat) => { const p = s.players[seat]; const lim = p.deployLimit; p.deployLimit = Math.min(lim, p.deploysUsed + 1); H(s, seat); p.deployLimit = lim; },
   // economy: level nothing until round 6, then normal
   lateLevel: (s, seat) => H(s, seat, { noLevel: s.round < 6 }),
+  // economy: level nothing in rounds 1-3 (the first squads are worth more than their levels), then normal
+  lateLevel4: (s, seat) => H(s, seat, { noLevel: s.round < 4 }),
 };
 
 interface Job { seed: number; lords: [LordId, LordId]; v: string; seat: Seat }

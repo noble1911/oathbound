@@ -1,6 +1,6 @@
-// How much of the keep damage is the flat round bonus (70 x round, paid to the round winner) and how much comes from
+// How much of the keep damage is the round bonus (70 x round, scaled by the winning margin, paid to the round winner) and how much comes from
 // surviving squads? Hard vs Hard, every Lord pairing.   node tools/review/keepsplit.ts
-import { KEEP_DMG_BASE_PER_ROUND, suddenDeathPct } from '../../src/sim/match.ts';
+import { roundBonus, suddenDeathPct } from '../../src/sim/match.ts';
 import { hard, lordPairs, playMatch } from './lib.ts';
 let base = 0, all = 0, closeWins = 0, closeBase = 0, closeAll = 0, wins = 0;
 let seed = 17000;
@@ -8,7 +8,7 @@ for (let k = 0; k < 2; k++) for (const lords of lordPairs()) playMatch(seed++, l
   post: (s, r) => {
     if (r.winner === null) { all += r.keepDamage[0] + r.keepDamage[1]; return; }
     const d = r.keepDamage[1 - r.winner];
-    const b = Math.min(d, Math.trunc(KEEP_DMG_BASE_PER_ROUND * s.round * suddenDeathPct(s.round) / 100));
+    const b = Math.min(d, Math.trunc(roundBonus(s.round, Math.abs(r.score[0] - r.score[1])) * suddenDeathPct(s.round) / 100));
     base += b; all += d; wins++;
     if (Math.abs(r.score[0] - r.score[1]) < 20) { closeWins++; closeBase += b; closeAll += d; }
   },

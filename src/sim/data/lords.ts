@@ -18,8 +18,25 @@ export const SULTANA_HASTE_PCT = 8;
 export const RADIANCE_BASE = 20;
 export const RADIANCE_PER_LEVEL = 4;
 export const RADIANCE_RANGE = 800;
+/** Rally / Bulwark reach (cm), the ring within which Meteor looks for its target, and how near an enemy must be before
+ *  Rally, Bulwark, Skyfall and Necromancy fire. battle.ts reads these; the planning screen draws them as the Lord's aura ring. */
+export const RALLY_RANGE = 2000;
+export const BULWARK_RANGE = 1200;
+export const METEOR_REACH = 4000;
+export const LORD_TRIGGER_RANGE = 2500;
+/** The radius (cm) the planning screen rings around a Lord, and what that ring means. */
+export function lordAuraRing(ability: LordDef['ability']): { radius: number; label: string } {
+  switch (ability) {
+    case 'rally': return { radius: RALLY_RANGE, label: 'Rally' };
+    case 'bulwark': return { radius: BULWARK_RANGE, label: 'Bulwark' };
+    case 'radiance': return { radius: RADIANCE_RANGE, label: 'Radiance' };
+    case 'necromancy': return { radius: NECRO_RANGE, label: 'Necromancy' };
+    case 'meteor': return { radius: METEOR_REACH, label: 'Meteor reach' };
+    case 'skyfall': return { radius: LORD_TRIGGER_RANGE, label: 'Skyfall trigger' };
+  }
+}
 /** Sunlight burns the dead: damage percent of the Sultana (blade and Radiance) and of Sun Priests against undead (Ashen units, the Lich, raised skeletons). */
-export const SULTANA_HOLY = 125;
+export const SULTANA_HOLY = 150;
 export const SUN_PRIEST_HOLY = 150;
 
 export const LORDS: Record<LordId, LordDef> = {
@@ -28,7 +45,7 @@ export const LORDS: Record<LordId, LordDef> = {
     signature: ['militia', 'cavaliers'], tags: ['infantry'],
     hp: 900, dmg: 40, attackTicks: 20, range: 160, speed: 16, armor: 30, magicResist: 20, splash: 0,
     passive: '+1 squad deployment per round',
-    ability: 'rally', abilityName: 'Rally', abilityText: `Allied squads within 20 m gain +${RALLY_PCT}% attack speed for 10 s.`,
+    ability: 'rally', abilityName: 'Rally', abilityText: `Allied squads within ${RALLY_RANGE / 100} m gain +${RALLY_PCT}% attack speed for 10 s.`,
   },
   archmage: {
     id: 'archmage', faction: 'kingdom', name: 'Sefa', title: 'Archmage', modelId: 'lord_archmage', weapon: 'tome', damageType: 'magic', projectile: 'fireball',
@@ -42,7 +59,7 @@ export const LORDS: Record<LordId, LordDef> = {
     signature: ['berserkers', 'knights'], tags: ['armored', 'infantry'],
     hp: 1200, dmg: 36, attackTicks: 24, range: 170, speed: 13, armor: 45, magicResist: 10, splash: 0,
     passive: 'Keep +800 HP; squads +10% HP',
-    ability: 'bulwark', abilityName: 'Bulwark', abilityText: 'Allies within 12 m take 40% less damage for 6 s.',
+    ability: 'bulwark', abilityName: 'Bulwark', abilityText: `Allies within ${BULWARK_RANGE / 100} m take 40% less damage for 6 s.`,
   },
   skylady: {
     id: 'skylady', faction: 'kingdom', name: 'Ione', title: 'Skylady', modelId: 'lord_skylady', weapon: 'lance', damageType: 'physical', projectile: 'none',
@@ -63,7 +80,7 @@ export const LORDS: Record<LordId, LordDef> = {
     signature: ['spear_levy', 'camel_archer'], tags: ['infantry'],
     hp: 950, dmg: 36, attackTicks: 20, range: 170, speed: 16, armor: 30, magicResist: 25, splash: 0,
     passive: `Squads attack ${SULTANA_HASTE_PCT}% faster`,
-    ability: 'radiance', abilityName: 'Radiance', abilityText: `A burst of sunlight within ${RADIANCE_RANGE / 100} m: ${RADIANCE_BASE} (+${RADIANCE_PER_LEVEL} per Lord level) magic damage to enemies (a quarter more to the undead), and as much life restored to allies.`,
+    ability: 'radiance', abilityName: 'Radiance', abilityText: `A burst of sunlight within ${RADIANCE_RANGE / 100} m: ${RADIANCE_BASE} (+${RADIANCE_PER_LEVEL} per Lord level) magic damage to enemies (${SULTANA_HOLY - 100}% more to the undead), and as much life restored to allies.`,
   },
 };
 

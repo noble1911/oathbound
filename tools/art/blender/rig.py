@@ -300,18 +300,37 @@ def build_rig(aid, lib, co, H):
 
 
 def skin(aid, rig, meshes, H):
-    """Bone-heat weights on a voxel proxy, transferred to every mesh in `meshes`."""
+    """Bone-heat weights on a voxel proxy, transferred to every mesh in `meshes`.
+    Rigid parts (cleanup.py `parts` with a `bone`: point attribute `_PART` = index + 1 into the object's
+    `part_bones`) are left out of the proxy and weighted 100 % to their bone afterwards (howdah, crew, shields).
+    assets.json `skin: "solid"`: bone heat on a SOLID voxel hull first (the elephant: the plain voxel proxy of a
+    thin TRELLIS shell left whole legs unweighted)."""
+    import bmesh
     src = meshes[0]
     proxy = src.copy(); proxy.data = src.data.copy(); proxy.name = f'{aid}_proxy'
     bpy.context.scene.collection.objects.link(proxy)
     proxy.data.materials.clear()
+    part_bones = list(src.get('part_bones', []))
+    if part_bones and '_PART' in proxy.data.attributes:
+        pv = np.empty(len(proxy.data.vertices), np.float32); proxy.data.attributes['_PART'].data.foreach_get('value', pv)
+        bm = bmesh.new(); bm.from_mesh(proxy.data); bm.verts.ensure_lookup_table()
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if pv[v.index] > 0.5], context='VERTS')
+        bm.to_mesh(proxy.data); bm.free()
+    body = proxy.data.copy()
     ok = False
+    solid = L.assets().get(aid, {}).get('skin') == 'solid'
     # first try bone heat directly on the (already voxel-remeshed, watertight) LOD0; then coarser voxel proxies
-    for vs in (None, H / 140, H / 100, H / 70):
+    for vs in ((('solid', H / 130), ('solid', H / 95), ('solid', H / 70)) if solid else ()) + (None, H / 140, H / 100, H / 70):
         for m in list(proxy.modifiers):
             proxy.modifiers.remove(m)
-        proxy.data = src.data.copy()
-        if vs is not None:
+        old = proxy.data; proxy.data = body.copy()
+        if old.users == 0:
+            bpy.data.meshes.remove(old)
+        if isinstance(vs, tuple):
+            import cleanup as CL
+            old = proxy.data; proxy.data = CL.solid_mesh(proxy, vs[1]); bpy.data.meshes.remove(old)
+            vs = vs[1]
+        elif vs is not None:
             rm = proxy.modifiers.new('rm', 'REMESH'); rm.mode = 'VOXEL'; rm.voxel_size = vs; rm.use_smooth_shade = True
             L.apply_mods(proxy)
         if L.tris(proxy) > 40000:
@@ -351,6 +370,19 @@ def skin(aid, rig, meshes, H):
         ob.parent = rig
         ob.matrix_world = mw
         am = ob.modifiers.new('Armature', 'ARMATURE'); am.object = rig
+        if part_bones and '_PART' in ob.data.attributes:
+            pv = np.empty(len(ob.data.vertices), np.float32); ob.data.attributes['_PART'].data.foreach_get('value', pv)
+            ob.data.attributes.remove(ob.data.attributes['_PART'])
+            for i, bn in enumerate(part_bones):
+                idx = [int(k) for k in np.nonzero(np.round(pv) == i + 1)[0]]
+                if not idx:
+                    continue
+                if bn not in ob.vertex_groups:
+                    raise RuntimeError(f'{aid}: part bone {bn!r} is not a deform bone of the rig')
+                for g in ob.vertex_groups:
+                    g.remove(idx)
+                ob.vertex_groups[bn].add(idx, 1.0, 'REPLACE')
+                print(f'[rig] {ob.name}: {len(idx)} rigid vertices -> {bn}')
     bpy.data.objects.remove(proxy, do_unlink=True)
     return ok
 
@@ -449,8 +481,8 @@ def weapon_objects(wid):
     return out
 
 
-def attach(rig, lib, ob, wid, side, s, name):
-    hold = HOLDS[WEAPON_HOLD.get(wid) or L.assets().get(wid, {}).get('hold', 'fist')]     # assets.json `hold` for new weapons
+def hold_world(rig, lib, hold, side, s):
+    """(bone name, world matrix) of a weapon-frame object held as `hold` on `side`, in the rest pose."""
     sg = 1 if side == 'L' else -1
     bn = hold['bone'] if hold.get('central') else f"{hold['bone']}.{side}"
     lb = lib.data.bones[bn]
@@ -464,7 +496,12 @@ def attach(rig, lib, ob, wid, side, s, name):
     if hold.get('shift'):
         local = local @ Matrix.Translation((0, 0, hold['shift']))        # along the weapon's own axis, in metres
     tb = rig.data.bones[bn]
-    world = rig.matrix_world @ tb.matrix_local @ local
+    return bn, rig.matrix_world @ tb.matrix_local @ local
+
+
+def attach(rig, lib, ob, wid, side, s, name):
+    hold = HOLDS[WEAPON_HOLD.get(wid) or L.assets().get(wid, {}).get('hold', 'fist')]     # assets.json `hold` for new weapons
+    bn, world = hold_world(rig, lib, hold, side, s)
     ob.name = name
     ob.parent = rig
     ob.parent_type = 'BONE'
@@ -476,6 +513,7 @@ def attach(rig, lib, ob, wid, side, s, name):
 
 def main():
     aid = L.argv()[0]
+    L.webp_quality(aid)                          # assets.json `webp_q`
     a = L.assets()[aid]
     bpy.ops.wm.open_mainfile(filepath=str(L.WORK / 'blend' / f'{aid}_clean.blend'))
     sc = bpy.context.scene
@@ -489,6 +527,21 @@ def main():
     rig, land = build_rig(aid, lib, co, H)
     s = land['s']
     print('[rig] landmarks', json.dumps({k: v for k, v in land.items() if k != 'ycen'})[:600])
+    # `parts` with a `hold` (team-tinted shields / banners merged into the unit mesh): where a weapon would sit.
+    # cleanup.py places the piece with this matrix on the next run (first run: by `pos`).
+    holds = {}
+    for p in a.get('parts', []):
+        if p.get('hold'):
+            bn, world = hold_world(rig, lib, dict(HOLDS[p['hold']], **p.get('hold_adjust', {})), p.get('side', 'L'), s)
+            holds[p['name']] = [list(r) for r in world]
+            if p.get('bone') != bn:
+                print(f"[rig] WARNING {aid}: part {p['name']} hold bone is {bn} but `bone` is {p.get('bone')}")
+    if holds:
+        hf = L.WORK / 'clean' / f'{aid}_holds.json'
+        old = hf.read_text() if hf.exists() else ''
+        new = json.dumps(holds)
+        hf.write_text(new)
+        print(f'[rig] {aid}: hold matrices {"unchanged" if old == new else "CHANGED -> rebuild from cleanup"}')
     ok = skin(aid, rig, [lod0, lod1], H)
     # weapons
     wnodes = []

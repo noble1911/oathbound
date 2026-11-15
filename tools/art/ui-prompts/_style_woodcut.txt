@@ -1,0 +1,27 @@
+Woodcut art set (chosen 2026-11-15, replaces the manuscript miniatures). Two layers, one prompt line each; `{palette}`,
+`{panel}`, `{disc}`, `{glyph}` and `{accent}` come from the faction lines. Generated with the Codex image tool by
+tools/art/ui-woodcut.mjs; glyphs are then palette-quantised and normalised into the plate atlas by tools/art/glyph-atlas.py.
+
+portrait: Style: hand-carved woodcut print, bold black carved lines and hatching on cream paper, printed with a strict limited palette of {palette} only (plus the black line block), colours slightly off-register. Background: one flat {panel} panel with a rough printed edge, no pattern, no scenery, no border decoration. The figure fills the frame with a bold, simple silhouette that reads instantly at 40 pixels; few large shapes, heavy line weight, no tiny detail. No text, no letters. Square. Hand-made look, not a smooth AI digital painting.
+
+glyph: A single bold battlefield map icon. {subject} The figure is drawn LARGE: it fills about 85% of the square in both width and height, chunky proportions. Style: flat woodcut-stamp glyph, like a heraldic badge or a chess-piece symbol: one simple iconic silhouette built from a few thick solid shapes, readable at 24 pixels. No thin lines, no hatching, no gradients, no shading, no texture, no outline around the icon. Exactly three flat colours: a perfectly flat {disc} background, a {glyph} silhouette, and a few small {accent} details. The whole figure is inside the frame with an even margin on all sides, centred. No text, no border, no frame, no ground line. Square.
+
+item: Style: hand-carved woodcut print matching the game's woodcut unit portraits: bold black carved lines and hatching, printed in a strict limited palette of cream, steel grey and one muted ochre-brown only, colours slightly off-register. The object is large, drawn with few big shapes and a strong silhouette that reads at 40 pixels. Background: one flat very dark slate-charcoal panel, no pattern, no scenery, no border, no cream paper margin. No text, no letters. Square. Hand-made look, not a smooth AI digital painting.
+
+kingdom.palette: ultramarine blue, cream and steel grey
+kingdom.panel: ultramarine blue
+kingdom.disc: ultramarine blue
+kingdom.glyph: cream
+kingdom.accent: light steel grey
+
+ashen.palette: black, bone white and sickly soul-green
+ashen.panel: near-black charcoal
+ashen.disc: near-black charcoal
+ashen.glyph: bone white
+ashen.accent: bright sickly soul-green
+
+caliphate.palette: terracotta red, turquoise and warm sand
+caliphate.panel: terracotta red
+caliphate.disc: terracotta red
+caliphate.glyph: warm sand
+caliphate.accent: turquoise

@@ -75,6 +75,9 @@ export interface ArtEntry {
   lod1?: string;
   fireTime?: number;
   clipInfo?: Record<string, { duration: number; loop: boolean }>;
+  tris?: { lod0?: number | null; lod1?: number | null };
+  /** Team mask of the `lod1` file (heroes: the low tier draws LOD1 of heavy models). */
+  lod1TintMask?: string;
 }
 export type ArtManifest = Record<string, ArtEntry>;
 
@@ -97,6 +100,44 @@ const CLIP_ALIASES: Record<string, string[]> = {
   victory: ['victory'],
   reload: ['reload'],
 };
+
+/**
+ * Hero models of the v3 pipeline are up to ~40k triangles with 2048² basecolour + normal maps (about 53 MB of GPU
+ * memory per model with mips, against 12 MB for the 15k / 1024² heroes before). Low and medium keep the old cost:
+ * their hero textures are downscaled to HERO_TEX_CAP at load, and low draws the `lod1` file of any hero whose LOD0
+ * is heavier than HERO_LOW_TRIS. The choice is made when the model loads (a later tier change keeps what is loaded).
+ */
+const HERO_TEX_CAP: Record<string, number> = { low: 1024, medium: 1024 };
+const HERO_LOW_TRIS = 20000;
+
+/** Downscale every map of a loaded model that is larger than `cap` (before its first upload). */
+function capTextures(root: THREE.Object3D, cap: number): void {
+  const done = new Set<THREE.Texture>();
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      const m = mat as THREE.MeshStandardMaterial;
+      for (const t of [m.map, m.normalMap, m.roughnessMap, m.metalnessMap, m.aoMap, m.emissiveMap]) {
+        if (!t || done.has(t)) continue;
+        done.add(t);
+        const img = t.image as { width: number; height: number; close?: () => void } | null;
+        if (!img || Math.max(img.width, img.height) <= cap || typeof document === 'undefined') continue;
+        const k = cap / Math.max(img.width, img.height);
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * k));
+        c.height = Math.max(1, Math.round(img.height * k));
+        const g = c.getContext('2d');
+        if (!g) continue;
+        g.imageSmoothingQuality = 'high';
+        g.drawImage(img as unknown as CanvasImageSource, 0, 0, c.width, c.height);
+        img.close?.();
+        t.image = c;
+        t.needsUpdate = true;
+      }
+    }
+  });
+}
 
 /** Armoured units get a metallic default until the MR maps land. */
 const ARMOURED = /knight|lord_marshal|lord_warden|lord_skylady|cavalier|golem/;
@@ -215,8 +256,14 @@ export class UnitAssets {
     if (!e?.glb) return false;
     const t0 = performance.now();
     try {
-      const [gltf, tintMap, mrMap] = await Promise.all([this.loader.loadAsync(this.url(e.glb)), this.loadTex(e.tintMask, false), this.loadTex(e.mr, false)]);
+      const tier = this.engine.quality.tier;
+      // low tier: a heavy hero is drawn from its LOD1 file (same skeleton, nodes and clips)
+      // (its atlas is its own, so it needs its own team mask: manifest `lod1TintMask`; without one the LOD0 is kept)
+      const useLod1 = arch.render === 'hero' && tier === 'low' && !!e.lod1 && (e.tris?.lod0 ?? 0) > HERO_LOW_TRIS && (!e.tintMask || !!e.lod1TintMask);
+      const file = useLod1 ? e.lod1! : e.glb;
+      const [gltf, tintMap, mrMap] = await Promise.all([this.loader.loadAsync(this.url(file)), this.loadTex(useLod1 ? e.lod1TintMask : e.tintMask, false), this.loadTex(e.mr, false)]);
       const root = gltf.scene;
+      if (arch.render === 'hero' && HERO_TEX_CAP[tier]) capTextures(root, HERO_TEX_CAP[tier]);
       const clips = new Map<string, THREE.AnimationClip>();
       for (const [role, aliases] of Object.entries(CLIP_ALIASES)) {
         const want = e.clips?.[role];

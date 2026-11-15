@@ -139,7 +139,7 @@ Don't
 - No Cinzel, no wide-tracked serif caps for body labels.
 - No near-black glass panels with a hairline border; a panel is stone in a steel frame.
 - No new colour without a meaning in the table above.
-- Don't restyle the in-world squad plates here: the engine draws them (`src/render/plates.ts`).
+- Don't restyle the in-world squad plates in CSS: the engine draws them (`src/render/plates.ts`; see Portraits and battlefield glyphs).
 
 ## Battle HUD and inspector
 
@@ -158,9 +158,74 @@ Don't
 - It updates at 4 Hz at most and only while open; it never asks the renderer for a frame.
 - On the results screen and the report overlay it floats over the other army's table.
 
-## Portraits
+## Portraits and battlefield glyphs
 
-Lord and unit portraits are **illuminated-manuscript miniatures** (gold leaf, tempera, decorated vine borders), chosen over Amiga pixel art, woodcut, stained glass and 80s module-cover styles. Prompt and process: `tools/art/ui-prompts/_style_manuscript.txt`. New portraits must match this style.
+Units and Lords are drawn twice, as two layers of one **woodcut** set (it replaced the illuminated-manuscript
+miniatures, which were too yellow, too busy and too alike). Prompts and process:
+`tools/art/ui-prompts/_style_woodcut.txt`; the subject table is `tools/art/woodcut-spec.py`.
+
+**Faction palettes** (strict; this is how a faction is told apart at a glance, in menus and on the field):
+
+| Faction | Panel / disc | Figure / glyph | Accent |
+| --- | --- | --- | --- |
+| Kingdom | ultramarine `#1b2ea0` | cream `#f4ead0` | steel grey `#9fadc6` |
+| Covenant | charcoal `#16171a` | bone `#e8e1ca` | soul-green `#6ce062` |
+| Caliphate | terracotta `#b24427` | sand `#f2dca8` | turquoise `#2ac4b6` |
+
+### Menus: woodcut portraits (`public/ui/unit_*.webp` 320 px, `lord_*.webp` 512 px)
+
+Hand-carved woodcut prints: bold black carved lines and hatching on cream paper, the faction's three colours only,
+slightly off-register, on one flat faction-coloured panel (no pattern, no scenery, no border). The figure fills the
+frame, and every unit has its own pose and silhouette and shows its weapon or mount. Make them with
+`node tools/art/ui-woodcut.mjs portrait [ids]` then `python tools/art/ui-webp.py`. Lords take a character reference
+(`art-work/refs/portrait/lord_<id>.png`), units a per-faction style anchor (`_<faction>.png`).
+
+Caliphate panels are pulled to one terracotta-red by `python tools/art/panel-normalise.py` (run it before
+`ui-webp.py` after generating any Caliphate portrait).
+
+**Small crests show the glyph, not the portrait.** Every crest (`crest()` in `src/ui/units.ts`) carries both images;
+the stylesheet ("glyph crests" in `src/style.css`) swaps to the battlefield glyph in a round disc wherever a crest is
+drawn under about 40 px: every `sm` crest (battle log, kill feed, results rows, codex and Lord-pick chips, group
+lists, tooltips of field squads), the HUD Lord plaques and the two-row compact shop. Portraits stay on `md` / `lg`
+crests (shop cards, recruit cards, inspector, unit tooltips) and the Lord cards. The glyph disc has a neutral steel
+ring in menus: the blue disc / red diamond belongs to the battlefield, where it means side.
+
+### Battlefield: role glyphs on the squad plates (`public/ui/plates.webp` + `plates.json`)
+
+The plate over each squad (`src/render/plates.ts`) answers three questions with three separate signals:
+
+- **What is it? The glyph is the ROLE**, drawn the same way in every faction, so it is learnt once:
+
+  | Role | Glyph | Units |
+  | --- | --- | --- |
+  | Light infantry | footman striding in profile, short weapon, round shield | Militia |
+  | Shock infantry | warrior lunging in profile, big weapon overhead, no shield | Berserkers, Scimitar Guard |
+  | Heavy infantry | armoured figure from the front behind a big shield | Knights, Grave Knights |
+  | Spear | footman with a tall upright spear | Pikemen, Skeleton Spearmen, Spear Levy |
+  | Ranged | archer in profile at full draw | Archers, Bone Archers, Camel Archers (on a camel) |
+  | Cavalry | rider on a galloping mount, lance levelled | Cavaliers, Wraith Riders (skeletal horse), Mamluk Lancers |
+  | Caster | robed figure raising a staff with a flame or burst | Mages, Grave Acolytes, Djinn-Binders |
+  | Healer | robed figure from the front, arms raised under a rayed sun | Clerics, Sun Priests |
+  | Flier | creature from the front with both wings spread | Pegasus, Wyvern, Dragon, Bone Drake; the Bound Djinn (smoke tail) |
+  | Siege | wheeled machine in profile, no crew | Ballista, Trebuchet, Corpse Catapult |
+  | Giant | hulking block from the front, tiny head, fists low | Stone / Bone / Sand Golem, War Elephant |
+  | Lord | half-length commander defined by a signature object or companion (banner, meteor, horns and axe, wings, lantern, greatsword, tower shield, drake, scimitar, smoke djinn, elephant, roc), so no two Lords share a silhouette; the plate adds a gold crown and is larger | every Lord |
+
+- **Whose faction? The disc colour** (table above), with the glyph in the faction's light colour.
+- **Whose side? The crest's shape and ring**, which no faction colour can be mistaken for: **yours is a round
+  disc with a sky-blue ring, the enemy's is a diamond with a scarlet ring**, each ring held off the faction colour
+  by an ink line. The health bar repeats the side colour.
+
+Glyphs are flat three-colour stamps (no lines thinner than a stroke, no hatching). `tools/art/glyph-atlas.py`
+forces each generated glyph into its faction's three colours, thickens hairlines, and scales it to one enclosing
+circle, so the set is uniform; it writes the 1024 px atlas (128 px cells) and its index. Make them with
+`node tools/art/ui-woodcut.mjs glyph [ids]` then `python tools/art/glyph-atlas.py`. The plate shader undoes the
+grade pass, so the atlas colours are the colours on screen; do not brighten them in the shader.
+`python tools/art/woodcut-sheet.py <dir>` writes contact sheets of both layers (with 40 px and 28 px versions).
+
+Six Lords have art before they have rules (`lord_deathknight`, `lord_ossuary`, `lord_drakerider`, `lord_vizier`,
+`lord_rajah`, `lord_rocrider`): their portraits are in `public/ui/` and their glyphs are in the atlas, keyed by the
+Lord id the gameplay data must use.
 
 ## Factions
 

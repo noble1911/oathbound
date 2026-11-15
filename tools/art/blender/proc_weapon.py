@@ -2,7 +2,9 @@
 
 blender -b --factory-startup --python tools/art/blender/proc_weapon.py -- weapon_pike
 Out: art-work/blend/<id>_clean.blend with `<id>` / `<id>_lod1` in the same convention as cleanup.py's weapons
-(long axis +Z, head up, grip at the origin; flat PBR materials).
+(long axis +Z, head up, grip at the origin; flat PBR materials). Shields and banners (`trap`, or by id: trap_spec)
+come from the trappings kit instead: flat heraldic art on real geometry, `_TEAM` vertex mask + the material's
+`team_image` (packed in the blend).
 """
 import sys
 from pathlib import Path
@@ -49,15 +51,51 @@ def pike(name, length, seg):
     return ob
 
 
+def trap_spec(aid, a):
+    """Authored weapons (trappings kit, docs/ART.md section 10): assets.json `trap: [builder, args]`, or by id:
+    `weapon_shield_*` -> shield (ossuary = tower, rajah / sun = sun, grave = grave, round, kite), `weapon_banner_*`
+    -> banner. None = the plain procedural pike / spear."""
+    if a.get('trap'):
+        return a['trap'][0], dict(a['trap'][1] if len(a['trap']) > 1 else {})
+    if 'shield' in aid:
+        kind = next((k for key, k in (('ossuary', 'tower'), ('tower', 'tower'), ('rajah', 'sun'), ('sun', 'sun'), ('grave', 'grave'), ('round', 'round'), ('kite', 'kite')) if key in aid), None)
+        if kind:
+            return 'shield', dict(kind=kind)
+    if 'banner' in aid:
+        return 'banner', {}
+    return None
+
+
+def trapped(aid, a, spec):
+    import trappings as TR
+    name, args = spec
+    fac = dict(ossuary='ashen', grave='ashen', rajah='caliphate', sun='caliphate').get(next((k for k in ('ossuary', 'grave', 'rajah', 'sun') if k in aid), ''), None)
+    args.setdefault('faction', a.get('faction') or fac or 'kingdom')
+    args.setdefault('height' if name == 'shield' else 'length', a['length'])
+    for lod, nm in ((0, aid), (1, f'{aid}_lod1')):
+        ar = dict(args, name=nm)
+        if lod:
+            ar.update(nu=5, nv=7, strap=False, tex=min(256, args.get('tex', 256)), tassels=False)
+        else:
+            ar.setdefault('tex', a.get('tex', 512))
+        ob = TR.build(name, ar, dict(id=aid, asset=a, body=None))
+        ob.name = nm; ob.data.name = nm
+        print('[proc] trappings', name, nm, L.tris(ob), 'tris, atlas', ob['atlas'], 'team', round(ob['team_frac'], 3))
+
+
 def main():
     aid = L.argv()[0]
     a = L.assets()[aid]
     L.clear()
-    pike(aid, a['length'], 8); pike(f'{aid}_lod1', a['length'], 5)
-    for o in bpy.data.objects:
-        o['team_frac'] = 0.0
+    spec = trap_spec(aid, a)
+    if spec:
+        trapped(aid, a, spec)
+    else:
+        pike(aid, a['length'], 8); pike(f'{aid}_lod1', a['length'], 5)
+        for o in bpy.data.objects:
+            o['team_frac'] = 0.0
     (L.WORK / 'blend').mkdir(parents=True, exist_ok=True)
-    bpy.ops.wm.save_as_mainfile(filepath=str(L.WORK / 'blend' / f'{aid}_clean.blend'))
+    bpy.ops.wm.save_as_mainfile(filepath=str(L.WORK / 'blend' / f'{aid}_clean.blend'), compress=True)
     print('[proc] done', aid, L.tris(bpy.data.objects[aid]), L.tris(bpy.data.objects[f'{aid}_lod1']))
 
 

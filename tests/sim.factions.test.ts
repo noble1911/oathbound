@@ -210,7 +210,7 @@ describe('faction mechanics', () => {
     // ethereal: the same riders lose less to swords than to magic of equal listed damage
     const sheet = squadSheet(viewFor(arena([['wraith_rider', 1, [4000, 3000]]], [], ['lich', 'lich']), 0), 3)!;
     expect(sheet.stats.find((x) => x.key === 'armor')!.value).toBe(45);
-    expect(sheet.stats.find((x) => x.key === 'magicResist')!.value).toBe(-10);
+    expect(sheet.stats.find((x) => x.key === 'magicResist')!.value).toBe(-40);
     const lost = (enemy: UnitType): number => {
       const dd = run(arena([['wraith_rider', 3, [4000, 3900]]], [[enemy, 1, [4000, 3900]]], ['lich', 'warden']));
       const q = squadStatsAt(dd, dd.replay.ticks).squads.find((x) => x.type === 'wraith_rider')!;

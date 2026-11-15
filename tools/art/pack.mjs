@@ -14,8 +14,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const OUT = join(root, 'public/models/v2');
-const RAW = join(root, 'art-work/unpacked');
+// ART_OUT (run.mjs --stage): pack the staged files; their originals go to art-work/unpacked/stage/
+const OUT = process.env.ART_OUT ? join(root, process.env.ART_OUT) : join(root, 'public/models/v2');
+const RAW = join(root, process.env.ART_OUT ? 'art-work/unpacked/stage' : 'art-work/unpacked');
 mkdirSync(RAW, { recursive: true });
 const GLTFPACK = 'gltfpack@0.22.0';
 
