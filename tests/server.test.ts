@@ -35,6 +35,33 @@ async function chores(c: Client, view: PlayerView): Promise<void> {
 const latestView = async (c: Client, pred: (r: RoomView) => boolean = () => true) => (await c.wait('room', (m) => !!m.room.view && pred(m.room))).room;
 
 describe('real sim', () => {
+  it('faction pick: pickFaction then pickLord; the enemy choice stays hidden; the timer picks a Lord of the chosen faction', async (ctx) => {
+    skipIfNoSim(ctx);
+    const { host, guest, all } = await makeRoom(url);
+    host.send({ t: 'start' });
+    await host.wait('room', (m) => m.room.phase === 'lordPick');
+    host.send({ t: 'intent', intent: { t: 'pickFaction', faction: 'ashen' } });
+    const mine = await host.wait('room', (m) => m.room.view?.you?.faction === 'ashen');
+    expect(mine.room.view!.you!.lord).toBe(null);
+    // the guest does not see it, and may not pick a Lord of another faction after choosing one
+    guest.send({ t: 'intent', intent: { t: 'pickFaction', faction: 'caliphate' } });
+    const theirs = await guest.wait('room', (m) => m.room.view?.you?.faction === 'caliphate');
+    expect(theirs.room.view!.enemy.faction).toBe(null);
+    guest.send({ t: 'intent', intent: { t: 'pickLord', lord: 'marshal' } });
+    expect((await guest.wait('rejected')).error).toMatch(/does not lead/);
+    guest.send({ t: 'intent', intent: { t: 'ready' } });
+    expect((await guest.wait('rejected')).error).toMatch(/Lord/);
+    // neither picks a Lord: the timer gives each a Lord of the faction they chose
+    const p = await latestView(host, (r) => r.phase === 'planning');
+    expect(p.view!.you!.faction).toBe('ashen');
+    expect(p.view!.you!.lord).toBe('lich');
+    expect(p.view!.enemy.faction).toBe('caliphate');
+    expect(p.view!.enemy.lord).toBe('sultana');
+    expect(p.view!.you!.unlocked).toEqual(['skeleton', 'grave_acolyte']);
+    expect(p.view!.you!.draftOptions).toEqual(['grave_knight', 'bone_archer', 'wraith_rider']);
+    for (const c of all) c.close();
+  }, 15_000);
+
   it('pvp: lord pick -> planning with intents -> both ready -> battle on both -> battleDone -> results -> round 2', async (ctx) => {
     skipIfNoSim(ctx);
     const { host, guest, all } = await makeRoom(url);

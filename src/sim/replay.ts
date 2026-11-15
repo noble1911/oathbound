@@ -22,7 +22,7 @@ export const PROJ_CODES: readonly ProjectileKind[] = ['none', 'arrow', 'bolt', '
 export const ARC_CODES: readonly ArcType[] = ['line', 'arc', 'high_arc'];
 export const ABILITY_CODES: readonly AbilityEventKind[] = [
   'rally', 'meteor', 'bulwark', 'skyfall', 'chain', 'burn', 'frost', 'ember_burst', 'reflect', 'stomp', 'charge', 'brace',
-  'earthshaker', 'bloodthirst', 'sunfire', 'lifebinder', 'levelup', 'knockback', 'shield_wall', 'war_cry', 'cleave',
+  'earthshaker', 'bloodthirst', 'sunfire', 'lifebinder', 'levelup', 'knockback', 'shield_wall', 'war_cry', 'cleave', 'necromancy', 'radiance',
 ];
 /** Wire order of the skills (append only). */
 export const SKILL_CODES: readonly SkillId[] = [
@@ -33,6 +33,7 @@ export const SKILL_CODES: readonly SkillId[] = [
 export const STAT_CAUSES: readonly StatCause[] = [
   'attack', 'burn', 'thorns', 'tower', 'chain', 'ember_burst', 'sunfire', 'meteor', 'skyfall', 'heal', 'leech', 'lifebinder', 'bloodthirst', 'revive', 'rout',
   ...SKILL_CODES,
+  'radiance', 'regen',
 ];
 export const REVIVE_CODES = ['undying_oath', 'phoenix'] as const;
 /** Kinds in the binary event stream: the classic eleven, then skill casts and ledger entries (decoded into their own lists). */

@@ -1,5 +1,7 @@
 // Unit presentation: crest portraits (placeholders until the art agent's portraits land), role
 // icons, the unit tooltip (stats, traits, counters) and the squad tooltip for the battlefield.
+import { FACTIONS } from '../sim/data/factions.ts';
+import { unitSkills } from '../sim/data/skills.ts';
 import type { Item, LordId, SkillInfo, Squad, SquadType, UnitType } from '../sim/types.ts';
 import type { SquadSheet, StatKey, StatLine } from '../sim/sheet.ts';
 import { UNITS } from '../sim/data/units.ts';
@@ -24,7 +26,7 @@ const TRAIT_TEXT: Record<string, string> = {
   backline: 'Holds back behind the front line',
 };
 
-export const LORD_HUE: Record<LordId, string> = { marshal: '#b98a2e', archmage: '#6a4fb0', warden: '#3f7a48', skylady: '#3f86c4' };
+export const LORD_HUE: Record<LordId, string> = { marshal: '#b98a2e', archmage: '#6a4fb0', warden: '#3f7a48', skylady: '#3f86c4', lich: '#4fbf7a', sultana: '#2fa7a0' };
 
 /** A crest portrait: tier-coloured shield with the weapon glyph. */
 export function crest(t: SquadType, lord?: LordId | null, size: 'sm' | 'md' | 'lg' = 'md'): string {
@@ -156,9 +158,12 @@ export function countersBlock(t: UnitType): string {
 /** Shop / draft tooltip for a unit type. */
 export function unitTooltip(t: UnitType, extra = ''): string {
   const d = UNITS[t];
-  const traits = d.traits.map((x) => TRAIT_TEXT[x]).filter(Boolean);
+  // what the unit does, in the sim's words (raise dead, ethereal, plague, sun blessing, regeneration...), then the plain traits
+  const known = new Set<string>();
+  const innate = unitSkills(t).filter((k) => !['ranged', 'magic', 'flier', 'armored', 'resist'].includes(k.id)).map((k) => (known.add(k.id), `${k.name}: ${k.text}`));
+  const traits = innate.concat(d.traits.filter((x) => !known.has(x) && x !== 'healer' && x !== 'raider' && x !== 'charge').map((x) => TRAIT_TEXT[x]).filter((x): x is string => !!x));
   return `<div class="utip">
-    <div class="utip-h">${crest(t, null, 'md')}<div><b>${esc(d.name)}</b><small>${esc(d.role)} · ${WEAPON_LABEL[d.weapon]} · ${d.damageType === 'magic' ? 'Magic' : 'Physical'}</small></div>
+    <div class="utip-h">${crest(t, null, 'md')}<div><b>${esc(d.name)}</b><small>${esc(FACTIONS[d.faction].short)} · ${esc(d.role)} · ${WEAPON_LABEL[d.weapon]} · ${d.damageType === 'magic' ? 'Magic' : 'Physical'}</small></div>
       <div class="utip-cost">${icon('gold')}${d.cost}</div></div>
     <div class="utip-tags">${tagsOf(t).map((g) => `<span class="tg">${icon(g)}${TAG_LABEL[g]}</span>`).join('')}</div>
     ${statBlock(t, 1)}

@@ -47,7 +47,7 @@ const deps = (i) => [...(assets[i]?.weapons ?? []).map((w) => w[0]), ...(assets[
 const ids = [];
 const visit = (i) => { if (ids.includes(i)) return; deps(i).forEach(visit); ids.push(i); };
 want.forEach(visit);
-const composite = (a) => !!a.rider || a.id === 'dragon';
+const composite = (a) => !!a.rider || a.id === 'dragon' || !!a.creature;   // `creature`: a standalone creature.py build (bone drake, war elephant)
 const need = (s) => STAGES.indexOf(s) >= from && STAGES.indexOf(s) <= to;
 const sourced = ids.filter((i) => !assets[i].rider && !assets[i].procedural);    // ids with their own concept + mesh
 
@@ -62,7 +62,8 @@ for (const id of ids) {
   if (need('cleanup') && !a.rider && !a.procedural && !blender('cleanup.py', [id], `cleanup ${id}`)) continue;
   if (need('build')) {
     let ok = true;
-    if (composite(a)) ok = blender('creature.py', [id], `creature ${id}`);
+    if (a.builder) ok = blender(a.builder, [id], `${a.builder} ${id}`);     // per-asset builder (faction.py wraps rig.py / creature.py)
+    else if (composite(a)) ok = blender('creature.py', [id], `creature ${id}`);
     else if (a.kind === 'humanoid' || (a.clipset && (a.style ?? 'character') === 'character')) ok = blender('rig.py', [id], `rig ${id}`);
     else if (a.kind === 'structure') ok = blender('keep.py', [id], `keep ${id}`);
     else if (a.kind === 'siege') ok = blender('siege.py', [id], `siege ${id}`);

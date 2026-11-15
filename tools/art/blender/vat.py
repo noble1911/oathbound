@@ -28,8 +28,10 @@ from cleanup import emit_restore, unwrap
 
 OCT = 45
 # canonical crowd clip name -> (source action by clipset, sample fps)
-PRIMARY = {'sword': 'attack_melee_a', 'spear': 'attack_melee_a', 'cast': 'cast', 'bow': 'attack_bow', 'fist': 'attack_melee_a', 'greataxe': 'attack_melee_a'}
-SECONDARY = {'sword': 'attack_melee_b', 'spear': 'attack_melee_b', 'cast': 'attack_melee_a', 'bow': 'attack_melee_a', 'fist': 'attack_melee_b', 'greataxe': 'attack_melee_b'}
+PRIMARY = {'sword': 'attack_melee_a', 'spear': 'attack_melee_a', 'cast': 'cast', 'bow': 'attack_bow', 'fist': 'attack_melee_a', 'greataxe': 'attack_melee_a',
+           'pike': 'attack_melee_a', 'staff': 'cast'}
+SECONDARY = {'sword': 'attack_melee_b', 'spear': 'attack_melee_b', 'cast': 'attack_melee_a', 'bow': 'attack_melee_a', 'fist': 'attack_melee_b', 'greataxe': 'attack_melee_b',
+             'pike': 'attack_melee_b', 'staff': 'attack_melee_a'}
 
 
 def plan(clipset):

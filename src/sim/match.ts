@@ -3,13 +3,14 @@
 import { FIELD_H, FIELD_W, mirrorPos, mirrorFacing } from './constants.ts';
 import { SLOT_UNLOCK_LEVEL } from './data/items.ts';
 import { canEquip, classError, classesOf } from './data/skills.ts';
+import { FACTIONS, FACTION_IDS } from './data/factions.ts';
 import { LORDS, LORD_IDS } from './data/lords.ts';
-import { BASIC_POOL, UNITS, UNIT_TYPES } from './data/units.ts';
+import { UNITS } from './data/units.ts';
 import { modsOf, rollLoot } from './loot.ts';
 import { genTerrain } from './terrain.ts';
 import type {
   BattleResult, Comeback, EnemyView, Intent, IntentResult, Item, LordId, MatchState, PlayerState, PlayerView, RoundOutcome, RoundSummary, Seat, Slot,
-  Squad, SquadType, UnitClass, UnitType, Vec2,
+  FactionId, Squad, SquadType, UnitClass, UnitType, Vec2,
 } from './types.ts';
 
 export const START_GOLD = 300;
@@ -33,12 +34,16 @@ export const CATCHUP_PER_DEFICIT = 0;
 export const UNDERDOG_DEFICIT = 0;
 /** Cumulative XP needed for Lord levels 1..10. */
 export const LORD_XP_LEVELS = [0, 50, 120, 215, 335, 480, 655, 865, 1105, 1375];
-/** Safety valve: after this round the higher keep wins. */
+/**
+ * Not a game rule: a guard against an endless match in tests and bot runs. Matches end by a keep falling; the
+ * keep-damage curve and sudden death make that happen by about round 12 at the latest. Should a match ever reach
+ * this round, the higher keep wins.
+ */
 export const MAX_ROUNDS = 30;
 /** Keep damage per cost tier (cost / 100) of a surviving Lv1 squad; see squadKeepDamage. */
-export const KEEP_DMG_PER_TIER = 22;
+export const KEEP_DMG_PER_TIER = 55;
 export const KEEP_DMG_BASE_PER_ROUND = 70;
-export const LORD_KEEP_DMG = 30;
+export const LORD_KEEP_DMG = 60;
 
 /** Income at the start of `round` (round 1 is the 300 starting gold). */
 export function income(round: number): number {
@@ -72,7 +77,7 @@ export function squadKeepDamage(sq: Squad): number {
   return Math.trunc((KEEP_DMG_PER_TIER * tier * (1 + sq.level)) / 2);
 }
 /** Sudden death: from round SUDDEN_DEATH_ROUND on, all keep damage grows by SUDDEN_DEATH_PCT percent per round. */
-export const SUDDEN_DEATH_ROUND = 10;
+export const SUDDEN_DEATH_ROUND = 8;
 export const SUDDEN_DEATH_PCT = 25;
 export function suddenDeathPct(round: number): number {
   return round >= SUDDEN_DEATH_ROUND ? 100 + SUDDEN_DEATH_PCT * (round - SUDDEN_DEATH_ROUND + 1) : 100;
@@ -106,7 +111,7 @@ export function comebackFor(_me?: PlayerState, _enemy?: PlayerState, _round?: nu
 
 function newPlayer(seat: Seat): PlayerState {
   return {
-    seat, lord: null, gold: 0, keepHp: KEEP_HP, keepMax: KEEP_HP, unlocked: [], draftOptions: [], draftPicks: 0, lootOffer: null,
+    seat, faction: null, lord: null, gold: 0, keepHp: KEEP_HP, keepMax: KEEP_HP, unlocked: [], draftOptions: [], draftPicks: 0, lootOffer: null,
     squads: [], stash: [], deploysUsed: 0, deployLimit: BASE_DEPLOY_LIMIT, lordXp: 0, ready: false, lostLast: false, lastArmy: null,
     comeback: { gold: 0, deploys: 0, deficit: 0 },
   };
@@ -150,12 +155,15 @@ export function freeSpotNear(squads: readonly Squad[], seat: Seat, type: SquadTy
     if (x < z.x0 || x > z.x1 || y < z.y0 || y > z.y1) return null;
     return overlappingSquad(squads, type, [x, y], ignoreId) ? null : [x, y];
   };
+  const sg = seat === 0 ? 1 : -1;
   for (let ring = 0; ring <= 40; ring++) {
     if (ring === 0) { const h = tryAt(cx, cy); if (h) return h; continue; }
     // Walk the ring nearest-first: offsets sorted by |dx| + |dy|.
     for (let k = 0; k <= ring; k++) {
       for (const [dx, dy] of [[k, ring], [-k, ring], [k, -ring], [-k, -ring], [ring, k], [-ring, k], [ring, -k], [-ring, -k]]) {
-        const h = tryAt(cx + dx * 100, cy + dy * 100);
+        // Seat 1 searches in the mirrored order, so both seats shift a blocked squad the same way relative to the
+        // enemy (the bots place through this: an unmirrored order gave seat 0 a small but real edge).
+        const h = tryAt(cx + sg * dx * 100, cy + sg * dy * 100);
         if (h) return h;
       }
     }
@@ -179,6 +187,7 @@ export function newMatch(seed: number, lords: [LordId, LordId] | null): MatchSta
 function setLord(s: MatchState, seat: Seat, lord: LordId): void {
   const p = s.players[seat];
   p.lord = lord;
+  p.faction = LORDS[lord].faction;
   if (lord === 'warden') { p.keepMax = KEEP_HP + WARDEN_KEEP_BONUS; p.keepHp = p.keepMax; }
   const pos: Vec2 = seat === 0 ? [3999, 1200] : mirrorPos([3999, 1200]);
   p.squads = [{ id: s.nextId++, owner: seat, type: 'lord', level: 1, pos, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 0, spent: 0 }];
@@ -191,8 +200,8 @@ function startMatch(s: MatchState): void {
     const L = LORDS[p.lord!];
     p.unlocked = [...L.signature];
     p.gold = START_GOLD;
-    // No random draft: like every round, round 1 is a free choice of one unit, here from the whole basic pool.
-    p.draftOptions = BASIC_POOL.filter((u) => !p.unlocked.includes(u));
+    // No random draft: like every round, round 1 is a free choice of one unit, here from the faction's basic units.
+    p.draftOptions = unlockOptions(p, 1);
     p.draftPicks = FIRST_UNLOCKS;
     p.deploysUsed = 0;
     p.deployLimit = deployLimitFor(p, 0);
@@ -202,9 +211,14 @@ function startMatch(s: MatchState): void {
 /** Unit types unlocked in round 1 (any one of the basic pool) on top of the Lord's two signature units; every later round unlocks one more. */
 export const FIRST_UNLOCKS = 1;
 
-/** The units `p` may unlock in `round`: every locked unit whose minRound has come (round 1: the basic pool). Same rule for both players. */
-export function unlockOptions(p: Pick<PlayerState, 'unlocked'>, round: number): UnitType[] {
-  const pool: readonly UnitType[] = round <= 1 ? BASIC_POOL : UNIT_TYPES;
+/**
+ * The units `p` may unlock in `round`: every locked unit of the player's FACTION whose time has come (round 1: the
+ * faction's basic units; later: every unit whose minRound has come). The same rule for both players; the list
+ * depends only on the faction and on what is already unlocked. (`faction` defaults to the Kingdom for old callers.)
+ */
+export function unlockOptions(p: Pick<PlayerState, 'unlocked'> & { faction?: FactionId | null }, round: number): UnitType[] {
+  const F = FACTIONS[p.faction ?? 'kingdom'];
+  const pool = round <= 1 ? F.basic : F.units;
   return pool.filter((u) => !p.unlocked.includes(u) && UNITS[u].minRound <= round);
 }
 
@@ -290,10 +304,18 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
   if (!intent || typeof intent !== 'object') return err('bad intent');
   const p = s.players[seat];
   if (s.phase === 'over') return err('match is over');
+  if (intent.t === 'pickFaction') {
+    if (s.phase !== 'lordPick') return err('not picking lords');
+    if (!FACTION_IDS.includes(intent.faction)) return err('unknown faction');
+    if (p.lord) return err('lord already picked');
+    p.faction = intent.faction;
+    return OK;
+  }
   if (intent.t === 'pickLord') {
     if (s.phase !== 'lordPick') return err('not picking lords');
     if (!LORD_IDS.includes(intent.lord)) return err('unknown lord');
     if (p.lord) return err('lord already picked');
+    if (p.faction && LORDS[intent.lord].faction !== p.faction) return err(`${LORDS[intent.lord].title} ${LORDS[intent.lord].name} does not lead ${FACTIONS[p.faction].name}`);
     setLord(s, seat, intent.lord);
     if (s.players.every((q) => q.lord)) startMatch(s);
     return OK;
@@ -319,6 +341,7 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       const def = UNITS[intent.unit];
       if (!def) return err('unknown unit');
       if (!p.unlocked.includes(intent.unit)) return err('unit not unlocked');
+      if (p.faction && def.faction !== p.faction) return err('that unit belongs to another faction');
       if (!Array.isArray(intent.pos) || !inDeployZone(seat, intent.pos)) return err('outside deploy zone');
       if (!validFacing(intent.facing)) return err('bad facing');
       if (p.deploysUsed >= p.deployLimit) return err('deployment limit reached');
@@ -422,6 +445,7 @@ function enemyView(s: MatchState, seat: Seat): EnemyView {
   const e = s.players[seat];
   return {
     seat,
+    faction: s.phase === 'lordPick' ? null : e.faction,
     lord: s.phase === 'lordPick' ? null : e.lord,
     keepHp: e.keepHp,
     keepMax: e.keepMax,

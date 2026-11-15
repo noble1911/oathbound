@@ -1,12 +1,17 @@
-// Lord pick: four Lord cards (portrait, signature units, passive, ability, stats) with the phase
-// countdown. Picks stay hidden until both players have chosen; the reveal (yours vs theirs) plays
-// as the match moves into round 1.
-import type { LordId } from '../sim/types.ts';
+// Faction and Lord pick, one screen: three faction banners (name, blurb, colours, lineup), the
+// chosen faction's identity and mechanics, then its Lords (four for the Kingdom, one each for the
+// Covenant and the Caliphate) with the phase countdown. Choosing a banner sends {t:'pickFaction'}
+// and can be changed until a Lord is picked; the Lord's card sends {t:'pickLord'}. Picks stay hidden
+// until both players have chosen; the reveal (yours vs theirs) plays as the match moves into round 1.
+import type { FactionId, LordId, UnitType } from '../sim/types.ts';
 import type { RoomView } from '../net/protocol.ts';
-import { LORDS, LORD_IDS } from '../sim/data/lords.ts';
+import { LORDS } from '../sim/data/lords.ts';
 import { UNITS } from '../sim/data/units.ts';
+import { FACTIONS, FACTION_IDS, factionOfLord } from '../sim/data/factions.ts';
+import { unitSkills } from '../sim/data/skills.ts';
 import { sound } from '../audio.ts';
-import { $, el, esc, secsLeft } from './dom.ts';
+import { playLordLine } from '../audio/voice.ts';
+import { $, el, esc, secsLeft, store } from './dom.ts';
 import { icon } from './icons.ts';
 import { crest, LORD_HUE } from './units.ts';
 import { art } from './art.ts';
@@ -24,7 +29,35 @@ export function lordPortrait(id: LordId, cls = ''): string {
   </div>`;
 }
 
-const FOOT = 'Both players may pick the same Lord. Picks are revealed together.';
+/**
+ * What sets a faction apart on the field, read from its units' own abilities: raise dead, ethereal,
+ * plague, life drain, sun blessing, whirlwind, regeneration, howdah archers, healing. A faction
+ * with no healer says so.
+ */
+const MECHANIC_IDS = ['raise', 'ethereal', 'plague', 'lifesteal', 'bless', 'slowing', 'regen', 'howdah', 'heal'];
+export interface FactionMechanic { id: string; name: string; text: string; units: UnitType[]; tone: 'good' | 'bad' }
+export function factionMechanics(f: FactionId): FactionMechanic[] {
+  const out = new Map<string, FactionMechanic>();
+  for (const u of FACTIONS[f].units) {
+    for (const k of unitSkills(u)) {
+      if (!MECHANIC_IDS.includes(k.id)) continue;
+      const m = out.get(k.id);
+      if (m) m.units.push(u);
+      else out.set(k.id, { id: k.id, name: k.name, text: k.text, units: [u], tone: 'good' });
+    }
+  }
+  const list = MECHANIC_IDS.map((id) => out.get(id)).filter((m): m is FactionMechanic => !!m);
+  if (!out.has('heal')) list.push({ id: 'no_heal', name: 'No healers', text: 'This faction has no unit that heals. Its losses are answered another way.', units: [], tone: 'bad' });
+  return list;
+}
+
+/** The two colours a faction is known by in the HUD (a small band; team blue and red stay the sides' colours). */
+export function factionAccent(f: FactionId): [string, string] {
+  const c = FACTIONS[f].colors;
+  return f === 'kingdom' ? [c[1], c[0]] : f === 'ashen' ? [c[0], c[2]] : [c[2], c[1]];
+}
+
+const FOOT = 'Both players may pick the same faction and Lord. Picks are revealed together.';
 const FOOT_TIMED = ' If the timer runs out, a Lord is chosen for you.';
 
 export class LordPickScreen {
@@ -32,35 +65,91 @@ export class LordPickScreen {
   private timer: HTMLElement;
   private iv: ReturnType<typeof setInterval>;
   private picked: LordId | null = null;
+  private faction: FactionId;
   private endsAt = 0;
   private spectator = false;
+  private pickFaction: ((f: FactionId) => void) | null;
 
-  constructor(ui: HTMLElement, pick: (l: LordId) => void, spectator: boolean) {
+  /** `initial`: the faction shown first (the tutorial opens on the Kingdom); else the one played last. */
+  constructor(ui: HTMLElement, pick: (l: LordId) => void, spectator: boolean, pickFaction: ((f: FactionId) => void) | null = null, initial: FactionId | null = null) {
     const key = art('keyart');
+    const stored = store.get('faction') as FactionId | null;
+    this.faction = initial ?? (stored && FACTION_IDS.includes(stored) ? stored : 'kingdom');
+    this.pickFaction = pickFaction;
     this.root = el(`<div class="screen lordpick" ${key ? `style="--key:url(${key})"` : ''}>
-      <header class="lp-head"><small class="eyebrow">Choose your Lord</small><h2>Who leads your host?</h2>
-        <div class="lp-timer">${icon('timer')}<b>30</b></div></header>
-      <div class="lp-cards">${LORD_IDS.map((id) => this.card(id)).join('')}</div>
-      <p class="lp-foot muted">${spectator ? 'The commanders are choosing their Lords…' : FOOT}</p>
+      <header class="lp-head"><small class="eyebrow">Choose your banner and your Lord</small><h2>Who leads your host?</h2>
+        <div class="lp-timer hidden">${icon('timer')}<b>30</b></div></header>
+      <div class="lp-factions" role="radiogroup" aria-label="Faction">${FACTION_IDS.map((f) => this.banner(f)).join('')}</div>
+      <div class="lp-ident"></div>
+      <div class="lp-cards"></div>
+      <p class="lp-foot muted">${spectator ? 'The commanders are choosing their factions and Lords…' : FOOT}</p>
     </div>`);
     this.spectator = spectator;
     this.timer = $(this.root, '.lp-timer b');
     ui.appendChild(this.root);
-    if (!spectator)
-      this.root.querySelectorAll<HTMLElement>('.lcard').forEach((c) =>
-        c.addEventListener('click', () => {
-          if (this.picked) return;
-          sound.unlock();
-          sound.deploy();
-          this.picked = c.dataset.lord as LordId;
-          this.root.classList.add('has-pick');
-          c.classList.add('chosen');
-          pick(this.picked);
-        }),
-      );
-    else this.root.classList.add('spect');
-    this.root.querySelectorAll('.lcard').forEach((c) => c.addEventListener('pointerenter', () => sound.hover()));
+    if (spectator) this.root.classList.add('spect');
+    this.root.querySelectorAll<HTMLElement>('.fcard').forEach((b) => {
+      b.addEventListener('pointerenter', () => sound.hover());
+      b.addEventListener('click', () => {
+        if (this.picked || this.spectator) return;
+        sound.click();
+        this.setFaction(b.dataset.faction as FactionId, true);
+      });
+    });
+    const cards = $(this.root, '.lp-cards');
+    cards.addEventListener('click', (e) => {
+      const c = (e.target as HTMLElement).closest<HTMLElement>('.lcard');
+      if (!c || this.picked || this.spectator) return;
+      sound.unlock();
+      sound.deploy();
+      this.picked = c.dataset.lord as LordId;
+      this.root.classList.add('has-pick');
+      c.classList.add('chosen');
+      store.set('faction', factionOfLord(this.picked));
+      pick(this.picked);
+      playLordLine(this.picked, 'pick', { delay: 0.25 });
+    });
+    cards.addEventListener('pointerover', (e) => {
+      const c = (e.target as HTMLElement).closest('.lcard');
+      if (c && !c.contains(e.relatedTarget as Node | null)) sound.hover();
+    });
+    this.setFaction(this.faction, false);
     this.iv = setInterval(() => this.tick(), 1000);
+  }
+
+  private banner(f: FactionId): string {
+    const F = FACTIONS[f];
+    const show = F.units.slice(0, 7);
+    return `<button class="fcard" data-faction="${f}" role="radio" aria-checked="false" style="--f1:${F.colors[0]};--f2:${F.colors[1]};--f3:${F.colors[2]}">
+      <i class="fc-band"></i>
+      <b>${esc(F.name)}</b>
+      <small>${esc(F.blurb)}</small>
+      <span class="fc-line">${show.map((u) => `<i data-tip="${esc(UNITS[u].name)}">${crest(u, null, 'sm')}</i>`).join('')}${F.units.length > show.length ? `<em>+${F.units.length - show.length}</em>` : ''}</span>
+      <span class="fc-n">${F.lords.length} Lord${F.lords.length === 1 ? '' : 's'} · ${F.units.length} unit types</span>
+    </button>`;
+  }
+
+  /** Show a faction's identity and Lords; `send` tells the server (a player's own click). */
+  private setFaction(f: FactionId, send: boolean): void {
+    this.faction = f;
+    const F = FACTIONS[f];
+    this.root.dataset.faction = f;
+    this.root.querySelectorAll<HTMLElement>('.fcard').forEach((b) => {
+      const on = b.dataset.faction === f;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', String(on));
+    });
+    const mech = factionMechanics(f);
+    $(this.root, '.lp-ident').innerHTML = `<p><b>${esc(F.short)}.</b> ${esc(F.identity)}</p>
+      <div class="lp-mech">${mech.map((m) => `<span class="tg ${m.tone}" data-tip="${esc(m.units.length ? `${m.units.map((u) => UNITS[u].name).join(', ')}: ${m.text}` : m.text)}">${esc(m.name)}</span>`).join('')}</div>`;
+    const cards = $(this.root, '.lp-cards');
+    cards.dataset.n = String(F.lords.length);
+    cards.innerHTML = F.lords.map((id) => this.card(id)).join('');
+    if (this.picked) cards.querySelector(`.lcard[data-lord="${this.picked}"]`)?.classList.add('chosen');
+    if (send) {
+      store.set('faction', f);
+      this.pickFaction?.(f);
+    }
   }
 
   private card(id: LordId): string {
@@ -90,9 +179,10 @@ export class LordPickScreen {
     this.endsAt = room.phaseEndsAt ? room.phaseEndsAt - room.serverNow + Date.now() : 0;
     const me = room.view?.you;
     if (me?.lord && !this.picked) {
+      // picked elsewhere (a rejoin, or the timer chose): show that Lord's faction with its card sealed
       this.picked = me.lord;
       this.root.classList.add('has-pick');
-      this.root.querySelector(`.lcard[data-lord="${me.lord}"]`)?.classList.add('chosen');
+      this.setFaction(factionOfLord(me.lord), false);
     }
     const foot = $(this.root, '.lp-foot');
     // the timer is only mentioned when there is one (the tutorial has none)
@@ -106,4 +196,3 @@ export class LordPickScreen {
     this.root.remove();
   }
 }
-

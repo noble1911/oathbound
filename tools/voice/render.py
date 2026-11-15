@@ -37,7 +37,9 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "tools" / "voice" / "manifest.json"
-WORK = ROOT / "art-work" / "voice"
+# Bulky intermediates live on E: when it is there (C: is tight); else the git-ignored art-work/voice/.
+_E = Path("/mnt/e/local/oathbound-art-work/voice")
+WORK = Path(os.environ.get("OATHBOUND_VOICE_WORK") or (_E if _E.parent.exists() else ROOT / "art-work" / "voice"))
 BREEZE_SRC = Path("~/breeze-tts").expanduser()
 BREEZE_MODEL = Path("~/breeze-tts-2").expanduser()
 ASR_MODELS = ["openai/whisper-small.en", "openai/whisper-base.en"]
@@ -270,7 +272,8 @@ def lines(tts: Breeze, asr: Asr, man: dict, lid: str, takes: int, only: set | No
     for ev, texts in L["lines"].items():
         if only and ev not in only:
             continue
-        instruction = f"{man['events'][ev]} {L['style']}"
+        # a Lord may override an event's delivery (Sefa never shouts her battle cry)
+        instruction = f"{L.get('delivery', {}).get(ev) or man['events'][ev]} {L['style']}"
         for i, text in enumerate(texts):
             key = f"{ev}_{i + 1}"
             final = d / "take" / f"{key}.wav"
@@ -297,9 +300,37 @@ def lines(tts: Breeze, asr: Asr, man: dict, lid: str, takes: int, only: set | No
             final.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(d / "raw" / f"{key}.s{best['seed']}.wav", final)
             report[key] = {"text": text, "chosen": best["seed"], "ok": not best["fails"], "best": best, "takes": rows}
+            for r in rows[1:]:  # rejected takes: only their scores are kept (report.json)
+                (d / "raw" / f"{key}.s{r['seed']}.wav").unlink(missing_ok=True)
             rep_path.write_text(json.dumps(report, indent=2))
     bad = [k for k, r in report.items() if not r["ok"]]
     print(f"== {lid}: {len(report)} lines, {len(bad)} still failing {bad}", flush=True)
+
+
+def verify(asr: Asr, man: dict, lids: list) -> None:
+    import soundfile as sf
+
+    out, bad = {}, []
+    for lid in lids:
+        L = man["lords"][lid]
+        for ev, texts in L["lines"].items():
+            for i, text in enumerate(texts):
+                key = f"{ev}_{i + 1}"
+                f = WORK / "shipped" / lid / f"{key}.wav"
+                if not f.exists():
+                    bad.append(f"{lid}/{key} missing")
+                    continue
+                x, sr = sf.read(f, dtype="float32")
+                hyp = asr(x, sr)
+                m = measure(x, sr)
+                w = wer(text, hyp)
+                out[f"{lid}/{key}"] = {"text": text, "asr": hyp, "wer": round(w, 3), **m}
+                flag = "" if w <= WER_OK else "  <-- CHECK"
+                if flag:
+                    bad.append(f"{lid}/{key}")
+                print(f"{lid}/{key:12s} {m['dur']:4.2f}s f0 {m['f0']:5.1f} wer {w:.2f} | {hyp}{flag}", flush=True)
+    (WORK / "verify.json").write_text(json.dumps(out, indent=2))
+    print(f"== verify: {len(out)} clips, {len(bad)} flagged {bad}", flush=True)
 
 
 def load_breeze() -> Breeze:
@@ -341,7 +372,7 @@ def main() -> None:
     sys.stdout, sys.stderr = _Tee(sys.stdout, log), _Tee(sys.stderr, log)
     print(f"---- {time.strftime('%H:%M:%S')} render.py {' '.join(sys.argv[1:])}", flush=True)
     ap = argparse.ArgumentParser()
-    ap.add_argument("job", choices=["design", "lines", "asr"])
+    ap.add_argument("job", choices=["design", "lines", "asr", "verify"])
     ap.add_argument("lords", nargs="*")
     ap.add_argument("--takes", type=int, default=3)
     ap.add_argument("--only", help="comma-separated events (lines job)")
@@ -349,9 +380,12 @@ def main() -> None:
     a = ap.parse_args()
     man = json.loads(MANIFEST.read_text(encoding="utf-8"))
     lids = a.lords or list(man["lords"])
-    tts = load_breeze() if a.job != "asr" else None  # Breeze first: it needs the big contiguous allocation
+    tts = load_breeze() if a.job in ("design", "lines") else None  # Breeze first: it needs the big contiguous allocation
     asr = Asr()
     print(f"ASR: {asr.name}", flush=True)
+    if a.job == "verify":  # ASR + measures on the shipped clips (build.py decodes them to <work>/shipped)
+        verify(asr, man, lids)
+        return
     if a.job == "asr":  # re-check the chosen takes only (no Breeze)
         import soundfile as sf
 

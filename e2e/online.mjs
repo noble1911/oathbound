@@ -102,10 +102,16 @@ try {
   await a.click('.start');
   check(await waitFor(a, () => window.__ob.app.room?.phase === 'lordPick'), 'lord pick');
   await waitFor(b, () => !!document.querySelector('.lcard'));
+  // the faction step: three banners; B takes the Ashen Covenant (its one Lord), A stays with the Kingdom
+  check((await a.$$('.fcard')).length === 3 && !!(await a.$('.fcard.on[data-faction="kingdom"]')) && (await a.$$('.lcard')).length === 4, 'three faction banners; the Kingdom shows its four Lords');
+  await b.click('.fcard[data-faction="ashen"]');
+  check(await waitFor(b, () => window.__ob.app.room.view.you.faction === 'ashen' && document.querySelectorAll('.lcard').length === 1), 'B picks the Ashen Covenant: the server has it, one Lord card shows');
+  check(await a.evaluate(() => window.__ob.app.room.view.enemy.faction === null), 'A cannot see the rival faction before the reveal');
   await a.click('.lcard[data-lord="marshal"]');
-  await b.click('.lcard[data-lord="skylady"]');
+  await b.click('.lcard[data-lord="lich"]');
   check(await waitFor(a, () => window.__ob.app.room?.phase === 'planning'), 'both picked: planning');
-  check(await waitFor(a, () => window.__ob.app.room.view.enemy.lord === 'skylady'), 'A sees B\'s lord after the reveal');
+  check(await waitFor(a, () => window.__ob.app.room.view.enemy.lord === 'lich' && window.__ob.app.room.view.enemy.faction === 'ashen'), 'A sees the rival Lord and faction after the reveal');
+  check(await b.evaluate(() => window.__ob.app.room.view.you.faction === 'ashen' && window.__ob.app.room.view.you.draftOptions.length > 0), 'B is offered recruits of its own faction');
   await sleep(3800);
   await shot(a, 'planning-A');
   await planTurn(a);
@@ -149,8 +155,11 @@ try {
   await c.click('.diff button[data-lvl="easy"]');
   await c.click('.vsai');
   check(await waitFor(c, () => window.__ob.app.room?.phase === 'lordPick'), 'vs AI: auto-started into lord pick');
-  await c.click('.lcard[data-lord="warden"]');
+  await c.click('.fcard[data-faction="caliphate"]');
+  await waitFor(c, () => !!document.querySelector('.lcard[data-lord="sultana"]'));
+  await c.click('.lcard[data-lord="sultana"]');
   check(await waitFor(c, () => window.__ob.app.room?.phase === 'planning'), 'vs AI: planning');
+  check(await waitFor(c, () => { const v = window.__ob.app.room.view; return v.you.faction === 'caliphate' && !!v.enemy.faction && !!v.enemy.lord; }), 'vs AI: the Caliphate for me, and the AI has a faction and a Lord');
   await sleep(3800);
   await planTurn(c);
   await c.click('.ready-btn');

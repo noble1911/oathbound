@@ -1,0 +1,100 @@
+{
+ "version": 1,
+ "vertexCount": 694,
+ "width": 694,
+ "rowsPerFrame": 1,
+ "totalFrames": 121,
+ "format": "f16",
+ "clips": [
+  {
+   "name": "idle",
+   "start": 0,
+   "frames": 25,
+   "fps": 10,
+   "loop": true,
+   "duration": 2.5,
+   "source": "idle"
+  },
+  {
+   "name": "move",
+   "start": 25,
+   "frames": 10,
+   "fps": 15,
+   "loop": true,
+   "duration": 0.6667,
+   "source": "walk"
+  },
+  {
+   "name": "run",
+   "start": 35,
+   "frames": 10,
+   "fps": 20,
+   "loop": true,
+   "duration": 0.5,
+   "source": "run"
+  },
+  {
+   "name": "attack",
+   "start": 45,
+   "frames": 15,
+   "fps": 12,
+   "loop": false,
+   "duration": 1.125,
+   "source": "attack_melee_a"
+  },
+  {
+   "name": "attack2",
+   "start": 60,
+   "frames": 15,
+   "fps": 12,
+   "loop": false,
+   "duration": 1.2083,
+   "source": "attack_melee_b"
+  },
+  {
+   "name": "hit",
+   "start": 75,
+   "frames": 5,
+   "fps": 12,
+   "loop": false,
+   "duration": 0.3333,
+   "source": "hit"
+  },
+  {
+   "name": "death",
+   "start": 80,
+   "frames": 25,
+   "fps": 10,
+   "loop": false,
+   "duration": 2.375,
+   "source": "death_a"
+  },
+  {
+   "name": "victory",
+   "start": 105,
+   "frames": 16,
+   "fps": 8,
+   "loop": true,
+   "duration": 1.9583,
+   "source": "victory"
+  }
+ ],
+ "bounds": {
+  "min": [
+   -0.843,
+   -0.7199,
+   -2.0738
+  ],
+  "max": [
+   2.6647,
+   4.3879,
+   2.3197
+  ]
+ },
+ "pos": "wraith_rider.vat.pos.bin",
+ "nrm": null,
+ "normalEncoding": "octPosW45",
+ "vertexIndexAttribute": "_vid",
+ "mesh": "wraith_rider_lod1.glb",
+ "tintMask": "wraith_rider_lod1_tint.png"
+}

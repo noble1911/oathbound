@@ -4,7 +4,197 @@ The numbers come from `node tools/tournament.ts --seeds 3 --best`. That run has 
 
 To re-tune, run `node tools/tournament.ts --seeds 1 --tune N`. It rewrites the multipliers in `src/sim/data/balance.ts`.
 
-## Final report (DESIGN §8 targets)
+## Current report: equal-level balance first
+
+Two humans play at the same level, so **equal-level play is the target** and the mixed bot field is secondary.
+
+- Hard vs Hard: `node tools/tournament.ts --strats hard --seeds 200` (6 Lords, 6000 matches; n = 1600 per Kingdom
+  pairing, 400 for Ashen vs Caliphate, about ±2.5 points). Normal vs Normal: the same with `--strats normal`.
+- Mixed field: `--seeds 3 --best` (42 entries, 5166 matches). `--same` restricts any run to equal-level pairs,
+  `--tune N --tune-what factions,lords` tunes on it, and `--strats hard,hardx` is the strength test below.
+
+### Hard vs Hard (the proxy for two good players): every target met
+
+| Metric | Result | Target |
+|---|---|---|
+| Kingdom vs Ashen Covenant | **45.6%** (n = 1600) | 45–55% ✅ (at the edge) |
+| Kingdom vs Sun Caliphate | **51.4%** (n = 1600) | 45–55% ✅ |
+| Ashen Covenant vs Sun Caliphate | **47.0%** (n = 400) | 45–55% ✅ |
+| Lords | Marshal 52.5, Archmage 47.4, Warden 49.5, Skylady 48.1, Lich-Priest 52.9, Sultana 49.5 | 45–55% ✅ |
+| Archmage's share of her army's damage | 23.3% | ≤ 25% ✅ |
+| Seat advantage | **49.9%** (was 51.5–53.6% before the seat fix below) | < 52% ✅ |
+| Match length | avg 8.41; 6r 4.0%, 7r 13.3%, 8r 34.3%, 9r 35.4%, 10r 12.3%, 11r 0.7%; nothing longer | avg 8–9 ✅ |
+| Blowouts (winner above 75% keep) | 33.6% | reported |
+
+### Strength test: Hard with the corrected counter table is the better player, and is now Hard
+
+`hardx` is Hard with the other counter table. Head-to-head, every Lord pairing from both seats (n = 2160 cross matches):
+
+| | Win rate |
+|---|---|
+| Corrected counters (`cvReal`) against the plain table, before adoption | **54.0%** |
+| The adopted Hard against the old one (`hardx`), after re-tuning | **55.8%** |
+
+So Hard now reads the counter table corrected by what units really are (no anti-cavalry value against a target that
+is not mounted, steel is poor against heavy armour and ethereal riders, magic is good against them, and so on), and
+the factions and Lords were re-tuned for it.
+
+### Normal vs Normal: every target met
+
+200 seeds, 6000 matches (n = 1600 per Kingdom pairing, 400 for Ashen vs Caliphate, about ±2.5 points). "Before" is
+the start of this pass, on the same seeds.
+
+| Metric | Before | Now | Target |
+|---|---|---|---|
+| Kingdom vs Ashen | 47.2% | 47.8% | 45–55% ✅ |
+| Kingdom vs Caliphate | 56.1% | **47.3%** | 45–55% ✅ |
+| Ashen vs Caliphate | 46.5% | 46.0% | 45–55% ✅ |
+| Marshal | 44.8 | **51.5** | 45–55% ✅ |
+| Archmage | 47.1 | 47.0 | 45–55% ✅ |
+| Warden | 60.3 | **50.9** | 45–55% ✅ |
+| Skylady | 50.4 | 46.6 | 45–55% ✅ |
+| Lich-Priest | 51.5 | 50.9 | 45–55% ✅ |
+| Sultana | 45.8 | **53.0** | 45–55% ✅ |
+| Flier unit rates | Pegasus 58.3, Wyvern 58.1, Bone Drake 54.6, Djinn 50.0, Dragon 72 (n = 35) | Pegasus 58.1, Wyvern 57.7, Bone Drake 56.7, Djinn 56.3, Dragon 69 (n = 47) | ≤ 60% ✅ (the Dragon is too rare at Normal to judge) |
+| Seat advantage | 50.8% | 51.1% | < 52% ✅ |
+| Match length | 8.54 | 8.57; 6r 1.6%, 7r 14.9%, 8r 31.5%, 9r 32.5%, 10r 16.7%, 11r 2.5%, 0.1% past 12 | avg 8–9 ✅ |
+| Blowouts | 45.1% | 41.9% | reported |
+
+Hard vs Hard was re-run after the change and is identical to the table above, match for match (Hard does not use any
+of the code that moved). Ladder (`--strats easy,normal,hard --seeds 10`): **Hard beats Normal 76%** (target ≥ 65%),
+**Normal beats Easy 91%** (≥ 75%), Hard beats Easy 96%.
+
+**Diagnosis.** Two hypotheses were given for the Caliphate's poor Normal play: fixed lanes waste its mobile units, and
+Normal keeps no anti-air against fliers. A per-unit diagnostic (gold share, survival and placement per unit, by round)
+and cross-planner matches (Normal against Hard on each side) showed:
+
+- **The Caliphate deficit was one pairing.** The Sultana was 46–53% against the Marshal, the Archmage and the Skylady,
+  and 25% against the Warden. Kingdom vs Caliphate at 56% was almost all of that one pairing. At Hard the same pairing
+  goes 78% the other way, so it is the Sultana's planning, not her numbers.
+- **"No anti-air" was half right.** Normal did buy anti-air, but it counted every flier of its own as an answer to
+  fliers, and gave own fliers a bonus against a Large flier. Against the Warden's Wyverns the Sultana bought Djinn
+  (anti-air bonus × Large-flier bonus × her 1.2 preference). The Warden answered with five or six Archers, which
+  shred Djinn, and her real anti-air, the Camel Archers, came only in round 7. Hard's Sultana buys half as many Djinn.
+- **"Fixed lanes waste the cavalry" was not the lever.** Reactive flanking is Hard's flank row, which chooses its
+  side from the enemy's last formation (unlike the fixed wings rejected last pass). On its own, for the Caliphate
+  only, it fixed Kingdom vs Caliphate (50.6%). On top of the anti-air fix it changed nothing within noise. For every
+  faction's ground raiders it broke Ashen vs Caliphate (32%), because the Wraith Riders gain most.
+- **The Marshal was starved of his passive.** His passive is an extra deployment, and Normal's 12% reserve held him a
+  squad short most rounds.
+- **The Warden's edge is his gear.** Normal puts each item on its "most valuable squad", which is the hero, and the
+  Warden is the one hero who survives every round to use it (below).
+
+**What changed (src/sim/bot.ts, the classic planner, so Normal and every flavoured strategy).**
+
+1. **Only Large fliers count as an answer to fliers.** Anti-air is ranged fire (bows, bolts, casters) or a Dragon,
+   Wyvern or Bone Drake of one's own. A Pegasus or a Djinn is no longer bought "against" a Wyvern. Both halves are
+   needed: either half alone left Kingdom vs Caliphate at 55–57%.
+2. **Archers move under the enemy's fliers.** When the enemy's last-round army had flier squads, Normal's archer-type
+   squads (Archers, Bone Archers, Camel Archers) take Hard's formation spot, under where the fliers were. The rest of
+   the army keeps its lanes. A flying Lord alone (the Skylady) does not count: tracking her hero stripped her army
+   (Skylady 44.3% → 46.6% on 100 seeds when she was left out). Pegasus went from 61.9% to 58.1% with this rule.
+   It is pinned by a test in `tests/sim.factions.test.ts`.
+3. **The Marshal keeps half the reserve** (6% instead of 12%). Earlier he spent everything and read 62%; now he reads 49–52%.
+4. **The Warden shares his gear.** When the classic planner chooses who wears an item, a Warden bot values its own
+   hero at 25% of his usual value (`WARDEN_GEAR`), so most items go to his squads. Only a Warden bot's own choice
+   changes; no stat moves. Also pinned by a test.
+
+The flavoured strategies share the classic planner, so rules 1, 2 and 4 apply to the mixed field too (rule 3 does
+not: those bots keep no reserve).
+
+**Tried and rejected in this pass** (100 seeds, 3000 Normal-vs-Normal matches each, on the same seeds; the baseline
+on those seeds was Kingdom vs Caliphate 57.6%, Warden 60.5%, Sultana 44.6%):
+
+| Change | K v C | A v C | Warden | Notes |
+|---|---|---|---|---|
+| Count the enemy Lord in the counter score (as the unit he fights like), every round | 53.6 | 65.0 | 73.2 | the Warden counter-picks other Lords too |
+| Same, round 1 only (the Lord is public before any army is) | 37.1 | 20.0 | 82.2 | one round-1 unlock cascades through the match |
+| Same, only against an armoured Lord (the Warden), weight 150–450 | 46.6–49.5 | 46–49 | 60–63 | his pairings reshuffle; total unchanged |
+| Hard's whole formation for Normal | | | 67.4 | Kingdom 64%, Ashen 37.5% |
+| Hard's flank row, every faction's raiders and fliers | 53.6 | 33.0 | 57.6 | Marshal 36% |
+| Hard's flank row, ground raiders only | 52.9 | 32.0 | 59.0 | Wraith Riders gain most |
+| Hard's flank row, Caliphate only (with rules 1 + 3) | 52.9 | 46.0 | 60.3 | neutral on top of rule 1 |
+| Archers boosted further against Pegasus-like raiders (×1 + 2–4 × share) | 53.0–53.5 | 49.0 | 59 | Pegasus unmoved (61.4–61.9) |
+| No items on the Lord | 52.6 | 74.5 | 47.9 | Archmage 66%, Lich 60%, Skylady 36% |
+| Hard's item-aware gearing for Normal | 51.0 | 49.0 | 58.9 | no gain |
+| Reserve 6% or 0% for everyone | | | 65.5 / 60.5 | (Warden pairings only) |
+| Warden placed back (y 15 m) or forward (y 35 m) | | | 60.0 / 63.5 | Bulwark coverage is not it |
+| A Warden bot puts no gear on its hero | 42.0 | 46.0 | 29.5 | overshoot: the Kingdom falls to 42.5% |
+| A Warden bot values its hero at 70% / 50% / 35% / **25%** for gear | 50.9 / 50.2 / 49.1 / 47.4 | 46.0 | 59.1 / 57.8 / 54.2 / **50.0** | 25% adopted (rule 4) |
+| No signature bonus for the Warden | | | 69–76 / 73 | against the Sultana / Archmage, on 100 matches each: no effect |
+
+**The Warden at Normal.** The cross-planner matches located it. Normal Warden against Hard opponents won 51–61%,
+while any other Normal Lord against Hard won roughly 20–25%, and Hard Warden against Hard is 50%. Every
+opponent-side rule only moved his pairings around. The +800 keep decides about 6 points of his matches at both Normal
+and Hard, so it is not the gap. The gap was his gear. The Warden is the one hero who survives every round, so he kept
+everything Normal gave its most valuable squad. A Warden bot with no gear on the hero falls to 29.5%. Valuing the
+hero at a quarter for gear (rule 4) puts him at 50.9% and moves no other Lord or faction out of band. His hero
+multiplier (160) and his stats are untouched, so Hard is unchanged.
+
+**The Skylady** fell from 50.4% to 46.6% (44.3% before rule 4). That is the price of rule 2: her army is fliers, and
+the Caliphate in particular now meets them with Camel Archers underneath.
+
+### Mixed field (secondary)
+
+| Metric | Before this Normal pass | Now | Target |
+|---|---|---|---|
+| Side advantage | 49.7% | 50.0% | < 52% ✅ |
+| Match length | avg 8.23 | avg **8.17** | avg 8–9 ✅ |
+| Ladder (`--strats easy,normal,hard --seeds 10`) | Hard beats Normal 81% (mixed run) | Hard beats Normal **76%**, Normal beats Easy **91%**, Hard beats Easy 96% | ≥ 65%, ≥ 75% ✅ |
+| The `air` strategy | 38.3% | **36.8%** | ≥ 40% ❌ |
+| Kingdom vs Ashen | 42.7% | **43.5%** | 45–55% ❌ |
+| Kingdom vs Caliphate | 57.1% | **53.3%** | 45–55% ✅ |
+| Ashen vs Caliphate | 51.4% | 48.6% | 45–55% ✅ |
+| Lords | Marshal 42.2, Archmage 44.8, Warden 62.0, Skylady 50.8, Lich 56.1, Sultana 44.1 | **Marshal 41.2**, Archmage 46.4, **Warden 57.5**, Skylady 52.3, Lich 55.0, Sultana 47.6 | 45–55% ❌ for two |
+| Units | 42.4% to 62.2% (bone archer) | 43.2% (scimitar) to 61.8% (bone archer); Pegasus 60.2 | 40–60% (two at the top edge) |
+
+The flavoured bots share the classic planner, so the anti-air rules and the Warden's gear rule apply to them. They brought
+Kingdom vs Caliphate into band and the Sultana and Lich-Priest rows with it. The Marshal's half reserve does not
+reach them (they keep no reserve), and his row in this field (41%) was not investigated in this pass.
+
+**Fliers.** Shots from the ground lose **30%** against fliers (it was 15%): less effective anti-air rather than stronger
+fliers. Two other levers were tried in the previous pass:
+- letting Wyverns, Bone Drakes and Djinn dive on the backline like Pegasus Knights made the factions
+  rock-paper-scissors at Hard (each beating the next by 55–60%), so it was reverted;
+- raising flier power lifted `air` by 3 points and broke Kingdom vs Caliphate.
+
+Flier unit rates at Hard: Pegasus 58.0, Dragon 61.7, Wyvern 52.7, Bone Drake 56.3, Djinn 52.5. The Dragon is just
+over the top of the unit band there.
+
+### What changed in this pass
+
+- **Hard uses the corrected counters** (strength test above).
+- **Seat fairness bug fixed.** When Hard's flank choice was a tie it sent seat 0's raiders left and seat 1's right
+  *in their own frames*, which put both on the same side of the map; seat 0 then won 51.5–53.6% of Hard mirrors. A
+  tie now resolves the same way in both frames, the two plans are exact mirror images, and the seat split is 49.9%.
+  `freeSpotNear` also searches in mirrored order for seat 1.
+- **A replay corruption bug fixed.** Negative magic resistance (Wraith Riders) made Sunfire Mantle write a negative
+  "mitigated" amount into the unsigned ledger, which broke `decodeReplay` for that battle. Amounts are clamped and
+  there is a test.
+- **Faction scalars** (`FACTION_POWER`, per mille): Kingdom 976, Ashen 1046, Caliphate 966.
+- **Sunlight burns the dead:** the Sultana (blade and Radiance) deals 25% more and Sun Priests 50% more to the
+  undead (Ashen units, the Lich-Priest, raised skeletons). It is the lever for Caliphate vs Ashen alone, which no
+  faction scalar can reach (the three pairings were cyclic).
+- **Ashen:** raised skeletons are 120 life / 16 damage (they were dealing next to nothing); Wraith Riders take 10%
+  more magic damage (was 30%); Bone Drake armour 40%.
+- **Lords:** Marshal 125, Archmage 43, Warden 160, Skylady 56, Lich-Priest 95, Sultana 115.
+- **Bots:** Normal's reserve holds for deployments; fliers are not a frontline; the Archmage's bots buy casters.
+- **Normal pass (bots only; no unit, faction or Lord number moved):** only Large fliers count as an answer to
+  fliers; archer-type squads move under the enemy's last-round flier squads; the Marshal keeps half of Normal's
+  reserve; a Warden bot spreads its gear over its squads instead of its hero. See the Normal-vs-Normal section for the diagnosis and the rejected alternatives.
+
+### Open
+
+- Normal vs Normal: every target met; the Skylady (46.6%) and Ashen vs Caliphate (46.0%) are the nearest the edge.
+- The mixed field: the `air` strategy (37%), Kingdom vs Ashen (43.5%), the Marshal (41%) and Warden (57.5%) rows,
+  and Bone Archers (62%).
+- Kingdom vs Ashen at Hard is at the edge of the band (45.6%).
+- Legendaries and item skills were not re-tuned; no faction-flavoured item skills yet; one Lord each for the new factions.
+
+## Kingdom-only report before the factions (historical)
+
+The numbers in this section and the one after it are from before the factions and the match-length pass (matches
+then averaged 10.3 rounds). They are kept for the reasoning; the table above is current.
 
 The main run here is `node tools/tournament.ts --seeds 5 --best` (3780 matches), for larger item samples.
 
@@ -277,7 +467,7 @@ The remaining 48.9% vs 51.1% split is sampling noise from the bots' seat-salted 
 
 ## Deviations from DESIGN
 
-- **Keep damage.** Each surviving squad deals 22 × cost tier × (1 + level) / 2, the Lord deals 30 × (9 + lvl) / 10, and the round winner (by a wipe or on points) adds **70 × round** (DESIGN says 50 × round). The larger base was needed to bring matches from 13 rounds down to 7–12.
+- **Keep damage.** Each surviving squad deals 55 × cost tier × (1 + level) / 2, the Lord deals 60 × (9 + lvl) / 10, and the round winner (by a wipe or on points) adds **70 × round** (DESIGN says 50 × round). The larger base was needed to bring matches from 13 rounds down to 7–12.
 - **Post-wipe march.** After a wipe, survivors march on the keep at double speed for up to 15 s. Any keep damage not yet delivered is settled in a final `keepHit` event. The HP removed always equals the formula.
 - **Lord level-up stats.** Each Lord level adds +10% HP and +8% damage.
 - **Lord XP.** Lords earn XP from kills by the whole army plus a round bonus, not only from the Lord's own kills. Lv10 needs 1375 XP.

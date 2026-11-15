@@ -9,9 +9,11 @@ import { LAYER_VFX } from '../core/post.ts';
 export type ProjectileKind =
   | 'arrow' | 'bolt' | 'stone' | 'fireball' | 'firebreath' | 'lightning' | 'tower_arrow'
   /** Skill variants: burning arrows, heavy pinning arrows, a burning pitch pot, an empowered fireball. */
-  | 'fire_arrow' | 'pin_shot' | 'fire_pot' | 'skill_fireball';
+  | 'fire_arrow' | 'pin_shot' | 'fire_pot' | 'skill_fireball'
+  /** Faction shots: the Corpse Catapult's plague bundle, a Djinn-Binder's whirlwind. */
+  | 'plague' | 'sand_bolt';
 /** Which instanced mesh draws a kind, and at what scale (skill variants reuse the base meshes: no extra draws). */
-const MESH_OF: Partial<Record<ProjectileKind, [ProjectileKind, number]>> = { fire_arrow: ['arrow', 1.1], pin_shot: ['arrow', 1.5], fire_pot: ['stone', 0.75], skill_fireball: ['fireball', 1.7] };
+const MESH_OF: Partial<Record<ProjectileKind, [ProjectileKind, number]>> = { fire_arrow: ['arrow', 1.1], pin_shot: ['arrow', 1.5], fire_pot: ['stone', 0.75], skill_fireball: ['fireball', 1.7], plague: ['stone', 0.9] };
 export type ArcType = 'line' | 'arc' | 'high_arc';
 type Ground = (wx: number, wz: number) => number;
 
@@ -234,7 +236,8 @@ export class Debris {
       const k = 0.72 + 0.5 * (h - Math.floor(h));
       gp.setXYZ(i, x * k, y * k * 0.8, z * k);
     }
-    const mat = lit(engine, { color: '#ffffff', roughness: 0.92, metalness: 0, flatShading: true });
+    // (the base colour scales the per-chunk instance colour: rubble must not out-shine the wall it fell from)
+    const mat = lit(engine, { color: '#8a8a8a', roughness: 0.95, metalness: 0, flatShading: true });
     this.mesh = new THREE.InstancedMesh(geo, mat, MAX_DEBRIS);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_DEBRIS * 3), 3);
     this.mesh.count = 0;

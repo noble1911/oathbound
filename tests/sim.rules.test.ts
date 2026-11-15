@@ -9,7 +9,7 @@ import { rollItem } from '../src/sim/loot.ts';
 import { Rng } from '../src/sim/rng.ts';
 import type { BotStrategy, Item, MatchState, RoundSummary, Seat, Squad } from '../src/sim/types.ts';
 import { playMatch } from '../src/sim/tournament.ts';
-import { KEEP_DMG_BASE_PER_ROUND, MAX_LORD_LEVEL, concede, keepDamageOf, suddenDeathPct, unlockOptions } from '../src/sim/match.ts';
+import { KEEP_DMG_BASE_PER_ROUND, KEEP_DMG_PER_TIER, MAX_LORD_LEVEL, SUDDEN_DEATH_ROUND, concede, keepDamageOf, squadKeepDamage, suddenDeathPct, unlockOptions } from '../src/sim/match.ts';
 import { itemName, lootSchedule } from '../src/sim/loot.ts';
 import { income } from '../src/sim/match.ts';
 import { readFileSync } from 'node:fs';
@@ -370,14 +370,33 @@ describe('AI difficulty levels', () => {
 });
 
 describe('match pacing: sudden death, clamped keep damage, concessions', () => {
-  it('sudden death: keep damage grows 25% a round from round 10', () => {
-    expect([1, 9, 10, 11, 14].map(suddenDeathPct)).toEqual([100, 100, 125, 150, 225]);
+  it('sudden death: keep damage grows 25% a round from round 8', () => {
+    expect(SUDDEN_DEATH_ROUND).toBe(8);
+    expect([1, 7, 8, 9, 12].map(suddenDeathPct)).toEqual([100, 100, 125, 150, 225]);
     const s = newMatch(3, ['warden', 'warden']);
     const q = squad(s, 0, 'knights', [4000, 3000]);
     const ids = [q.id];
     const at = (round: number): number => keepDamageOf(s.players[0].squads, ids, round, true, false);
-    expect(at(10)).toBe(Math.trunc((at(9) + KEEP_DMG_BASE_PER_ROUND) * 1.25));
-    expect(keepDamageOf(s.players[0].squads, ids, 12, false, true)).toBe(Math.trunc(Math.trunc(44 / 2) * 1.75));
+    const own = squadKeepDamage(q);
+    expect(own).toBe(KEEP_DMG_PER_TIER * 2);
+    expect(at(7)).toBe(own + KEEP_DMG_BASE_PER_ROUND * 7);
+    expect(at(8)).toBe(Math.trunc((own + KEEP_DMG_BASE_PER_ROUND * 8) * 1.25));
+    expect(keepDamageOf(s.players[0].squads, ids, 10, false, true)).toBe(Math.trunc(Math.trunc(own / 2) * 1.75));
+  });
+
+  it('there is no forced end: a match is only over when a keep falls', () => {
+    const s = newMatch(3, ['warden', 'warden']);
+    for (const p of s.players) p.keepHp = 100000;
+    for (let r = 1; r <= 15; r++) {
+      expect(s.phase).toBe('planning');
+      applyIntent(s, 0, { t: 'ready' });
+      applyIntent(s, 1, { t: 'ready' });
+      applyBattle(s, simulateBattle(s, { record: false }).result);
+      expect(s.phase).toBe('results');
+      nextRound(s);
+    }
+    expect(s.round).toBe(16);
+    expect(s.winner).toBe(null);
   });
 
   it('keep damage is clamped to the keep: overkill is not damage taken', () => {

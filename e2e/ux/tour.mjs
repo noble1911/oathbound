@@ -83,7 +83,12 @@ try {
   await sleep(1200);
   await shot('lordpick');
   const cards = await p.$$eval('.lcard', (ns) => ns.map((n) => { const r = n.getBoundingClientRect(); const a = n.querySelector('.lc-block.abil p').getBoundingClientRect(); return { r: [r.left, r.top, r.right, r.bottom], abil: [a.top, a.bottom], vis: a.height > 8 }; }));
-  check(cards.length === 4 && cards.every((c) => c.vis && c.r[0] >= 0 && c.r[2] <= W && c.abil[1] <= H), `4 lord cards with their ability text on screen`);
+  // faction first: three banners, the tutorial opens on the Kingdom and so shows its four Lords
+  const fb = await p.$$eval('.fcard', (ns) => ns.map((n) => { const r = n.getBoundingClientRect(); return { f: n.dataset.faction, on: n.classList.contains('on'), ok: r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight && r.height > 20 }; }));
+  check(fb.length === 3 && fb.every((b) => b.ok) && fb.find((b) => b.on)?.f === 'kingdom', `three faction banners on screen, the Kingdom chosen ${JSON.stringify(fb)}`);
+  check(cards.length === 4 && cards.every((c) => c.vis && c.r[0] >= 0 && c.r[2] <= W && c.abil[1] <= H), `the Kingdom's 4 lord cards with their ability text on screen`);
+  const coachR = await rect('.coach.on'), cardsR = await rect('.lp-cards');
+  check(!coachR || !cardsR || coachR.y >= cardsR.b - 2 || coachR.b <= cardsR.y + 2, `coach clear of the Lord cards (${JSON.stringify(coachR)} vs ${JSON.stringify(cardsR)})`);
   check(!!(await p.$('.coach.on')), 'coach shows on lord pick');
   check((await frames(2500)) === 0, 'lord pick draws 0 fps');
   await p.click('.lcard[data-lord="marshal"]');

@@ -3,7 +3,7 @@
  "vertexCount": 748,
  "width": 748,
  "rowsPerFrame": 1,
- "totalFrames": 151,
+ "totalFrames": 155,
  "format": "f16",
  "clips": [
   {
@@ -45,15 +45,15 @@
   {
    "name": "attack2",
    "start": 71,
-   "frames": 15,
+   "frames": 19,
    "fps": 12,
    "loop": false,
-   "duration": 1.2083,
+   "duration": 1.5,
    "source": "attack_melee_a"
   },
   {
    "name": "cast",
-   "start": 86,
+   "start": 90,
    "frames": 19,
    "fps": 12,
    "loop": false,
@@ -62,7 +62,7 @@
   },
   {
    "name": "hit",
-   "start": 105,
+   "start": 109,
    "frames": 5,
    "fps": 12,
    "loop": false,
@@ -71,7 +71,7 @@
   },
   {
    "name": "death",
-   "start": 110,
+   "start": 114,
    "frames": 25,
    "fps": 10,
    "loop": false,
@@ -80,7 +80,7 @@
   },
   {
    "name": "victory",
-   "start": 135,
+   "start": 139,
    "frames": 16,
    "fps": 8,
    "loop": true,
@@ -95,8 +95,8 @@
    -1.6773
   ],
   "max": [
-   0.6142,
-   1.9576,
+   0.6234,
+   1.9603,
    0.7707
   ]
  },

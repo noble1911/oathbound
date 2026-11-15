@@ -14,16 +14,30 @@
 export type Seat = 0 | 1;
 export type Vec2 = [number, number];
 
-export type LordId = 'marshal' | 'archmage' | 'warden' | 'skylady';
+/** The three playable factions. Both players may pick any of them (also the same one); a Lord belongs to one faction. */
+export type FactionId = 'kingdom' | 'ashen' | 'caliphate';
 
-export type UnitType =
+/** Kingdom: marshal, archmage, warden, skylady. Ashen Covenant: lich. Sun Caliphate: sultana. */
+export type LordId = 'marshal' | 'archmage' | 'warden' | 'skylady' | 'lich' | 'sultana';
+
+/** The Oathsworn Kingdom's 14 units. */
+export type KingdomUnit =
   | 'militia' | 'pikemen' | 'berserkers' | 'archers' | 'knights' | 'cavaliers' | 'mages'
   | 'clerics' | 'pegasus' | 'ballista' | 'trebuchet' | 'golem' | 'wyvern' | 'dragon';
+/** The Ashen Covenant (undead). 'skeleton' is also the model of skeletons raised in battle. */
+export type AshenUnit = 'skeleton' | 'grave_knight' | 'bone_archer' | 'wraith_rider' | 'grave_acolyte' | 'bone_drake' | 'corpse_catapult' | 'bone_golem';
+/** The Sun Caliphate (desert empire). */
+export type CaliphateUnit = 'spear_levy' | 'scimitar' | 'camel_archer' | 'mamluk' | 'djinn_binder' | 'sun_priest' | 'djinn' | 'war_elephant' | 'sand_golem';
+/** Every deployable unit type of every faction. The id is also the renderer model id. */
+export type UnitType = KingdomUnit | AshenUnit | CaliphateUnit;
 
 /** A squad is either one of the 14 unit types or the player's Lord (a 1-soldier squad). */
 export type SquadType = UnitType | 'lord';
-/** Soldiers raised by the Gravebloom legendary. They exist only inside a battle (replay header), never in MatchState. */
-export type SoldierType = SquadType | 'skeleton';
+/**
+ * A soldier's type in a replay. Skeletons raised in battle (Gravebloom, Grave Acolytes, the Lich-Priest) are type
+ * 'skeleton' with `summoned` set; they exist only inside a battle, never in MatchState.
+ */
+export type SoldierType = SquadType;
 
 export type Tag = 'mounted' | 'armored' | 'flier' | 'large' | 'infantry';
 export type WeaponKind = 'sword' | 'axe' | 'lance' | 'bow' | 'tome' | 'staff' | 'bolt' | 'stone' | 'fists' | 'breath';
@@ -35,6 +49,15 @@ export type ArcType = 'line' | 'arc' | 'high_arc';
 
 export interface UnitDef {
   id: UnitType;
+  /** The faction that fields this unit (a player only ever unlocks units of their own faction). */
+  faction: FactionId;
+  /**
+   * The Kingdom unit this one plays like (its role and counters); the Kingdom's own units name themselves.
+   * Bots and tools use it so that every faction's roster is understood through one counter table.
+   */
+  like: KingdomUnit;
+  /** Round-1 unit: may be unlocked from round 1 (others from round 2, or their minRound). */
+  basic: boolean;
   name: string;
   /** Renderer model key (public/models/v2/<modelId>.glb). */
   modelId: string;
@@ -69,6 +92,12 @@ export interface UnitDef {
   heal: number;
   /** Lifesteal percent of damage dealt. */
   lifesteal: number;
+  /** Innate damage over time: attacks burn / plague for this many HP per second over 3 s (0 = none). */
+  burn: number;
+  /** Innate slow: attacks slow the target by this percent for 2 s (0 = none). */
+  slow: number;
+  /** Innate regeneration: tenths of a percent of maximum life per second (15 = 1.5%/s; 0 = none). */
+  regen: number;
   /** Special rules, see data/units.ts. */
   traits: UnitTrait[];
   /** Earliest round in which the unit may be offered in the unlock draft. */
@@ -76,10 +105,14 @@ export interface UnitDef {
   /** Short role text for UI. */
   role: string;
 }
-export type UnitTrait = 'brace' | 'charge' | 'pierce' | 'stomp' | 'cone' | 'slowTurn' | 'healer' | 'ignoresArmor' | 'crushing' | 'backline' | 'raider';
+export type UnitTrait =
+  | 'brace' | 'charge' | 'pierce' | 'stomp' | 'cone' | 'slowTurn' | 'healer' | 'ignoresArmor' | 'crushing' | 'backline' | 'raider'
+  /** raise: raises fallen soldiers as skeletons (Grave Acolytes). bless: its heals also quicken the target (Sun Priests). howdah: a melee unit that can also strike fliers (War Elephant). */
+  | 'raise' | 'bless' | 'howdah';
 
 export interface LordDef {
   id: LordId;
+  faction: FactionId;
   name: string;
   title: string;
   modelId: string;
@@ -101,7 +134,24 @@ export interface LordDef {
   abilityName: string;
   abilityText: string;
 }
-export type AbilityId = 'rally' | 'meteor' | 'bulwark' | 'skyfall';
+export type AbilityId = 'rally' | 'meteor' | 'bulwark' | 'skyfall' | 'necromancy' | 'radiance';
+
+export interface FactionDef {
+  id: FactionId;
+  name: string;
+  /** One word for tight UI: 'Kingdom', 'Covenant', 'Caliphate'. */
+  short: string;
+  /** One line of flavour, and what makes the faction play differently. */
+  blurb: string;
+  identity: string;
+  /** Palette hint for the UI (hex): primary, secondary, accent. */
+  colors: [string, string, string];
+  lords: LordId[];
+  /** The whole roster, cheapest role first. */
+  units: UnitType[];
+  /** Units that may be unlocked in round 1. */
+  basic: UnitType[];
+}
 
 // ---------------------------------------------------------------- Items / loot
 
@@ -224,6 +274,8 @@ export interface Squad {
 
 export interface PlayerState {
   seat: Seat;
+  /** Chosen with {t:'pickFaction'} during the Lord pick, or implied by the Lord picked. Null until then. */
+  faction: FactionId | null;
   lord: LordId | null;
   gold: number;
   keepHp: number;
@@ -321,6 +373,8 @@ export interface PlayerView {
 }
 export interface EnemyView {
   seat: Seat;
+  /** Hidden (null) during the Lord pick, like the Lord. */
+  faction: FactionId | null;
   lord: LordId | null;
   keepHp: number;
   keepMax: number;
@@ -333,6 +387,11 @@ export interface EnemyView {
 // ---------------------------------------------------------------- Intents
 
 export type Intent =
+  /**
+   * Lord-pick phase, optional: choose a faction first (may be changed until the Lord is picked). The Lord picked
+   * afterwards must belong to it. A client may skip this and send pickLord alone: the Lord implies the faction.
+   */
+  | { t: 'pickFaction'; faction: FactionId }
   | { t: 'pickLord'; lord: LordId }
   | { t: 'draft'; unit: UnitType }
   | { t: 'deploy'; unit: UnitType; pos: Vec2; facing?: number }
@@ -473,7 +532,7 @@ export type TallyEvent =
 /** What a ledger entry is attributed to: plain attacks, damage-over-time and procs, Lord abilities, heals, or an item skill. */
 export type StatCause =
   | 'attack' | 'burn' | 'thorns' | 'tower' | 'chain' | 'ember_burst' | 'sunfire' | 'meteor' | 'skyfall'
-  | 'heal' | 'leech' | 'lifebinder' | 'bloodthirst' | 'revive' | 'rout' | SkillId;
+  | 'heal' | 'leech' | 'lifebinder' | 'bloodthirst' | 'revive' | 'rout' | 'radiance' | 'regen' | SkillId;
 
 /** One squad of the battle (header row). Row index = position in Replay.squads; summoned skeleton bands get their own row. */
 export interface ReplaySquad {
@@ -496,8 +555,15 @@ export interface ReplaySquad {
 }
 
 export type AbilityEventKind =
-  | 'rally' | 'meteor' | 'bulwark' | 'skyfall'
-  | 'chain' /* chain lightning segment src->tgt */ | 'burn' /* burn applied, dur in ticks */ | 'frost' /* slow applied */
+  | 'rally' | 'meteor' | 'bulwark' | 'skyfall' | 'necromancy' | 'radiance'
+  | 'chain' /* chain lightning segment src->tgt */
+  /**
+   * Debuff windows, one event when the debuff STARTS on soldier `tgt` (refreshes are not repeated), `src` = the soldier
+   * that applied it, `dur` = ticks it lasts: 'burn' = a burn or the Corpse Catapult's plague (3 s; its damage ticks
+   * are not events, they are in the ledger under cause 'burn' or the skill that lit it), 'frost' = a slow.
+   * A Sun Priest's blessing is a 'war_cry' event with `tgt` = the blessed soldier and radius 0.
+   */
+  | 'burn' | 'frost'
   | 'ember_burst' | 'reflect' | 'stomp' | 'charge' | 'brace' | 'earthshaker' | 'bloodthirst' | 'sunfire' | 'lifebinder' | 'levelup'
   /** Skill effects on one soldier `tgt`: thrown to `pos` (knockback), or buffed for `dur` ticks. */
   | 'knockback' | 'shield_wall' | 'war_cry' | 'cleave';
@@ -585,4 +651,6 @@ export interface SimulateOptions {
  * Tournament strategies plus the three vs-AI difficulties: 'easy', 'normal', 'hard' ('best' = 'hard').
  * 'counter' is the plain counter-picker the 'normal' level builds on.
  */
-export type BotStrategy = 'rush' | 'ranged' | 'armor' | 'air' | 'counter' | 'random' | 'best' | 'easy' | 'normal' | 'hard';
+export type BotStrategy = 'rush' | 'ranged' | 'armor' | 'air' | 'counter' | 'random' | 'best' | 'easy' | 'normal' | 'hard'
+  /** Experimental, for strength tests only (tools/tournament.ts): Hard with the other counter table. Not offered to players. */
+  | 'hardx';

@@ -11,7 +11,7 @@ import { archetypeFor } from './crowd/archetypes.ts';
 import { Battlefield, defaultTerrain } from './terrain/index.ts';
 import { Vfx } from './vfx/index.ts';
 import { SquadPlates, type PlateState } from './plates.ts';
-import { BattlePlayback, type PlaybackHooks } from './battle-playback.ts';
+import { BattlePlayback, type NumberMode, type PlaybackHooks } from './battle-playback.ts';
 import { RangeRing, type RangeRingHandle } from './range-ring.ts';
 import { GhostMarks, type GhostMark } from './ghost-marks.ts';
 import { TEAM_COLORS } from './crowd/archetypes.ts';
@@ -394,6 +394,9 @@ export class BattleView {
     this.director.reset(this.seat === 0 ? 0 : Math.PI);
     this.camera.setMode(hooks.director === false ? 'free' : 'director');
     this.engine.animate(this.playbackAnimator);
+    this.playback.onResume = () => this.engine.animate(this.playbackAnimator);
+    // a stored / explicitly set mode wins over the caller's default
+    if (this.numberMode) this.playback.damageNumbers = this.numberMode;
     return this.playback;
   }
 
@@ -433,6 +436,31 @@ export class BattleView {
       this.camera.home(this.seat);
     }
   }
+  /**
+   * Floating damage numbers: 'all' (every hit), 'important' (default: crits, skill hits, Lord hits and big
+   * per-squad totals, about one figure a second per squad) or 'off'. Applies at once and to later battles;
+   * stored as localStorage 'oathbound.render.damageNumbers'.
+   */
+  setDamageNumbers(mode: NumberMode): void {
+    this.numberMode = mode;
+    try {
+      localStorage.setItem('oathbound.render.damageNumbers', mode);
+    } catch {
+      /* private mode: not stored */
+    }
+    if (this.playback) this.playback.damageNumbers = mode;
+  }
+  get damageNumbers(): NumberMode {
+    return this.numberMode ?? 'important';
+  }
+  private numberMode: NumberMode | null = (() => {
+    try {
+      const v = localStorage.getItem('oathbound.render.damageNumbers');
+      return v === 'all' || v === 'important' || v === 'off' ? v : null;
+    } catch {
+      return null;
+    }
+  })();
   setQuality(t: QualityTier | 'auto'): void {
     this.engine.setQuality(t);
   }

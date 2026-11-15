@@ -10,16 +10,22 @@ import { LORDS, METEOR_BASE, METEOR_PER_LEVEL } from './lords.ts';
 import { UNITS } from './units.ts';
 
 /** Mirrors FLIER_EVADE_PCT in battle.ts (a test keeps them equal; data files do not import the battle). */
-export const FLIER_EVADE = 15;
+export const FLIER_EVADE = 30;
 
 /** The one class of each unit type. */
 export const UNIT_CLASS: Record<UnitType, UnitClass> = {
   militia: 'infantry', pikemen: 'infantry', berserkers: 'infantry', knights: 'infantry',
   archers: 'ranged', cavaliers: 'mounted', mages: 'caster', clerics: 'caster',
   pegasus: 'flier', wyvern: 'flier', dragon: 'flier', ballista: 'siege', trebuchet: 'siege', golem: 'giant',
+  // The Ashen Covenant
+  skeleton: 'infantry', grave_knight: 'infantry', bone_archer: 'ranged', wraith_rider: 'mounted', grave_acolyte: 'caster', bone_drake: 'flier',
+  corpse_catapult: 'siege', bone_golem: 'giant',
+  // The Sun Caliphate (Camel Archers are bowmen first: they take the archers' skills)
+  spear_levy: 'infantry', scimitar: 'infantry', camel_archer: 'ranged', mamluk: 'mounted', djinn_binder: 'caster', sun_priest: 'caster', djinn: 'flier',
+  war_elephant: 'giant', sand_golem: 'giant',
 };
 /** A Lord is of class 'lord' and also of the class of its fighting style. */
-export const LORD_CLASS: Record<LordId, UnitClass> = { marshal: 'infantry', warden: 'infantry', archmage: 'caster', skylady: 'flier' };
+export const LORD_CLASS: Record<LordId, UnitClass> = { marshal: 'infantry', warden: 'infantry', archmage: 'caster', skylady: 'flier', lich: 'caster', sultana: 'infantry' };
 export const UNIT_CLASSES: readonly UnitClass[] = ['caster', 'infantry', 'ranged', 'mounted', 'flier', 'siege', 'giant', 'lord'];
 export const CLASS_NAME: Record<UnitClass, string> = {
   caster: 'Casters', infantry: 'Infantry', ranged: 'Archers', mounted: 'Cavalry', flier: 'Fliers', siege: 'Siege engines', giant: 'Giants', lord: 'Lords',
@@ -183,7 +189,7 @@ const sec = (ticks: number): number => Math.round((ticks / TICK_HZ) * 10) / 10;
 const TAGN: Record<string, string> = { mounted: 'Mounted', armored: 'Armored', flier: 'Flying', large: 'Large', infantry: 'Infantry' };
 
 /** Lord ability cooldowns in ticks (battle.ts uses these). */
-export const ABILITY_CD = { rally: 280, bulwark: 340, meteor: 300, skyfall: 360 } as const;
+export const ABILITY_CD = { rally: 280, bulwark: 340, meteor: 300, skyfall: 360, necromancy: 320, radiance: 300 } as const;
 
 /** The innate abilities of a unit type: traits, counters and movement rules, as data. Behaviour lives in battle.ts. */
 export function unitSkills(type: UnitType): SkillInfo[] {
@@ -194,6 +200,9 @@ export function unitSkills(type: UnitType): SkillInfo[] {
     if (cooldown !== undefined) s.cooldown = cooldown;
     out.push(s);
   };
+  if (u.traits.includes('raise')) add('raise', 'Raise dead', `Instead of attacking, raises a fallen soldier within ${m(u.range)} m as a skeleton that fights for you (up to 3 + the squad's level per battle; not Lords or Large units)`, 'active', sec(u.attackTicks));
+  if (u.traits.includes('bless')) add('bless', 'Sun blessing', 'Soldiers it heals attack 15% faster for 4 s');
+  if (u.id === 'sun_priest') add('radiant', 'Radiant', 'Its sunbolts deal 50% more damage to the undead (Ashen units, the Lich-Priest, raised skeletons)');
   if (u.traits.includes('healer')) add('heal', 'Heal', `Heals the most wounded ally within ${m(u.range)} m for ${u.heal} life (grows with level); attacks only when nobody needs healing`, 'active', sec(u.attackTicks));
   for (const tag of Object.keys(u.effective)) {
     const pct = u.effective[tag as keyof typeof u.effective]!;
@@ -202,7 +211,12 @@ export function unitSkills(type: UnitType): SkillInfo[] {
   if (u.traits.includes('brace')) add('brace', 'Brace', 'Negates the cavalry charge bonus and takes 30% less melee damage from Mounted units');
   if (u.traits.includes('charge')) add('charge', 'Charge', 'The first hit of a charge deals double damage; re-arms after 5 s out of combat');
   if (u.traits.includes('raider')) add('raider', 'Raider', 'Hunts the enemy backline: archers, casters, healers and siege engines');
-  if (u.lifesteal) add('lifesteal', 'Bloodlust', `Heals for ${u.lifesteal}% of the damage it deals`);
+  if (u.lifesteal) add('lifesteal', u.faction === 'ashen' ? 'Life drain' : 'Bloodlust', `Heals for ${u.lifesteal}% of the damage it deals`);
+  if (u.burn) add('plague', u.faction === 'ashen' ? 'Plague' : 'Burning', `Hits fester for ${u.burn} damage per second over 3 s`);
+  if (u.slow) add('slowing', 'Whirlwind', `Hits slow the target by ${u.slow}% for 2 s`);
+  if (u.regen) add('regen', 'Shifting sands', `Regenerates ${u.regen / 10}% of maximum life per second`);
+  if (u.traits.includes('howdah')) add('howdah', 'Howdah archers', 'Can also strike fliers that come within reach');
+  if (u.magicResist < 0) add('ethereal', 'Ethereal', `Steel passes through it (${u.armor}% less physical damage), but magic deals ${-u.magicResist}% more`);
   if (u.traits.includes('pierce')) add('pierce', 'Piercing bolt', 'Bolts pass through the target, hitting everything along the line for 60% damage');
   if (u.traits.includes('stomp')) add('stomp', 'Stomp', `Every blow shakes the ground: 60% damage to all enemies within ${m(u.splash)} m`);
   else if (u.traits.includes('cone')) add('cone', 'Fire breath', `Breathes fire in a cone ${m(u.range)} m long, burning everything inside it`);

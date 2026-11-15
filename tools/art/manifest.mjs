@@ -12,7 +12,7 @@ const CLEAN = join(root, 'art-work/clean');
 const assets = JSON.parse(readFileSync(join(root, 'tools/art/assets.json'), 'utf8')).assets;
 const size = (f) => (existsSync(join(OUT, f)) ? statSync(join(OUT, f)).size : 0);
 const read = (f) => (existsSync(join(CLEAN, f)) ? JSON.parse(readFileSync(join(CLEAN, f), 'utf8')) : null);
-const PRIMARY = { sword: 'attack_melee_a', spear: 'attack_melee_a', cast: 'cast', bow: 'attack_bow', fist: 'attack_melee_a', greataxe: 'attack_melee_a' };
+const PRIMARY = { sword: 'attack_melee_a', spear: 'attack_melee_a', cast: 'cast', bow: 'attack_bow', fist: 'attack_melee_a', greataxe: 'attack_melee_a', pike: 'attack_melee_a', staff: 'cast' };
 
 const out = {
   version: 2,
@@ -49,7 +49,7 @@ for (const a of assets) {
   if (f.clips) {
     const cs = a.clipset ?? 'sword';
     e.clips = {
-      idle: 'idle', move: 'walk', run: 'run', attack: PRIMARY[cs], attack2: cs === 'bow' ? 'attack_melee_a' : 'attack_melee_b',
+      idle: 'idle', move: 'walk', run: 'run', attack: PRIMARY[cs], attack2: cs === 'bow' || cs === 'staff' ? 'attack_melee_a' : 'attack_melee_b',
       cast: 'cast', hit: 'hit', death: 'death_a', death2: 'death_b', victory: 'victory',
     };
     e.clipInfo = Object.fromEntries(Object.entries(f.clips).map(([k, v]) => [k, { duration: v.duration, loop: v.loop }]));

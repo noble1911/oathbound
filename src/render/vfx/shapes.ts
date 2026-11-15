@@ -286,7 +286,7 @@ void main() {
   float rim = inside * (1.0 - smoothstep(0.06, 0.2, d));
   float boss = exp(-(x * x * 6.0 + (y - 0.62) * (y - 0.62) * 40.0));
   float sweep = exp(-pow((vUv.x - fract(uTime * 0.45)) * 5.0, 2.0));
-  float a = rim * 0.9 + inside * (0.1 + 0.3 * sweep) + boss * 0.5;
+  float a = rim * 0.85 + inside * (0.04 + 0.22 * sweep) + boss * 0.16;
   a += exp(-y * 14.0) * 0.6; // seam of light on the ground
   a *= smoothstep(0.0, 0.04, vUv.x) * smoothstep(1.0, 0.96, vUv.x) * smoothstep(1.0, 0.9, y);
   a *= uAlpha * (0.85 + 0.15 * sin(uTime * 6.0 + vUv.x * 20.0));
@@ -314,6 +314,125 @@ export class Barrier {
     this.mesh = new THREE.Mesh(g, this.material);
     this.mesh.layers.set(LAYER_VFX);
     this.mesh.renderOrder = 15;
+  }
+  dispose(): void {
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.material.dispose();
+  }
+}
+
+// ------------------------------------------------------------------ flame cone (dragon breath)
+
+const CONE_VERT = /* glsl */ `
+varying vec2 vUv;
+varying vec3 vN;
+varying vec3 vV;
+varying vec3 vL;
+void main() {
+  vUv = uv;
+  vL = position;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vN = normalize(normalMatrix * normal);
+  vV = normalize(-mv.xyz);
+  gl_Position = projectionMatrix * mv;
+}`;
+
+const CONE_FRAG = /* glsl */ `
+uniform float uAlpha;
+uniform float uTime;
+uniform float uReach;   // 0..1: how far down the cone the fire has got
+varying vec2 vUv;
+varying vec3 vN;
+varying vec3 vV;
+varying vec3 vL;
+float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float n3(vec3 p) {
+  vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), f.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), f.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+void main() {
+  float t = vUv.y;                       // 0 at the jaws, 1 at the far end
+  // fire streaming away from the jaws: noise sampled around the cone (seamless) and scrolled along it
+  float a = vUv.x * 6.28318;
+  vec3 q = vec3(cos(a) * 1.6, sin(a) * 1.6, t * 5.0 - uTime * 7.0);
+  float n = n3(q) * 0.6 + n3(q * 2.3 + 7.0) * 0.3 + n3(q * 5.1 + 3.0) * 0.1;
+  // dense and unbroken near the jaws, tearing into tongues toward the end
+  float body = smoothstep(t * 0.95 - 0.25, t * 0.95 + 0.3, n + (1.0 - t) * 0.75);
+  float reach = 1.0 - smoothstep(uReach - 0.18, uReach, t);
+  float tip = 1.0 - smoothstep(0.72, 1.0, t);
+  // soft silhouette: a shell seen edge-on fades out, face-on it glows
+  float facing = pow(abs(dot(normalize(vN), normalize(vV))), 0.8);
+  float k = body * reach * tip * (0.35 + 0.65 * facing) * smoothstep(0.0, 0.03, t) * uAlpha;
+  vec3 hot = vec3(5.0, 3.6, 1.8);
+  vec3 mid = vec3(3.6, 1.3, 0.22);
+  vec3 cool = vec3(1.5, 0.25, 0.04);
+  vec3 col = mix(hot, mid, smoothstep(0.0, 0.3, t + (1.0 - n) * 0.15));
+  col = mix(col, cool, smoothstep(0.35, 0.95, t + (1.0 - n) * 0.25));
+  // four shell layers overlap along most sight lines: keep each one thin
+  gl_FragColor = vec4(col * (k * k * 0.085), 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+/**
+ * A cone of streaming fire along +Z: apex at the origin, length 1, end radius 1 (scale it:
+ * x = y = end radius, z = length). Two nested shells in one geometry, so one draw call.
+ */
+export class FlameCone {
+  readonly mesh: THREE.Mesh;
+  readonly material: THREE.ShaderMaterial;
+  constructor() {
+    this.material = new THREE.ShaderMaterial({
+      vertexShader: CONE_VERT,
+      fragmentShader: CONE_FRAG,
+      uniforms: { uAlpha: { value: 0 }, uTime: { value: 0 }, uReach: { value: 0 } },
+      ...additive,
+      side: THREE.DoubleSide,
+    });
+    const shell = (rad: number): THREE.BufferGeometry => {
+      // CylinderGeometry: axis Y, top radius at +Y. Apex (jaws) at y = 0, mouth of the cone at y = 1.
+      const g = new THREE.CylinderGeometry(rad, 0.04 * rad, 1, 20, 10, true);
+      g.translate(0, 0.5, 0);
+      g.rotateX(Math.PI / 2); // +Y -> +Z
+      // slight belly so the profile is a plume, not a ruled cone
+      const p = g.attributes.position;
+      const uv = g.attributes.uv;
+      for (let i = 0; i < p.count; i++) {
+        const z = p.getZ(i);
+        const k = 1 + 0.35 * Math.sin(Math.PI * Math.min(1, z * 1.1)) * (1 - z);
+        p.setXYZ(i, p.getX(i) * k, p.getY(i) * k, z);
+        uv.setY(i, z);
+      }
+      g.computeVertexNormals();
+      return g;
+    };
+    const a = shell(1);
+    const b = shell(0.55);
+    const geo = new THREE.BufferGeometry();
+    const merge = (name: 'position' | 'normal' | 'uv', n: number) => {
+      const A = a.attributes[name].array as Float32Array;
+      const B = b.attributes[name].array as Float32Array;
+      const out = new Float32Array(A.length + B.length);
+      out.set(A, 0);
+      out.set(B, A.length);
+      geo.setAttribute(name, new THREE.BufferAttribute(out, n));
+    };
+    merge('position', 3);
+    merge('normal', 3);
+    merge('uv', 2);
+    const ia = Array.from(a.index!.array as ArrayLike<number>);
+    const off = a.attributes.position.count;
+    const ib = Array.from(b.index!.array as ArrayLike<number>).map((i) => i + off);
+    geo.setIndex(ia.concat(ib));
+    a.dispose();
+    b.dispose();
+    this.mesh = new THREE.Mesh(geo, this.material);
+    this.mesh.frustumCulled = false;
+    this.mesh.layers.set(LAYER_VFX);
+    this.mesh.renderOrder = 18;
+    this.mesh.name = 'vfx.breath';
   }
   dispose(): void {
     this.mesh.removeFromParent();

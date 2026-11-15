@@ -127,7 +127,50 @@ def stage(src, k, H, size, lod):
     L.select_only(ob, rb)
     bpy.context.view_layer.objects.active = ob
     bpy.ops.object.join()
-    return bpy.context.view_layer.objects.active
+    ob = bpy.context.view_layer.objects.active
+    stone_caps(ob)
+    return ob
+
+
+_STONE_UV = {}
+
+
+def stone_caps(ob):
+    """Cut caps and rubble used an untextured `Rubble` material. The renderer lifts every Keep material's colour
+    factor (x1.5, the baked stone is dark), which turned the untextured one pure white: blown-out tower tops and
+    rubble on stage1-3. They now use the Keep's own stone material, their UVs parked on a patch of plain dark
+    stone in its atlas, so they get exactly the same treatment as the walls."""
+    me = ob.data
+    names = [m.name if m else '' for m in me.materials]
+    if 'Rubble' not in names:
+        return
+    ri = names.index('Rubble'); si = next(i for i, n in enumerate(names) if n and n != 'Rubble')
+    if 'uv' not in _STONE_UV:
+        nt = me.materials[si].node_tree
+        bsdf = next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
+        px = L.img_np(L._upstream_image(bsdf.inputs['Base Color'].links[0].from_node))[..., :3]
+        h, w = px.shape[:2]; B = 64          # a big uniform patch: small ones mip-blend with the black atlas background
+        blk = px[:h // B * B, :w // B * B].reshape(h // B, B, w // B, B, 3)
+        mean = blk.mean((1, 3)); var = blk.var((1, 3)).sum(-1)
+        lum = mean.mean(-1); sat = mean.max(-1) - mean.min(-1)
+        used = lum[lum > 0.02]
+        target = float(np.percentile(used, 90)) * 0.85            # wall stone, a little darker (broken, shadowed); not the roofs
+        print('[keep] atlas block luminance percentiles 35/50/65/80/95:', np.percentile(used, [35, 50, 65, 80, 95]).round(3).tolist())
+        score = var * 40 + np.abs(lum - target) * 12 + sat * 6 + (blk.min((1, 3)).mean(-1) < 0.03) * 5
+        score[lum < 0.02] = 1e9
+        by, bx = np.unravel_index(int(np.argmin(score)), score.shape)
+        _STONE_UV['uv'] = ((bx + 0.5) * B / w, (by + 0.5) * B / h)
+        print(f'[keep] cap / rubble stone texel at uv {_STONE_UV["uv"]}, colour {mean[by, bx].round(3).tolist()}')
+    u, v = _STONE_UV['uv']
+    uvl = me.uv_layers.active or me.uv_layers.new(name='UVMap')
+    for poly in me.polygons:
+        if poly.material_index == ri:
+            poly.material_index = si
+            # a few texels of spread per face: with constant UVs the normal map's derivative tangent frame is
+            # degenerate and the faces shade black
+            for k, li in enumerate(poly.loop_indices):
+                uvl.data[li].uv = (u + (0.004 if k % 3 == 1 else 0.0), v + (0.004 if k % 3 == 2 else 0.0))
+    me.materials.pop(index=ri)
 
 
 def fit_budget(ob, budget):

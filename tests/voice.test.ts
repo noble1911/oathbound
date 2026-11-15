@@ -26,9 +26,9 @@ describe('Lord voice lines', () => {
     }
   });
 
-  it.skipIf(!rendered)('the voice set stays within its 1.5 MB budget', () => {
+  it.skipIf(!rendered)('the voice set stays within its 2.3 MB budget (6 Lords; each match loads only its two)', () => {
     const bytes = allVoiceFiles().reduce((n, f) => n + statSync(`public/audio/${f}`).size, 0);
-    expect(bytes).toBeLessThan(1.5e6);
+    expect(bytes).toBeLessThan(2.3e6);
   });
 
   it('variants rotate, cooldowns hold and priorities interrupt', () => {

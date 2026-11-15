@@ -14,6 +14,7 @@ import { LORDS } from './sim/data/lords.ts';
 import { UNITS } from './sim/data/units.ts';
 import { itemName } from './sim/loot.ts';
 import { sound } from './audio.ts';
+import { playLordLine, voice } from './audio/voice.ts';
 import type { Backend } from './ui/backend.ts';
 import { el, esc, toast } from './ui/dom.ts';
 import { createScene, type SceneAdapter } from './ui/scene-adapter.ts';
@@ -30,6 +31,9 @@ import { battleHints } from './ui/insights.ts';
 import { installLoadTracker, LoadChip, loadFraction, loadState, onLoad } from './ui/loading.ts';
 import { Coach } from './ui/tutorial.ts';
 import { setRulesContext } from './ui/rules.ts';
+import { setFactionContext } from './ui/gamedata.ts';
+import { FACTIONS, factionOfLord } from './sim/data/factions.ts';
+import type { FactionId } from './sim/types.ts';
 
 installLoadTracker();
 migratePowerKeys();
@@ -100,6 +104,12 @@ class App {
     this.shell.onLeave = (kind) => (kind === 'pvp' && this.backend?.concede ? this.backend.concede() : this.backend?.leave());
     // the codex quotes the viewer's own deploy limit while they are in a match
     setRulesContext(() => (this.room && this.room.phase !== 'lobby' && this.room.phase !== 'over' ? this.room.view?.you?.deployLimit ?? null : null));
+    // counters and the codex name the enemy faction's units once the reveal has shown it
+    setFactionContext(() => {
+      const v = this.room && this.room.phase !== 'lobby' ? this.room.view : null;
+      const lordFaction = (l: LordId | null | undefined): FactionId | null => (l ? factionOfLord(l) : null);
+      return { mine: v?.you?.faction ?? lordFaction(v?.you?.lord), enemy: v?.enemy?.faction ?? lordFaction(v?.enemy?.lord) };
+    });
     // a hidden tab: pause CSS animation (the scene and battle loops stop by themselves)
     document.addEventListener('visibilitychange', () => document.body.classList.toggle('tab-hidden', document.hidden));
     onLoad(() => this.loadProgress());
@@ -434,7 +444,7 @@ class App {
         this.prevPhase = phase;
         // painted backdrop: the Lord pick never waits for the renderer
         const fresh = !(this.screen instanceof LordPickScreen);
-        const s = this.screen instanceof LordPickScreen ? this.screen : new LordPickScreen(ui, (lord) => ((this.pickedLord = true), this.backend!.intent({ t: 'pickLord', lord })), this.seat === null);
+        const s = this.screen instanceof LordPickScreen ? this.screen : new LordPickScreen(ui, (lord) => ((this.pickedLord = true), this.backend!.intent({ t: 'pickLord', lord })), this.seat === null, (faction) => this.backend!.intent({ t: 'pickFaction', faction }), this.coach ? 'kingdom' : null);
         if (fresh) {
           this.reports = [];
           this.pickedLord = false;
@@ -512,12 +522,15 @@ class App {
     const theirs = v.enemies?.[1 - me]?.lord ?? v.enemy.lord;
     if (!mine || !theirs) return;
     const r = el(`<div class="reveal">
-      <div class="rv-side me">${lordPortrait(mine, 'big')}<b>${esc(LORDS[mine].title)} ${esc(LORDS[mine].name)}</b><small>${esc(room.seats[me]?.name ?? '')}</small></div>
+      <div class="rv-side me">${lordPortrait(mine, 'big')}<b>${esc(LORDS[mine].title)} ${esc(LORDS[mine].name)}</b><em class="rv-fac">${esc(FACTIONS[factionOfLord(mine)].name)}</em><small>${esc(room.seats[me]?.name ?? '')}</small></div>
       <div class="rv-vs">VS</div>
-      <div class="rv-side foe">${lordPortrait(theirs, 'big')}<b>${esc(LORDS[theirs].title)} ${esc(LORDS[theirs].name)}</b><small>${esc(room.seats[1 - me]?.name ?? '')}</small></div>
+      <div class="rv-side foe">${lordPortrait(theirs, 'big')}<b>${esc(LORDS[theirs].title)} ${esc(LORDS[theirs].name)}</b><em class="rv-fac">${esc(FACTIONS[factionOfLord(theirs)].name)}</em><small>${esc(room.seats[1 - me]?.name ?? '')}</small></div>
     </div>`);
     ui.appendChild(r);
     sound.horn();
+    // both Lords' lines load now; the rival opens with a taunt once the horn has sounded
+    voice.setMatchLords([mine, theirs]);
+    playLordLine(theirs, 'taunt', { delay: 1.0, pan: 0.2 });
     setTimeout(() => r.classList.add('out'), 2600);
     setTimeout(() => r.remove(), 3200);
   }
@@ -530,6 +543,7 @@ class App {
       ...(p.get('seed') ? { seed: Number(p.get('seed')) } : {}),
       ...(p.get('round') ? { round: Number(p.get('round')) } : {}),
       ...(lord ? { lord } : {}),
+      ...(p.get('enemy') ? { enemyLord: p.get('enemy') as LordId } : {}),
       timers,
     });
     if (p.get('coach') === '1') this.startCoach();

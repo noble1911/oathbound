@@ -3,7 +3,7 @@
  "vertexCount": 677,
  "width": 677,
  "rowsPerFrame": 1,
- "totalFrames": 151,
+ "totalFrames": 134,
  "format": "f16",
  "clips": [
   {
@@ -45,24 +45,15 @@
   {
    "name": "attack2",
    "start": 71,
-   "frames": 15,
+   "frames": 17,
    "fps": 12,
    "loop": false,
-   "duration": 1.2083,
+   "duration": 1.2917,
    "source": "attack_melee_a"
   },
   {
-   "name": "cast",
-   "start": 86,
-   "frames": 19,
-   "fps": 12,
-   "loop": false,
-   "duration": 1.5,
-   "source": "cast"
-  },
-  {
    "name": "hit",
-   "start": 105,
+   "start": 88,
    "frames": 5,
    "fps": 12,
    "loop": false,
@@ -71,7 +62,7 @@
   },
   {
    "name": "death",
-   "start": 110,
+   "start": 93,
    "frames": 25,
    "fps": 10,
    "loop": false,
@@ -80,7 +71,7 @@
   },
   {
    "name": "victory",
-   "start": 135,
+   "start": 118,
    "frames": 16,
    "fps": 8,
    "loop": true,
@@ -90,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.8133,
-   -0.3395,
-   -2.3713
+   -1.0615,
+   -0.0208,
+   -2.2402
   ],
   "max": [
-   0.4891,
-   2.5364,
-   1.1959
+   0.4975,
+   2.8128,
+   1.1211
   ]
  },
  "pos": "cleric.vat.pos.bin",

@@ -53,8 +53,11 @@ which units to unlock, what to deploy and where, which item to take and who wear
     plus 50 × the round number as a base.
   - A points win counts in full: the winner's survivors deal their `keepDamage` plus the round base; the loser's deal none.
   - A points draw: both sides deal half damage from their survivors.
-  - **Sudden death:** from round 10, all keep damage grows by 25% per round (round 10 ×1.25, round 11 ×1.5, ...), so
+  - **Sudden death:** from round 8, all keep damage grows by 25% per round (round 8 ×1.25, round 9 ×1.5, ...), so
     late matches resolve (`suddenDeathPct`).
+  - **Match length** comes from these numbers alone: there is no final round and no forced end. A surviving squad
+    deals 55 × its cost tier × (1 + level) / 2 and the Lord 60 × (9 + level) / 10, so a clear win hurts much more
+    than a narrow one. Matches average 8–9 rounds and almost never pass round 12 (see `docs/BALANCE.md`).
   - Keep damage is clamped to the life the Keep has left, in the result, the replay's `keepHit` events and the history.
 - **Conceding:** a player may give up at any time (`concede(state, seat)`; the `concede` message, or leaving a running
   match). The match ends at once, the opponent wins, and `overReason` is `'concede'`. A lost connection is not a
@@ -102,7 +105,7 @@ A squad is N identical soldiers with shared orders. Each soldier has its own HP 
 | Wyvern Riders | 2 | heavy air | axe | 300 | flier + Large; melee vs ground and air |
 | Dragon | 1 | late game | fire breath | 500 | flier + Large; cone AoE; unlockable from round 5 only |
 
-- **Fliers** ignore terrain and can only be hit by bows, magic, bolts and other fliers. Shots from the ground lose 15% against them (`FLIER_EVADE_PCT`), and Archers deal ×1.25 to fliers (it was ×2): with every unit freely unlockable, anti-air has to be an answer to an air army, not an automatic win over it.
+- **Fliers** ignore terrain and can only be hit by bows, magic, bolts and other fliers. Shots from the ground lose 30% against them (`FLIER_EVADE_PCT`), and Archers deal ×1.25 to fliers (it was ×2): with every unit freely unlockable, anti-air has to be an answer to an air army, not an automatic win over it.
 - **Weapon triangle:** Sword > Axe > Lance > Sword. The winner deals +25% damage and the loser −25%. This applies within the sword/axe/lance families.
 - **Tags:** `mounted`, `armored`, `flier`, `large`, `infantry`. Effectiveness multipliers key off these tags.
 - **Stats:** the sim agent tunes HP, damage, attack interval, range, speed, armor and magic resist per soldier, and they live in `src/sim/data/units.ts`.
@@ -110,7 +113,7 @@ A squad is N identical soldiers with shared orders. Each soldier has its own HP 
 
 ## 4. Lords (the "commander" / FE-Lord layer, also the ARPG hero)
 
-At match start, each player picks one of 4 Lords. They are mirrored-available, so both players can pick the same one. The Lord:
+At match start, each player picks a faction (§4b) and one of its Lords: four for the Kingdom, one each for the Ashen Covenant and the Sun Caliphate. They are mirrored-available, so both players can pick the same one. The Lord:
 - Is a single hero unit on the field, deployed like a squad. It does not count against the deployment limit.
 - Gains XP from kills, levels up during the match (to Lv10), and has **3 item slots** (weapon, armor, relic) from the start.
 - Has a passive and an active ability that fires automatically in battle.
@@ -118,15 +121,73 @@ At match start, each player picks one of 4 Lords. They are mirrored-available, s
 | Lord | Signature units | Passive | Auto ability |
 |---|---|---|---|
 | **Marshal Aldric** (sword) | Militia, Cavaliers | +1 squad deployment per round | Rally: +40% attack speed to squads within 20 m for 10 s |
-| **Archmage Sefa** (tome) | Mages, Clerics | Magic damage +76% | Meteor: a 10 m AoE at the densest enemy cluster (18 + 3 per Lord level) |
+| **Archmage Sefa** (tome) | Mages, Clerics | Magic damage +70% | Meteor: a 10 m AoE at the densest enemy cluster (18 + 3 per Lord level) |
 | **Warden Hrolf** (axe) | Berserkers, Knights | Keep +800 HP; squads +10% HP | Bulwark: allies within 12 m take −40% damage for 6 s |
 | **Skylady Ione** (lance) | Pegasus, Archers | Loot picks see 4 items instead of 3 | Skyfall: dive on the furthest enemy ranged squad |
+| **Lich-Priest Morthen** (tome; Ashen Covenant) | Skeleton Spearmen, Grave Acolytes | Squads deal +12% damage | Necromancy: raises 3 (+1 per 3 Lord levels) skeletons from the fallen within 25 m |
+| **Sultana Zahira** (sword; Sun Caliphate) | Spear Levy, Camel Archers | Squads attack 8% faster | Radiance: 20 (+4 per Lord level) magic damage to enemies within 8 m, and as much life restored to allies |
 
 If the Lord dies in battle, it respawns next round like everything else. The death only costs you its presence in that fight.
 
 A Lord is strong but must not carry the army: the balance target is that a Lord deals 25% or less of its army's
 damage on average (see `docs/BALANCE.md`). Lord power therefore sits in the passive and the army-wide ability
 rather than in the hero's own stats, and Lord levels come slowly (Lv10 needs 1375 XP).
+
+## 4b. Factions
+
+There are three playable factions, so a match is no longer two copies of one army. Each player picks a faction at
+match start, then one of its Lords. Either player can pick any faction, including the same one.
+
+- **A faction is a roster and nothing else.** Only its units can be unlocked (`unlockOptions`), and its Lords start
+  with two of them. Income, loot offers, the deployment limit, keep HP and every rule of battle are identical for all
+  factions (§0). Items and skills are faction-neutral: every unit maps onto one of the existing skill classes.
+- **Picking** (`lordPick` phase): `{t:'pickFaction', faction}` is optional and can be changed until the Lord is picked;
+  `{t:'pickLord', lord}` must name a Lord of that faction, and a Lord picked without a faction implies its own. The
+  enemy's faction and Lord stay hidden until both have picked.
+- Every unit names the Kingdom unit it plays **like** (`UnitDef.like`), so the bots and the counter table understand
+  all three rosters. Unit ids are also the renderer's model ids.
+- **Balance levers** (`src/sim/data/balance.ts`): `UNIT_POWER` per unit, `LORD_POWER` per Lord, and `FACTION_POWER`
+  per faction in per mille, applied to every unit of the faction. The target is equal-level play (Hard vs Hard), as
+  two humans play; see `docs/BALANCE.md`.
+
+**1. The Oathsworn Kingdom** (blue, steel, gold): the original 14 units and 4 Lords. The broadest roster, with healers.
+
+**2. The Ashen Covenant** (bone white, ash grey, tarnished bronze, green soul-fire). No healers; the fallen rise instead.
+
+| Unit (id) | Size | Cost | Class | Plays like | What it does |
+|---|---|---|---|---|---|
+| Skeleton Spearmen (`skeleton`) | 10 | 100 | infantry | Pikemen | chaff; ×2 against mounted, braces against charges |
+| Grave Knights (`grave_knight`) | 4 | 200 | infantry | Knights | heavy armour (55%); drains 10% of its damage as life |
+| Bone Archers (`bone_archer`) | 9 | 100 | ranged | Archers | 24 m bows; ×1.25 against fliers |
+| Wraith Riders (`wraith_rider`) | 4 | 200 | mounted | Cavaliers | charge and raid the backline; **ethereal**: 45% less physical damage, 10% more magic damage; spectral steeds are not `mounted`, so anti-cavalry bonuses miss them (a braced spear wall still stops the charge) |
+| Grave Acolytes (`grave_acolyte`) | 3 | 200 | caster | Mages | 18 m soul bolts that drain 30% as life; **raise the fallen** as skeletons (3 + squad level per battle) |
+| Bone Drake (`bone_drake`) | 1 | 300 | flier | Wyvern | Large flier, 2 m sweep; arrows rattle through its ribs (40% armour), magic is the answer |
+| Corpse Catapult (`corpse_catapult`) | 1 | 300 | siege | Trebuchet | 55 m, 5 m splash; **plague**: hits fester for 4 damage a second over 3 s |
+| Bone Golem (`bone_golem`) | 1 | 400 | giant | Golem | Large, stomps, crushes armour |
+
+Lord: the **Lich-Priest** (`lich`, model `lord_lich`), a soul-lantern caster. Raised skeletons (by Acolytes, the Lich
+or the Gravebloom legendary) are summoned soldiers of type `skeleton` (120 life, 16 damage a blow): they fight until the
+battle ends and are gone.
+Each side can raise a given corpse once; Lords and Large units leave no usable corpse.
+
+**3. The Sun Caliphate** (white, ochre, turquoise, gold). Fast, blessed and hard to pin down.
+
+| Unit (id) | Size | Cost | Class | Plays like | What it does |
+|---|---|---|---|---|---|
+| Spear Levy (`spear_levy`) | 10 | 100 | infantry | Pikemen | chaff; ×2 against mounted, braces |
+| Scimitar Guard (`scimitar`) | 6 | 150 | infantry | Berserkers | fast sword line (beats axes, loses to lances) |
+| Camel Archers (`camel_archer`) | 4 | 200 | ranged | Archers | mounted bows: 18 m range, fast, tougher than foot archers; ×1.25 against fliers |
+| Mamluk Lancers (`mamluk`) | 4 | 200 | mounted | Cavaliers | armoured shock cavalry: charge, raid the backline |
+| Djinn-Binders (`djinn_binder`) | 4 | 200 | caster | Mages | whirlwind: 3 m splash that **slows 25%** for 2 s |
+| Sun Priests (`sun_priest`) | 3 | 150 | caster | Clerics | heal; **bless**: what they heal attacks 15% faster for 4 s; **radiant**: their sunbolts deal 50% more to the undead |
+| Bound Djinn (`djinn`) | 2 | 300 | flier | Pegasus | flier with wind-blades: a sword in the weapon triangle that deals magic damage; not Large (bolt-throwers get no bonus) |
+| War Elephant (`war_elephant`) | 1 | 400 | giant | Golem | Large, tramples (3 m); **howdah archers** let it strike fliers in reach; from round 3 |
+| Sand Golem (`sand_golem`) | 1 | 300 | giant | Golem | Large; **regenerates 1.5% of its life a second** |
+
+Lord: the **Sultana** (`sultana`, model `lord_sultana`), a sun-banner commander. Sunlight burns the dead: her blade and her
+Radiance deal 25% more to the undead (Ashen units, the Lich-Priest, raised skeletons).
+
+Future work: a second Lord for each new faction, and one or two faction-flavoured item skills.
 
 ## 5. Loot (the core replacement for spell cards)
 
@@ -271,6 +332,9 @@ area skills against infantry) and re-gears every round.
     - **skill casts** (`DecodedReplay.skills`): the casting soldier and squad, the skill, the target point, soldier and squad, the radius and the duration;
     - the **statistics ledger** (`DecodedReplay.tallies`): every 0.5 s, per (source squad, target squad, cause), the life removed (no overkill), the damage mitigated, the life restored (no overheal) and the hit count. Causes are plain attacks, burns, thorns, towers, legendary procs, Lord abilities, heals and each item skill.
     - a `squads` header (one row per squad, with its soldiers, skills and items).
+  - **Debuff windows** are `ability` events emitted once when the debuff starts on a soldier (`tgt`), with `src` = the
+    soldier that applied it and `dur` in ticks: `burn` (a burn, or the Corpse Catapult's plague; the damage ticks
+    themselves are not events), `frost` (a slow), and `war_cry` with radius 0 (a Sun Priest's blessing).
   - `squadStatsAt(decoded, tick)` reads the ledger into per-squad statistics (damage dealt, taken and mitigated, healing done and received, kills, losses, soldiers, skill casts and totals, HP over time). It is the single source of truth for the inspector and the battle report. `squadSheet` / `replaySquadSheet` give a squad's stats "base → effective", items and skills.
   - The size target is under 400 KB uncompressed for a 90 s battle with 200 soldiers. Use delta and RLE encoding if needed, and gzip via `permessage-deflate`.
 - Targeting: nearest valid enemy, biased by the unit role (ballista → Large, archers → fliers in range, cavalry → backline after charging).
@@ -305,8 +369,9 @@ The same infrastructure as v1 (cue-club pattern):
 - A **vs AI** option with three levels, all limited to what a player may see (`viewFor`):
   - **Easy** under-spends (about 65% of its gold), rarely levels up, drafts, loots and equips at random, doesn't
     counter-pick, and lines its army up in one naive row.
-  - **Normal** counter-picks the enemy's last army, keeps a frontline, spends sensibly (about a 15% reserve), equips
-    each item on its most valuable squad and uses fixed role lanes.
+  - **Normal** counter-picks the enemy's last army, keeps a frontline, spends sensibly (about a 12% reserve), equips
+    each item on its most valuable squad and uses fixed role lanes. It knows each faction's roster (which units pay
+    off without flanking) and keeps an answer to fliers, a single Dragon included.
   - **Hard** spends everything, re-forms its whole army each round against the enemy's last formation (counters
     opposite what they counter, raiders on the flank holding the enemy backline), gears squads by affix fit, and
     makes slot-aware level-ups and counter drafts.

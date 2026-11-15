@@ -5,6 +5,7 @@
 // Esc or a click outside closes the popover. Keys: Enter chat, M mute, F full screen, F1 codex.
 import type { Seat } from '../sim/types.ts';
 import { sound } from '../audio.ts';
+import { voice } from '../audio/voice.ts';
 import { $, confirmDialog, el, esc, store } from './dom.ts';
 import { icon } from './icons.ts';
 import { toggleRules } from './rules.ts';
@@ -62,6 +63,7 @@ export class Shell {
           <label class="sl"><span>Battle effects</span><input type="range" min="0" max="1" step="0.05" data-k="sfx" value="${sound.sfx}"></label>
           <label class="sl"><span>Ambience</span><input type="range" min="0" max="1" step="0.05" data-k="amb" value="${sound.amb}"></label>
           <label class="sl"><span>Interface</span><input type="range" min="0" max="1" step="0.05" data-k="ui" value="${sound.ui}"></label>
+          <label class="sl"><span>Voices</span><input type="range" min="0" max="1" step="0.05" data-k="voice" value="${voice.level}"></label>
         </div>
         <label class="ck"><input type="checkbox" class="mute-ck" ${sound.muted ? 'checked' : ''}><span>Mute all <kbd>M</kbd></span></label>
         <h4>Graphics</h4>
@@ -129,6 +131,7 @@ export class Shell {
         else if (k === 'music') sound.setMusic(v);
         else if (k === 'sfx') sound.setSfx(v);
         else if (k === 'amb') sound.setAmb(v);
+        else if (k === 'voice') voice.setVolume(v);
         else sound.setUi(v);
         sound.unlock();
         sound.hover();

@@ -77,6 +77,12 @@ describe('mirror symmetry (seat fairness)', () => {
     [2, ['warden', 'skylady'], ['armor', 'air']],
     [3, ['skylady', 'archmage'], ['counter', 'random']],
     [4, ['archmage', 'warden'], ['best', 'air']],
+    // faction mirrors and cross-faction battles
+    [5, ['lich', 'lich'], ['best', 'rush']],
+    [6, ['sultana', 'sultana'], ['counter', 'best']],
+    [7, ['lich', 'sultana'], ['best', 'ranged']],
+    [8, ['sultana', 'marshal'], ['air', 'best']],
+    [9, ['archmage', 'lich'], ['random', 'armor']],
   ];
   for (const [seed, lords, strats] of cases) {
     it(`seed ${seed}: ${lords.join(' vs ')} (${strats.join(' vs ')}) mirrors exactly every round`, () => {
@@ -97,12 +103,19 @@ describe('mirror symmetry (seat fairness)', () => {
 
   it('item skills mirror exactly: every skill in play on both sides, asymmetric armies', () => {
     // Seat 0 and seat 1 field different armies; every squad wears every skill item its class and level allow.
-    const armies: [UnitType[], UnitType[]] = [
+    const kingdom: [UnitType[], UnitType[]] = [
       ['militia', 'knights', 'mages', 'clerics', 'archers', 'cavaliers', 'trebuchet', 'pegasus', 'golem', 'berserkers'],
       ['pikemen', 'berserkers', 'archers', 'mages', 'wyvern', 'ballista', 'cavaliers', 'militia', 'dragon', 'clerics'],
     ];
-    expect(new Set([...armies[0], ...armies[1]]).size).toBe(UNIT_TYPES.length);
-    for (const [seed, lords] of [[11, ['archmage', 'marshal']], [12, ['skylady', 'warden']]] as const) {
+    // The whole Ashen roster against the whole Caliphate roster (and the reverse): every faction mechanic in play.
+    const ashen: UnitType[] = ['skeleton', 'grave_knight', 'bone_archer', 'wraith_rider', 'grave_acolyte', 'bone_drake', 'corpse_catapult', 'bone_golem', 'grave_acolyte', 'skeleton'];
+    const caliphate: UnitType[] = ['spear_levy', 'scimitar', 'camel_archer', 'mamluk', 'djinn_binder', 'sun_priest', 'djinn', 'war_elephant', 'sand_golem', 'sun_priest'];
+    expect(new Set([...kingdom[0], ...kingdom[1], ...ashen, ...caliphate]).size).toBe(UNIT_TYPES.length);
+    const cases: [number, [LordId, LordId], [UnitType[], UnitType[]], number][] = [
+      [11, ['archmage', 'marshal'], kingdom, 11], [12, ['skylady', 'warden'], kingdom, 11],
+      [13, ['lich', 'sultana'], [ashen, caliphate], 8], [14, ['sultana', 'lich'], [caliphate, ashen], 8], [15, ['lich', 'lich'], [ashen, ashen], 5],
+    ];
+    for (const [seed, lords, armies, minSkills] of cases) {
       const s = newMatch(seed, [...lords] as [LordId, LordId]);
       s.round = 7;
       let id = 9000;
@@ -129,7 +142,13 @@ describe('mirror symmetry (seat fairness)', () => {
       expect(r.soldiers).toBeGreaterThan(80);
       const d = decodeReplay(simulateBattle(s).replay);
       const cast = new Set(d.skills!.map((e) => e.skill));
-      expect(cast.size).toBeGreaterThanOrEqual(11);
+      expect(cast.size).toBeGreaterThanOrEqual(minSkills);
+      if (lords.includes('lich')) {
+        // the dead rise: skeletons are summoned, and the Lich-Priest's necromancy fires
+        expect(d.events.some((e) => e.k === 'summon')).toBe(true);
+        expect(d.events.some((e) => e.k === 'ability' && e.ability === 'necromancy')).toBe(true);
+      }
+      if (lords.includes('sultana')) expect(d.events.some((e) => e.k === 'ability' && e.ability === 'radiance')).toBe(true);
     }
   }, 60_000);
 

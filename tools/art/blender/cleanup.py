@@ -95,7 +95,10 @@ def team_mask(base_img):
     r, g, b = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
     h = np.where(mx == r, ((g - b) / d) % 6, np.where(mx == g, (b - r) / d + 2, (r - g) / d + 4)) / 6.0
     s = d / (mx + 1e-6)
-    hard = (h > TEAM_HUE[0]) & (h < TEAM_HUE[1]) & (s > TEAM_SAT) & (mx > TEAM_VAL)
+    hue_ok = (h > TEAM_HUE[0]) & (h < TEAM_HUE[1])
+    if TEAM_HUE[1] > 1.0:                          # a window that wraps through red (magenta-keyed factions: TRELLIS drifts magenta to crimson)
+        hue_ok |= h < TEAM_HUE[1] - 1.0
+    hard = hue_ok & (s > TEAM_SAT) & (mx > TEAM_VAL)
     m = hard.astype(np.float32)
     # 3x3 open (remove speckle) then soft 5x5 blur
     def box(a, k):
@@ -300,6 +303,8 @@ def solid_mesh(high, vox):
 
 
 LIFT = False
+HUE_MAP = None
+METAL_MAX = 1.0      # assets.json `metal_max`: heroes keep their MR map in the engine, and with no environment map full metal renders black (gold-heavy Sun Caliphate heroes)
 NO_REMESH = False      # vegetation: decimate the TRELLIS mesh directly first (voxel remesh shreds thin leaves + trunks)
 
 
@@ -357,7 +362,7 @@ def make_lod(high, name, budget, tex, height, use_team, voxel, save_mask=False, 
     r_np = L.img_np(rough); m_np = L.img_np(metal)
     # TRELLIS paints stone/cloth with mid metalness; keep metal only where it is clearly metal (iron, steel, gold)
     mt = np.clip((m_np[:, :, 0] - 0.5) / 0.3, 0, 1); mt = mt * mt * (3 - 2 * mt)
-    pk = np.ones_like(r_np); pk[:, :, 1] = r_np[:, :, 0]; pk[:, :, 2] = mt
+    pk = np.ones_like(r_np); pk[:, :, 1] = r_np[:, :, 0]; pk[:, :, 2] = mt * METAL_MAX
     big = L.new_image('_mr_big', tex, non_color=True); L.np_img(big, pk)
     big.scale(tex // 2, tex // 2); L.np_img(mr, L.img_np(big)); bpy.data.images.remove(big)
     bpy.data.images.remove(rough); bpy.data.images.remove(metal)
@@ -365,6 +370,21 @@ def make_lod(high, name, budget, tex, height, use_team, voxel, save_mask=False, 
     if LIFT:
         # squads must read at RTS distance: lift dark TRELLIS albedo toward mid-grey (gamma 0.8, gain 1.1)
         px = L.img_np(base); px[..., :3] = np.clip(px[..., :3] ** 0.8 * 1.1, 0, 1); L.np_img(base, px)
+    if HUE_MAP:
+        # assets.json `hue_map` [[lo, hi, to], ...]: saturated texels with a hue in lo..hi move to hue `to`
+        # (TRELLIS returns the Ashen Covenant's green soul-fire as cyan)
+        px = L.img_np(base); rgb = px[..., :3]
+        mx = rgb.max(2); mn = rgb.min(2); d = mx - mn + 1e-6
+        r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+        h = np.where(mx == r, ((g - b) / d) % 6, np.where(mx == g, (b - r) / d + 2, (r - g) / d + 4)) / 6.0
+        s = d / (mx + 1e-6)
+        for lo, hi, to in HUE_MAP:
+            k = np.clip((s - 0.18) / 0.12, 0, 1) * ((h > lo) & (h < hi))
+            h6 = to * 6.0; c = mx * s; x = c * (1 - abs(h6 % 2 - 1)); m0 = mx - c
+            tri = [(c, x, 0), (x, c, 0), (0, c, x), (0, x, c), (x, 0, c), (c, 0, x)][int(h6) % 6]
+            new = np.stack([np.zeros_like(mx) + t + m0 for t in tri], -1)
+            rgb[...] = rgb * (1 - k[..., None]) + new * k[..., None]
+        L.np_img(base, px)
     if use_team:
         mask = team_mask(base)
         tf = vertex_team(low, mask)
@@ -473,6 +493,11 @@ def main():
         return
     yaw_override = float(args[args.index('--yaw') + 1]) if '--yaw' in args else None
     a = L.assets()[aid]
+    global TEAM_HUE, TEAM_SAT, HUE_MAP, METAL_MAX
+    METAL_MAX = a.get('metal_max', 1.0)
+    HUE_MAP = a.get('hue_map')
+    TEAM_SAT = a.get('team_sat', TEAM_SAT)
+    TEAM_HUE = tuple(a.get('team_hue', TEAM_HUE))      # per-asset team-cloth key (the new factions key on magenta)
     kind = a['kind']
     src = L.WORK / 'mesh' / f'{aid}.glb'
     L.clear()

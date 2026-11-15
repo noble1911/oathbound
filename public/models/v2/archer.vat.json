@@ -3,7 +3,7 @@
  "vertexCount": 729,
  "width": 729,
  "rowsPerFrame": 1,
- "totalFrames": 128,
+ "totalFrames": 136,
  "format": "f16",
  "clips": [
   {
@@ -45,15 +45,15 @@
   {
    "name": "attack2",
    "start": 71,
-   "frames": 11,
+   "frames": 19,
    "fps": 12,
    "loop": false,
-   "duration": 0.8333,
+   "duration": 1.4583,
    "source": "attack_melee_a"
   },
   {
    "name": "hit",
-   "start": 82,
+   "start": 90,
    "frames": 5,
    "fps": 12,
    "loop": false,
@@ -62,7 +62,7 @@
   },
   {
    "name": "death",
-   "start": 87,
+   "start": 95,
    "frames": 25,
    "fps": 10,
    "loop": false,
@@ -71,7 +71,7 @@
   },
   {
    "name": "victory",
-   "start": 112,
+   "start": 120,
    "frames": 16,
    "fps": 8,
    "loop": true,
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.6515,
+   -0.583,
    -0.518,
    -1.7099
   ],
   "max": [
-   1.1027,
-   2.17,
-   0.8575
+   1.1114,
+   2.2128,
+   0.7631
   ]
  },
  "pos": "archer.vat.pos.bin",

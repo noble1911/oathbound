@@ -74,7 +74,13 @@ export type ClientMsg =
   | { t: 'start' }
   /** Host only, lobby only: swap seat 0 and seat 1 (either may be empty or the bot). */
   | { t: 'swapSeats' }
-  /** Players only. lordPick phase: {t:'pickLord'}; planning phase: everything else (incl. ready/unready). */
+  /**
+   * Players only. lordPick phase: {t:'pickFaction', faction} (optional, may be changed until the Lord is picked) and
+   * {t:'pickLord', lord}; the Lord must belong to the chosen faction, and a Lord picked without a faction implies
+   * its own. view.you.faction / view.you.lord show the player's choice; the enemy's stay null until both have picked.
+   * If the pick timer runs out, the server picks a random Lord of the chosen faction (any Lord if none was chosen).
+   * Planning phase: everything else (incl. ready/unready).
+   */
   | { t: 'intent'; intent: Intent }
   /** I finished watching (or skipped) the battle playback. */
   | { t: 'battleDone' }

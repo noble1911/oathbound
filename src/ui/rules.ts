@@ -3,8 +3,9 @@
 // tables (so a balance change never leaves the codex lying): how a match is won, the weapon
 // triangle and counters, fliers and anti-air, terrain, loot / slots / levels, the economy and
 // catch-up, and the controls.
-import type { UnitType } from '../sim/types.ts';
-import { UNITS, UNIT_TYPES } from '../sim/data/units.ts';
+import type { FactionId, UnitType } from '../sim/types.ts';
+import { FACTIONS, FACTION_IDS } from '../sim/data/factions.ts';
+import { UNITS } from '../sim/data/units.ts';
 import { SLOT_UNLOCK_LEVEL, LEGENDARY_EVERY } from '../sim/data/items.ts';
 import { lootSchedule } from '../sim/loot.ts';
 import type { Rarity } from '../sim/types.ts';
@@ -14,11 +15,13 @@ import { sound } from '../audio.ts';
 import { $, el, esc, store } from './dom.ts';
 import { icon } from './icons.ts';
 import { crest } from './units.ts';
-import { TAG_LABEL } from './gamedata.ts';
+import { TAG_LABEL, factionContext } from './gamedata.ts';
+import { factionMechanics } from './lordpick.ts';
 
-type TabId = 'match' | 'combat' | 'air' | 'terrain' | 'loot' | 'gold' | 'keys';
+export type TabId = 'match' | 'factions' | 'combat' | 'air' | 'terrain' | 'loot' | 'gold' | 'keys';
 const TABS: { id: TabId; label: string; ic: string }[] = [
   { id: 'match', label: 'The match', ic: 'keep' },
+  { id: 'factions', label: 'Factions', ic: 'flag' },
   { id: 'combat', label: 'Counters', ic: 'sword2' },
   { id: 'air', label: 'Fliers', ic: 'flier' },
   { id: 'terrain', label: 'Terrain', ic: 'move' },
@@ -29,12 +32,50 @@ const TABS: { id: TabId; label: string; ic: string }[] = [
 
 const chip = (u: UnitType) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`;
 const chips = (l: UnitType[]) => l.map(chip).join('');
-const fliers = () => UNIT_TYPES.filter((u) => UNITS[u].tags.includes('flier'));
-const antiAir = () => UNIT_TYPES.filter((u) => !UNITS[u].traits?.includes('healer') && !UNITS[u].tags.includes('flier') && (UNITS[u].weapon === 'bow' || UNITS[u].damageType === 'magic' || UNITS[u].weapon === 'bolt'));
+/**
+ * The codex speaks about one faction's units at a time: yours while you are in a match, else the
+ * one you played last (the Kingdom for a newcomer). The Factions tab describes all three.
+ */
+export function codexFaction(): FactionId {
+  const mine = factionContext().mine;
+  if (mine) return mine;
+  const last = store.get('faction') as FactionId | null;
+  return last && FACTION_IDS.includes(last) ? last : 'kingdom';
+}
+const roster = (): UnitType[] => FACTIONS[codexFaction()].units;
+/** What that roster is measured against: the enemy's units once their faction is known, else every faction's. */
+const foes = (): UnitType[] => { const e = factionContext().enemy; return e ? FACTIONS[e].units : FACTION_IDS.flatMap((f) => FACTIONS[f].units); };
+const names = (l: UnitType[], n = 3): string => l.slice(0, n).map((u) => UNITS[u].name).join(', ');
+const scope = (): string => {
+  const e = factionContext().enemy;
+  return `<p class="rl-scope">${icon('flag')}Showing <b>${esc(FACTIONS[codexFaction()].name)}</b>${e && e !== codexFaction() ? ` against <b>${esc(FACTIONS[e].name)}</b>` : ''}. The other factions are under <i>Factions</i>.</p>`;
+};
+const fliers = () => roster().filter((u) => UNITS[u].tags.includes('flier'));
+const antiAir = () => roster().filter((u) => !UNITS[u].traits?.includes('healer') && !UNITS[u].tags.includes('flier') && (UNITS[u].weapon === 'bow' || UNITS[u].damageType === 'magic' || UNITS[u].weapon === 'bolt' || UNITS[u].traits?.includes('howdah' as never)));
+
+/** The three factions side by side: what each is, its Lords, its roster and what sets it apart. */
+function factionsPage(): string {
+  const mine = factionContext().mine;
+  return `<h3>Three factions, one set of rules</h3>
+    <p class="lead">A faction is a <b>roster</b>: its own units and Lords. Gold, loot offers, the deploy limit, Keep life and every rule of battle are <b>the same for all three</b>.</p>
+    <div class="rl-facs">${FACTION_IDS.map((f) => {
+      const F = FACTIONS[f];
+      const mech = factionMechanics(f);
+      return `<div class="rl-fac${f === mine ? ' mine' : ''}" style="--f1:${F.colors[0]};--f2:${F.colors[1]};--f3:${F.colors[2]}">
+        <i class="fc-band"></i>
+        <b>${esc(F.name)}${f === mine ? ' <em>yours</em>' : ''}</b>
+        <p>${esc(F.blurb)} ${esc(F.identity)}</p>
+        <small>Lords</small><div>${F.lords.map((l) => `<span class="uchip">${crest('lord', l, 'sm')}${esc(LORDS[l].title)} ${esc(LORDS[l].name)}</span>`).join('')}</div>
+        <small>Units</small><div>${chips(F.units)}</div>
+        <small>What sets it apart</small>
+        <ul class="rl-list">${mech.map((m) => `<li class="${m.tone}"><b>${esc(m.name)}</b>${m.units.length ? ` (${esc(names(m.units, 2))})` : ''}: ${esc(m.text)}</li>`).join('')}</ul>
+      </div>`;
+    }).join('')}</div>`;
+}
 
 function triangle(): string {
   const node = (cls: string, w: string, label: string, units: string) => `<div class="tri-node ${cls}"><i>${icon(w)}</i><span class="tri-l"><b>${label}</b><small>${units}</small></span></div>`;
-  const of = (w: string) => UNIT_TYPES.filter((u) => UNITS[u].weapon === w).map((u) => UNITS[u].name).join(', ');
+  const of = (w: string) => roster().filter((u) => UNITS[u].weapon === w).map((u) => UNITS[u].name).join(', ') || '–';
   return `<div class="tri">
     <svg viewBox="0 0 200 180" aria-hidden="true">
       <defs><marker id="tri-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
@@ -53,11 +94,11 @@ function triangle(): string {
 
 function effectiveRows(): string {
   const rows: string[] = [];
-  for (const u of UNIT_TYPES) {
+  for (const u of roster()) {
     const d = UNITS[u];
     for (const [tag, m] of Object.entries(d.effective ?? {})) {
       if (!m || m <= 100) continue;
-      const prey = UNIT_TYPES.filter((v) => UNITS[v].tags.includes(tag as never)).slice(0, 4);
+      const prey = foes().filter((v) => UNITS[v].tags.includes(tag as never)).slice(0, 4);
       rows.push(`<div class="rl-row">${chip(u)}<b class="x">×${(m / 100).toFixed(m % 100 ? 1 : 0)}</b><span>vs ${TAG_LABEL[tag as keyof typeof TAG_LABEL]}</span><div class="rl-prey">${chips(prey)}</div></div>`);
     }
   }
@@ -108,6 +149,22 @@ function lootTable(): string {
     <div class="leg"><small>Every ${LEGENDARY_EVERY === 3 ? '3rd' : `${LEGENDARY_EVERY}th`} round</small><p><span class="r-legendary">1 Legendary</span></p></div></div>`;
 }
 
+/** " (Knights, Stone Golem)" for the units of the codex's faction that match, or nothing. */
+function listOf(test: (d: (typeof UNITS)[UnitType]) => boolean): string {
+  const l = roster().filter((u) => test(UNITS[u]));
+  return l.length ? ` (${esc(names(l))})` : '';
+}
+/** "Archers deal ×1.3 to fliers." for the faction's best answer to wings. */
+function antiAirLine(): string {
+  const best = roster().map((u) => ({ u, m: UNITS[u].effective?.flier ?? 0 })).sort((a, b) => b.m - a.m)[0];
+  return best && best.m > 100 ? `${esc(UNITS[best.u].name)} deal <b>×${(best.m / 100).toFixed(best.m % 100 ? 1 : 0)}</b> to fliers.` : 'Bows and magic are the answer to fliers.';
+}
+
+/** One tab of the codex as HTML (exported for the tests: every faction unit must appear in it). */
+export function codexPage(id: TabId): string {
+  return page(id);
+}
+
 function page(id: TabId): string {
   const armor = SLOT_UNLOCK_LEVEL.armor;
   const relic = SLOT_UNLOCK_LEVEL.relic;
@@ -127,8 +184,10 @@ function page(id: TabId): string {
           <li>If time runs out, both sides deal only <b>half</b> Keep damage from what still stands.</li>
           <li>Your <b>Lord</b> is a hero on the field with a passive, an ability that fires by itself, and three item slots. If the Lord falls, they are back next round.</li>
         </ul>`;
+    case 'factions':
+      return factionsPage();
     case 'combat':
-      return `<h3>The weapon triangle</h3>
+      return `${scope()}<h3>The weapon triangle</h3>
         <div class="rl-two">${triangle()}
           <div><p class="lead">Sword beats Axe, Axe beats Lance, Lance beats Sword.</p>
           <p>The winner deals <b class="good">+25% damage</b> and the loser <b class="bad">−25%</b>. Bows, magic and siege weapons stand outside the triangle.</p>
@@ -137,16 +196,17 @@ function page(id: TabId): string {
         <h3>Hard counters</h3>
         <div class="rl-table">${effectiveRows()}</div>
         <ul class="rl-list">
-          <li><b>Armor</b> (Knights, Golem) cuts physical damage. <b>Magic ignores armor</b>, and crushing blows break it.</li>
-          <li><b>Splash</b> (Mages, Trebuchet) shreds big squads of small soldiers; cheap Militia soak it up.</li>
-          <li><b>Fast squads</b> (Cavaliers, Pegasus) ride past the line to hunt archers, mages and healers.</li>
+          <li><b>Armor</b>${listOf((d) => d.armor >= 40)} cuts physical damage. <b>Magic ignores armor</b>, and crushing blows break it.</li>
+          <li><b>Splash</b>${listOf((d) => !!d.splash)} shreds big squads of small soldiers; cheap chaff soaks it up.</li>
+          <li><b>Fast squads</b>${listOf((d) => d.traits.includes('raider'))} ride past the line to hunt archers, casters and healers.</li>
+          ${roster().some((u) => UNITS[u].traits.includes('healer')) ? '' : `<li class="bad"><b>${esc(FACTIONS[codexFaction()].short)} has no healers.</b> What falls stays down, unless it is raised again.</li>`}
         </ul>`;
     case 'air':
-      return `<h3>Fliers and anti-air</h3>
+      return `${scope()}<h3>Fliers and anti-air</h3>
         <p class="lead">Fliers cross rivers and forests freely, and <b>most of an army cannot touch them</b>.</p>
         <div class="rl-two cards">
           <div class="rl-card air"><small>${icon('flier')}Fliers</small><div>${chips(fliers())}</div><p>Only bows, magic, ballista bolts and other fliers can hit them. Swords, axes and lances on the ground cannot.</p></div>
-          <div class="rl-card aa"><small>${icon('bow')}Anti-air</small><div>${chips(antiAir())}</div><p>Archers deal <b>×${((UNITS.archers.effective?.flier ?? 200) / 100).toFixed(0)}</b> to fliers. Keep at least one answer once you see wings among the ghosts.</p></div>
+          <div class="rl-card aa"><small>${icon('bow')}Anti-air</small><div>${chips(antiAir())}</div><p>${antiAirLine()} Keep at least one answer once you see wings among the ghosts.</p></div>
         </div>
         <ul class="rl-list">
           <li>An army with <b>no anti-air</b> loses to a single flier squad left alive: it will reach your Keep.</li>

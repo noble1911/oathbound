@@ -3,7 +3,9 @@
 // (flash, shake, choir) for a legendary. Also the unit-unlock draft modal.
 import type { Item, PlayerState, UnitType } from '../sim/types.ts';
 import { UNITS } from '../sim/data/units.ts';
+import { FACTIONS, factionOfLord } from '../sim/data/factions.ts';
 import { sound } from '../audio.ts';
+import { playLordLine } from '../audio/voice.ts';
 import { $, el, esc } from './dom.ts';
 import { icon } from './icons.ts';
 import { itemIcon, itemTooltip } from './items.ts';
@@ -95,6 +97,7 @@ export class LootModal {
         if (this.chosen >= 0) return;
         this.chosen = i;
         sound.equip();
+        if (offer[i]?.rarity === 'legendary') playLordLine(me.lord, 'legendary', { delay: 0.2 });
         this.root.classList.add('picked');
         d.classList.add('chosen');
         onPick(i);
@@ -172,15 +175,17 @@ export class DraftModal {
       </button>`;
     };
     const opts = draftOrder(me.draftOptions);
+    const fac = me.faction ?? (me.lord ? factionOfLord(me.lord) : null);
+    const healers = fac ? FACTIONS[fac].units.some((u) => UNITS[u].traits.includes('healer')) : true;
     this.root = el(`<div class="modal draft${fresh ? ' fresh' : ''}" data-n="${opts.length}">
       ${fresh ? '<div class="draft-ribbon">New recruits!</div>' : ''}
-      <header class="loot-head"><small class="eyebrow">${round <= 1 ? 'Muster' : `Round ${round}`}</small>
+      <header class="loot-head"><small class="eyebrow">${fac ? `${esc(FACTIONS[fac].name)} · ` : ''}${round <= 1 ? 'Muster' : `Round ${round}`}</small>
         <h2>Recruit a new unit type</h2>
         <p>Choose <b>any ${n > 1 ? n : 'one'}</b> of these ${opts.length}. ${n > 1 ? 'They join' : 'It joins'} your shop for the whole match. <span class="loot-same">Your opponent has the same choice.</span></p>
       </header>
       <div class="draft-row" style="--cols:${Math.min(5, Math.max(3, Math.ceil(opts.length / 2)))}">${opts.map(card).join('')}</div>
       <div class="draft-have"><small>Already yours</small>${me.unlocked.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('')}</div>
-      <footer class="loot-foot"><button class="btn later">Later</button><small class="muted">${fallback ? `If planning ends first, <b>${esc(UNITS[fallback].name)}</b> is recruited for you.` : ''}</small></footer>
+      <footer class="loot-foot"><button class="btn later">Later</button><small class="muted">${fallback ? `If planning ends first, <b>${esc(UNITS[fallback].name)}</b> is recruited for you.` : ''}${healers ? '' : ` The ${esc(FACTIONS[fac!].short)} has <b>no healers</b>: its fallen rise instead.`}</small></footer>
     </div>`);
     host.appendChild(this.root);
     if (fresh) sound.draft();

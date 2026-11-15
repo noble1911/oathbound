@@ -6,7 +6,8 @@
 //  - 'easy':   spends only ~65% of its gold, rarely levels up, drafts / loots / equips at random, ignores the enemy
 //              army when buying, and lines everything up in one naive row.
 //  - 'normal': the counter-picker. Buys counters to the enemy's last army, keeps a frontline, spends sensibly (keeps a
-//              ~15% reserve), equips each item on its most valuable squad, and places squads in fixed role lanes.
+//              ~12% reserve, half that for the Marshal), equips each item on its most valuable squad, and places squads
+//              in fixed role lanes, except its archers, which move under the enemy's fliers.
 //  - 'hard':   ('best' is an alias) spends everything, counter-picks against what its army does not already cover,
 //              re-forms the whole army every round against the enemy's last formation (pikes in front of enemy
 //              cavalry, raiders on the flank with the enemy backline, archers under enemy fliers...), puts each item
@@ -19,7 +20,14 @@ import { UNITS } from './data/units.ts';
 import { itemPower } from './loot.ts';
 import { ARMY_CAP, applyIntent, deployZone, freeSpotNear, levelUpCost, slotOpen, squadFootprint, viewFor } from './match.ts';
 import { hash } from './rng.ts';
-import type { BotStrategy, Item, LordId, MatchState, PlayerState, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2 } from './types.ts';
+import type { BotStrategy, Item, KingdomUnit, LordId, MatchState, PlayerState, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2 } from './types.ts';
+
+/**
+ * Every faction's units are understood through the Kingdom unit they play like (UnitDef.like): the preference and
+ * counter tables below are written once, for the Kingdom roster, and K() maps any unit onto them.
+ */
+const K = (u: UnitType): KingdomUnit => UNITS[u].like;
+const KT = (t: SquadType): KingdomUnit | 'lord' => (t === 'lord' ? 'lord' : UNITS[t].like);
 
 export const BOT_STRATEGIES: readonly BotStrategy[] = ['rush', 'ranged', 'armor', 'air', 'counter', 'random', 'best', 'easy', 'normal', 'hard'];
 
@@ -49,9 +57,51 @@ const C: Partial<Record<UnitType, Partial<Record<UnitType, number>>>> = {
   dragon: { militia: 2, pikemen: 2, berserkers: 2, knights: 2, golem: 1, mages: 1 },
   clerics: {},
 };
-const cv = (a: UnitType, b: UnitType): number => C[a]?.[b] ?? 0;
+/** The plain counter table through the "plays like" mapping. */
+const cv = (a: UnitType, b: UnitType): number => C[K(a)]?.[K(b)] ?? 0;
 
-const FRONT: ReadonlySet<UnitType> = new Set(['militia', 'pikemen', 'berserkers', 'knights', 'cavaliers', 'golem', 'pegasus', 'wyvern', 'dragon']);
+/**
+ * How well unit a beats unit b (0..4): the table entry of the Kingdom units they play like, corrected by what the two
+ * units really are when either is from another faction. The "like" mapping is only a role; these corrections keep the
+ * bots from buying an answer that does not work (pikes against spectral riders, bolt-throwers against a Djinn...).
+ * Used by the classic planner (Normal and the tournament strategies). Hard keeps the plain table (`cv`): its own
+ * cover logic was tuned on it, and with the corrections its faction balance tested much worse (see BALANCE.md).
+ */
+function cvReal(a: UnitType, b: UnitType): number {
+  const ka = K(a), kb = K(b);
+  let v = C[ka]?.[kb] ?? 0;
+  const A = UNITS[a], B = UNITS[b];
+  if (A.faction === 'kingdom' && B.faction === 'kingdom') return v;
+  // A counter that rests on a tag bonus is worth nothing when the target does not carry the tag.
+  if ((A.effective.mounted ?? 0) > 100 && kb !== 'pikemen' && (kb === 'cavaliers' || kb === 'pegasus') && !B.tags.includes('mounted')) v = Math.min(v, 1);
+  if ((A.effective.large ?? 0) > 100 && !B.tags.includes('large')) v = Math.min(v, 1);
+  // ...and a tag bonus the table does not know about is worth something.
+  if ((A.effective.mounted ?? 0) > 100 && B.tags.includes('mounted') && B.range <= 400 && v < 2) v = 2; // melee riders only: mounted bowmen shoot the spearmen down
+  // Armour and resistance as they really are: steel against heavy armour (or ethereal riders) is poor, magic against
+  // an ethereal or unwarded target is good, magic against a warded one is poor.
+  const magic = A.damageType === 'magic' || A.traits.includes('ignoresArmor');
+  if (!magic && B.armor >= 45 && !A.traits.includes('crushing')) v -= 1;
+  if (magic && B.magicResist < 0) v += 1.5;
+  if (magic && B.armor >= 45) v += 0.5;
+  if (A.damageType === 'magic' && B.magicResist >= 40) v -= 1;
+  // Ground melee cannot touch a flier at all.
+  if (B.tags.includes('flier') && A.range <= 400 && !A.tags.includes('flier') && !A.traits.includes('howdah')) v = 0;
+  return v < 0 ? 0 : v;
+}
+
+/** Units that hold a line on the ground. Fliers are not a frontline: ground troops walk under them to the archers. */
+/**
+ * Faction-aware composition for the classic planner (Normal and the tournament strategies): how much it wants a unit
+ * beyond what the counter table says. The Caliphate wins in these bots' hands with its casters, its sword line and
+ * its Djinn, not with a mass of Spear Levy and unsupported Mamluks (which need Hard's flanking to pay off).
+ */
+const CLASSIC_PREF: Partial<Record<UnitType, number>> = {
+  djinn_binder: 1.4, scimitar: 1.3, djinn: 1.2, spear_levy: 0.75, mamluk: 0.85,
+  // The Covenant: fewer Skeleton Spearmen (splash fodder), more of what stands up to it.
+  skeleton: 0.8, grave_knight: 1.25, bone_archer: 1.15, wraith_rider: 1.15,
+};
+
+const FRONT: ReadonlySet<UnitType> = new Set(['militia', 'pikemen', 'berserkers', 'knights', 'cavaliers', 'golem']);
 
 /** sqrt by Newton iteration (src/sim avoids Math.sqrt so the grep test stays strict; bots only use it for weights). */
 function fsqrt(x: number): number {
@@ -74,7 +124,7 @@ function unitScore(s: MatchState, seat: Seat, strat: BotStrategy, u: UnitType, s
     for (const e of enemy) {
       if (e.type === 'lord') continue;
       const val = UNITS[e.type].cost * e.level;
-      num += val * (cv(u, e.type) - 0.7 * cv(e.type, u));
+      num += val * (cvReal(u, e.type) - 0.7 * cvReal(e.type, u));
       den += val;
     }
     counter = Math.max(0.2, 1.2 + (2 * num) / Math.max(1, den));
@@ -83,46 +133,65 @@ function unitScore(s: MatchState, seat: Seat, strat: BotStrategy, u: UnitType, s
   if (strat === 'random') w = (1 + 2 * rnd01(s.seed, s.round, seat, u, salt, 'r')) * fsqrt(counter);
   else if (strat === 'counter' || strat === 'normal' || strat === 'best' || strat === 'hard') w = counter;
   // Flavoured strategies still counter-pick a little ("random-but-sensible").
-  else w = (PREF[strat as Flavour][u] ?? 0.5) * fsqrt(counter);
+  else w = (PREF[strat as Flavour][K(u)] ?? 0.5) * fsqrt(counter);
   // Sensible play for every strategy: answer enemy fliers with anti-air, and answer enemy cavalry with pikes.
   if (enemy && enemy.length) {
-    let air = 0, mounted = 0, all = 0;
+    let air = 0, mounted = 0, all = 0, bigAir = 0;
     for (const e of enemy) {
       if (e.type === 'lord') continue;
       const d = UNITS[e.type], val = d.cost * e.level;
       all += val;
+      if (d.tags.includes('flier') && d.tags.includes('large')) bigAir += val;
       if (d.tags.includes('flier')) air += val;
       else if (d.tags.includes('mounted')) mounted += val;
     }
     const fa = air / Math.max(1, all), fm = mounted / Math.max(1, all);
-    const antiAir = def.range > 400 && def.weapon !== 'stone' && !def.traits.includes('healer') || def.tags.includes('flier');
-    if (fa > 0.1) w *= antiAir ? 1 + 2.5 * fa : 1 - 0.5 * fa;
-    if (fm > 0.15 && u === 'pikemen') w *= 1 + 3 * fm;
+    // Anti-air is ranged fire, or a Large flier of one's own. A small flier is no answer (Pegasus and Djinn cannot
+    // trade with a Wyvern), and buying one invites the enemy's archers: the Caliphate used to answer every Wyvern
+    // with Djinn and lose them to a wall of Archers, while its Camel Archers stayed home.
+    const antiAir = def.range > 400 && def.weapon !== 'stone' && !def.traits.includes('healer') || def.tags.includes('flier') && def.tags.includes('large');
+    // (From 5% of the enemy's value in the air: a single Dragon is reason enough to keep an answer.)
+    if (fa > 0.05) w *= antiAir ? 1 + 2.5 * fa + 0.15 : 1 - 0.5 * fa;
+    // A Dragon, Wyvern or Bone Drake overhead: bolt-throwers (bonus against Large) and Large fliers of one's own are the answer.
+    if (bigAir > 0) {
+      const fb = bigAir / Math.max(1, all);
+      if ((def.effective.large ?? 0) > 100) w *= 1.3 + 4 * fb;
+      else if (def.tags.includes('flier') && def.tags.includes('large')) w *= 1.15 + fb;
+    }
+    if (fm > 0.15 && K(u) === 'pikemen') w *= 1 + 3 * fm;
   }
   // Keep a frontline: at least ~half the squads must be front units.
-  const front = mine.filter((q) => q.type !== 'lord' && FRONT.has(q.type as UnitType)).length;
+  const front = mine.filter((q) => q.type !== 'lord' && FRONT.has(K(q.type as UnitType))).length;
   const total = mine.filter((q) => q.type !== 'lord').length;
-  if (FRONT.has(u) && front < Math.ceil((total + 1) / 2)) w *= 1.8;
-  if (!FRONT.has(u) && front < Math.ceil((total + 1) / 2)) w *= 0.6;
-  if (u === 'clerics' && mine.filter((q) => q.type === 'clerics').length >= 2) w *= 0.2;
+  if (FRONT.has(K(u)) && front < Math.ceil((total + 1) / 2)) w *= 1.8;
+  if (!FRONT.has(K(u)) && front < Math.ceil((total + 1) / 2)) w *= 0.6;
+  if (K(u) === 'clerics' && mine.filter((q) => KT(q.type) === 'clerics').length >= 2) w *= 0.2;
   // Diminishing returns on stacking one type.
   const same = mine.filter((q) => q.type === u).length;
   w /= 1 + 0.25 * same;
   // Signature units of your Lord are cheaper to love.
   const lord = s.players[seat].lord;
   if (lord && LORDS[lord].signature.includes(u)) w *= 1.25;
+  // Play to the Lord's passive: the Archmage's magic bonus makes her casters worth far more than anyone else's.
+  if (lord === 'archmage' && def.damageType === 'magic' && !def.traits.includes('healer')) w *= 1.5;
+  // What the classic planner has learnt about a roster that the Kingdom counter table does not say (CLASSIC_PREF).
+  w *= CLASSIC_PREF[u] ?? 1;
   w *= 0.9 + 0.2 * rnd01(s.seed, s.round, seat, u, salt, 'j');
   return w;
 }
 
 // ---------------------------------------------------------------- shared helpers
 
+/** Does Hard read the counter table corrected by real unit mechanics (cvReal)? 'hardx' is always the opposite. */
+const HARD_USES_REAL = true;
+let hardCv: (a: UnitType, b: UnitType) => number = cv;
+
 type Level = 'easy' | 'normal' | 'hard' | 'classic';
 /** Which planner a strategy uses: the three vs-AI levels, or the classic tournament planner (flavours, random, counter). */
 function levelOf(strat: BotStrategy): Level {
   if (strat === 'easy') return 'easy';
   if (strat === 'normal') return 'normal';
-  if (strat === 'hard' || strat === 'best') return 'hard';
+  if (strat === 'hard' || strat === 'best' || strat === 'hardx') return 'hard';
   return 'classic';
 }
 
@@ -132,17 +201,18 @@ const own = (seat: Seat, p: Vec2): Vec2 => (seat === 0 ? [p[0], p[1]] : mirrorPo
 const units = (sq: readonly Squad[]): Squad[] => sq.filter((q) => q.type !== 'lord');
 const valueOf = (q: Squad): number => (q.type === 'lord' ? 450 : UNITS[q.type].cost * (1 + 0.5 * (q.level - 1)));
 
-/** Deterministic slot for the k-th squad of a role, in seat 0 coordinates. */
-function placeFor(u: UnitType | 'lord', k: number, lord: LordId | null): Vec2 {
+/** Deterministic slot for a new squad by its role, in seat 0 coordinates: lanes across the field in deploy order, rows by role. */
+function placeFor(u: UnitType | 'lord', squads: readonly Squad[], lord: LordId | null): Vec2 {
+  const k = squads.filter((q) => q.type !== 'lord').length;
   const lanes = [3999, 2600, 5400, 1300, 6700, 3300, 4700, 2000, 6000];
   const x = lanes[k % lanes.length];
-  if (u === 'lord') return lord === 'archmage' ? [3999, 1500] : [3999, 2600];
-  const def = UNITS[u];
+  if (u === 'lord') return lord && LORDS[lord].range > 400 ? [3999, 1500] : [3999, 2600];
+  const def = UNITS[u], ku = K(u);
   let y: number;
-  if (u === 'trebuchet') y = 700;
-  else if (u === 'ballista' || u === 'clerics') y = 1500;
+  if (ku === 'trebuchet') y = 700;
+  else if (ku === 'ballista' || ku === 'clerics') y = 1500;
   else if (def.range > 400) y = 2100;
-  else if (u === 'cavaliers' || u === 'pegasus' || u === 'wyvern') y = 2900;
+  else if (ku === 'cavaliers' || ku === 'pegasus' || ku === 'wyvern') y = 2900;
   else y = 3500;
   const row = Math.floor(k / lanes.length);
   return [x, Math.max(400, y - row * 600)];
@@ -155,6 +225,12 @@ function deployNear(s: MatchState, seat: Seat, u: UnitType, want: Vec2): boolean
   return !!spot && applyIntent(s, seat, { t: 'deploy', unit: u, pos: spot }).ok;
 }
 
+/**
+ * How much the classic planner values the Warden's hero when choosing who wears an item (percent of his squad value).
+ * His hero outlasts nearly every Normal army; with the full value he wore the best of everything and read 60% at
+ * Normal (50% at Hard). Spreading his gear over his squads is what a sensible Warden player does (see BALANCE.md).
+ */
+const WARDEN_GEAR = 25;
 function bestSquadFor(item: Item, squads: Squad[], lord: LordId | null): Squad | null {
   let best: Squad | null = null, bestV = -1;
   for (const q of squads) {
@@ -163,7 +239,8 @@ function bestSquadFor(item: Item, squads: Squad[], lord: LordId | null): Squad |
     if (!canEquip(item, q.type, lord)) continue;
     const cur = q.items[item.slot];
     if (cur && itemPower(cur) >= itemPower(item)) continue;
-    const value = valueOf(q);
+    // The Warden's hero already outlasts most armies it meets: he shares more of his gear with the squads around him.
+    const value = q.type === 'lord' && lord === 'warden' ? WARDEN_GEAR * valueOf(q) / 100 : valueOf(q);
     const v = value - (cur ? itemPower(cur) * 5 : 0);
     if (v > bestV) { bestV = v; best = q; }
   }
@@ -216,10 +293,13 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
   const v = viewFor(s, seat);
   const enemy = v.enemy.lastArmy;
   const p = s.players[seat];
+  // (Tried and rejected: letting Normal choose units with Hard's scoring, and wing lanes for cavalry. Both swung the
+  // Normal-vs-Normal faction pairings by 20-40 points; see docs/BALANCE.md.)
+  const score = (u: UnitType, sl: number): number => unitScore(s, seat, strat, u, sl, p.squads, enemy);
   // 1. Drafts.
   pickDrafts(s, seat, (opts) => {
     let best = opts[0], bw = -1;
-    for (const u of opts) { const w = unitScore(s, seat, strat, u, salt + 7, p.squads, enemy); if (w > bw) { bw = w; best = u; } }
+    for (const u of opts) { const w = score(u, salt + 7); if (w > bw) { bw = w; best = u; } }
     return best;
   });
   // 2. Loot: take the strongest item.
@@ -229,17 +309,19 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
     p.lootOffer.forEach((it, i) => { const pw = p.squads.some((q) => canEquip(it, q.type, p.lord)) ? itemPower(it) : 0; if (pw > bp) { bp = pw; bi = i; } });
     applyIntent(s, seat, { t: 'pickLoot', index: bi });
   }
-  const reserve = Math.floor(p.gold * reserveFrac);
+  // The Marshal's passive is an extra deployment a round; a full reserve left him a squad short (45% at Normal).
+  const reserve = Math.floor(p.gold * (p.lord === 'marshal' ? reserveFrac / 2 : reserveFrac));
   // 3. Spend: deploy up to the limit, then level up.
   for (let guard = 0; guard < 8 && canDeploy(p); guard++) {
     let best: UnitType | null = null, bw = -1;
     for (const u of p.unlocked) {
-      if (UNITS[u].cost > p.gold) continue;
-      const w = unitScore(s, seat, strat, u, salt, p.squads, enemy);
+      // The reserve holds for deployments as for level-ups (it used to spare a Lord with more deployments, the Marshal).
+      if (UNITS[u].cost > p.gold - reserve) continue;
+      const w = score(u, salt);
       if (w > bw) { bw = w; best = u; }
     }
     if (!best) break;
-    if (!deployNear(s, seat, best, placeFor(best, units(p.squads).length, p.lord))) break;
+    if (!deployNear(s, seat, best, placeFor(best, p.squads, p.lord))) break;
   }
   // Level-ups: cheapest relative upgrade first (lowest level, then higher cost tier).
   for (let guard = 0; guard < 40; guard++) {
@@ -259,10 +341,14 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
     const q = bestSquadFor(it, p.squads, p.lord);
     if (q) applyIntent(s, seat, { t: 'equip', item: it.id, squad: q.id });
   }
+  // 4b. Anti-air where the air is: when the enemy flew last round, archer-type squads (Archers, Bone Archers, Camel
+  //     Archers) move under where its fliers were, as Hard's formation does. The rest of the army keeps its lanes:
+  //     re-forming it all like Hard, or sending the cavalry to a flank, swung the faction pairings by 10-25 points.
+  antiAirPlacement(s, seat, threatsOf(seat, enemy, v.enemy.lord));
   // 5. Lord placement.
   const lord = p.squads.find((q) => q.type === 'lord');
   if (lord && s.round === 1) {
-    const spot = freeSpotNear(p.squads, seat, 'lord', seat === 0 ? placeFor('lord', 0, p.lord) : mirrorPos(placeFor('lord', 0, p.lord)), lord.id);
+    const spot = freeSpotNear(p.squads, seat, 'lord', seat === 0 ? placeFor('lord', p.squads, p.lord) : mirrorPos(placeFor('lord', p.squads, p.lord)), lord.id);
     if (spot) applyIntent(s, seat, { t: 'move', squad: lord.id, pos: spot });
   }
   applyIntent(s, seat, { t: 'ready' });
@@ -298,9 +384,9 @@ function hardUnitScore(s: MatchState, seat: Seat, u: UnitType, mine: Squad[], th
     for (const e of threats) {
       if (e.type === 'lord') continue;
       let cover = 0;
-      for (const m of units(mine)) cover += cv(m.type as UnitType, e.type) * valueOf(m);
+      for (const m of units(mine)) cover += hardCv(m.type as UnitType, e.type) * valueOf(m);
       const weight = e.value / (1 + cover / Math.max(1, e.value));
-      num += weight * (cv(u, e.type) - 0.7 * cv(e.type, u));
+      num += weight * (hardCv(u, e.type) - 0.7 * hardCv(e.type, u));
       den += weight;
     }
     w = Math.max(0.15, 1.2 + (2.2 * num) / Math.max(1, den));
@@ -313,14 +399,16 @@ function hardUnitScore(s: MatchState, seat: Seat, u: UnitType, mine: Squad[], th
     const airCover = mineAir / Math.max(1, air);
     if (fa > 0.1) w *= antiAir ? 1 + (2.5 * fa) / (1 + airCover) : 1 - 0.4 * fa;
   }
-  const front = units(mine).filter((q) => FRONT.has(q.type as UnitType)).length;
+  const front = units(mine).filter((q) => FRONT.has(K(q.type as UnitType))).length;
   const total = units(mine).length;
-  if (FRONT.has(u) && front < Math.ceil((total + 1) / 2)) w *= 1.8;
-  if (!FRONT.has(u) && front < Math.ceil((total + 1) / 2)) w *= 0.6;
-  if (u === 'clerics' && mine.filter((q) => q.type === 'clerics').length >= 1) w *= 0.25;
+  if (FRONT.has(K(u)) && front < Math.ceil((total + 1) / 2)) w *= 1.8;
+  if (!FRONT.has(K(u)) && front < Math.ceil((total + 1) / 2)) w *= 0.6;
+  if (K(u) === 'clerics' && mine.filter((q) => KT(q.type) === 'clerics').length >= 1) w *= 0.25;
   w /= 1 + 0.3 * mine.filter((q) => q.type === u).length;
   const lord = s.players[seat].lord;
   if (lord && LORDS[lord].signature.includes(u)) w *= 1.2;
+  // Play to the Lord's passive: the Archmage's magic bonus makes her casters worth far more than anyone else's.
+  if (lord === 'archmage' && def.damageType === 'magic' && !def.traits.includes('healer')) w *= 1.5;
   // Spending gold well: prefer the stronger buy when two are close (bigger units are better per deploy slot).
   w *= 0.6 + 0.4 * (def.cost / 200);
   w *= 0.95 + 0.1 * rnd01(s.seed, s.round, seat, u, salt, 'hj');
@@ -329,10 +417,11 @@ function hardUnitScore(s: MatchState, seat: Seat, u: UnitType, mine: Squad[], th
 
 type Role = 'front' | 'flank' | 'ranged' | 'support' | 'artillery';
 function roleOf(t: SquadType, lord: LordId | null): Role {
-  if (t === 'lord') return lord === 'skylady' ? 'flank' : lord === 'archmage' ? 'ranged' : 'support';
-  if (t === 'trebuchet') return 'artillery';
-  if (t === 'clerics') return 'support';
-  if (t === 'cavaliers' || t === 'pegasus' || t === 'wyvern' || t === 'dragon') return 'flank';
+  if (t === 'lord') return lord === 'skylady' ? 'flank' : lord && LORDS[lord].range > 400 ? 'ranged' : 'support';
+  const k = K(t);
+  if (k === 'trebuchet') return 'artillery';
+  if (k === 'clerics') return 'support';
+  if (k === 'cavaliers' || k === 'pegasus' || k === 'wyvern' || k === 'dragon') return 'flank';
   return UNITS[t].range > 400 ? 'ranged' : 'front';
 }
 
@@ -354,10 +443,12 @@ function hardLayout(p: PlayerState, threats: Threat[]): Map<number, Vec2> {
   // Flank choice: enemy backline value minus pike danger, per side of the field.
   let left = 0, right = 0;
   for (const e of threats) {
-    const w = (e.backline ? e.value : 0) - (e.type === 'pikemen' ? 1.5 * e.value : 0) - (e.ranged && e.tags.includes('infantry') && e.type === 'archers' ? 0.3 * e.value : 0);
+    const ek = KT(e.type);
+    const w = (e.backline ? e.value : 0) - (ek === 'pikemen' ? 1.5 * e.value : 0) - (e.ranged && ek === 'archers' ? 0.3 * e.value : 0);
     if (e.x < 3999) left += w; else right += w;
   }
-  const flankX = left > right ? 1100 : left < right ? 6900 : (p.seat === 0 ? 1100 : 6900);
+  // A tie goes to the same side in the bot's own frame for both seats, so the two plans are exact mirror images.
+  const flankX = left > right ? 1100 : left < right ? 6900 : 1100;
   const rows: Record<Role, { q: Squad; want: number }[]> = { front: [], flank: [], ranged: [], support: [], artillery: [] };
   for (const q of p.squads) {
     const role = roleOf(q.type, p.lord);
@@ -365,7 +456,7 @@ function hardLayout(p: PlayerState, threats: Threat[]): Map<number, Vec2> {
     if (q.type !== 'lord') {
       const u = q.type as UnitType;
       if (role === 'flank') want = flankX;
-      else if (u === 'archers') want = meanX(threats, (e) => (e.tags.includes('flier') ? 3 : 0) + (e.type !== 'lord' && cv(u, e.type) > 0 ? 1 : 0), centre);
+      else if (K(u) === 'archers') want = meanX(threats, (e) => (e.tags.includes('flier') ? 3 : 0) + (e.type !== 'lord' && cv(u, e.type) > 0 ? 1 : 0), centre);
       else if (role !== 'support') want = meanX(threats, (e) => (e.type !== 'lord' ? Math.max(0, cv(u, e.type)) : 0), centre);
     } else if (role === 'flank') want = flankX;
     rows[role].push({ q, want });
@@ -426,6 +517,17 @@ function applyLayout(s: MatchState, seat: Seat, layout: Map<number, Vec2>): void
   }
 }
 
+/** Normal's anti-air placement: Hard's formation, applied to the archer-type squads only, when the enemy flew last round. */
+function antiAirPlacement(s: MatchState, seat: Seat, all: Threat[]): void {
+  // Flier squads only: a flying Lord (the Skylady) is one rider, and archers parked under her strip her army's flank.
+  const threats = all.filter((e) => e.type !== 'lord');
+  if (!threats.some((e) => e.tags.includes('flier'))) return;
+  const p = s.players[seat];
+  const layout = hardLayout(p, threats);
+  for (const q of p.squads) if (q.type === 'lord' || K(q.type) !== 'archers') layout.delete(q.id);
+  applyLayout(s, seat, layout);
+}
+
 const MELEE_DPS: ReadonlySet<SquadType> = new Set(['berserkers', 'cavaliers', 'militia', 'wyvern', 'knights', 'pikemen', 'pegasus', 'golem']);
 const MANY = (t: SquadType): number => (t === 'lord' ? 1 : UNITS[t].squadSize);
 
@@ -438,8 +540,9 @@ function itemFit(item: Item, q: Squad, threats: Threat[], lord: LordId | null): 
   if (!canEquip(item, t, lord)) return -1;
   const role = roleOf(t, lord);
   const ranged = t === 'lord' ? LORDS[lord ?? 'marshal'].range > 400 : UNITS[t].range > 400;
-  const healer = t === 'clerics';
-  const tough = role === 'front' || t === 'lord' || t === 'golem' || t === 'dragon' || t === 'wyvern';
+  const k = KT(t);
+  const healer = k === 'clerics';
+  const tough = role === 'front' || k === 'lord' || k === 'golem' || k === 'dragon' || k === 'wyvern';
   let total = 0, magic = 0, ranged_ = 0;
   const tagShare: Partial<Record<Tag, number>> = {};
   for (const e of threats) {
@@ -455,7 +558,7 @@ function itemFit(item: Item, q: Squad, threats: Threat[], lord: LordId | null): 
     let m = 1;
     switch (a.id) {
       case 'vicious': case 'keen': case 'haste': m = healer ? 0.5 : 1.1; break;
-      case 'leech': m = MELEE_DPS.has(t) ? 1.4 : ranged ? 0.6 : 0.8; break;
+      case 'leech': m = MELEE_DPS.has(k) ? 1.4 : ranged ? 0.6 : 0.8; break;
       case 'farreach': m = ranged ? 1.3 : 0; break;
       case 'stalwart': m = tough ? 1.3 : 0.6; break;
       case 'plated': m = tough ? 1.3 * (1 - share(magic)) + 0.1 : 0.4; break;
@@ -478,7 +581,7 @@ function itemFit(item: Item, q: Squad, threats: Threat[], lord: LordId | null): 
       case 'undying_oath': case 'ember_crown': case 'gravebloom': m = n >= 6 ? 1.8 : n >= 3 ? 1 : 0.6; break;
       case 'mirror_aegis': m = (tough ? 1 : 0.5) * (0.3 + 2.5 * share(ranged_)); break;
       case 'warhorn': m = n >= 6 ? 1.8 : n <= 2 ? 1.4 : 0.8; break;
-      case 'bloodthirst': case 'earthshaker': case 'windrunner': m = MELEE_DPS.has(t) ? 1.5 : 0.4; break;
+      case 'bloodthirst': case 'earthshaker': case 'windrunner': m = MELEE_DPS.has(k) ? 1.5 : 0.4; break;
       case 'sunfire': m = role === 'front' ? 1.5 : 0.3; break;
       case 'lifebinder': m = tough ? 1.5 : 0.6; break;
       case 'frostheart': m = 1.1; break;
@@ -495,7 +598,7 @@ function itemFit(item: Item, q: Squad, threats: Threat[], lord: LordId | null): 
       case 'fireball': case 'rain_of_arrows': case 'incendiary_payload': m = 0.7 + 0.9 * foot; break;
       case 'chain_lightning': m = 1.1; break;
       case 'frost_nova': m = 0.5 + 2 * fast; break;
-      case 'mending_light': m = t === 'clerics' ? 1.3 : 1; break;
+      case 'mending_light': m = k === 'clerics' ? 1.3 : 1; break;
       case 'shield_wall': m = tough ? 1.3 : 0.8; break;
       case 'war_cry': m = role === 'front' || t === 'lord' ? 1.2 : 0.7; break;
       case 'cleave': m = n >= 4 ? 1.4 : 0.9; break;
@@ -545,7 +648,7 @@ function planHard(s: MatchState, seat: Seat, salt: number): void {
     let best = opts[0], bw = -1;
     for (const u of opts) {
       // Late-game power units are worth a pick on their own.
-      const w = hardUnitScore(s, seat, u, p.squads, threats, salt + 7) * (u === 'dragon' || u === 'golem' ? 1.25 : 1);
+      const w = hardUnitScore(s, seat, u, p.squads, threats, salt + 7) * (K(u) === 'dragon' || K(u) === 'golem' ? 1.25 : 1);
       if (w > bw) { bw = w; best = u; }
     }
     return best;
@@ -574,7 +677,7 @@ function planHard(s: MatchState, seat: Seat, salt: number): void {
       if (w > bw) { bw = w; best = u; }
     }
     if (!best) break;
-    if (!deployNear(s, seat, best, placeFor(best, units(p.squads).length, p.lord))) break;
+    if (!deployNear(s, seat, best, placeFor(best, p.squads, p.lord))) break;
   }
   // 4. Level-ups, spending everything: the cheapest relative upgrade first (lowest level, then the bigger unit), and
   //    a squad whose next level opens a slot for an item waiting in the stash jumps the queue.
@@ -605,8 +708,12 @@ export function botPlan(s: MatchState, seat: Seat, strategy: BotStrategy, salt =
   if (s.phase !== 'planning' || s.players[seat].ready) return;
   const level = levelOf(strategy);
   if (level === 'easy') return planEasy(s, seat, salt);
-  if (level === 'hard') return planHard(s, seat, salt);
-  return planClassic(s, seat, strategy, salt, level === 'normal' ? 0.15 : 0);
+  if (level === 'hard') {
+    // 'hardx' is the strength-test variant: the same planner with the other counter table.
+    hardCv = (strategy === 'hardx') !== HARD_USES_REAL ? cvReal : cv;
+    return planHard(s, seat, salt);
+  }
+  return planClassic(s, seat, strategy, salt, level === 'normal' ? 0.12 : 0);
 }
 
 export type { Slot };

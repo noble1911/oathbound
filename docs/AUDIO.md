@@ -152,7 +152,7 @@ archive.org mirrors `sonniss-gdc-<year>-game-audio-bundle-normalized`. The exact
 
 ## Voices
 
-The four Lords speak: about 17 short lines each (picked, the VS taunt, deploy, ready, the charge,
+The six Lords speak: 18 short lines each (108 in all) (picked, the VS taunt, deploy, ready, the charge,
 their ability, round won and lost, the keep under attack, legendary loot, match victory and defeat).
 
 - **Licence.** The Lord voices are outputs of **Breeze-TTS-2** (BreezeBlue, self-hosted in WSL), and fall
@@ -166,25 +166,33 @@ their ability, round won and lost, the keep under attack, legendary loot, match 
   Lord's own designed reference clip.
 - **Pipeline.** `tools/voice/` (see its README): `manifest.json` (descriptions and lines) →
   `render.py` in WSL (design, then render each line with 3 seeds, auto-checked by Whisper ASR, pitch,
-  rate and clipping) → `build.py` (trim, 70 Hz high-pass, normalise to −16 dB short-term, 48 kHz
-  mono Opus at 40 kbps). Raw takes and reference voices stay in `art-work/voice/` (git-ignored).
+  rate and clipping; `render.py verify` re-checks the shipped clips) → `build.py` (trim, 70 Hz high-pass, normalise to −16 dB short-term, 48 kHz
+  mono Opus at 40 kbps). Raw takes and reference voices stay off the repo in `E:\local\oathbound-art-work\voice`
+  (or `art-work/voice/`, git-ignored, when there is no E: drive).
 - **Runtime.** `src/audio/voice.ts` (the player) and `src/audio/voice-lines.ts` (the line table,
   cooldowns, priorities and variant rotation). The lines play on their own `voice` bus into the
   master, persisted as `oathbound.voicevol`. While a line plays, the music ducks by 4–9 dB (the
   ambience by half that) and the battle effects by 60 % of it. One line plays at a time: a higher
   priority cuts a lower one short, and anything else is dropped. Each (Lord, event) has a cooldown
   (deploy 4 s, keep 20 s, ability 6 s), and variants rotate without repeating. A Lord's lines are
-  fetched only once that Lord is in the match (about 90 KB per Lord), and a line that has not
+  fetched only once that Lord is in the match (150–360 KB per Lord; 1.46 MB for all six), and a line that has not
   arrived within 1.2 s is dropped.
 - **Test.** `tests/voice.test.ts` checks that every manifest line is shipped and the set stays under
-  1.5 MB.
+  2.3 MB.
+- **Checks.** Every take is scored by Whisper (small.en) against its script, plus pitch, duration and
+  clipping; `render.py verify` re-runs Whisper on the shipped clips. Of the 108 shipped clips, 103 match
+  the script. The other 5 are name or near-homophone misses ("Ione" as "I only", "Morthen" as "More than",
+  "claw at" as "call it") or sub-second clips that Whisper mishears ("Placed" as "replaced", "Diving" as
+  "Stiving"), all accepted by hand.
 
 | Lord | Voice description (abridged; full text in the manifest) | Seed |
 | --- | --- | --- |
-| Marshal Aldric | A seasoned commander in his fifties: a warm, commanding baritone with a refined southern English accent. Steady, measured and noble | SEED_MARSHAL |
-| Archmage Sefa | A composed woman in her forties: a cool, smooth alto with crisp English diction. Wry, quietly menacing and unhurried | SEED_ARCHMAGE |
-| Warden Hrolf | A huge old Nordic chieftain: a very deep, gravelly bass with a Scandinavian accent. Slow, deliberate and booming | SEED_WARDEN |
-| Skylady Ione | A young sky-rider captain: a bright, clear, energetic voice with a lively Irish accent. Fierce, quick and exhilarated | SEED_SKYLADY |
+| Marshal Aldric | A seasoned commander in his fifties: a warm, commanding baritone with a refined southern English accent. Steady, measured and noble | 37 |
+| Archmage Sefa | A composed woman in her forties: a cool, smooth alto with crisp English diction. Wry, quietly menacing and unhurried | 37 |
+| Warden Hrolf | A huge old Nordic chieftain: a very deep, gravelly bass with a Scandinavian accent. Slow, deliberate and booming | 53 |
+| Skylady Ione | A young sky-rider captain: a bright, clear, energetic voice with a lively Irish accent. Fierce, quick and exhilarated | 53 |
+| Lich-Priest Morthen | An ancient undead priest: a dry, hollow, rasping voice, half-whispered yet resonant, cold and archaic. A faint crypt echo is added at build | 11 |
+| Sultana Zahira | A regal woman in her forties: a warm, rich, commanding mezzo with a light Arabic accent. Poised, proud and gracious | 53 |
 
 ### Where the UI triggers each line
 

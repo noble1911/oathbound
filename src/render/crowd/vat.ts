@@ -189,12 +189,19 @@ varying float vTintMask;
 varying vec3 vTeam;
 varying float vFlash;
 varying float vFlashCol;
+varying float vChill;
 varying float vFade;
 varying vec3 vRest;
 varying vec2 vObUv;
 varying float vMirror;
 ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
   fs = after(fs, 'void main() {', `
+  // ethereal units are a little see-through (screen-door: no blending, no sorting, no extra pass)
+  if (vChill < -0.5) {
+    // one pixel in four, on a fixed 2 x 2 grid: reads as an even veil, not as noise
+    vec2 obG = mod(floor(gl_FragCoord.xy), 2.0);
+    if (obG.x + obG.y < 0.5) discard;
+  }
 `);
   fs = after(fs, '#include <color_fragment>', `
   {
@@ -207,6 +214,17 @@ ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
     // blowing out to a flat white blob in sunlight
     vec3 over = max(diffuseColor.rgb - 0.45, 0.0);
     diffuseColor.rgb = min(diffuseColor.rgb, vec3(0.45)) + over * 0.3;
+    // slowed / chilled (vChill 0..1): drained toward a cold blue, as if rimed with frost
+    // vChill: 0..1 = slowed by cold (blue), 1..2 = slowed by a sandstorm (ochre), < 0 = ethereal (a spectre)
+    if (vChill > 0.001) {
+      float cl = dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1));
+      float sandy = step(1.0005, vChill);
+      float amt = vChill - sandy;
+      diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.42, 0.62, 1.0), vec3(1.25, 0.9, 0.42), sandy) * (cl * 1.15 + 0.08 + 0.1 * sandy), amt * mix(0.55, 0.75, sandy));
+    } else if (vChill < -0.5) {
+      float gl = dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1));
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.45, 0.95, 0.7) * (gl * 1.1 + 0.06), 0.6);
+    }
   }`);
   // mirrored instances (death2) have reversed winding: flip the face direction back
   fs = after(fs, '#include <normal_fragment_begin>', '#ifdef DOUBLE_SIDED\n  normal *= vMirror;\n  #ifdef USE_TANGENT\n  tbn[2] *= vMirror;\n  #endif\n#endif');
@@ -223,6 +241,14 @@ ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
     diffuseColor.rgb = mix(vec3(obLum), vTeam, 0.75) * 0.7;
     float obRim = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.0);
     totalEmissiveRadiance += vTeam * (0.22 + 1.1 * obRim);
+  }
+  if (vChill > 0.001 && vChill < 1.0005) {
+    float obCold = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.5);
+    totalEmissiveRadiance += vec3(0.1, 0.3, 0.75) * (vChill * (0.04 + 0.6 * obCold));
+  } else if (vChill < -0.5) {
+    // a spectre: lit from within along its edges
+    float obGhost = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 1.8);
+    totalEmissiveRadiance += vec3(0.12, 0.7, 0.4) * (0.08 + 1.1 * obGhost);
   }
   // hit flash / highlight: a warm lift on top of the lit surface (never a flat white silhouette)
   totalEmissiveRadiance += vFlash * mix(vec3(0.5, 0.42, 0.34) + diffuseColor.rgb * 0.6, vec3(2.6, 0.3, 0.2), vFlashCol);`);
@@ -291,7 +317,7 @@ export interface CrowdMaterialOpts {
 /**
  * The instanced VAT material (+ its shadow depth material). Per-instance attributes:
  *  iA = (clip A frame0, frame1, frac, -), iB = same for the cross-fade source clip,
- *  iC = (blend weight of B, fade 0..1, flash 0..1, -), iTeam = team colour (linear RGB).
+ *  iC = (blend weight of B, fade 0..1, flash 0..1, flash colour 0 warm .. 1 red), iB.w = chill 0..1 (slowed: blue cast), iTeam = team colour (linear RGB).
  */
 export function createCrowdMaterials(engine: Engine, vat: VatData, o: CrowdMaterialOpts): { material: THREE.MeshStandardMaterial; depth: THREE.MeshDepthMaterial; ghost: THREE.MeshBasicMaterial } {
   const mat = new THREE.MeshStandardMaterial({
@@ -316,6 +342,7 @@ varying float vTintMask;
 varying vec3 vTeam;
 varying float vFlash;
 varying float vFlashCol;
+varying float vChill;
 varying float vFade;
 varying vec3 vRest;
 varying vec2 vObUv;
@@ -331,7 +358,8 @@ varying float vMirror;`);
   vTeam = iTeam;
   vFade = iC.y;
   vFlash = iC.z;
-  vFlashCol = iC.w;`);
+  vFlashCol = iC.w;
+  vChill = iB.w;`);
     return vs;
   };
   engine.patch(mat, `vat:${o.key}:${vat.octNormals ? 'o' : ''}${o.tintMap ? 't' : ''}${o.mrMap ? 'm' : ''}`, (shader) => {
@@ -370,9 +398,9 @@ varying float vMirror;`);
  * Material for a skinned hero mesh built by the rig builder (surf/tint vertex attributes), with
  * per-object uniforms for team colour, hit flash and fade.
  */
-export function createHeroMaterial(engine: Engine, key: string, o: { surf: boolean; map?: THREE.Texture | null; tintMap?: THREE.Texture | null; vertexColors: boolean }): { material: THREE.MeshStandardMaterial; uniforms: { uTeam: { value: THREE.Color }; uFlash: { value: number }; uFade: { value: number } } } {
+export function createHeroMaterial(engine: Engine, key: string, o: { surf: boolean; map?: THREE.Texture | null; tintMap?: THREE.Texture | null; vertexColors: boolean }): { material: THREE.MeshStandardMaterial; uniforms: { uTeam: { value: THREE.Color }; uFlash: { value: number }; uFade: { value: number }; uChill: { value: number }; uFlashCol: { value: number } } } {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: o.vertexColors, roughness: 0.7, metalness: o.surf ? 1 : 0, map: o.map ?? null });
-  const uniforms = { uTeam: { value: new THREE.Color(1, 1, 1) }, uFlash: { value: 0 }, uFade: { value: 1 }, uTintMap: { value: o.tintMap ?? null } };
+  const uniforms = { uTeam: { value: new THREE.Color(1, 1, 1) }, uFlash: { value: 0 }, uFade: { value: 1 }, uChill: { value: 0 }, uFlashCol: { value: 0 }, uTintMap: { value: o.tintMap ?? null } };
   engine.patch(mat, `hero:${o.surf ? 's' : ''}${o.tintMap ? 't' : ''}`, (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = after(shader.vertexShader, '#include <common>', `
@@ -380,11 +408,14 @@ ${o.surf ? 'attribute vec3 surf;\nattribute float tint;' : ''}
 uniform vec3 uTeam;
 uniform float uFlash;
 uniform float uFade;
+uniform float uChill;
+uniform float uFlashCol;
 varying vec3 vSurf;
 varying float vTintMask;
 varying vec3 vTeam;
 varying float vFlash;
 varying float vFlashCol;
+varying float vChill;
 varying float vFade;
 varying vec3 vRest;
 varying vec2 vObUv;
@@ -398,7 +429,8 @@ varying float vMirror;`);
   vTeam = uTeam;
   vFade = uFade;
   vFlash = uFlash;
-  vFlashCol = 0.0;`);
+  vFlashCol = uFlashCol;
+  vChill = uChill;`);
     shader.fragmentShader = patchFragment(shader.fragmentShader, { surf: o.surf, tintAttr: o.surf, tintMap: !!o.tintMap });
   });
   // per-object uniforms: each hero gets its own material instance, but they share one program

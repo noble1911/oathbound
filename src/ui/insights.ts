@@ -48,7 +48,7 @@ export function battleStats(d: DecodedReplay): BattleStats {
   const rows = replaySquads(d);
   const by = new Map<number, SquadStat>();
   for (const q of at.squads) {
-    if (q.summoned || q.type === 'skeleton') continue;
+    if (q.summoned) continue;
     const size = rows[q.row]?.soldiers.length ?? q.soldiers;
     by.set(q.squad, { id: q.squad, side: q.side, type: q.type as SquadType, lord: q.lord, level: q.level, size, lost: q.losses, dealt: q.dealt, taken: q.taken, kills: q.kills, healed: q.healingDone, life: q.hpMax, wipedAt: q.wipedAt });
   }
@@ -58,7 +58,7 @@ export function battleStats(d: DecodedReplay): BattleStats {
     return q && by.has(q.squad) && by.get(q.squad)!.side === q.side ? q.squad : undefined;
   };
   for (const q of at.squads) {
-    if (!q.summoned && q.type !== 'skeleton') continue;
+    if (!q.summoned) continue;
     const owner = by.get(idOf(q.row) ?? -1);
     if (!owner) continue;
     owner.dealt += q.dealt;
@@ -81,7 +81,7 @@ export function battleStats(d: DecodedReplay): BattleStats {
     if (a === undefined) continue;
     for (const [rb, dmg] of m) {
       const tgt = at.squads[rb];
-      if (!tgt || tgt.summoned || tgt.type === 'skeleton' || !by.has(tgt.squad) || !dmg) continue;
+      if (!tgt || tgt.summoned || !by.has(tgt.squad) || !dmg) continue;
       let out = pair.get(a);
       if (!out) pair.set(a, (out = new Map()));
       out.set(tgt.squad, (out.get(tgt.squad) ?? 0) + dmg);

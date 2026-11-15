@@ -128,7 +128,8 @@ export class LocalMatch implements Backend {
     if (ph !== this.phase) return;
     const s = this.s;
     if (ph === 'lordPick') {
-      if (!s.players[0].lord) sim.applyIntent(s, 0, { t: 'pickLord', lord: 'marshal' });
+      // like the server: a Lord of the faction already chosen, else the Kingdom's first
+      if (!s.players[0].lord) sim.applyIntent(s, 0, { t: 'pickLord', lord: sim.FACTIONS[s.players[0].faction ?? 'kingdom'].lords[0] ?? 'marshal' });
       this.afterIntent();
     } else if (ph === 'planning') {
       sim.forceReady(s);

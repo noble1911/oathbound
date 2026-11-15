@@ -10,6 +10,7 @@ import { battleClock, TIME_LIMIT_TICKS } from './insights.ts';
 import { income } from '../sim/match.ts';
 import * as match from '../sim/match.ts';
 import { sound } from '../audio.ts';
+import { playLordLine } from '../audio/voice.ts';
 import { $, el, esc, num, secsLeft } from './dom.ts';
 import { icon } from './icons.ts';
 import { crest } from './units.ts';
@@ -356,6 +357,7 @@ export class MatchOverScreen {
     this.body = $(this.root, '.ov-acts');
     ui.appendChild(this.root);
     if (!spect) setTimeout(() => sound.fanfare(outcome === 'victory'), 300);
+    if (!spect && outcome !== 'draw') playLordLine(v.you?.lord, outcome, { delay: 2.2 });
     this.update(room);
   }
 
@@ -380,12 +382,12 @@ export class MatchOverScreen {
   }
 }
 
-export function mvpOf(view: PlayerView | null, dmg: Map<number, { dmg: number; kills: number }> | null, seat: Seat, soldiers: { squad: number; side: Seat; type: string; lord?: LordId }[]): MvpInfo | null {
+export function mvpOf(view: PlayerView | null, dmg: Map<number, { dmg: number; kills: number }> | null, seat: Seat, soldiers: { squad: number; side: Seat; type: string; lord?: LordId; summoned?: boolean }[]): MvpInfo | null {
   if (!dmg) return null;
   let best: { id: number; dmg: number; kills: number } | null = null;
   for (const [id, r] of dmg) {
     const s = soldiers.find((x) => x.squad === id);
-    if (!s || s.side !== seat || s.type === 'skeleton') continue;
+    if (!s || s.side !== seat || s.summoned) continue;
     if (!best || r.dmg > best.dmg) best = { id, ...r };
   }
   if (!best) return null;

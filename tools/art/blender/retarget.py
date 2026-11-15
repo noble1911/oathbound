@@ -145,6 +145,10 @@ def bake(tgt, act_name, segments, rule='absolute', hips_scale=1.0, hips_offset=N
                     hp = hp + hips_offset
             if extra:
                 extra(out_f, rot, tgt)
+            # a procedural layer may also move the hips (lunges, bounces): rot['_hips_shift'] = Vector
+            shift = rot.pop('_hips_shift', None)
+            if shift is not None and hp is not None:
+                hp = hp + shift
             prev = solve_and_key(tgt, out_f, rot, hp, prev=prev)
             out_f += 1
     set_action(tgt, None)

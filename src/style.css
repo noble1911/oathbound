@@ -348,12 +348,42 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .lobby .copy { color: var(--steel-100); border: 1px dashed var(--slate-400); }
 
 /* ------------------------------------------------------------ lord pick: four charters on the painted backdrop */
-.lordpick { display: grid; grid-template-rows: auto 1fr auto; padding: 3vh 2vw 2.5vh; gap: 0.6rem; background: radial-gradient(ellipse at 50% 40%, rgba(9, 11, 15, 0.7), rgba(9, 11, 15, 0.96)), var(--key, none) center / cover no-repeat, var(--iron-900); }
+.lordpick { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; padding: 2vh 2vw 2vh; gap: 0.5rem; background: radial-gradient(ellipse at 50% 40%, rgba(9, 11, 15, 0.7), rgba(9, 11, 15, 0.96)), var(--key, none) center / cover no-repeat, var(--iron-900); }
 .lp-head { text-align: center; position: relative; }
-.lp-head h2 { margin: 0.2rem 0 0; font: 600 2.6rem/1.1 var(--display); color: var(--parch-100); letter-spacing: 0.01em; text-shadow: 0 2px 0 #000, 0 2px 10px #000; }
-.lp-timer { display: flex; align-items: center; justify-content: center; gap: 0.4rem; margin-top: 0.2rem; font: 700 1.5rem var(--serif); color: var(--steel-100); }
+.lp-head h2 { margin: 0.1rem 0 0; font: 600 2.2rem/1.1 var(--display); color: var(--parch-100); letter-spacing: 0.01em; text-shadow: 0 2px 0 #000, 0 2px 10px #000; }
+/* top left: the corner tools hold the top right on this screen */
+.lp-timer { position: absolute; left: 0; top: 0.2rem; display: flex; align-items: center; justify-content: center; gap: 0.4rem; font: 700 1.5rem var(--serif); color: var(--steel-100); }
+/* three faction banners: a heraldic band in the faction's colours, its name, a line of flavour and its lineup */
+.lp-factions { display: grid; grid-template-columns: repeat(3, minmax(0, 24rem)); gap: 0.9rem; justify-content: center; }
+.fcard { position: relative; min-width: 0; display: grid; gap: 0.2rem; justify-items: start; padding: 0.55rem 0.5rem 0.2rem; text-align: left; border: solid transparent; border-width: 0.45rem 0.6rem; border-image: url('/ui/kit/btn-stone.webp') 26 40 fill / 0.45rem 0.6rem; background: none; color: var(--steel-100); filter: brightness(0.78) saturate(0.8) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5)); transition: filter 0.15s, transform 0.15s; }
+.fcard:hover { filter: brightness(1) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5)); }
+.fcard.on { border-image-source: url('/ui/kit/btn-stone-hover.webp'); filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.6)); outline: 2px solid var(--steel-100); outline-offset: -1px; }
+.fc-band { position: absolute; left: 0; right: 0; top: 0; height: 0.34rem; background: linear-gradient(90deg, var(--f1) 0 34%, var(--f2) 34% 67%, var(--f3) 67% 100%); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5); }
+.fcard > b { font: 700 1.25rem/1.1 var(--serif); color: #fff; }
+.fcard > small { font-size: 0.82rem; line-height: 1.25; color: var(--steel-200); }
+.fc-line { display: flex; align-items: center; gap: 0.2rem; min-height: 1.6rem; margin-top: 0.1rem; }
+.fc-line i { display: inline-grid; }
+.fc-line .crest.sm { width: 1.35rem; height: 1.5rem; }
+.fc-line em { margin-left: 0.2rem; font: 700 0.72rem var(--sans); font-style: normal; color: var(--steel-200); }
+.fc-n { font: 700 0.62rem var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--steel-300); }
+.lordpick.has-pick .fcard:not(.on), .lordpick.spect .fcard { pointer-events: none; }
+.lordpick.has-pick .fcard:not(.on) { filter: brightness(0.5) saturate(0.4); }
+/* what the chosen faction is about, and the mechanics that set it apart */
+.lp-ident { width: min(74rem, 100%); margin: 0 auto; display: grid; gap: 0.3rem; justify-items: center; text-align: center; color: var(--steel-100); text-shadow: 0 1px 2px #000; }
+.lp-ident p { margin: 0; font-size: 0.92rem; line-height: 1.35; }
+.lp-ident p b { color: #fff; }
+.lp-mech { display: flex; flex-wrap: wrap; gap: 0.3rem; justify-content: center; }
+.tg.good { color: var(--steel-100); border: 1px solid var(--slate-400); cursor: help; }
+.tg.bad { color: var(--foe-hi); border: 1px solid var(--foe-deep); cursor: help; }
 .lp-timer.hurry { color: var(--bad); animation: pulse 0.5s infinite alternate; }
-.lp-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 17rem)); gap: 1.5rem; justify-content: center; align-content: center; min-height: 0; overflow: hidden auto; padding: 1rem 0.8rem; }
+.lp-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 17rem)); gap: 1.5rem; justify-content: center; align-content: center; min-height: 0; overflow: hidden auto; padding: 0.8rem 0.8rem; }
+/* a faction with one Lord: one wide charter, the portrait beside the text */
+.lp-cards[data-n='1'] { grid-template-columns: minmax(0, 46rem); }
+.lp-cards[data-n='1'] .lcard { grid-template-columns: 17rem minmax(0, 1fr); grid-template-rows: auto auto auto auto 1fr; column-gap: 0.4rem; padding: 0.4rem 0 0.9rem; }
+.lp-cards[data-n='1'] .lcard > .lport { grid-row: 1 / -1; height: auto; min-height: 15rem; margin: 0 0 0 0.4rem; }
+.lp-cards[data-n='1'] .lcard > :not(.lport) { grid-column: 2; }
+.lp-cards[data-n='2'] { grid-template-columns: repeat(2, minmax(0, 19rem)); }
+.lp-cards[data-n='3'] { grid-template-columns: repeat(3, minmax(0, 18rem)); }
 .lcard { --hue: var(--steel-300); min-width: 0; display: grid; grid-template-rows: auto auto auto auto auto 1fr; gap: 0.55rem; padding: 0 0 0.9rem; text-align: left; transition: transform 0.2s, opacity 0.3s, filter 0.3s; animation: cardin 0.6s both; }
 .lcard:nth-child(2) { animation-delay: 0.08s; }
 .lcard:nth-child(3) { animation-delay: 0.16s; }
@@ -361,7 +391,7 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 @keyframes cardin { from { opacity: 0; transform: translateY(1.5rem) scale(0.97); } }
 .lcard:hover { transform: translateY(-0.4rem); }
 .lcard > :not(.lport) { margin: 0 0.9rem; }
-.lport { position: relative; height: 11rem; overflow: hidden; background: var(--iron-800); border: 2px solid #3d3324; border-bottom: 0.3rem solid var(--hue); box-shadow: 0 2px 5px rgba(35, 27, 18, 0.5); }
+.lport { position: relative; height: 8.5rem; overflow: hidden; background: var(--iron-800); border: 2px solid #3d3324; border-bottom: 0.3rem solid var(--hue); box-shadow: 0 2px 5px rgba(35, 27, 18, 0.5); }
 .lcard > .lport { margin: 0.35rem 0.35rem 0; }
 .lport-rays { display: none; }
 .lport-sigil { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 6rem; height: 6rem; color: var(--steel-200); }
@@ -396,6 +426,7 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .rv-side .lport.big { outline-color: var(--side); border-bottom-color: var(--iron-800); }
 .rv-side b { min-width: 15rem; margin-top: -1.6rem; padding: 0.5rem 3rem 0.85rem; position: relative; background: var(--rib) center / 100% 100% no-repeat; font: 700 1.6rem var(--serif); color: #fff; text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7); filter: drop-shadow(0 0.3rem 0.4rem rgba(0, 0, 0, 0.6)); }
 .rv-side small { color: var(--steel-200); font: 700 0.8rem var(--sans); letter-spacing: 0.14em; text-transform: uppercase; }
+.rv-fac { font: italic 400 1.15rem var(--serif); color: var(--parch-100); text-shadow: 0 1px 3px #000; }
 .rv-vs { font: 600 5rem var(--display); color: var(--parch-100); text-shadow: 0 3px 0 #000; animation: vsin 0.6s 0.5s both; }
 @keyframes rvl { from { opacity: 0; transform: translateX(-30vw); } }
 @keyframes rvr { from { opacity: 0; transform: translateX(30vw); } }
@@ -408,6 +439,9 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .topbar::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 4.6rem; background: linear-gradient(180deg, rgba(9, 11, 15, 0.62), rgba(9, 11, 15, 0.28) 55%, transparent); pointer-events: none; z-index: -1; }
 .tb-side { justify-self: start; width: min(22rem, var(--plaque-w)); height: var(--hud-h); display: flex; align-items: center; gap: 0.5rem; min-width: 0; padding: 0 0.15rem; border: solid transparent; border-width: 0.3rem 0.5rem; border-image: url('/ui/kit/btn-stone.webp') 26 40 fill / 0.3rem 0.5rem; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55)); }
 .tb-side.foe { justify-self: end; flex-direction: row-reverse; text-align: right; }
+.tb-side { position: relative; }
+.tb-side[data-faction]:not([data-faction=''])::after { content: ''; position: absolute; top: -0.3rem; bottom: -0.3rem; left: -0.5rem; width: 0.26rem; background: linear-gradient(180deg, var(--fa) 0 50%, var(--fb) 50% 100%); box-shadow: 1px 0 0 rgba(0, 0, 0, 0.55); pointer-events: none; }
+.tb-side.foe[data-faction]:not([data-faction=''])::after { left: auto; right: -0.5rem; box-shadow: -1px 0 0 rgba(0, 0, 0, 0.55); }
 .tb-side .crest.md { width: 1.95rem; height: 2.15rem; }
 .tb-info { flex: 1; min-width: 0; display: grid; gap: 0.12rem; }
 .tb-name { display: flex; align-items: baseline; gap: 0.45rem; white-space: nowrap; overflow: hidden; line-height: 1.1; }
@@ -534,6 +568,8 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .round-banner { position: absolute; left: 0; right: 0; top: 34%; text-align: center; animation: banner 2.6s both; }
 .round-banner small { display: block; font: italic 400 1.3rem var(--serif); color: var(--parch-100); text-shadow: 0 2px 6px #000, 0 0 2px #000; }
 .round-banner b { font: 600 4.4rem/1.1 var(--display); letter-spacing: 0.02em; color: var(--parch-100); text-shadow: 0 0.06em 0 #0b0d11, 0 0.2rem 1rem #000; }
+/* a decision opened over it (the recruit or loot pick) takes the screen: the round banner would show through its veil, behind its text */
+#ui:has(.modal) .round-banner { display: none; }
 @keyframes banner { 0% { opacity: 0; transform: scale(1.15); } 15% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-1rem); } }
 .planning.is-ready .shop { opacity: 0.45; pointer-events: none; }
 
@@ -1042,6 +1078,20 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
 .rl-body b { color: var(--head); font-weight: 700; }
 .rl-body .good { color: var(--good-c); }
 .rl-body .bad { color: var(--bad-c); }
+.rl-scope { display: flex; align-items: center; gap: 0.4rem; margin: 0; padding: 0.3rem 0.6rem; background: var(--well); border-left: 3px solid var(--ink-2); font-size: 0.88rem; color: var(--muted); }
+.rl-scope b { color: var(--head); }
+.rl-facs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; align-items: start; }
+.rl-fac { position: relative; display: grid; gap: 0.3rem; padding: 0.9rem 0.8rem 0.8rem; border: 1px solid var(--rule); background: var(--well); }
+.rl-fac.mine { border-color: var(--ink-2); }
+.rl-fac .fc-band { height: 0.4rem; }
+.rl-fac > b { font: 700 1.3rem/1.1 var(--serif); color: var(--head); }
+.rl-fac > b em { font: 700 0.62rem var(--sans); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: var(--me-deep); vertical-align: middle; margin-left: 0.3rem; }
+.rl-fac > p { font-size: 0.88rem; line-height: 1.4; }
+.rl-fac > small { margin-top: 0.25rem; font: 700 0.66rem var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.rl-fac .uchip { margin: 0 0.2rem 0.25rem 0; font-size: 0.76rem; }
+.rl-fac .rl-list { font-size: 0.86rem; line-height: 1.35; gap: 0.25rem; }
+.rl-fac .rl-list li.good, .rl-fac .rl-list li.bad { color: var(--text); }
+.rl-fac .rl-list li.bad b { color: var(--bad-c); }
 .rl-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.35rem; }
 .rl-list li { position: relative; padding-left: 1.2rem; }
 .rl-list li::before { content: ''; position: absolute; left: 0.2rem; top: 0.55em; width: 0.4rem; height: 0.4rem; transform: rotate(45deg); background: var(--ink-2); }
@@ -1128,7 +1178,12 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
    note along the bottom of the Lord pick, which keeps that strip free while it is up. */
 .coach[data-slot='right'] { left: auto; right: 1rem; top: var(--hud-under); bottom: auto; }
 .coach[data-slot='foot'] { left: 0; right: 0; top: auto; bottom: 1.1rem; margin-inline: auto; width: min(54rem, calc(100vw - 2rem)); }
-#ui:has(.coach.on[data-slot='foot']) .lordpick { padding-bottom: 9.5rem; }
+/* the tutorial's Lord pick: a wide, short coach under the cards, and cards with a shorter portrait so all four fit above it */
+.coach[data-slot='foot'] { width: min(72rem, calc(100vw - 2rem)); padding-block: 0.6rem 0.45rem; gap: 0.2rem; }
+#ui:has(.coach.on[data-slot='foot']) .lordpick { padding-bottom: var(--coach-foot, 10rem); gap: 0.35rem; }
+#ui:has(.coach.on[data-slot='foot']) .lp-cards { padding-block: 0.5rem 0.2rem; }
+#ui:has(.coach.on[data-slot='foot']) .lcard { gap: 0.4rem; }
+#ui:has(.coach.on[data-slot='foot']) .lcard > .lport { height: 5.6rem; }
 #ui:has(.coach.on[data-slot='foot']) .lp-foot { display: none; }
 /* it reads above a tooltip that opens over it (tooltips are z-index 90) */
 #ui:has(.tip-layer.on) .coach { z-index: 91; }
@@ -1169,10 +1224,11 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .lp-cards { grid-template-columns: repeat(4, minmax(0, 17rem)); gap: 1.1rem; }
   .lcard { gap: 0.4rem; }
   .lcard > :not(.lport) { margin: 0 0.6rem; }
-  .lport { height: 7.5rem; }
+  .lport { height: 6rem; }
   .lc-name b { font-size: 1.25rem; }
   .lc-wpn { float: none; margin-top: 0.1rem; display: flex; }
   .lc-block p { font-size: 0.82rem; line-height: 1.3; }
+  .lc-stats { gap: 0.3rem 0.5rem; font-size: 0.78rem; }
   .lobby-card { padding: 1rem 1.2rem 0.9rem; }
   .code-big { font-size: 2.8rem; }
   .vs-port { width: 3.2rem; height: 4rem; }
@@ -1181,6 +1237,12 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .res-foot .res-gold { grid-column: 1 / -1; }
   .rl-flow, .rl-grid, .rl-slots, .rl-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rl-sched { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lp-factions { gap: 0.5rem; }
+  .fcard > small { font-size: 0.76rem; }
+  .fcard > b { font-size: 1.1rem; }
+  .lp-ident p { font-size: 0.84rem; }
+  .lp-cards[data-n='1'] .lcard { grid-template-columns: 14rem minmax(0, 1fr); }
+  .lp-cards[data-n='1'] .lcard > .lport { min-height: 12rem; }
   .draft-row { gap: 0.8rem 0.8rem; }
   .dcard { padding: 0.6rem 0.4rem 0.5rem; }
   .dcard .crest.lg { width: 3rem; height: 3.35rem; }
@@ -1196,6 +1258,12 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .b-tally { top: calc(var(--hud-h) + 0.15rem); left: 50%; transform: translateX(-50%); height: 1.9rem; }
   .notices { top: calc(var(--hud-under) + 2.2rem); }
   .coach { width: 15.5rem; }
+  .coach[data-slot='foot'] { width: calc(100vw - 2rem); }
+  #ui:has(.coach.on[data-slot='foot']) .lcard > .lport { height: 3.6rem; }
+  #ui:has(.coach.on[data-slot='foot']) .lp-head .eyebrow { display: none; }
+  #ui:has(.coach.on[data-slot='foot']) .lcard { gap: 0.3rem; }
+  #ui:has(.coach.on[data-slot='foot']) .lp-cards { padding-block: 0.3rem 0; }
+  #ui:has(.coach.on[data-slot='foot']) .lc-sig .uchip { font-size: 0.72rem; }
   .coach[data-slot='modal'] { width: 13.5rem; padding: 0.6rem 0.7rem 0.45rem; }
   .coach[data-slot='modal'] .coach-x { font-size: 0.84rem; }
 }

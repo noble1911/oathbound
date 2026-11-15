@@ -83,8 +83,11 @@ export { itemName, itemLines, itemPower, rollLoot, lootSchedule, lootTopSlot, RA
 // itemName(item): string          e.g. "Vicious Ironbark Bow of Haste"
 // itemLines(item): ItemLine[]     ARPG tooltip lines (name, base type, implicit, affixes, legendary power, flavour)
 
-export { UNITS, UNIT_TYPES, BASIC_POOL, unitDef } from './data/units.ts';
+export { UNITS, UNIT_TYPES, BASIC_POOL, unitDef, like } from './data/units.ts';
 export { LORDS, LORD_IDS } from './data/lords.ts';
+export { FACTIONS, FACTION_IDS, factionOfLord, factionOfUnit } from './data/factions.ts';
+// FACTIONS[id]: { name, short, blurb, identity, colors, lords, units, basic } — the three factions (DESIGN §4b)
+// Lord pick phase: {t:'pickFaction', faction} (optional, changeable) then {t:'pickLord', lord}; a Lord implies its faction.
 export { BASES, AFFIXES, LEGENDARIES, RARITIES, SLOT_UNLOCK_LEVEL } from './data/items.ts';
 export { FIELD_W, FIELD_H, TICK_HZ, TICK_MS, KEYFRAME_TICKS, MAX_BATTLE_TICKS, MARCH_TICKS, mirrorPos, mirrorFacing } from './constants.ts';
 export { terrainAt, genTerrain } from './terrain.ts';

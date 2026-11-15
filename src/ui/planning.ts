@@ -13,6 +13,7 @@ import { LORDS } from '../sim/data/lords.ts';
 import { inDeployZone, levelUpCost, sellRefund, ARMY_CAP, MAX_SQUAD_LEVEL, LORD_XP_LEVELS, MAX_LORD_LEVEL, overlappingSquad, freeSpotNear } from '../sim/match.ts';
 import { SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
 import { sound } from '../audio.ts';
+import { playLordLine } from '../audio/voice.ts';
 import type { Backend } from './backend.ts';
 import type { SceneAdapter, SquadVisual } from './scene-adapter.ts';
 import { $, el, esc, hideTip, num, showTipAt, store, tip, toast } from './dom.ts';
@@ -425,6 +426,7 @@ export class PlanningScreen {
       this.intent({ t: 'unready' });
     } else {
       sound.ready();
+      playLordLine(me.lord, 'ready');
       this.cancelDrag();
       this.intent({ t: 'ready' });
     }
@@ -888,6 +890,7 @@ export class PlanningScreen {
     const at = this.spot(u, pos, -1);
     if (!at) return this.rejected('No room there: each squad needs its own ground');
     sound.deploy();
+    playLordLine(this.me?.lord, 'deploy', { delay: 0.15 });
     this.intent({ t: 'deploy', unit: u, pos: at, facing });
   }
 

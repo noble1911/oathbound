@@ -2,7 +2,8 @@
 // One squad of a replay at a tick: who it is, how it is doing (the sim's ledger, src/sim/stats.ts),
 // where its damage comes from, how it ranks on its side, what it can do and what each ability has
 // done so far, and its sheet (base -> effective stats, items). Plus the pair view for compare mode.
-import type { DecodedReplay, LordId, ReplaySquad, Seat, SkillId, SkillInfo, SquadType, StatCause } from '../sim/types.ts';
+import type { DecodedReplay, FactionId, LordId, ReplaySquad, Seat, SkillId, SkillInfo, SquadType, StatCause } from '../sim/types.ts';
+import { UNITS } from '../sim/data/units.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { LEGENDARIES } from '../sim/data/items.ts';
 import { SKILLS } from '../sim/data/skills.ts';
@@ -52,6 +53,8 @@ export interface InspectModel {
   keepDamage: number;
   /** Largest first, at most five and then "Other". */
   causes: CauseShare[];
+  /** The squad's faction (a Lord's own; a unit's roster), for the header. */
+  faction: FactionId;
   /** "2nd-highest damage on your side", or '' before anybody has done anything. */
   rank: string;
   /** Still standing and untouched: it has neither dealt nor taken nor healed anything (Lords and the back line early on). */
@@ -66,6 +69,7 @@ const CAUSE_LABEL: Partial<Record<StatCause, string>> = {
   attack: 'Attacks', burn: 'Burning', thorns: 'Thorns', tower: 'Keep towers', chain: LEGENDARIES.stormcaller?.name ?? 'Chain lightning',
   ember_burst: 'Ember Crown', sunfire: 'Sunfire Mantle', meteor: 'Meteor', skyfall: 'Skyfall', rout: 'Rout',
   heal: 'Healing', leech: 'Lifesteal', lifebinder: 'Lifebinder', bloodthirst: 'Bloodthirst', revive: 'Revive',
+  radiance: 'Radiance', regen: 'Regeneration',
 };
 
 export function causeLabel(c: StatCause | 'other'): string {
@@ -82,7 +86,7 @@ export function ordinal(n: number): string {
 
 interface Index { rowOf: Int32Array; lordCasts: { tick: number; row: number; ability: string }[] }
 const INDEX = new WeakMap<DecodedReplay, Index>();
-const LORD_ABILITIES = new Set(['rally', 'meteor', 'bulwark', 'skyfall']);
+const LORD_ABILITIES = new Set(['rally', 'meteor', 'bulwark', 'skyfall', 'necromancy', 'radiance']);
 
 function index(d: DecodedReplay): Index {
   let ix = INDEX.get(d);
@@ -91,7 +95,7 @@ function index(d: DecodedReplay): Index {
   const rowOf = new Int32Array(d.replay.soldiers.length).fill(-1);
   for (const q of rows) for (const i of q.soldiers) if (i >= 0 && i < rowOf.length) rowOf[i] = q.row;
   const lordCasts: Index['lordCasts'] = [];
-  for (const e of d.events) if (e.k === 'ability' && LORD_ABILITIES.has(e.ability) && rowOf[e.src] !== undefined && rowOf[e.src]! >= 0) lordCasts.push({ tick: e.tick, row: rowOf[e.src]!, ability: e.ability });
+  for (const e of d.events) if (e.k === 'ability' && LORD_ABILITIES.has(e.ability) && d.replay.soldiers[e.src]?.type === 'lord' && rowOf[e.src] !== undefined && rowOf[e.src]! >= 0) lordCasts.push({ tick: e.tick, row: rowOf[e.src]!, ability: e.ability });
   INDEX.set(d, (ix = { rowOf, lordCasts }));
   return ix;
 }
@@ -101,8 +105,8 @@ export function inspectRow(d: DecodedReplay, row: number): number {
   const rows = replaySquads(d);
   const q = rows[row];
   if (!q) return -1;
-  if (!q.summoned && q.type !== 'skeleton') return row;
-  const owner = rows.find((x) => x.id === q.id && x.side === q.side && !x.summoned && x.type !== 'skeleton');
+  if (!q.summoned) return row;
+  const owner = rows.find((x) => x.id === q.id && x.side === q.side && !x.summoned);
   return owner ? owner.row : -1;
 }
 
@@ -114,7 +118,7 @@ export function rowOfSoldier(d: DecodedReplay, soldier: number): number {
 
 /** The inspectable row of a MatchState squad id (battle report rows), or -1. */
 export function rowOfSquad(d: DecodedReplay, squadId: number, side?: Seat): number {
-  const q = replaySquads(d).find((x) => x.id === squadId && !x.summoned && x.type !== 'skeleton' && (side === undefined || x.side === side));
+  const q = replaySquads(d).find((x) => x.id === squadId && !x.summoned && (side === undefined || x.side === side));
   return q ? q.row : -1;
 }
 
@@ -122,7 +126,7 @@ export function rowOfSquad(d: DecodedReplay, squadId: number, side?: Seat): numb
 export function cycleRows(d: DecodedReplay, viewer: Seat | null): number[] {
   const me = viewer ?? 0;
   const rank = (q: ReplaySquad): number => (q.side === me ? 0 : 1000) + (q.type === 'lord' ? 0 : 1 + q.row);
-  return replaySquads(d).filter((q) => !q.summoned && q.type !== 'skeleton').sort((a, b) => rank(a) - rank(b)).map((q) => q.row);
+  return replaySquads(d).filter((q) => !q.summoned).sort((a, b) => rank(a) - rank(b)).map((q) => q.row);
 }
 
 /** "Your" / "Enemy", or the commander's name for a spectator. */
@@ -141,7 +145,7 @@ export function rankHint(st: BattleStatsAt, row: number, viewer: Seat | null, na
   const healer = me.healingDone > me.dealt;
   const val = (q: SquadStats): number => (healer ? q.healingDone : q.dealt);
   if (val(me) <= 0) return '';
-  const peers = st.squads.filter((q) => !q.summoned && q.type !== 'skeleton');
+  const peers = st.squads.filter((q) => !q.summoned);
   const side = peers.filter((q) => q.side === me.side);
   const place = 1 + side.filter((q) => val(q) > val(me)).length;
   const what = healer ? 'healing' : 'damage';
@@ -165,7 +169,7 @@ export function causeShares(byCause: SquadStats['byCause'], max = 5): CauseShare
 export function inspectModel(d: DecodedReplay, st: BattleStatsAt, row: number, viewer: Seat | null, names: [string, string] = ['Blue', 'Red']): InspectModel | null {
   const q = st.squads[row];
   const info = replaySquads(d)[row];
-  if (!q || !info || q.summoned || q.type === 'skeleton') return null;
+  if (!q || !info || q.summoned) return null;
   const type = q.type as SquadType;
   const lord = type === 'lord' ? (q.lord ?? info.ownerLord ?? null) : null;
   const sheet = d.replay.squads?.length ? replaySquadSheet(d.replay, row) : null;
@@ -184,7 +188,7 @@ export function inspectModel(d: DecodedReplay, st: BattleStatsAt, row: number, v
     return { info: k, casts: null, damage: q.byCause[k.id as StatCause] ?? 0, healing: 0, hits: 0 };
   });
   return {
-    row, squad: q.squad, side: q.side, type, lord,
+    row, squad: q.squad, side: q.side, type, lord, faction: type === 'lord' ? (lord ? LORDS[lord].faction : 'kingdom') : UNITS[type].faction,
     name: L ? `${L.title} ${L.name}` : unitName(type, lord), role: sheet?.role ?? (type === 'lord' ? 'Lord' : ''), level: q.level,
     alive: Math.max(0, q.alive), soldiers: q.soldiers, hp: q.hp, hpMax: q.hpMax, wipedAt: q.wipedAt,
     dealt: q.dealt, taken: q.taken, mitigated: q.mitigated, healingDone: q.healingDone, healingReceived: q.healingReceived,

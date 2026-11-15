@@ -134,19 +134,29 @@ def build_ballista(body, H, lod):
                 key(o, 0, loc=rest_b, scale=(1, 1, 1)); key(o, 2, loc=rest_b + Vector((0, -0.4, 0)))
                 key(o, 4, loc=rest_b + Vector((0, -6, 0.2)), scale=(1, 1, 1)); key(o, 5, scale=(0, 0, 0)); key(o, n - 1, loc=rest_b, scale=(0, 0, 0))
             elif clipname == 'reload':
-                key(o, 0, loc=rest_b + Vector((0, 0.4, 0)), scale=(0, 0, 0)); key(o, n * 0.5, scale=(1, 1, 1)); key(o, n - 1, loc=rest_b, scale=(1, 1, 1))
+                key(o, 0, loc=rest_b + Vector((0, 0.7, 0.05)), scale=(0, 0, 0)); key(o, n * 0.25, loc=rest_b + Vector((0, 0.7, 0.05)), scale=(1, 1, 1))
+                key(o, n * 0.7, loc=rest_b + Vector((0, 0.08, 0)), scale=(1, 1, 1)); key(o, n - 1, loc=rest_b, scale=(1, 1, 1))
             elif clipname == 'death':
                 key(o, 0, loc=rest_b, scale=(1, 1, 1)); key(o, 6, scale=(0, 0, 0))
             else:
                 key(o, 0, loc=rest_b, scale=(1, 1, 1)); key(o, n - 1, loc=rest_b, scale=(1, 1, 1))
         else:
             if clipname == 'fire':
-                key(o, 0, loc=(0, 0, 0), rot=(0, 0, 0)); key(o, 3, loc=(0, 0.12, 0), rot=(0.05, 0, 0)); key(o, 12, loc=(0, 0, 0), rot=(0, 0, 0))
+                key(o, 0, loc=(0, 0, 0), rot=(0, 0, 0)); key(o, 2, loc=(0, -0.03, 0), rot=(-0.02, 0, 0))        # audit pass: readable recoil
+                key(o, 5, loc=(0, 0.3, 0.03), rot=(0.12, 0, 0)); key(o, 10, loc=(0, 0.2, 0), rot=(-0.02, 0, 0))
+                key(o, 20, loc=(0, 0, 0), rot=(0, 0, 0)); key(o, n - 1, loc=(0, 0, 0), rot=(0, 0, 0))
+            elif clipname == 'reload':
+                key(o, 0, loc=(0, 0, 0), rot=(0, 0, 0))
+                for i in range(1, 7):                                   # the crew cranks the windlass: small rhythmic rock
+                    key(o, n * i / 8, rot=(0.022 * (1 if i % 2 else -0.4), 0, 0.012 * (1 if i % 2 else -1)))
                 key(o, n - 1, loc=(0, 0, 0), rot=(0, 0, 0))
             elif clipname == 'hit':
-                key(o, 0, rot=(0, 0, 0)); key(o, 2, rot=(0, 0.04, 0.03)); key(o, 5, rot=(0, -0.02, -0.01)); key(o, n - 1, rot=(0, 0, 0))
+                key(o, 0, loc=(0, 0, 0), rot=(0, 0, 0)); key(o, 2, loc=(0, 0.08, 0), rot=(0.07, 0.09, 0.05)); key(o, 5, loc=(0, 0.02, 0), rot=(-0.03, -0.04, -0.02))
+                key(o, n - 1, loc=(0, 0, 0), rot=(0, 0, 0))
             elif clipname == 'death':
-                key(o, 0, loc=(0, 0, 0), rot=(0, 0, 0)); key(o, 10, loc=(0.1, 0, -0.15), rot=(0.08, 0.25, 0.05)); key(o, n - 1, loc=(0.15, 0, -0.25), rot=(0.1, 0.32, 0.06))
+                key(o, 0, loc=(0, 0, 0), rot=(0, 0, 0)); key(o, 6, loc=(0.05, 0.1, 0.05), rot=(0.1, 0.2, 0.05))
+                key(o, 16, loc=(0.35, 0.05, -0.12), rot=(0.12, 0.95, 0.12)); key(o, 20, loc=(0.37, 0.05, -0.1), rot=(0.12, 0.88, 0.12))
+                key(o, n - 1, loc=(0.38, 0.05, -0.12), rot=(0.12, 0.93, 0.12))
             else:
                 key(o, 0, loc=(0, 0, 0), rot=(0, 0, 0)); key(o, n - 1, loc=(0, 0, 0), rot=(0, 0, 0))
     return [body, bolt], anim, {'fireTime': round(4 / FPS, 3)}
@@ -202,6 +212,7 @@ def build_trebuchet(body, H, lod):
     print('[siege] arm verts', int(mask.sum()), 'of', len(co), 'pivot', [round(v, 2) for v in piv], 'tip', [round(v, 2) for v in tip])
     arm = split(body, mask, 'arm', piv)
     body.name = 'frame'
+    arm.parent = body          # the arm rides the frame (rocking on fire, the collapse on death)
     rope_len = 0.18 * H
     rope = prim('rope', 'cyl', r=0.02, d=rope_len, seg=4)
     rope.data.transform(Matrix.Translation((0, 0, -rope_len / 2)))
@@ -216,7 +227,8 @@ def build_trebuchet(body, H, lod):
     def anim(o, n, clipname):
         if o.name == 'arm':
             if clipname == 'fire':
-                key(o, 0, rot=(0, 0, 0)); key(o, 6, rot=(swing * 0.25, 0, 0)); key(o, 12, rot=(swing, 0, 0)); key(o, n - 1, rot=(swing, 0, 0))
+                key(o, 0, rot=(0, 0, 0)); key(o, 6, rot=(swing * 0.25, 0, 0)); key(o, 12, rot=(swing, 0, 0))
+                key(o, 16, rot=(swing * 1.09, 0, 0)); key(o, 22, rot=(swing * 0.96, 0, 0)); key(o, 29, rot=(swing * 1.02, 0, 0)); key(o, n - 1, rot=(swing, 0, 0))
             elif clipname == 'reload':
                 key(o, 0, rot=(swing, 0, 0)); key(o, n - 1, rot=(0, 0, 0))
             elif clipname == 'death':
@@ -239,9 +251,12 @@ def build_trebuchet(body, H, lod):
                 key(o, 0, scale=(1, 1, 1)); key(o, n - 1, scale=(1, 1, 1))
         else:
             if clipname == 'hit':
-                key(o, 0, rot=(0, 0, 0)); key(o, 2, rot=(0, 0.02, 0.02)); key(o, n - 1, rot=(0, 0, 0))
+                key(o, 0, rot=(0, 0, 0)); key(o, 2, rot=(0.025, 0.05, 0.03)); key(o, 6, rot=(-0.01, -0.02, -0.01)); key(o, n - 1, rot=(0, 0, 0))
+            elif clipname == 'fire':                                   # the frame rocks as the arm goes over
+                key(o, 0, rot=(0, 0, 0)); key(o, 9, rot=(0.03, 0, 0)); key(o, 14, rot=(-0.05, 0, 0)); key(o, 21, rot=(0.02, 0, 0)); key(o, n - 1, rot=(0, 0, 0))
             elif clipname == 'death':
-                key(o, 0, loc=(0, 0, 0), rot=(0, 0, 0)); key(o, n - 1, loc=(0, 0, -0.3), rot=(0.05, 0.18, 0))
+                key(o, 0, loc=(0, 0, 0), rot=(0, 0, 0)); key(o, 8, loc=(0, 0, -0.05), rot=(0.04, 0.12, 0.02))
+                key(o, 22, loc=(0.5, 0, -0.5), rot=(0.1, 0.62, 0.08)); key(o, 27, loc=(0.5, 0, -0.45), rot=(0.1, 0.57, 0.08)); key(o, n - 1, loc=(0.52, 0, -0.5), rot=(0.1, 0.6, 0.08))
             else:
                 key(o, 0, loc=(0, 0, 0), rot=(0, 0, 0)); key(o, n - 1, loc=(0, 0, 0), rot=(0, 0, 0))
     return [body, arm, rope, stone], anim, {'fireTime': round(12 / FPS, 3)}
@@ -259,6 +274,8 @@ def main():
         rule = lambda fr, bk: np.ptp(fr[:, 0]) < np.ptp(bk[:, 0])           # bow (widest) at the front
     else:
         rule = lambda fr, bk: fr[:, 2].max() > bk[:, 2].max()               # cocked arm tip at the back
+    if a.get('flip'):                                   # assets.json `flip`: the front rule guessed wrong for this mesh
+        rule0 = rule; rule = lambda fr, bk: not rule0(fr, bk)
     orient([l0, l1], rule)
     facts = dict(id=aid, height=H, clips={})
     for lod, src, name in ((False, l0, aid), (True, l1, f'{aid}_lod1')):

@@ -91,7 +91,7 @@ export class Coach {
     const armor = SLOT_UNLOCK_LEVEL.armor;
     if (has('.lordpick')) {
       if (has('.lordpick.has-pick')) return null;
-      return { id: 'lord', slot: 'foot', target: '.lcard[data-lord="marshal"]', title: 'Choose your Lord', text: 'Your Lord is a hero who fights on the field. Each one brings <b>two signature units</b>, a passive and an ability that fires by itself. <b>Marshal Aldric</b> is a forgiving first pick: he lets you deploy an extra squad every round.' };
+      return { id: 'lord', slot: 'foot', target: '.lcard[data-lord="marshal"]', title: 'Choose your Lord', text: 'The three banners are the <b>factions</b>, each with its own units and Lords; gold, loot and rules are the same for all. We start with the Kingdom. Your Lord fights on the field and brings <b>two signature units</b>, a passive and an ability that fires by itself. <b>Marshal Aldric</b> is a forgiving first pick: he deploys an extra squad every round.' };
     }
     if (has('.reveal')) return null;
     if (has('.modal.draft')) {
@@ -224,6 +224,8 @@ export class Coach {
     }
     this.root.dataset.slot = s.slot ?? 'side';
     this.root.classList.add('on');
+    // a coach under the screen (the Lord pick) reserves its own height plus its margin, so nothing sits under it
+    if (s.slot === 'foot') this.ui.style.setProperty('--coach-foot', `${this.root.offsetHeight + parseFloat(getComputedStyle(this.root).bottom) * 2}px`);
     this.ring(s.target ? [...this.ui.querySelectorAll(s.target)] : []);
   }
 

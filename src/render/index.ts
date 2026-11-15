@@ -45,6 +45,10 @@
 //   pb.playing = false / true;  pb.speed = 2;  pb.seek(ms);  pb.timeMs;  pb.durationMs
 //   view.stopBattle()
 //   Events drive units (attack/cast one-shots, hit flashes, deaths), the director and VFX automatically.
+//   Damage numbers: view.setDamageNumbers('all' | 'important' | 'off') / view.damageNumbers (stored; default
+//   'important' = crits, skill hits, Lord hits and big per-squad totals, ~1 figure a second per squad, and never
+//   more on screen than the tier allows: low 5, medium 7, high 10, ultra 12). pb.damageNumbers for one playback.
+//   Slowed soldiers (Frost Nova, Pinning Shot, Trample, frost procs) take a blue cast and shed frost for the slow.
 //   Item skills (replay v3): replaySource passes `decoded.skills` through as `source.skills`; each cast plays its
 //   signature effect in sync with its tick and fires the hook  onSkill(e: SkillEvent, ms)  (e.squad = casting row of
 //   Replay.squads, e.skill = SkillId) for banners / the kill feed. A custom or flipped BattleSource must carry
@@ -52,7 +56,7 @@
 //
 // VFX (direct triggers, world-space THREE.Vector3; also used by the event mapping)
 //   view.vfx.projectile(kind, from, to, flightSec, arc) · impact(kind, pos, splashM) · hitSpark(pos, {crit, magic})
-//   heal · lightning(from, to) · burn · frost · meteor(pos, r) · rally(pos, r, dur, follow?) · bulwark(...)
+//   heal · lightning(from, to) · burn · burnMote · frost · bless · meteor(pos, r) · rally(pos, r, dur, follow?) · bulwark(...)
 //   skyfall(from, to) · breath(origin, dir, len, halfAngle, dur) · stomp · marchDust · keepHit · keepCollapse
 //   death(pos, size) · keepFire(points, dur) · levelUp · lootBeam(pos, rarity) → { setPosition, dispose }
 //   damageNumber(pos, value, style, key?)  (key = squad id: hits within 0.75 s merge into one total; crits pop alone)
@@ -105,7 +109,7 @@
 // COORDINATES: field cm (sim) → world metres: X = x/100 − 40, Z = 60 − y/100 (seat 0's keep at +Z). See core/coords.ts.
 
 export { BattleView, type ArmySquad, type ArmyOptions, type BattleViewOptions } from './battle-view.ts';
-export { BattlePlayback, type PlaybackHooks } from './battle-playback.ts';
+export { BattlePlayback, type PlaybackHooks, type NumberMode } from './battle-playback.ts';
 export type { RangeRingHandle } from './range-ring.ts';
 export { replaySource, sampleKeyframes, makeTransforms, type BattleSource } from './battle-source.ts';
 export { defaultTerrain } from './terrain/index.ts';

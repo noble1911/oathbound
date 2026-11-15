@@ -10,6 +10,7 @@ import { decodeReplay } from '../sim/index.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { LEGENDARIES } from '../sim/data/items.ts';
 import { sound } from '../audio.ts';
+import { playLordLine, voice } from '../audio/voice.ts';
 import type { CameraMode, PlaybackHandle, SceneAdapter } from './scene-adapter.ts';
 import { $, el, esc, store } from './dom.ts';
 import { icon } from './icons.ts';
@@ -40,7 +41,9 @@ const PROC: Record<string, { name: string; ic: string }> = {
   chain: { name: 'Stormcaller', ic: 'lightning' },
   reflect: { name: 'Mirror Aegis', ic: 'shield' },
 };
-const LORD_ABIL = new Set(['rally', 'meteor', 'bulwark', 'skyfall']);
+const LORD_ABIL = new Set(['rally', 'meteor', 'bulwark', 'skyfall', 'necromancy', 'radiance']);
+/** How the log words a Lord's ability when "casts X" would undersell it. */
+const ABIL_VERB: Record<string, string> = { necromancy: 'raises the dead', radiance: 'calls down Radiance' };
 
 export class BattleScreen {
   readonly root: HTMLElement;
@@ -177,8 +180,10 @@ export class BattleScreen {
     this.renderTally();
     this.syncInsets();
     sound.setTerrain(replay.terrain);
+    voice.setMatchLords(info.lords);
     if (offsetMs < 500) {
       sound.battleStart(replay.round);
+      if (info.seat !== null) playLordLine(info.lords[info.seat], 'charge', { delay: 1.6 });
       this.banner('To battle!', `Round ${replay.round}`, 'start');
     } else sound.setPhase('battle');
     // the HUD clock ticks at 4 Hz (no per-frame DOM work)
@@ -313,7 +318,7 @@ export class BattleScreen {
 
   private squadLabel(squadId: number): { name: string; side: Seat; crest: string; row: number } {
     const sol = this.decoded.replay.soldiers[this.squadSoldier.get(squadId) ?? 0]!;
-    return { name: unitName(sol.type === 'skeleton' ? 'militia' : sol.type, sol.lord), side: sol.side, crest: crest(sol.type === 'skeleton' ? 'militia' : sol.type, sol.lord, 'sm'), row: rowOfSquad(this.decoded, squadId, sol.side) };
+    return { name: unitName(sol.type, sol.lord), side: sol.side, crest: crest(sol.type, sol.lord, 'sm'), row: rowOfSquad(this.decoded, squadId, sol.side) };
   }
 
   /**
@@ -342,7 +347,7 @@ export class BattleScreen {
     const key = `${c.row}:${c.id}`;
     if (performance.now() - (this.procSeen.get(key) ?? -1e9) < 3000) return;
     this.procSeen.set(key, performance.now());
-    const t = q.type === 'skeleton' ? 'militia' : q.type;
+    const t = q.type;
     const mine = q.side === this.mySeat();
     this.push(`${skillGlyph(c.id as SkillId)}${crest(t, q.lord ?? q.ownerLord ?? null, 'sm')}<span>${this.sideName(q.side)} ${esc(unitName(t, q.lord ?? q.ownerLord ?? null))} cast <b>${esc(c.name)}</b></span>`, `skill ${mine ? 'mine' : 'foe'}`, c.row);
   }
@@ -416,9 +421,12 @@ export class BattleScreen {
         if (performance.now() - (this.procSeen.get(key) ?? -1e9) > 6000) {
           this.procSeen.set(key, performance.now());
           const srcSol = sol[e.src];
-          if (srcSol) {
+          if (srcSol && srcSol.type !== 'lord') {
             const L = this.squadLabel(srcSol.squad);
-            this.push(`${icon('skull')}${L.crest}<span>${this.sideName(L.side)} ${esc(L.name)}: <em class="leg">Gravebloom</em> raises the dead</span>`, 'proc', L.row);
+            const bloom = srcSol.items.some((it) => it.legendary === 'gravebloom');
+            this.push(bloom
+              ? `${icon('skull')}${L.crest}<span>${this.sideName(L.side)} ${esc(L.name)}: <em class="leg">Gravebloom</em> raises the dead</span>`
+              : `${icon('skull')}${L.crest}<span>${this.sideName(L.side)} <b>${esc(L.name)}</b> raise the dead</span>`, bloom ? 'proc' : srcSol.side === this.mySeat() ? 'skill mine' : 'skill foe', L.row);
           }
         }
         break;
@@ -431,6 +439,7 @@ export class BattleScreen {
         if (!this.breached[e.seat]) {
           this.breached[e.seat] = true;
           const mine = e.seat === this.mySeat();
+          if (mine && this.info.seat !== null) playLordLine(this.info.lords[e.seat], 'keep');
           this.push(`${icon('keep')}<span>${this.info.seat === null ? `${this.sideName(e.seat)} Keep is under attack!` : mine ? 'Your Keep is under attack!' : 'Assault on the enemy Keep!'}</span>`, mine ? 'bad big' : 'good big');
         }
         if (e.final && e.dmg > 0) {
@@ -442,13 +451,16 @@ export class BattleScreen {
       case 'ability': {
         if (quiet) break;
         const src = sol[e.src];
+        // a Grave Acolyte's raise is also a 'necromancy' event: its log line comes from the 'summon' event
+        if (LORD_ABIL.has(e.ability) && src && src.type !== 'lord') break;
         if (LORD_ABIL.has(e.ability) && src) {
           const lord = src.lord ?? 'marshal';
           const L = LORDS[lord];
           const mine = src.side === this.mySeat();
           sound.ability(e.ability, e.pos);
+          playLordLine(lord, 'ability', { delay: 0.1, pan: this.info.seat === null || mine ? 0 : 0.25 });
           this.banner(`${L.abilityName}!`, `${this.plainSide(src.side)} ${L.title} ${L.name}`, `abil ${e.ability} ${mine ? 'mine' : 'foe'}`);
-          this.push(`${icon('lightning')}${crest('lord', lord, 'sm')}<span>${esc(L.title)} ${esc(L.name)} casts <b>${esc(L.abilityName)}</b></span>`, mine ? 'abil mine' : 'abil foe');
+          this.push(`${icon('lightning')}${crest('lord', lord, 'sm')}<span>${esc(L.title)} ${esc(L.name)} ${ABIL_VERB[e.ability] ? `<b>${esc(ABIL_VERB[e.ability]!)}</b>` : `casts <b>${esc(L.abilityName)}</b>`}</span>`, mine ? 'abil mine' : 'abil foe');
           break;
         }
         const proc = PROC[e.ability];
@@ -563,6 +575,7 @@ export class BattleScreen {
     const end = (r as unknown as { end?: string }).end;
     const title = this.info.seat === null ? (r.winner === null ? txt.title : `${this.info.names[r.winner]} wins the round`) : txt.title === 'Victory' ? 'Round won' : txt.title === 'Defeat' ? 'Round lost' : txt.title;
     sound.battleEnd(won);
+    if (won !== null && this.info.seat !== null) playLordLine(this.info.lords[this.info.seat], won ? 'roundWon' : 'roundLost', { delay: 0.8 });
     this.banner(title, end === 'stalemate' ? 'Neither army could harm the other' : r.timeout ? 'Time is up: 1:30' : 'The field falls silent', won === null ? 'neutral' : won ? 'good' : 'bad');
     this.root.classList.add('over');
     $(this.root, '.skip').setAttribute('disabled', '');

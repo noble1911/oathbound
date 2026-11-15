@@ -1,6 +1,6 @@
 // UI-side readings of the sim's data tables: counters, level stats, formations for the deploy
 // ghost, item stat totals and comparison deltas. Pure (no DOM), unit-tested in tests/client.test.ts.
-import type { Affix, Item, LordId, Rarity, Seat, Slot, Squad, SquadType, Tag, UnitDef, UnitType, Vec2, WeaponKind } from '../sim/types.ts';
+import type { Affix, Item, LordId, Rarity, Seat, Slot, Squad, SquadType, Tag, UnitDef, UnitType, Vec2, WeaponKind, FactionId } from '../sim/types.ts';
 import { UNITS, UNIT_TYPES } from '../sim/data/units.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { AFFIXES, LEGENDARIES } from '../sim/data/items.ts';
@@ -86,14 +86,30 @@ export interface Counters {
   weakTo: UnitType[];
 }
 
-export function counters(t: UnitType): Counters {
+/**
+ * Whose units a counter list names: the enemy faction's roster once it is known (after the reveal),
+ * else every faction's. Set by the app from the room view; the codex and the cards read it.
+ */
+let factionCtx: () => { mine: FactionId | null; enemy: FactionId | null } = () => ({ mine: null, enemy: null });
+export function setFactionContext(f: () => { mine: FactionId | null; enemy: FactionId | null }): void {
+  factionCtx = f;
+}
+export function factionContext(): { mine: FactionId | null; enemy: FactionId | null } {
+  return factionCtx();
+}
+/** The units `t` is compared with: the enemy roster when known, plus nothing of its own faction's unknowns. */
+export function rivals(t: UnitType, enemy: FactionId | null = factionCtx().enemy): UnitType[] {
+  return (enemy ? UNIT_TYPES.filter((u) => UNITS[u].faction === enemy) : UNIT_TYPES).filter((u) => u !== t);
+}
+
+export function counters(t: UnitType, enemy: FactionId | null = factionCtx().enemy): Counters {
   const d = UNITS[t];
   const bonuses: string[] = [];
   for (const [tag, m] of Object.entries(d.effective) as [Tag, number][]) if (m > 100) bonuses.push(`×${(m / 100).toFixed(m % 100 ? 1 : 0)} vs ${TAG_LABEL[tag]}`);
   if (BEATS[d.weapon]) bonuses.push(`${WEAPON_LABEL[d.weapon]} beats ${WEAPON_LABEL[BEATS[d.weapon]!]}`);
   if (d.traits.includes('ignoresArmor')) bonuses.push('Ignores armor');
   if (d.splash) bonuses.push(`${(d.splash / 100).toFixed(0)} m splash`);
-  const others = UNIT_TYPES.filter((u) => u !== t);
+  const others = rivals(t, enemy);
   const strongVs = others.filter((u) => counterScore(d, UNITS[u]) >= 1.5).sort((a, b) => counterScore(d, UNITS[b]) - counterScore(d, UNITS[a])).slice(0, 4);
   const weakTo = others.filter((u) => counterScore(UNITS[u], d) >= 1.5).sort((a, b) => counterScore(UNITS[b], d) - counterScore(UNITS[a], d)).slice(0, 4);
   return { bonuses, strongVs, weakTo };

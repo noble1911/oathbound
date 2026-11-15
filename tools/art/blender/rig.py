@@ -26,17 +26,29 @@ import retarget as R
 LIB_TOP = 1.83         # Quaternius mannequin height (m)
 FINAL_CLIPS = ['idle', 'walk', 'run', 'attack_melee_a', 'attack_melee_b', 'attack_bow', 'cast', 'hit',
                'death_a', 'death_b', 'victory']
-COMMON = dict(idle='idle', walk='walk', run='run', attack_bow='bow', cast='cast', hit='hit',
-              death_a='death_a', death_b='death_b', victory='victory')
+COMMON = dict(idle='idle', walk='walk', run='run_up', attack_bow='bow', cast='cast', hit='hit',
+              death_a='death_a', death_b='death_b', victory='victory_b')
 CLIPSETS = {
-    'sword': dict(attack_melee_a='swing_a', attack_melee_b='swing_b', run='run_sword'),
-    'spear': dict(attack_melee_a='thrust_a', attack_melee_b='thrust_b', idle='idle_spear', walk='walk_spear', run='run_spear'),
-    'bow': dict(attack_melee_a='jab', attack_melee_b='cross'),
-    'cast': dict(attack_melee_a='swing_a', attack_melee_b='swing_b'),
+    'sword': dict(attack_melee_a='swing_a', attack_melee_b='swing_b', run='run_sword_up'),
+    # one-handed spear / lance: the carry is kept through hit and cast and released as the unit falls
+    'spear': dict(attack_melee_a='lunge_a', attack_melee_b='lunge_b', idle='idle_spear', walk='walk_spear', run='run_spear_up',
+                  hit='hit_spear', cast='cast_spear', death_a='death_a_spear', death_b='death_b_spear'),
+    # two-handed pike: carried and thrust in both hands
+    'pike': dict(attack_melee_a='pike_a', attack_melee_b='pike_b', idle='idle_pike', walk='walk_pike', run='run_pike',
+                 hit='hit_pike', cast='pike_b', attack_bow='pike_a', death_a='death_a_pike', death_b='death_b_pike', victory='victory_pike'),
+    # ranged units alternate attack / attack2 per soldier, so BOTH must be a shot / a cast (attack2 used to be
+    # a punch for archers and an empty-handed sword chop for casters)
+    'bow': dict(attack_bow='bow_a', attack_melee_a='bow_b', attack_melee_b='cross'),
+    'cast': dict(attack_melee_a='cast_b', attack_melee_b='cast_b'),
+    # staff carried upright in the fist (hold 'fist'), raised to cast, thrust head-first to strike
+    'staff': dict(idle='idle_staff', walk='walk_staff', run='run_staff', hit='hit_staff', cast='cast_staff', attack_bow='cast_staff',
+                  attack_melee_a='staff_strike', attack_melee_b='staff_strike', death_a='death_a_staff', death_b='death_b_staff',
+                  victory='victory_staff'),
     'fist': dict(attack_melee_a='jab', attack_melee_b='cross'),
     # two-handed great axe: port-arms carry, overhead chop, horizontal cleave, heavier walk / jog timing
     'greataxe': dict(attack_melee_a='chop2h', attack_melee_b='cleave2h', idle='idle_axe', walk='walk_axe', run='run_axe',
-                     victory='victory_axe', hit='hit_axe', cast='cast_axe', attack_bow='chop2h'),
+                     victory='victory_axe', hit='hit_axe', cast='cast_axe', attack_bow='chop2h',
+                     death_a='death_a_axe', death_b='death_b_axe'),
 }
 LOOPS = {'idle', 'walk', 'run', 'victory'}
 # weapon holds, in the library T-pose armature space for the left side (x mirrored for the right):
@@ -50,6 +62,10 @@ HOLDS = {
     'staff':  dict(bone='hand', along=0.4, axis=(-1, 0, 0), face=(0, -1, 0), off=0.04),
     # two-handed axe: the right hand sits 0.3 m further up the shaft so the left hand has room below it
     'greataxe': dict(bone='hand', along=0.45, axis=(0, -1, 0), face=(0, 0, 1), off=0.0, shift=-0.30),
+    # hangs from the fist along the arm (away from the elbow): below the hand when the arm hangs
+    'lantern': dict(bone='hand', along=0.5, axis=(1, 0, 0), face=(0, -1, 0), off=0.0),
+    # carried on the back (a standard strapped to the upper spine): upright in every clip, both hands free
+    'back': dict(bone='spine3', central=True, along=0.5, axis=(0, 0, 1), face=(0, -1, 0), off=-0.2),
 }
 WEAPON_HOLD = {'weapon_axe_great': 'greataxe', 'weapon_bow': 'bow', 'weapon_tome': 'tome', 'weapon_shield_kite': 'shield', 'weapon_shield_round': 'shield', 'weapon_staff': 'staff'}
 
@@ -434,9 +450,9 @@ def weapon_objects(wid):
 
 
 def attach(rig, lib, ob, wid, side, s, name):
-    hold = HOLDS[WEAPON_HOLD.get(wid, 'fist')]
+    hold = HOLDS[WEAPON_HOLD.get(wid) or L.assets().get(wid, {}).get('hold', 'fist')]     # assets.json `hold` for new weapons
     sg = 1 if side == 'L' else -1
-    bn = f"{hold['bone']}.{side}"
+    bn = hold['bone'] if hold.get('central') else f"{hold['bone']}.{side}"
     lb = lib.data.bones[bn]
     ax = Vector(hold['axis']); ax.x *= sg
     fc = Vector(hold['face']); fc.x *= sg
@@ -466,6 +482,8 @@ def main():
     sc.render.fps = 24
     lod0 = bpy.data.objects[aid]; lod1 = bpy.data.objects[f'{aid}_lod1']
     H = a['height']
+    if a.get('clipset') == 'staff':
+        WEAPON_HOLD['weapon_staff'] = 'fist'        # the 'staff' clipset grips the shaft in the fist (thumb = staff axis)
     lib = load_lib()
     co = surface_points(lod0)
     rig, land = build_rig(aid, lib, co, H)

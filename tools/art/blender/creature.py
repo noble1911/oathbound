@@ -467,14 +467,18 @@ class Creature:
             if hit or wind:
                 if self.mid == 'dragon':        # rear the head back, then drive it forward and down (breath / bite)
                     b = clip in ('attack_melee_b', 'attack_bow')
-                    self.neck(pose, -0.45 * wind + (0.75 if not b else 0.95) * hit, head=0.3 * wind - (0.1 if not b else -0.25) * hit)
-                    pose.pitch += -0.14 * wind + 0.1 * hit
-                    pose.off.y += 0.25 * wind - (0.5 if b else 0.2) * hit
-                    amp *= 1 + 0.3 * hit
+                    # (audit pass: the strike was too subtle to read from the RTS camera -- bigger rear-back, a real lunge)
+                    self.neck(pose, -0.7 * wind + (1.0 if not b else 1.2) * hit, head=0.4 * wind - (0.15 if not b else -0.3) * hit)
+                    pose.pitch += -0.26 * wind + 0.2 * hit
+                    pose.off.y += 0.45 * wind - (1.1 if b else 0.8) * hit
+                    pose.off.z += 0.25 * wind - 0.3 * hit
+                    amp *= 1 + 0.35 * hit + 0.25 * wind
                 else:                           # mount lunges under the rider's blow
-                    self.neck(pose, -0.25 * wind + 0.5 * hit, head=0.15 * wind - 0.2 * hit)
-                    pose.pitch += -0.08 * wind + 0.1 * hit
-                    pose.off.y += 0.1 * wind - 0.22 * hit
+                    k = 1.0 if horse else 1.9          # wyvern: a clear swoop under the rider's blow (pegasus keeps the small one)
+                    self.neck(pose, k * (-0.25 * wind + 0.5 * hit), head=k * (0.15 * wind - 0.2 * hit))
+                    pose.pitch += k * (-0.08 * wind + 0.1 * hit)
+                    pose.off.y += k * (0.1 * wind - 0.22 * hit)
+                    pose.off.z += (k - 1) * (0.12 * wind - 0.16 * hit)
                     pose.lean += 0.12 * hit
             if clip == 'hit':
                 k = math.sin(math.pi * u)
@@ -517,7 +521,7 @@ class Creature:
                 pose.off.z = -0.06 + 0.055 * math.cos(2 * math.pi * (ph - 0.86))
                 self.flex_spine(pose, 0.11 * math.cos(2 * math.pi * (ph - 0.88)) - 0.02)   # rounds in the air, stretches on the hinds
                 self.neck(pose, 0.05 - 0.16 * rock)                        # neck reaches out and down as the fores land
-                self.tail(pose, ph, sway=0.05, wave=0.16, lift=0.8)
+                self.tail(pose, ph, sway=0.05, wave=0.26, lift=0.42, lag=0.16)    # streams behind and ripples (was a level plank)
                 pose.seat.z = 0.035 * math.cos(2 * math.pi * (ph - 0.98))
                 pose.seat.y = 0.02 * math.sin(2 * math.pi * (ph - 0.3))
                 pose.lean = 0.26 + 0.07 * math.cos(2 * math.pi * (ph - 0.55))

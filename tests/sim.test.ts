@@ -212,7 +212,7 @@ describe('match rules', () => {
     expect(s.round).toBe(3);
     for (const p of s.players) {
       expect(p.draftPicks).toBe(1);
-      expect(p.draftOptions).toEqual(UNIT_TYPES.filter((u) => !p.unlocked.includes(u) && UNITS[u].minRound <= 3)); // every locked unit, no dragon yet
+      expect(p.draftOptions).toEqual(UNIT_TYPES.filter((u) => UNITS[u].faction === 'kingdom' && !p.unlocked.includes(u) && UNITS[u].minRound <= 3)); // every locked unit of the faction, no dragon yet
       expect(p.draftOptions).not.toContain('dragon');
       expect(p.lootOffer?.length).toBe(p.lord === 'skylady' ? 4 : 3);
       expect(p.unlocked.length).toBe(2 + 2); // signature units + one unlock in each of rounds 1 and 2
@@ -238,7 +238,7 @@ describe('hidden information', () => {
     const after = viewFor(s, 0);
     expect(after).toEqual(before);
     // The enemy block contains only public fields.
-    expect(Object.keys(after.enemy).sort()).toEqual(['keepHp', 'keepMax', 'lastArmy', 'lord', 'ready', 'seat']);
+    expect(Object.keys(after.enemy).sort()).toEqual(['faction', 'keepHp', 'keepMax', 'lastArmy', 'lord', 'ready', 'seat']);
     expect(JSON.stringify(after.enemy.lastArmy)).toBe(JSON.stringify(s.players[1].lastArmy));
     // Mutating the view cannot touch the state.
     after.you!.gold = -1;

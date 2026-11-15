@@ -12,8 +12,9 @@ import { DECAL_COLS, DECAL_ROWS } from './atlas.ts';
 
 export type Ground = (wx: number, wz: number) => number;
 
-/** kind: 0 expanding shockwave ring · 1 soft glow · 2 glowing sheet cell (sigil) · 3 dark sheet cell (scorch / cracks, optional ember glow) · 4 soft dark scuff · 5 pulsing warning ring */
-export const DK = { shock: 0, glow: 1, sigil: 2, mark: 3, scuff: 4, warn: 5 } as const;
+/** kind 6 = rime: frost creeping over the ground (soft whitening, feathery crystalline rim, melts back at the end).
+ * kind: 0 expanding shockwave ring · 1 soft glow · 2 glowing sheet cell (sigil) · 3 dark sheet cell (scorch / cracks, optional ember glow) · 4 soft dark scuff · 5 pulsing warning ring */
+export const DK = { shock: 0, glow: 1, sigil: 2, mark: 3, scuff: 4, warn: 5, rime: 6 } as const;
 
 export interface DecalSpec {
   kind: number;
@@ -84,6 +85,11 @@ varying vec2 vLocal;
 varying vec2 vUv;
 varying vec4 vColor;
 varying vec3 vInfo;
+float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n2(vec2 p) {
+  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h2(i), h2(i + vec2(1.0, 0.0)), f.x), mix(h2(i + vec2(0.0, 1.0)), h2(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 void main() {
   float r = length(vLocal);
   if (r > 1.0) discard;
@@ -111,6 +117,34 @@ void main() {
     add = vColor.rgb * m * m * hot * hot * exp(-r * r * 2.5) * 1.6;
   } else if (kind < 4.5) {
     dark = exp(-r * r * 4.5) * 0.55 * vColor.a;
+  } else if (kind > 5.5) {
+    // rime: frost races out over the ground, holds, then melts back from its edge
+    float ang = atan(vLocal.y, vLocal.x);
+    float lumpy = n2(vLocal * 3.5 + 11.0);
+    float fine = n2(vLocal * 13.0 + 3.0);
+    float front = (1.0 - exp(-vInfo.z * 4.5)) * (1.0 - 0.75 * smoothstep(0.62, 1.0, t));
+    // feathery crystal needles push the rim outward in spikes of different length
+    float seg = ang * 9.0 + lumpy * 1.2;
+    float needle = pow(abs(sin(seg * 3.0)), 10.0) * (0.35 + 0.65 * n2(vec2(floor(seg * 0.955) * 7.3, 2.0)));
+    float patchy = n2(vLocal * 2.1 + 5.0);
+    float edgeR = front * (0.56 + 0.34 * patchy + 0.07 * needle);
+    float body = 1.0 - smoothstep(edgeR - 0.2 - 0.12 * fine, edgeR, r);
+    // thin toward the middle where feet have churned it, densest in a band inside the rim
+    float band = 0.55 + 0.45 * smoothstep(0.0, edgeR * 0.75, r);
+    float cover = body * band * (0.72 + 0.28 * fine) * (0.4 + 0.6 * smoothstep(0.2, 0.7, lumpy + 0.3 * fine));
+    // hard glints along crystal edges and scattered sparkles
+    float crystal = smoothstep(0.55, 0.9, needle) * smoothstep(edgeR - 0.28, edgeR - 0.05, r) * body;
+    float spark = step(0.993, h2(floor(vLocal * 70.0))) * body * (0.5 + 0.5 * sin(vInfo.z * 9.0 + h2(floor(vLocal * 90.0) + 3.0) * 40.0));
+    float a = cover * vColor.a;
+    dark = a * 0.34;                                   // whitens the ground instead of glowing over it
+    add = vColor.rgb * (crystal * 0.35 + spark * 1.2) * vColor.a * 2.5;
+    add *= edge * 0.4;
+    dark *= edge;
+    if (dark < 0.003 && max(add.r, max(add.g, add.b)) < 0.002) discard;
+    gl_FragColor = vec4(add + vec3(0.5, 0.62, 0.78) * dark, dark);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+    return;
   } else {
     // warning: pulsing rim + a ring closing on the centre as the strike nears
     float a = exp(-pow((r - 0.95) / 0.035, 2.0)) * (0.6 + 0.4 * sin(vInfo.z * 18.0));
@@ -224,7 +258,7 @@ export class DecalBatch {
     const end = birth + d.life;
     if (end > this.aliveUntil) this.aliveUntil = end;
     // static marks only need frames while they appear / while their embers glow
-    const anim = d.kind === DK.mark ? birth + Math.min(d.life, 2.4) : d.kind === DK.scuff ? birth + Math.min(d.life, (d.fadeIn ?? 0) + 0.1) : end;
+    const anim = d.kind === DK.rime ? end : d.kind === DK.mark ? birth + Math.min(d.life, 2.4) : d.kind === DK.scuff ? birth + Math.min(d.life, (d.fadeIn ?? 0) + 0.1) : end;
     if (anim > this.animatedUntil) this.animatedUntil = anim;
   }
 

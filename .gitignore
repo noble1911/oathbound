@@ -8,3 +8,4 @@ e2e/shots/
 art-work/
 __pycache__/
 *.pyc
+docs/art-review/factions/*.png

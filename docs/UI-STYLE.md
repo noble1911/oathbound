@@ -161,3 +161,16 @@ Don't
 ## Portraits
 
 Lord and unit portraits are **illuminated-manuscript miniatures** (gold leaf, tempera, decorated vine borders), chosen over Amiga pixel art, woodcut, stained glass and 80s module-cover styles. Prompt and process: `tools/art/ui-prompts/_style_manuscript.txt`. New portraits must match this style.
+
+## Factions
+
+- Team colour is still the side: blue is you, red is the enemy, whatever the factions are.
+- A faction shows as a **small heraldic band** in its own colours (`FACTIONS[f].colors`): three
+  stripes across the top of its banner on the pick screen and its card in the codex, and a two-colour
+  band on the outer edge of a HUD plaque (`factionAccent`: steel and blue for the Kingdom, bone and
+  soul-green for the Covenant, turquoise and ochre for the Caliphate). It never colours text, frames
+  or buttons, and the Caliphate's ochre is not the primary-action gold.
+- The pick screen is one flow: three banners, the chosen faction's identity and mechanics, then its
+  Lords (one wide charter when a faction has a single Lord).
+- The codex speaks about one faction at a time (yours in a match) and says so in a scope line; the
+  Factions tab describes all three.

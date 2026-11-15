@@ -26,9 +26,12 @@ const ICONS = [
   'unit_militia', 'unit_pikemen', 'unit_berserkers', 'unit_archers', 'unit_knights', 'unit_cavaliers', 'unit_mages', 'unit_clerics',
   'unit_pegasus', 'unit_ballista', 'unit_trebuchet', 'unit_golem', 'unit_wyvern', 'unit_dragon',
   'lord_marshal', 'lord_archmage', 'lord_warden', 'lord_skylady',
+  // the Ashen Covenant / the Sun Caliphate
+  'unit_skeleton', 'unit_grave_knight', 'unit_bone_archer', 'unit_wraith_rider', 'unit_grave_acolyte', 'unit_bone_drake', 'unit_corpse_catapult', 'unit_bone_golem', 'lord_lich',
+  'unit_spear_levy', 'unit_scimitar', 'unit_camel_archer', 'unit_mamluk', 'unit_djinn_binder', 'unit_sun_priest', 'unit_djinn', 'unit_war_elephant', 'unit_sand_golem', 'lord_sultana',
 ];
 const COLS = 8;
-const ROWS = 4;
+const ROWS = 8; // 8 x 8 cells of 64 px = 512 x 512 (power of two): room for 63 portraits + the fallback glyph
 const CELL = 64;
 const FALLBACK = ICONS.length; // a plain helm glyph for anything without a portrait (skeletons)
 const MAX = 96;

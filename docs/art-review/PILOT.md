@@ -127,3 +127,59 @@ Still weak:
 * The dragon's and wyvern's wings are rolled ~65° / ~30° at the root to lie flat in flight (the meshes hold them "displayed"), which twists the shoulder skin if you look closely from below.
 * Rider upper bodies still come from the foot-soldier clips: no reins, and the staff-wielders' melee swing strikes with the butt of the staff.
 * Skirted squads have short rigged legs (the hip joint sits at the hem), so their walk covers less ground than the renderer's `walkSpeed` assumes; see the audit numbers from `anim_audit.py`.
+
+---
+
+# Factions: the Ashen Covenant and the Sun Caliphate (18 new models + the skeleton restyle)
+
+Contract and options: `docs/ART.md` section 8. Sheets: `<id>.jpg` / `<id>_vat.jpg` here; concept art in `factions/`;
+in-engine line-ups in `e2e/shots/faction-*.png` (`node e2e/faction-shots.mjs`).
+
+## What went well
+
+* **Concepts and meshes.** One Codex pass (2 candidates per body, 1 per weapon) and one TRELLIS pass: no mesh was
+  rejected. The bone drake, the war elephant with its howdah, the camel and both golems came out better than the
+  first roster's creatures. 32 TRELLIS runs took 45 minutes once the GPU was free.
+* **Silhouettes** are distinct from the Kingdom at RTS distance: bone-white skeletons behind teardrop shields,
+  hooded archers, turbans and round sun shields, camels, the elephant, the floating djinn.
+* **New rigs built first time**: camel (pace + gallop), elephant (amble + trunk), bone drake (dragon flight), djinn
+  (smoke tail), all inside the existing limb / hoof / wing-tip checks.
+
+## Lessons (new)
+
+* **TRELLIS shifts hues.** Magenta comes back as saturated red, green as cyan, turquoise as blue (and, as before,
+  royal blue as teal). The magenta team key therefore works as a *red* key with a saturation floor, and the faction
+  colours are mapped back with `hue_map`. Always look at the baked atlas, not the concept.
+* **Byte images are not linear.** The team key is evaluated on the stored sRGB values; thresholds measured on
+  linearised pixels were wrong by 0.2 in saturation (the first masks came out 0 % or patchy).
+* **Tabards fool the crotch detector** exactly like the Warden's skirt: four squads were fitted with hips at
+  0.5-0.6 m. `anim_audit.py` prints the hip height; anything under 0.42 x height on a normal humanoid needs `hip`.
+* **Full metal is black in the engine** for heroes (MR map kept, no environment map): gold-heavy heroes need
+  `metal_max`.
+* **Do not run Cycles bakes next to TRELLIS**: one mesh (the scimitar) died with an access violation while a
+  cleanup bake was running; re-run alone it was fine.
+* **Hero weapons are untinted** in the renderer, so team colour must be on the body mesh.
+
+## Per model
+
+| id | status | honest notes |
+|---|---|---|
+| skeleton | restyled | spear + teardrop shield, bronze helm. The shield turns flat during the lunge (it follows the forearm). Limbs are thin: at 1.4k triangles the ribs are texture only. |
+| grave_knight | good | reads as heavy bronze undead; plume and cape carry the team colour. Bronze is dark next to Kingdom steel. |
+| bone_archer | good | same bow limits as the Kingdom archer (rigid string). |
+| wraith_rider | good | rider + skeletal horse, green fire mane / tail. Drawn as a spectre by the renderer, which also washes out most of its team colour. The shroud is skinned to the legs, so it splits when seated. |
+| grave_acolyte | good | hood and stole are team-coloured so it reads from behind; staff upright, raised to cast. |
+| bone_drake | good | flies level, tail uncurled, wings beat; a thin loop of stretched triangles at the tail tip; wing roots twist like the dragon's. |
+| corpse_catapult | fair | arm swings over the top and releases; the skull-cage counterweight is part of the static frame and does not drop. |
+| bone_golem | good | slam / hook attacks. Its long feet touch on their edges in idle (the sole bones sit 14 cm up). |
+| lord_lich | good | staff + soul lantern; lifted from a mean albedo of 0.08 to 0.24. No team colour from behind (the mantle is green-black); his run slides about 15 % (jog covers 4.4 m/s, he moves at 2.6). |
+| spear_levy | good | |
+| scimitar | good | cloak hides the back of the lamellar; the cloak is skinned, no cloth motion. |
+| camel_archer | good | pace and gallop read as a camel; the rider shoots from the saddle with the foot-archer's upper body. |
+| mamluk | good | the Kingdom lance (with vamplate) is reused; the cape splits over the saddle. |
+| djinn_binder | fair | casting drags the mantle up with the arm like a flag. |
+| sun_priest | good | veil team-coloured; little colour from the front beyond sash and stole. |
+| djinn | good | floats, tail waves; walk / run are a leaned idle, so the arms do little while flying. |
+| war_elephant | good | amble with real weight shift, trunk lashes on the attack and lifts on victory; the victory rear is steep for an animal carrying a howdah; ears are rigid. |
+| sand_golem | good | |
+| lord_sultana | good | banner on her back stays upright; it leans with her torso in the run. |

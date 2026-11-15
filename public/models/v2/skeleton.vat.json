@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 637,
- "width": 637,
+ "vertexCount": 663,
+ "width": 663,
  "rowsPerFrame": 1,
  "totalFrames": 128,
  "format": "f16",
@@ -39,7 +39,7 @@
    "frames": 15,
    "fps": 12,
    "loop": false,
-   "duration": 1.2083,
+   "duration": 1.125,
    "source": "attack_melee_a"
   },
   {
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.9291,
-   -0.0174,
-   -2.0942
+   -1.0994,
+   -0.3312,
+   -2.7425
   ],
   "max": [
-   0.8273,
-   2.6737,
-   1.3167
+   1.1141,
+   3.593,
+   2.1392
   ]
  },
  "pos": "skeleton.vat.pos.bin",

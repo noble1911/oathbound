@@ -8,10 +8,13 @@ import type { Director } from './camera/director.ts';
 import type { Vfx, ProjectileKind as VfxProjectile } from './vfx/index.ts';
 import type { Battlefield } from './terrain/index.ts';
 import { fieldToWorld } from './core/coords.ts';
+import { abilityFx } from './ability-fx.ts';
 
 const NO_IMPACT = (): void => {};
 /** Event sources at or above this are keeps / towers (sim: keepSource(seat, n) = BASE + seat*4 + n). */
 export const KEEP_SRC_BASE = 1_000_000;
+
+export type NumberMode = 'all' | 'important' | 'off';
 
 export interface PlaybackHooks {
   /** Every event as it fires (UI: kill feed, keep HP bars, sounds). */
@@ -22,8 +25,8 @@ export interface PlaybackHooks {
    */
   onSkill?: (e: SkillEvent, timeMs: number) => void;
   onEnd?: () => void;
-  /** Show floating damage numbers (default: crits, heroes, heals, keeps). */
-  damageNumbers?: 'all' | 'important' | 'off';
+  /** Floating damage numbers: 'all' | 'important' (default: crits, skill hits, Lord hits, big totals) | 'off'. */
+  damageNumbers?: NumberMode;
 }
 
 export class BattlePlayback {
@@ -31,8 +34,18 @@ export class BattlePlayback {
   readonly tf: SoldierTransforms;
   timeMs = 0;
   speed = 1;
-  playing = true;
   ended = false;
+  private _playing = true;
+  /** Set by the view: called when playback resumes after a pause, so the render loop wakes up again. */
+  onResume: (() => void) | null = null;
+  get playing(): boolean {
+    return this._playing;
+  }
+  set playing(v: boolean) {
+    const resume = v && !this._playing;
+    this._playing = v;
+    if (resume) this.onResume?.();
+  }
   private cursor = 0;
   private readonly units: UnitRenderer;
   private readonly director: Director;
@@ -54,6 +67,11 @@ export class BattlePlayback {
     this.vfx = vfx;
     this.field = field;
     this.hooks = hooks;
+    this.damageNumbers = hooks.damageNumbers ?? 'important';
+    source.soldiers.forEach((h) => {
+      const k = h.side * 1_000_000 + h.squad;
+      this.squadHp.set(k, (this.squadHp.get(k) ?? 0) + h.maxHp);
+    });
     this.tf = source.makeTransforms();
     units.setRoster(source.soldiers);
     source.sample(0, this.tf);
@@ -91,6 +109,9 @@ export class BattlePlayback {
     this.dispatch(prev, this.timeMs);
     this.runTimers();
     this.units.update(this.tf, this.timeMs / 1000, bdt);
+    this.chillMotes(bdt);
+    this.burnMotes(bdt);
+    this.ambientFx(bdt);
     this.director.update(this.timeMs / 1000, bdt);
     if (this.timeMs >= this.durationMs) {
       this.ended = true;
@@ -113,6 +134,10 @@ export class BattlePlayback {
     this.timers.length = 0;
     this.volleys.clear();
     this.dressed.clear();
+    this.chilled.length = 0;
+    this.burning.length = 0;
+    this.skillHot.clear();
+    this.lastCast.clear();
     const sk = this.source.skills ?? [];
     this.skillCursor = 0;
     while (this.skillCursor < sk.length && sk[this.skillCursor].tick * TICK_MS <= t) this.skillCursor++;
@@ -139,6 +164,8 @@ export class BattlePlayback {
       const e = sk[this.skillCursor++];
       const tms = e.tick * TICK_MS;
       if (tms < from - 1) continue;
+      this.skillHot.set(this.squadKey(e.src), tms + Math.max(2500, e.dur * TICK_MS + 1500));
+      this.lastCast.set(this.squadKey(e.src), e);
       this.fxSkill(e);
       this.hooks.onSkill?.(e, tms);
     }
@@ -181,18 +208,124 @@ export class BattlePlayback {
     return out;
   }
 
+  /** 'all' = every hit as it lands · 'important' (default) = see `number` · 'off'. Settable while playing. */
+  damageNumbers: NumberMode;
+  /** Total max HP per squad (side * 1e6 + squad id), for "is this total worth showing". */
+  private squadHp = new Map<number, number>();
+  /** Squads that cast a skill recently (battle ms until which their hits count as skill hits). */
+  private skillHot = new Map<number, number>();
+  /** The last item skill each squad cast (tells a skill's own slows from innate ones on the same tick). */
+  private lastCast = new Map<number, SkillEvent>();
+  private squadKey(i: number): number {
+    const h = this.source.soldiers[i];
+    return h ? h.side * 1_000_000 + h.squad : -1;
+  }
+
   /**
-   * Floating numbers. 'important' (default): big crits pop on their own, everything else merges
-   * into one running total per target squad (`key`); misses are dropped. 'all': every hit.
+   * Floating numbers. 'important': only what the player should notice gets a number, and never one
+   * per blow. Everything merges per target squad (`key`) into a total shown about once a second:
+   *   · crits (big ones, or on / by a hero)         -> their own gold total, shown quickly
+   *   · hits from a squad that just cast a skill, and anything dealt by or to a Lord -> always totalled
+   *   · ordinary fighting -> only when the second's total is a real chunk of the squad (>= 8% of its
+   *     max HP, at least 40); the steady trickle of a melee shows nothing
+   *   · heals -> totalled, small ones dropped;  misses -> never.
+   * The VFX layer also caps how many numbers are on screen at once (tier-scaled).
    */
-  private number(pos: THREE.Vector3, value: number, style: 'normal' | 'crit' | 'heal' | 'effective' | 'weak' | 'miss', important: boolean, key?: number): void {
-    const mode = this.hooks.damageNumbers ?? 'important';
+  private number(pos: THREE.Vector3, value: number, style: 'normal' | 'crit' | 'heal' | 'effective' | 'weak' | 'miss', important: boolean, key?: number, notable = false): void {
+    const mode = this.damageNumbers;
     if (mode === 'off') return;
     const at = pos.clone().setY(pos.y + 0.6);
     if (mode === 'all') return this.vfx.damageNumber(at, value, style);
     if (style === 'miss') return;
     if (style === 'crit' && !important) style = 'effective';
-    this.vfx.damageNumber(at, value, style, key);
+    if (key === undefined) return this.vfx.damageNumber(at, value, style);
+    if (style === 'crit' || notable) return this.vfx.damageNumber(at, value, style, key, { min: 0 });
+    const hp = this.squadHp.get(key) ?? 0;
+    this.vfx.damageNumber(at, value, style, key, { min: style === 'heal' ? Math.max(15, hp * 0.03) : Math.max(40, hp * 0.08) });
+  }
+
+  // ------------------------------------------------------------------ debuff / buff windows
+  // Driven by the sim's 'frost' / 'burn' / 'war_cry' ability events, which carry the real duration.
+
+  /** Soldier `i` is slowed for `sec`: he takes a cold blue (or sand) cast and sheds frost. */
+  private chill(i: number, sec: number, sand = false): void {
+    const s = this.units.slots[i];
+    if (!s || s.deadAt >= 0) return;
+    s.chillSand = sand;
+    s.chillUntil = Math.max(s.chillUntil, this.timeMs / 1000 + sec);
+    if (!this.chilled.includes(s)) this.chilled.push(s);
+  }
+  private chilled: Slot[] = [];
+  private chillAcc = 0;
+  /** A few frost flakes around slowed soldiers (a fixed small budget however many are slowed). */
+  private chillMotes(bdt: number): void {
+    if (!this.chilled.length) return;
+    const t = this.timeMs / 1000;
+    let w = 0;
+    for (const s of this.chilled) if (s.deadAt < 0 && s.chillUntil > t) this.chilled[w++] = s;
+    this.chilled.length = w;
+    if (!w) return;
+    this.chillAcc += bdt * Math.min(14, 1.6 * w);
+    while (this.chillAcc >= 1) {
+      this.chillAcc -= 1;
+      const s = this.chilled[Math.floor(Math.random() * w)];
+      if (!s.visible) continue;
+      if (s.chillSand) this.vfx.sandMote(s.pos, s.arch.render === 'hero' ? 2.6 : 1.6);
+      else this.vfx.chillMote(s.pos, s.arch.render === 'hero' ? 2.6 : 1.6);
+    }
+  }
+
+  /** Soldier `i` burns (or festers with plague) for `sec`: flames follow him for the window. */
+  private ignite(i: number, sec: number, plague: boolean): void {
+    const s = this.units.slots[i];
+    if (!s || s.deadAt >= 0) return;
+    s.burnPlague = plague;
+    s.burnUntil = Math.max(s.burnUntil, this.timeMs / 1000 + sec);
+    if (!this.burning.includes(s)) this.burning.push(s);
+  }
+  private burning: Slot[] = [];
+  private burnAcc = 0;
+  /** Flames / plague belches on burning soldiers (a fixed small budget however many burn). */
+  private burnMotes(bdt: number): void {
+    if (!this.burning.length) return;
+    const t = this.timeMs / 1000;
+    let w = 0;
+    for (const s of this.burning) if (s.deadAt < 0 && s.burnUntil > t) this.burning[w++] = s;
+    this.burning.length = w;
+    if (!w) return;
+    this.burnAcc += bdt * Math.min(18, 3 * w);
+    while (this.burnAcc >= 1) {
+      this.burnAcc -= 1;
+      const s = this.burning[Math.floor(Math.random() * w)];
+      if (!s.visible) continue;
+      if (s.burnPlague) this.vfx.plagueTick(s.pos);
+      else this.vfx.burnMote(s.pos, s.arch.render === 'hero' ? 1.4 : 1);
+    }
+  }
+
+  /** Soldier `i` is blessed for `sec`: a soft gold glow on his body (units.ts) and a halo as it lands. */
+  private bless(i: number, sec: number): void {
+    const s = this.units.slots[i];
+    if (!s || s.deadAt >= 0) return;
+    s.blessUntil = Math.max(s.blessUntil, this.timeMs / 1000 + sec);
+    if (s.visible) this.vfx.bless(s.pos);
+  }
+
+  /** Soldiers with a standing visual of their own: spectres trail wisps, Sand Golems draw sand while they mend. */
+  private ambient: Slot[] | null = null;
+  private ambientAcc = 0;
+  private ambientFx(bdt: number): void {
+    if (!this.ambient) this.ambient = this.units.slots.filter((s) => s.header.type === 'wraith_rider' || s.header.type === 'sand_golem');
+    if (!this.ambient.length) return;
+    this.ambientAcc += bdt;
+    if (this.ambientAcc < 0.12) return;
+    this.ambientAcc = 0;
+    for (const s of this.ambient) {
+      if (!s.visible || s.deadAt >= 0) continue;
+      if (s.header.type === 'wraith_rider') {
+        if (s.speed > 0.5 && Math.random() < 0.45) this.vfx.ghostWisp(s.pos, 1.8);
+      } else if (this.tf.hp[s.index] < s.header.maxHp * 0.995 && Math.random() < 0.7) this.vfx.sandTrickle(s.pos, 3.2, 1.3);
+    }
   }
 
   // ------------------------------------------------------------------ item skills
@@ -230,7 +363,7 @@ export class BattlePlayback {
         v.castFlare(feet, '#6fb0ff', 1.2); // the bolts themselves arrive as 'chain' segments this tick
         break;
       case 'frost_nova':
-        v.frostNova(P, Math.max(3, r), Math.max(2, dur));
+        v.frostNova(P, Math.max(3, r), Math.max(2, dur)); // the slowed soldiers arrive as 'frost' events
         break;
       case 'mending_light': {
         v.castFlare(feet, '#8dff9a', 1);
@@ -283,7 +416,8 @@ export class BattlePlayback {
           if (d > r) continue;
           const pos = s.pos;
           this.later(d / 22, () => {
-            s.flash = Math.max(s.flash, 0.7);
+            s.flash = 0.55;
+            s.flashTint = 1; // red: war paint
             if (n++ < 40) v.buffMote(pos, n % 2 ? '#ff5a2a' : '#ffc24a', 2);
           });
         }
@@ -313,7 +447,7 @@ export class BattlePlayback {
         break;
       }
       case 'trample':
-        v.trample(P, Math.max(2.5, r));
+        v.trample(P, Math.max(2.5, r)); // the slowed soldiers arrive as 'frost' events (sand cast)
         break;
       case 'dive_strike': {
         const mates = this.squadOf(e.src);
@@ -331,6 +465,33 @@ export class BattlePlayback {
         v.castFlare(feet, '#ff6a2a', 1.3);
         this.dress(lead, e.tick, 'fire_pot', { dur: Math.max(2, dur), radius: Math.max(2.5, r) });
         break;
+    }
+  }
+
+  /** A 'frost' / 'burn' / 'war_cry' window event → its effect (the mapping is ability-fx.ts). */
+  private debuffFx(e: Extract<ReplayEvent, { k: 'ability' }>): void {
+    const caster = e.src >= 0 && e.src < KEEP_SRC_BASE ? this.units.slots[e.src] : undefined;
+    const cast = caster ? this.lastCast.get(this.squadKey(e.src)) : undefined;
+    const fx = abilityFx(e, { srcType: caster?.header.type, srcSkill: cast && e.tick - cast.tick <= 1 ? cast.skill : null });
+    if (!fx) return;
+    switch (fx.kind) {
+      case 'chill': {
+        this.chill(e.tgt, fx.sec, fx.sand);
+        const q = fx.burst ? this.soldierPoint(e.tgt, this.tmpB) : null;
+        if (q) this.vfx.frost(q.setY(q.y - 0.8), Math.min(1.2, fx.sec));
+        break;
+      }
+      case 'burn':
+        this.ignite(e.tgt, fx.sec, fx.plague);
+        break;
+      case 'bless':
+        this.bless(e.tgt, fx.sec);
+        break;
+      case 'warCry': {
+        const p = caster && caster.visible ? caster.pos : this.ground(e.pos[0], e.pos[1], this.tmpB, 0);
+        this.vfx.warCry(p, fx.radiusM);
+        break;
+      }
     }
   }
 
@@ -365,11 +526,19 @@ export class BattlePlayback {
         let kind: VfxProjectile = e.kind === 'none' ? 'arrow' : e.kind;
         const caster = e.src < KEEP_SRC_BASE ? this.units.slots[e.src] : undefined;
         const vol = caster ? this.volleys.get(caster.header.side * 1_000_000 + caster.header.squad) : undefined;
+        // faction shots: the Corpse Catapult hurls plague, a Djinn-Binder throws a whirlwind
+        if (caster?.header.type === 'corpse_catapult' && e.kind === 'stone') {
+          kind = 'plague';
+          this.dressed.set(e.id, { kind });
+        } else if (caster?.header.type === 'djinn_binder' && e.kind !== 'none') {
+          kind = 'sand_bolt';
+          this.dressed.set(e.id, { kind });
+        }
         if (vol && e.tick - vol.tick <= 1 && e.kind !== 'firebreath') {
           const fits = vol.kind === 'skill_fireball' ? e.kind === 'fireball' : vol.kind === 'fire_pot' ? e.kind === 'stone' || e.kind === 'bolt' : e.kind === 'arrow' || e.kind === 'none' || e.kind === 'bolt';
           if (fits) {
             kind = vol.kind;
-            this.dressed.set(e.id, vol);
+            this.dressed.set(e.id, vol); // a pinning shot's slow arrives as a 'frost' event when it lands
           }
         }
         // the launcher's clip may still be winding up: spawn at its release point, land on time
@@ -386,7 +555,20 @@ export class BattlePlayback {
         if (e.kind === 'firebreath') {
           const dir = to.clone().sub(from);
           const len = dir.length();
-          v.breath(from.clone(), dir.normalize(), Math.max(10, len + 3), 0.32, Math.max(0.9, flight + 0.6));
+          // the cone stays on the snout while the dragon moves and its head swings; it is aimed at the
+          // target point throughout
+          const bsrc = e.src;
+          const aimAt = to.clone();
+          const bo = new THREE.Vector3();
+          const bd = new THREE.Vector3();
+          const bf = { origin: bo, dir: bd };
+          const breather = this.units.slots[bsrc];
+          v.breath(from.clone(), dir.normalize(), Math.max(10, len + 3), 0.3, Math.max(0.9, flight + 0.6), () => {
+            if (!breather || breather.deadAt >= 0) return null;
+            if (!this.units.muzzle(bsrc, bo)) return null;
+            bd.subVectors(aimAt, bo);
+            return bd.lengthSq() > 1 ? bf : null;
+          });
         } else v.projectile(kind, from.clone(), to.clone(), flight, e.arc, NO_IMPACT, follow); // the 'impact' event plays the landing
         break;
       }
@@ -417,15 +599,19 @@ export class BattlePlayback {
         if (melee && (e.crit || this.sparks++ % 2 === 0)) v.hitSpark(p.clone(), { crit: e.crit, magic: src?.arch.key === 'mages' });
         const tgt = this.units.slots[e.tgt];
         const hero = tgt.arch.render === 'hero';
-        const important = e.crit && (e.dmg >= 25 || hero);
-        this.number(p, e.dmg, e.crit ? 'crit' : e.effective ? 'effective' : e.triangle < 0 ? 'weak' : 'normal', important, hero ? 500_000 + e.tgt : tgt.header.squad);
+        const lord = tgt.header.type === 'lord' || src?.header.type === 'lord';
+        const important = e.crit && (e.dmg >= 25 || hero || lord);
+        // hits from a squad that has just cast a skill, and anything a Lord deals or takes, always get a total
+        const notable = lord || (!!src && (this.skillHot.get(this.squadKey(e.src)) ?? 0) > this.timeMs);
+        const key = this.squadKey(e.tgt);
+        this.number(p, e.dmg, e.crit ? 'crit' : e.effective ? 'effective' : e.triangle < 0 ? 'weak' : 'normal', important, key, notable);
         break;
       }
       case 'heal': {
         const p = this.soldierPoint(e.tgt, A);
         if (!p) break;
         v.heal(p.clone().setY(p.y - 1), Math.min(1.5, e.amount / 60));
-        this.number(p, e.amount, 'heal', true, this.units.slots[e.tgt].header.squad);
+        this.number(p, e.amount, 'heal', true, this.squadKey(e.tgt));
         break;
       }
       case 'death': {
@@ -440,6 +626,15 @@ export class BattlePlayback {
         const src = e.src;
         const follow = () => this.units.slots[src]?.pos ?? p;
         switch (e.ability) {
+          case 'necromancy': {
+            const caster = this.soldierPoint(e.src, A);
+            if (e.radius > 0) v.necromancy(p, r); // the Lich: the skeletons themselves arrive as 'summon' events
+            else if (caster) v.soulCall(caster.clone(), p.clone().setY(p.y + 0.3));
+            break;
+          }
+          case 'radiance':
+            v.radiance(p, r);
+            break;
           case 'meteor':
             v.meteor(p, r);
             break;
@@ -460,23 +655,19 @@ export class BattlePlayback {
             if (a && b) v.lightning(a.clone(), b.clone());
             break;
           }
-          case 'burn': {
-            const q = this.soldierPoint(e.tgt, B) ?? p;
-            v.burn(q.clone().setY(q.y - 0.8), Math.max(1, dur));
+          case 'burn':
+          case 'frost':
+          case 'war_cry':
+            this.debuffFx(e);
             break;
-          }
-          case 'frost': {
-            const q = this.soldierPoint(e.tgt, B) ?? p;
-            v.frost(q.clone().setY(q.y - 0.8), Math.max(1, dur));
-            break;
-          }
           case 'ember_burst':
           case 'sunfire':
             v.impact('fireball', p, r);
             break;
           case 'stomp':
           case 'earthshaker':
-            v.stomp(p, r);
+            if (this.units.slots[e.src]?.header.type === 'war_elephant') v.elephantTrample(p, r);
+            else v.stomp(p, r);
             break;
           case 'lifebinder':
             v.heal(p, 1.5);
@@ -495,14 +686,6 @@ export class BattlePlayback {
           case 'shield_wall': {
             const q = this.units.slots[e.tgt];
             if (q) v.buffMote(q.pos, '#7ab8ff', 2);
-            break;
-          }
-          case 'war_cry': {
-            const q = this.units.slots[e.tgt];
-            if (q) {
-              q.flash = Math.max(q.flash, 0.6);
-              v.buffMote(q.pos, '#ff7a3a', 2);
-            }
             break;
           }
           case 'cleave': {
@@ -529,7 +712,9 @@ export class BattlePlayback {
         const at = !e.final && e.src >= 0 && e.src < KEEP_SRC_BASE ? this.soldierPoint(e.src, B) : null;
         const p = at ? k.hitPointNear(at) : k.hitPoint();
         v.keepHit(p, e.dmg >= 100 || e.final);
-        this.number(p.clone().setY(p.y + 1.5), e.dmg, e.final ? 'crit' : 'effective', true);
+        // blows on a keep add up into one figure a second (the final settlement shows on its own)
+        if (e.final) this.number(p.clone().setY(p.y + 1.5), e.dmg, 'crit', true);
+        else this.number(p.clone().setY(p.y + 1.5), e.dmg, 'effective', true, 3_000_000 + e.seat, true);
         break;
       }
       case 'keepStage': {
@@ -547,8 +732,8 @@ export class BattlePlayback {
       }
       case 'summon': {
         const p = this.ground(e.pos[0], e.pos[1], A, 0);
-        v.marchDust(p.clone(), 3);
-        v.frost(p.clone(), 0.8);
+        // a skeleton claws its way out of the ground
+        v.raiseDead(p.clone());
         break;
       }
       case 'attack':

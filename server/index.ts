@@ -393,7 +393,10 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
   }
 
   function pickRandomLord(s: MatchState, seat: SeatNo): void {
-    const ids = sim.LORD_IDS;
+    // A player who chose a faction but no Lord in time gets a random Lord of that faction.
+    const f = s.players[seat].faction, all = sim.LORD_IDS;
+    const own = f && sim.LORDS ? all.filter((l) => sim.LORDS[l]?.faction === f) : all;
+    const ids = own.length ? own : all;
     sim.applyIntent(s, seat, { t: 'pickLord', lord: ids[randomInt(ids.length)] });
   }
 
@@ -679,7 +682,7 @@ export function startServer(port: number, opts: ServerOptions = {}): Promise<{ p
         if (room.phase !== 'planning' && room.phase !== 'lordPick') return reject('not in the planning phase');
         const intent = msg.intent as Intent;
         if (!intent || typeof intent !== 'object' || typeof intent.t !== 'string') return reject('bad intent');
-        if (room.phase === 'lordPick' && intent.t !== 'pickLord') return reject('pick your Lord first');
+        if (room.phase === 'lordPick' && intent.t !== 'pickLord' && intent.t !== 'pickFaction') return reject('pick your Lord first');
         let result: ReturnType<typeof sim.applyIntent>;
         try {
           result = sim.applyIntent(room.state, m.seat, intent);

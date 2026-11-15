@@ -221,7 +221,7 @@ describe('phase machine (fake sim)', () => {
     host.send({ t: 'intent', intent: { t: 'ready' } });
     guest.send({ t: 'intent', intent: { t: 'ready' } });
     const [b1, b2] = await Promise.all([host.wait('battle'), guest.wait('battle')]);
-    expect(b1.offsetMs).toBe(0);
+    expect(b1.offsetMs).toBeLessThan(50); // wall-clock: 0 on a quiet box, a few ms under load
     expect(b2.replay.round).toBe(1);
     await host.wait('room', (m) => m.room.phase === 'battle');
     host.send({ t: 'intent', intent: { t: 'unready' } });

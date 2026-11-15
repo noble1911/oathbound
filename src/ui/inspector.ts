@@ -14,6 +14,7 @@ import { icon } from './icons.ts';
 import { crest, sheetStats, skillChips, skillTooltip } from './units.ts';
 import { cooldownText, itemIcon, itemTooltip, skillGlyph } from './items.ts';
 import { SLOT_LABEL } from './gamedata.ts';
+import { FACTIONS } from '../sim/data/factions.ts';
 import { cycleRows, inspectModel, pairModel, sparkPath, tickClock, SPARK_MIN_S, type InspectModel, type SkillRow } from './inspect-data.ts';
 
 export interface InspectorCtx {
@@ -124,7 +125,7 @@ export class Inspector {
     const pips = m.type === 'lord'
       ? `<div class="sp-pips"><small>Lord · level ${m.level}</small></div>`
       : `<div class="sp-pips">${Array.from({ length: MAX_SQUAD_LEVEL }, (_, i) => `<i class="${i < m.level ? 'on' : ''}"></i>`).join('')}<small>Lv ${m.level}</small></div>`;
-    return `${crest(m.type, m.lord, solo ? 'md' : 'lg')}<div class="in-t"><small>${esc(this.sideLabel(m.side, solo))}${m.role && m.type !== 'lord' && !solo ? ` · ${esc(m.role)}` : ''}</small><b>${esc(m.name)}</b>${solo ? '' : pips}</div>`;
+    return `${crest(m.type, m.lord, solo ? 'md' : 'lg')}<div class="in-t"><small data-tip="${esc(FACTIONS[m.faction].name)}">${esc(this.sideLabel(m.side, solo))}${solo ? '' : ` · ${esc(FACTIONS[m.faction].short)}`}${m.role && m.type !== 'lord' && !solo ? ` · ${esc(m.role)}` : ''}</small><b>${esc(m.name)}</b>${solo ? '' : pips}</div>`;
   }
 
   private bar(key: string): string {

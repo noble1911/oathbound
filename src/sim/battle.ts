@@ -10,10 +10,13 @@
 //    index in the squad — never by the seat or the match seed.
 //  * Seat 1's flow field is the exact mirror of seat 0's.
 import { CELL, FIELD_H, FIELD_W, GRID_W, KEYFRAME_TICKS, MARCH_TICKS, MAX_BATTLE_TICKS } from './constants.ts';
-import { ARCHMAGE_MAGIC_PCT, LORDS, LORD_LEVEL_DMG, LORD_LEVEL_HP, METEOR_BASE, METEOR_PER_LEVEL, RALLY_PCT } from './data/lords.ts';
+import {
+  ARCHMAGE_MAGIC_PCT, LICH_DMG_PCT, LORDS, LORD_LEVEL_DMG, LORD_LEVEL_HP, METEOR_BASE, METEOR_PER_LEVEL, NECRO_BASE, NECRO_LEVELS_PER, NECRO_RANGE,
+  RADIANCE_BASE, RADIANCE_PER_LEVEL, RADIANCE_RANGE, RALLY_PCT, SULTANA_HASTE_PCT, SULTANA_HOLY, SUN_PRIEST_HOLY,
+} from './data/lords.ts';
 import { ABILITY_CD, SKILLS, SKILL_START_CD, canEquip, skillNum } from './data/skills.ts';
 import { UNITS } from './data/units.ts';
-import { LORD_POWER, UNIT_POWER } from './data/balance.ts';
+import { FACTION_POWER, LORD_POWER, UNIT_POWER } from './data/balance.ts';
 import { angleOf, icos, idiv, isin, isqrt } from './fixed.ts';
 import { modsOf, type ItemMods } from './loot.ts';
 import { keepDamageOf } from './match.ts';
@@ -31,7 +34,7 @@ import type {
 const cz = (c: StatCause): number => STAT_CAUSES.indexOf(c);
 const C_ATTACK = cz('attack'), C_BURN = cz('burn'), C_THORNS = cz('thorns'), C_TOWER = cz('tower'), C_CHAIN = cz('chain'), C_EMBER = cz('ember_burst'),
   C_SUNFIRE = cz('sunfire'), C_METEOR = cz('meteor'), C_SKYFALL = cz('skyfall'), C_HEAL = cz('heal'), C_LEECH = cz('leech'), C_LIFEBINDER = cz('lifebinder'),
-  C_BLOOD = cz('bloodthirst'), C_REVIVE = cz('revive'), C_ROUT = cz('rout');
+  C_BLOOD = cz('bloodthirst'), C_REVIVE = cz('revive'), C_ROUT = cz('rout'), C_RADIANCE = cz('radiance'), C_REGEN = cz('regen');
 
 // ---------------------------------------------------------------- tuning constants
 
@@ -46,9 +49,14 @@ const LEVEL_DMG = 20;
 const AGGRO = 1400;
 const BUCKET = 400;
 const BW = FIELD_W / BUCKET, BH = FIELD_H / BUCKET;
-const SKELETON = { hp: 7000, dmg: 1000, atk: 22, speed: 15, radius: 45, range: 120 };
+/** Skeletons raised in battle (Grave Acolytes, the Lich-Priest, Gravebloom): 120 life, 16 damage a blow. */
+const SKELETON = { hp: 12000, dmg: 1600, atk: 22, speed: 15, radius: 45, range: 120 };
 /** Ranged damage a flier shrugs off when shot from the ground (percent; unitSkills quotes it). */
-export const FLIER_EVADE_PCT = 15;
+export const FLIER_EVADE_PCT = 30;
+/** Grave Acolytes: a squad raises at most RAISE_BASE + its level skeletons per battle; Sun Priests' blessing: +BLESS_PCT% attack speed for BLESS_TICKS. */
+export const RAISE_BASE = 3;
+export const BLESS_PCT = 15;
+export const BLESS_TICKS = 80;
 /** Legendary numbers (the item texts in data/items.ts quote these). */
 const HYDRA_PCT = 40, KINGSBANE_PCT = 300, FROSTHEART_PCT = 30, STORM_PCT = 30, BLOOD_HEAL_PCT = 10, BLOOD_HASTE = 10, GRAVE_MAX = 14;
 const KEEP_Y = 150;
@@ -113,6 +121,13 @@ interface Stats {
   prefFlier: boolean;
   /** Cavalry / pegasus: hunt the enemy backline (ranged, healers, artillery). */
   raider: boolean;
+  /** Faction traits: raises skeletons from corpses; heals also quicken; regeneration (tenths of a percent of max life per second). */
+  raise: boolean;
+  bless: boolean;
+  regen: number;
+  /** Sunlight against the dead: `holy` = damage percent against undead targets (100 = none); `undead` = an Ashen unit, the Lich or a raised skeleton. */
+  holy: number;
+  undead: boolean;
   magicBonus: number;
   L: Set<string>;
   ilvl: number;
@@ -173,12 +188,14 @@ interface Sol {
   summoned: boolean;
   moved: boolean;
   relocate: Vec2 | null;
-  pendingSlow: number; pendingSlowUntil: number;
+  pendingSlow: number; pendingSlowUntil: number; pendingSlowSrc: Sol | null;
   pendingBurn: number; pendingBurnSrc: Sol | null;
   xpValue: number;
   dealt: number;
   // Skill buffs (applied at end of tick, like Rally).
   wallUntil: number; wallPct: number; cryUntil: number; cryPct: number; cleaveUntil: number; cleavePct: number;
+  /** A corpse already raised as a skeleton by seat 0 (bit 0) / seat 1 (bit 1): each side may use a corpse once. */
+  rz: number;
   /** Crit counter: +crit% per attack; an attack that takes it to 100 is critical (and takes 100 off). */
   critAcc: number;
   /** Knockback displacement to apply at the end of this tick. */
@@ -240,7 +257,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
   let traits: string[] = [];
   let tags: number;
   let eff: Partial<Record<Tag, number>> = {};
-  let heal = 0, lifesteal = 0, minRange = 0, splash = 0, radius = 60;
+  let heal = 0, lifesteal = 0, minRange = 0, splash = 0, radius = 60, innateBurn = 0, innateSlow = 0, regen = 0;
   if (sq.type === 'lord') {
     const L = LORDS[lordOf!];
     base = L;
@@ -265,35 +282,40 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
     minRange = U.minRange;
     splash = U.splash;
     radius = U.radius;
+    innateBurn = U.burn;
+    innateSlow = U.slow;
+    regen = U.regen;
   }
   const wardenHp = lordOf === 'warden' ? 10 : 0;
-  const pw = sq.type === 'lord' ? LORD_POWER[lordOf!] : UNIT_POWER[sq.type];
+  // Power in 1/100000: percent x per mille (a unit's own multiplier times its faction's; Lords have only their own).
+  const pw = sq.type === 'lord' ? LORD_POWER[lordOf!] * 1000 : UNIT_POWER[sq.type] * FACTION_POWER[UNITS[sq.type].faction];
   let hpPct = 100 + m.hp + wardenHp;
-  let dmgPct = 100 + m.dmg;
+  let dmgPct = 100 + m.dmg + (lordOf === 'lich' ? LICH_DMG_PCT : 0);
   const size = sq.type === 'lord' ? 1 : UNITS[sq.type].squadSize;
   if (hasL(m, 'warhorn') && size <= 2) { hpPct += 35; dmgPct += 35; }
   const ranged = base.range > 400;
   const weapon = base.weapon;
   let speedPct = 100 + m.move + (hasL(m, 'windrunner') ? 40 : 0);
   const windAs = hasL(m, 'windrunner') ? 25 : 0;
-  const atk = Math.max(4, idiv(base.attackTicks * 100, 100 + m.as + windAs));
+  const atk = Math.max(4, idiv(base.attackTicks * 100, 100 + m.as + windAs + (lordOf === 'sultana' ? SULTANA_HASTE_PCT : 0)));
   const st: Stats = {
-    hp: idiv(idiv(base.hp * lvlHp * hpPct, 100) * pw, 100),
-    dmg: idiv(idiv(base.dmg * lvlDmg * dmgPct * DMG_SCALE, 10000) * pw, 100),
+    hp: idiv(idiv(base.hp * lvlHp * hpPct, 100) * pw, 100000),
+    dmg: idiv(idiv(base.dmg * lvlDmg * dmgPct * DMG_SCALE, 10000) * pw, 100000),
     atk,
     range: base.range + (ranged ? m.range : 0),
     minRange,
     speed: idiv(base.speed * speedPct, 100),
     armor: Math.min(80, base.armor + m.armor),
+    // May be negative (ethereal Wraith Riders): magic then deals more than its listed damage.
     mr: Math.min(80, base.magicResist + m.mr),
     splash,
     radius,
     crit: BASE_CRIT + m.crit,
     leech: lifesteal + m.leech,
     thorns: m.thorns,
-    burn: m.burn,
-    frost: hasL(m, 'frostheart') ? 40 : m.frost,
-    heal: idiv(idiv(heal * lvlDmg * dmgPct, 100) * pw, 100),
+    burn: Math.max(m.burn, innateBurn),
+    frost: hasL(m, 'frostheart') ? 40 : Math.max(m.frost, innateSlow),
+    heal: idiv(idiv(heal * lvlDmg * dmgPct, 100) * pw, 100000),
     tags,
     weapon,
     dmgType: base.damageType,
@@ -301,7 +323,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
     eff,
     slay: m.slay,
     ranged,
-    canHitAir: ranged && weapon !== 'stone' ? true : (tags & T_FLIER) !== 0,
+    canHitAir: (ranged && weapon !== 'stone') || traits.includes('howdah') ? true : (tags & T_FLIER) !== 0,
     healer: traits.includes('healer'),
     brace: traits.includes('brace'),
     charge: traits.includes('charge'),
@@ -312,9 +334,15 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
     ignoresArmor: traits.includes('ignoresArmor') || base.damageType === 'magic',
     crushing: traits.includes('crushing'),
     backline: traits.includes('backline'),
-    prefLarge: sq.type === 'ballista',
-    prefFlier: sq.type === 'archers',
+    // Bolt-throwers hunt Large units and bowmen hunt fliers (any unit with that bonus, in every faction).
+    prefLarge: ranged && (eff.large ?? 0) > 100,
+    prefFlier: ranged && (eff.flier ?? 0) > 100,
     raider: traits.includes('raider'),
+    raise: traits.includes('raise'),
+    bless: traits.includes('bless'),
+    regen,
+    holy: sq.type === 'sun_priest' ? SUN_PRIEST_HOLY : lordOf === 'sultana' && sq.type === 'lord' ? SULTANA_HOLY : 100,
+    undead: sq.type === 'lord' ? lordOf === 'lich' : UNITS[sq.type].faction === 'ashen',
     magicBonus: lordOf === 'archmage' && base.damageType === 'magic' ? ARCHMAGE_MAGIC_PCT : 0,
     L: m.legend,
     ilvl: m.ilvl,
@@ -331,7 +359,7 @@ function skeletonStats(): Stats {
     hp: SKELETON.hp, dmg: SKELETON.dmg, atk: SKELETON.atk, range: SKELETON.range, minRange: 0, speed: SKELETON.speed, armor: 0, mr: 0, splash: 0,
     radius: SKELETON.radius, crit: 0, leech: 0, thorns: 0, burn: 0, frost: 0, heal: 0, tags: T_INFANTRY, weapon: 'sword', dmgType: 'physical',
     proj: 'none', eff: {}, slay: {}, ranged: false, canHitAir: false, healer: false, brace: false, charge: false, pierce: false, stomp: false,
-    cone: false, slowTurn: false, ignoresArmor: false, crushing: false, backline: false, prefLarge: false, prefFlier: false, raider: false, magicBonus: 0,
+    cone: false, slowTurn: false, ignoresArmor: false, crushing: false, backline: false, prefLarge: false, prefFlier: false, raider: false, raise: false, bless: false, regen: 0, holy: 100, undead: true, magicBonus: 0,
     L: new Set(), ilvl: 1, phoenix: false, skills: [],
   };
 }
@@ -396,6 +424,8 @@ class Battle {
   marchChunk = 0;
   keepDamage: [number, number] = [0, 0];
   survivors: [number[], number[]] = [[], []];
+  /** The fallen that can still be raised as skeletons (no Lords, no Large units, no summons). */
+  corpses: Sol[] = [];
   queuedBuffs: { sol: Sol; kind: 'rally' | 'bulwark' | 'wall' | 'cry' | 'cleave'; until: number; pct: number }[] = [];
   // Statistics ledger (only when recording): this tick's raw contributions, and the running TALLY_TICKS window.
   cT: Sol[] = []; cS: number[] = []; cC: number[] = []; cA: number[] = []; cM: number[] = []; cH: number[] = [];
@@ -471,11 +501,11 @@ class Battle {
       chargeReady: st.charge, firstStrike: st.L.has('windrunner'), lastAttack: -1000, reflects: st.L.has('mirror_aegis') ? 3 : 0,
       undying: st.L.has('undying_oath'), burnDps: 0, burnUntil: 0, burnSrc: null, slowPct: 0, slowUntil: 0, rallyUntil: 0, bulwarkUntil: 0,
       dmgAcc: 0, healAcc: 0, killer: null, killerDmg: 0, killerTower: -1, attacks: 0, blood: 0, summoned, moved: false, relocate: null,
-      pendingSlow: 0, pendingSlowUntil: 0, pendingBurn: 0, pendingBurnSrc: null,
-      xpValue: b.type === 'lord' ? 30 : b.type === 'skeleton' ? 0 : Math.max(1, Math.round(UNITS[b.type as keyof typeof UNITS].cost / UNITS[b.type as keyof typeof UNITS].squadSize / 8)),
+      pendingSlow: 0, pendingSlowUntil: 0, pendingSlowSrc: null, pendingBurn: 0, pendingBurnSrc: null,
+      xpValue: b.type === 'lord' ? 30 : summoned ? 0 : Math.max(1, Math.round(UNITS[b.type as keyof typeof UNITS].cost / UNITS[b.type as keyof typeof UNITS].squadSize / 8)),
       dealt: 0,
       wallUntil: 0, wallPct: 0, cryUntil: 0, cryPct: 0, cleaveUntil: 0, cleavePct: 0, kx: 0, ky: 0, burnCause: C_BURN, pendingBurnCause: C_BURN,
-      eD: 0, rD: 0, eH: 0, rH: 0, critAcc: (b.sideIdx * 29 + k * 37) % 100,
+      eD: 0, rD: 0, eH: 0, rH: 0, critAcc: (b.sideIdx * 29 + k * 37) % 100, rz: 0,
     };
     this.sols.push(s);
     b.sols.push(s);
@@ -510,6 +540,10 @@ class Battle {
     this.cT.push(d); this.cS.push(src); this.cC.push(cause); this.cA.push(amt); this.cM.push(mit); this.cH.push(heal);
   }
   tallyAdd(src: number, tgtRow: number, cause: number, dmg: number, mit: number, heal: number, n: number): void {
+    // The stream stores unsigned numbers: a negative amount would corrupt everything after it.
+    if (dmg < 0) dmg = 0;
+    if (mit < 0) mit = 0;
+    if (heal < 0) heal = 0;
     const key = ((src >= KEEP_SRC_BASE ? 3000 + (src - KEEP_SRC_BASE) : src + 1) * 4096 + tgtRow) * 64 + cause;
     const e = this.tally.get(key);
     if (e) { e[0] += dmg; e[1] += mit; e[2] += heal; e[3] += n; }
@@ -706,8 +740,79 @@ class Battle {
         this.emitAbility(s.i, land.i, 'skyfall', land.x, land.y, 400, 14);
         s.anim = 3; s.animUntil = this.t + 14;
         b.abilityCd = ABILITY_CD.skyfall;
+      } else if (L.ability === 'necromancy') {
+        // The Lich-Priest raises the nearest fallen (of either army) as skeletons that fight for him.
+        if (!nearEnemy) continue;
+        const want = NECRO_BASE + idiv(b.level, NECRO_LEVELS_PER);
+        let raised = 0;
+        for (let k = 0; k < want; k++) {
+          const c = this.nearestCorpse(b.side, s.x, s.y, NECRO_RANGE);
+          if (!c) break;
+          c.rz |= 1 << b.side;
+          this.raiseSkeleton(b, c);
+          raised++;
+        }
+        if (!raised) continue;
+        this.emitAbility(s.i, -1, 'necromancy', s.x, s.y, NECRO_RANGE, 0);
+        s.anim = 3; s.animUntil = this.t + 16;
+        b.abilityCd = ABILITY_CD.necromancy;
+      } else if (L.ability === 'radiance') {
+        // The Sultana's sun-burst: burns the enemies around her and mends the allies.
+        let foes = 0;
+        this.near(enemySide, s.x, s.y, RADIANCE_RANGE, (o) => { if (o.spawnTick <= this.t) foes++; });
+        if (foes < 2) continue;
+        const amt = (RADIANCE_BASE + RADIANCE_PER_LEVEL * b.level) * 100;
+        this.near(enemySide, s.x, s.y, RADIANCE_RANGE, (o) => {
+          if (o.spawnTick > this.t) return;
+          // (Radiance against the undead is scaled by the Sultana's `holy` inside damage().)
+          const r = this.damage(s.st, null, o, 100, false, false, false, 'magic', amt);
+          this.credit(o, r.dmg, s, -1, C_RADIANCE, r.mit);
+          this.emit(EK.hit, s.i, o.i, Math.ceil(r.dmg / 100), 1 << 3);
+        });
+        this.near(b.side, s.x, s.y, RADIANCE_RANGE, (o) => {
+          if (o.spawnTick > this.t || o.hp >= o.maxHp) return;
+          const h = Math.min(amt, o.maxHp - o.hp);
+          this.heal(o, h, s, C_RADIANCE);
+          this.emit(EK.heal, s.i, o.i, Math.ceil(h / 100));
+        });
+        this.emitAbility(s.i, -1, 'radiance', s.x, s.y, RADIANCE_RANGE, 0);
+        s.anim = 3; s.animUntil = this.t + 14;
+        b.abilityCd = ABILITY_CD.radiance;
       }
     }
+  }
+
+  // ---------------------------------------------------------------- necromancy (Ashen Covenant)
+
+  /**
+   * The nearest corpse within `range` that `side` has not raised yet. Ties go to a corpse of the raiser's own army,
+   * then to the lower key: both are the same whichever seat the raiser sits in.
+   */
+  nearestCorpse(side: Seat, x: number, y: number, range: number): Sol | null {
+    let best: Sol | null = null, bd = 0;
+    const r2 = range * range, bit = 1 << side;
+    for (const c of this.corpses) {
+      if (c.rz & bit) continue;
+      const dx = c.x - x, dy = c.y - y, d2 = dx * dx + dy * dy;
+      if (d2 > r2) continue;
+      if (!best || d2 < bd || (d2 === bd && ((c.side === side) !== (best.side === side) ? c.side === side : c.key < best.key))) { best = c; bd = d2; }
+    }
+    return best;
+  }
+
+  /** A Grave Acolyte spends its attack raising a skeleton from a corpse in reach, while its squad's quota lasts. */
+  tryRaise(s: Sol): boolean {
+    const b = s.sq;
+    if (b.grave >= RAISE_BASE + b.level) return false;
+    const c = this.nearestCorpse(s.side, s.x, s.y, s.st.range);
+    if (!c) return false;
+    c.rz |= 1 << s.side;
+    b.grave++;
+    this.raiseSkeleton(b, c);
+    s.cd += s.st.atk * 100;
+    s.anim = 3; s.animUntil = this.t + 10;
+    this.emitAbility(s.i, c.i, 'necromancy', c.x, c.y, 0, 0);
+    return true;
   }
 
   // ---------------------------------------------------------------- item skills
@@ -747,7 +852,7 @@ class Battle {
     this.credit(d, r.dmg, a, -1, cause, r.mit);
     this.emit(EK.hit, a.i, d.i, Math.ceil(r.dmg / 100), (r.eff ? 2 : 0) | ((r.tri + 1) << 3));
     if (fx.burn && fx.burn > d.pendingBurn) { d.pendingBurn = fx.burn; d.pendingBurnSrc = a; d.pendingBurnCause = cause; }
-    if (fx.slow && fx.slow >= d.pendingSlow) { d.pendingSlow = fx.slow; d.pendingSlowUntil = this.t + fx.slowTicks; }
+    if (fx.slow && fx.slow >= d.pendingSlow) { d.pendingSlow = fx.slow; d.pendingSlowUntil = this.t + fx.slowTicks; d.pendingSlowSrc = a; }
     if (fx.knock && !(d.st.tags & (T_FLIER | T_LARGE)) && !d.kx && !d.ky) {
       const dx = d.x - fromX, dy = d.y - fromY, l = isqrt(dx * dx + dy * dy);
       if (l > 0) { d.kx = idiv(dx * fx.knock, l); d.ky = idiv(dy * fx.knock, l); }
@@ -1039,7 +1144,7 @@ class Battle {
         const reach = this.reach(s, e);
         if (d2 <= reach * reach) {
           s.facing = faceOr(s.facing, dx, dy);
-          if (s.cd <= 0) this.attack(s, e, isqrt(d2));
+          if (s.cd <= 0 && !(st.raise && this.tryRaise(s))) this.attack(s, e, isqrt(d2));
         } else {
           const d = isqrt(d2);
           const step = Math.min(sp, d - reach + 10);
@@ -1178,6 +1283,8 @@ class Battle {
       const o = best as Sol;
       const amt = Math.min(st.heal, o.maxHp - o.hp);
       this.heal(o, amt, s, C_HEAL);
+      // Sun Priests bless what they heal: it attacks faster for a few seconds.
+      if (st.bless) { if (o.cryUntil <= t) this.emitAbility(s.i, o.i, 'war_cry', o.x, o.y, 0, BLESS_TICKS); this.queuedBuffs.push({ sol: o, kind: 'cry', until: t + BLESS_TICKS, pct: BLESS_PCT }); }
       s.cd += st.atk * 100;
       s.anim = 3; s.animUntil = t + 10;
       s.facing = faceOr(s.facing, o.x - s.x, o.y - s.y);
@@ -1224,6 +1331,8 @@ class Battle {
       else if (TRIANGLE[d.st.weapon] === a.weapon) tri = -1;
     }
     if (tri) dmg = idiv(dmg * (100 + 25 * tri), 100);
+    // The sun burns the dead: Sun Priests and the Sultana deal more to Ashen units, the Lich and raised skeletons.
+    if (a.holy > 100 && d.st.undead) dmg = idiv(dmg * a.holy, 100);
     let effPct = 100;
     const tags = d.st.tags;
     for (const tag in a.eff) if (tags & TAG_BIT[tag as Tag]) effPct = Math.max(effPct, a.eff[tag as Tag]!);
@@ -1282,12 +1391,12 @@ class Battle {
     if (st.leech && a.alive) this.heal(a, idiv(r.dmg * st.leech, 100), a, C_LEECH);
     if (k.melee && d.st.thorns && a.alive) this.credit(a, idiv(r.dmg * d.st.thorns, 100), d, -1, C_THORNS);
     if (st.burn) { if (st.burn * 100 > d.pendingBurn) { d.pendingBurn = st.burn * 100; d.pendingBurnSrc = a; d.pendingBurnCause = C_BURN; } }
-    if (st.frost && st.frost > d.pendingSlow) { d.pendingSlow = st.frost; d.pendingSlowUntil = this.t + 40; }
+    if (st.frost && st.frost > d.pendingSlow) { d.pendingSlow = st.frost; d.pendingSlowUntil = this.t + 40; d.pendingSlowSrc = a; }
     // Skill volleys (Fire Arrows, Pinning Shot) carry their own burn / slow.
     const fx = k.sk;
     if (fx) {
       if (fx.burn && fx.burn > d.pendingBurn) { d.pendingBurn = fx.burn; d.pendingBurnSrc = a; d.pendingBurnCause = k.cause ?? C_BURN; }
-      if (fx.slow && fx.slow >= d.pendingSlow) { d.pendingSlow = fx.slow; d.pendingSlowUntil = this.t + fx.slowTicks; }
+      if (fx.slow && fx.slow >= d.pendingSlow) { d.pendingSlow = fx.slow; d.pendingSlowUntil = this.t + fx.slowTicks; d.pendingSlowSrc = a; }
     }
     this.emit(EK.hit, a.i, d.i, Math.ceil(r.dmg / 100), (crit ? 1 : 0) | (r.eff ? 2 : 0) | ((r.tri + 1) << 3));
   }
@@ -1462,11 +1571,14 @@ class Battle {
         this.credit(s, Math.max(50, dmg), s.burnSrc, -1, s.burnCause);
       }
       if (s.st.L.has('lifebinder') && s.hp < s.maxHp) this.heal(s, idiv(s.maxHp * 3, 400), s, C_LIFEBINDER);
+      if (s.st.regen && s.hp < s.maxHp) this.heal(s, idiv(s.maxHp * s.st.regen, 2000), s, C_REGEN);
       if (s.st.L.has('sunfire')) {
         const dmg = (20 + 2 * s.st.ilvl) * 50;
         this.near((1 - s.side) as Seat, s.x, s.y, 400, (o) => {
           if (o.spawnTick > t || o.st.tags & T_FLIER) return;
-          this.credit(o, idiv(dmg * (100 - o.st.mr), 100), s, -1, C_SUNFIRE, dmg - idiv(dmg * (100 - o.st.mr), 100));
+          // Resistance can be negative (ethereal Wraith Riders): then nothing is mitigated.
+          const sd = idiv(dmg * (100 - o.st.mr), 100);
+          this.credit(o, sd, s, -1, C_SUNFIRE, dmg > sd ? dmg - sd : 0);
         });
       }
       // Re-arm charges after 5 s out of combat.
@@ -1513,8 +1625,14 @@ class Battle {
       if (s.relocate) { s.x = s.relocate[0]; s.y = s.relocate[1]; s.relocate = null; }
       if (s.kx || s.ky) { if (s.alive) { s.x = clampX(s.x + s.kx); s.y = clampY(s.y + s.ky); } s.kx = 0; s.ky = 0; }
       if (!s.alive) continue;
-      if (s.pendingSlow) { s.slowPct = s.pendingSlow; s.slowUntil = s.pendingSlowUntil; s.pendingSlow = 0; }
+      if (s.pendingSlow) {
+        // A debuff event when a slow STARTS (not on every refresh): src = who applied it, dur = how long it lasts.
+        if (s.slowUntil <= t) this.emitAbility(s.pendingSlowSrc ? s.pendingSlowSrc.i : -1, s.i, 'frost', s.x, s.y, 0, s.pendingSlowUntil - t);
+        s.slowPct = s.pendingSlow; s.slowUntil = s.pendingSlowUntil; s.pendingSlow = 0; s.pendingSlowSrc = null;
+      }
       if (s.pendingBurn) {
+        // Likewise when a burn / plague starts: src = the soldier whose hit lit it (e.g. the Corpse Catapult).
+        if (s.burnUntil <= t) this.emitAbility(s.pendingBurnSrc ? s.pendingBurnSrc.i : -1, s.i, 'burn', s.x, s.y, 0, 60);
         if (s.burnUntil <= t || s.pendingBurn >= s.burnDps) { s.burnDps = s.pendingBurn; s.burnSrc = s.pendingBurnSrc; s.burnCause = s.pendingBurnCause; }
         s.burnUntil = t + 60; s.pendingBurn = 0; s.pendingBurnSrc = null; s.pendingBurnCause = C_BURN;
       }
@@ -1558,6 +1676,7 @@ class Battle {
       s.anim = 4;
       s.target = null;
       if (!s.summoned) this.lost[s.side]++;
+      if (!s.summoned && !(s.st.tags & (T_LARGE | T_LORD))) this.corpses.push(s);
       this.emit(EK.death, s.i, killer ? killer.i : ktower >= 0 ? ktower : -1);
       if (killer) {
         this.lordXp[killer.side] += s.xpValue;
@@ -1912,7 +2031,7 @@ class Battle {
       if (s.summoned) flags.push('skeleton');
       const row: ReplaySoldier = {
         id: s.i, squad: s.sq.id, side: s.side, type: s.sq.type,
-        modelId: s.sq.type === 'lord' ? LORDS[s.sq.lord!].modelId : s.sq.type === 'skeleton' ? 'skeleton' : UNITS[s.sq.type].modelId,
+        modelId: s.sq.type === 'lord' ? LORDS[s.sq.lord!].modelId : UNITS[s.sq.type].modelId,
         level: s.sq.level, maxHp: Math.ceil(s.maxHp / 100), items, flags, spawnTick: s.spawnTick, summoned: s.summoned,
       };
       if (s.sq.lord) row.lord = s.sq.lord;

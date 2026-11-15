@@ -5,7 +5,7 @@ import type { LordId } from '../sim/types.ts';
 
 export type VoiceEvent = 'pick' | 'taunt' | 'deploy' | 'ready' | 'charge' | 'ability' | 'roundWon' | 'roundLost' | 'keep' | 'legendary' | 'victory' | 'defeat';
 
-export const VOICE_LORDS: readonly LordId[] = ['marshal', 'archmage', 'warden', 'skylady'];
+export const VOICE_LORDS: readonly LordId[] = ['marshal', 'archmage', 'warden', 'skylady', 'lich', 'sultana'];
 
 /** Variants per event (the same for every Lord): files are audio/voice/<lord>/<event>_<n>.webm, n from 1. */
 export const VOICE_LINES: Record<VoiceEvent, number> = {

@@ -1,5 +1,7 @@
 // The top bar shared by planning, battle and results: both Keeps' HP (yours on the left, always),
 // the round, the phase label and a countdown ring. Also small shared bits (pretty intent errors).
+import { FACTIONS, factionOfLord } from '../sim/data/factions.ts';
+import { factionAccent } from './lordpick.ts';
 import type { LordId } from '../sim/types.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { sound } from '../audio.ts';
@@ -49,6 +51,15 @@ export class TopBar {
         <div class="keepbar" data-tip="Keep life"><i class="lag"></i><i class="fill"></i><span></span></div></div>`;
     }
     $(box, '.tb-crest').innerHTML = s.lord ? crest('lord', s.lord, 'md') : `<div class="crest md blank">${icon('keep')}</div>`;
+    // the faction's two colours as a small band on the plaque's outer edge (team blue / red stay the side's colours)
+    const fac = s.lord ? factionOfLord(s.lord) : null;
+    if (box.dataset.faction !== (fac ?? '')) {
+      box.dataset.faction = fac ?? '';
+      const [a, b] = fac ? factionAccent(fac) : ['', ''];
+      box.style.setProperty('--fa', a);
+      box.style.setProperty('--fb', b);
+      box.dataset.tip = fac ? FACTIONS[fac].name : '';
+    }
     $(box, '.tb-name b').textContent = s.name;
     $(box, '.tb-lord').textContent = lord ? `${lord.title} ${lord.name}` : '';
     const rd = $(box, '.tb-ready');

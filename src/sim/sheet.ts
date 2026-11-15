@@ -97,7 +97,7 @@ export function squadSheet(view: PlayerView, squadId: number): SquadSheet | null
 /** The sheet of a squad in a battle replay (`row` = index in Replay.squads). Null for skeleton bands and bad rows. */
 export function replaySquadSheet(replay: Replay, row: number): SquadSheet | null {
   const q = replay.squads?.[row];
-  if (!q || q.summoned || q.type === 'skeleton') return null;
+  if (!q || q.summoned) return null;
   const lord = q.ownerLord ?? null;
   return sheetOf({ id: q.id, type: q.type, level: q.level, items: q.items ?? EMPTY }, lord);
 }

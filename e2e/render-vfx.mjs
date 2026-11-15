@@ -12,7 +12,7 @@ const W = Number(process.env.W || 1600);
 const H = Number(process.env.H || 900);
 const TIER = process.env.TIER || 'high';
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
-const want = (n) => !ONLY || ONLY.includes(n) || (ONLY.includes('skills') && n.startsWith('skill-'));
+const want = (n) => !ONLY || ONLY.includes(n) || (ONLY.includes('skills') && n.startsWith('skill-')) || (ONLY.includes('factions') && n.startsWith('f-'));
 fs.mkdirSync('e2e/shots', { recursive: true });
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -98,6 +98,23 @@ const FX = [
   ['skill-dive_strike-hit', { dist: 16, pitch: 0.35, yaw: 0.3 }, 330, (v, T, P) => { for (let i = 0; i < 3; i++) v.vfx.diveStrike(P.clone().add(new T.Vector3(-7 + i * 2, 7, -5)), P.clone().add(new T.Vector3(i * 1.4 - 1.4, 0, 0)), 2, 0.2); }],
   ['skill-incendiary_payload-flight', { dist: 22, pitch: 0.36, yaw: 0.4 }, 600, (v, T, P) => v.vfx.projectile('fire_pot', P.clone().add(new T.Vector3(-26, 3, -12)), P.clone(), 0.8, 'arc', () => { v.vfx.impact('fire_pot', P, 3.4); v.vfx.firePatch(P, 4, 4); })],
   ['skill-incendiary_payload', { dist: 16, pitch: 0.38, yaw: 0.4 }, 2600, (v, T, P) => v.vfx.projectile('fire_pot', P.clone().add(new T.Vector3(-26, 3, -12)), P.clone(), 0.8, 'arc', () => { v.vfx.impact('fire_pot', P, 3.4); v.vfx.firePatch(P, 4, 4); })],
+  ['chill', { dist: 11, pitch: 0.35, yaw: 0.4 }, 1200, (v, T, P) => { const near = v.units.slots.filter((s) => s.visible).sort((a, b) => a.pos.distanceTo(P) - b.pos.distanceTo(P)).slice(0, 24); near.forEach((s, i) => { if (i % 2 === 0) s.chillUntil = 1e9; }); for (let i = 0; i < 20; i++) v.vfx.chillMote(near[(i * 2) % near.length].pos); v.camera.goal.target.copy(near[0].pos); v.camera.snap(); v.engine.wake(); }],
+  // faction mechanics (DESIGN 4b), files e2e/shots/vfx3-*.png
+  ['f-raise', { dist: 9, pitch: 0.38, yaw: 0.3 }, 450, (v, T, P) => { for (let i = 0; i < 3; i++) { const q = P.clone().add(new T.Vector3(i * 2 - 2, 0, (i % 2) * 1.2)); v.vfx.raiseDead(q); v.vfx.soulCall(P.clone().add(new T.Vector3(-6, 1.6, 3)), q.clone().setY(q.y + 0.3)); } }],
+  ['f-raise-late', { dist: 9, pitch: 0.38, yaw: 0.3 }, 1300, (v, T, P) => { for (let i = 0; i < 3; i++) v.vfx.raiseDead(P.clone().add(new T.Vector3(i * 2 - 2, 0, (i % 2) * 1.2))); }],
+  ['f-necromancy', { dist: 26, pitch: 0.45, yaw: 0.3 }, 600, (v, T, P) => { v.vfx.necromancy(P, 12); for (let i = 0; i < 4; i++) v.vfx.raiseDead(P.clone().add(new T.Vector3(Math.cos(i * 1.7) * 6, 0, Math.sin(i * 1.7) * 6))); }],
+  ['f-necromancy-late', { dist: 26, pitch: 0.45, yaw: 0.3 }, 1500, (v, T, P) => v.vfx.necromancy(P, 12)],
+  ['f-radiance', { dist: 20, pitch: 0.45, yaw: 0.3 }, 260, (v, T, P) => v.vfx.radiance(P, 8)],
+  ['f-radiance-late', { dist: 20, pitch: 0.45, yaw: 0.3 }, 900, (v, T, P) => v.vfx.radiance(P, 8)],
+  ['f-wraith', { dist: 10, pitch: 0.35, yaw: 0.4 }, 900, (v, T, P) => { const near = v.units.slots.filter((s) => s.visible).sort((a, b) => a.pos.distanceTo(P) - b.pos.distanceTo(P)).slice(0, 24); near.forEach((s, i) => { if (i % 2 === 0) s.ethereal = true; }); for (let i = 0; i < 14; i++) v.vfx.ghostWisp(near[(i * 2) % near.length].pos, 1.8); v.camera.goal.target.copy(near[0].pos); v.camera.snap(); v.engine.wake(); }],
+  ['f-plague-flight', { dist: 22, pitch: 0.36, yaw: 0.4 }, 900, (v, T, P) => v.vfx.projectile('plague', P.clone().add(new T.Vector3(-16, 3, -6)), P.clone(), 1.3, 'arc')],
+  ['f-plague', { dist: 16, pitch: 0.4, yaw: 0.4 }, 350, (v, T, P) => v.vfx.plagueBurst(P, 5, 4)],
+  ['f-plague-linger', { dist: 16, pitch: 0.4, yaw: 0.4 }, 2800, (v, T, P) => { v.vfx.plagueBurst(P, 5, 4); for (let i = 0; i < 3; i++) setTimeout(() => v.vfx.plagueTick(P.clone().add(new T.Vector3(i * 1.5 - 1.5, 0, 1))), 2500); }],
+  ['f-bless', { dist: 9, pitch: 0.35, yaw: 0.4 }, 500, (v, T, P) => { const near = v.units.slots.filter((s) => s.visible).sort((a, b) => a.pos.distanceTo(P) - b.pos.distanceTo(P)).slice(0, 8); near.forEach((s) => v.vfx.bless(s.pos)); v.camera.goal.target.copy(near[0].pos); v.camera.snap(); }],
+  ['f-sand', { dist: 12, pitch: 0.38, yaw: 0.4 }, 550, (v, T, P) => { const near = v.units.slots.filter((s) => s.visible).sort((a, b) => a.pos.distanceTo(P) - b.pos.distanceTo(P)).slice(0, 12); near.forEach((s, i) => { if (i % 2 === 0) { s.chillUntil = 1e9; s.chillSand = true; v.vfx.sandMote(s.pos); } }); const c = near[0].pos.clone().add(new T.Vector3(4, 0, 0)); v.vfx.sandSwirl(c, 3); v.camera.goal.target.copy(near[0].pos).add(new T.Vector3(2, 0, 0)); v.camera.snap(); v.engine.wake(); }],
+  ['f-sand-flight', { dist: 12, pitch: 0.3, yaw: 0.3 }, 600, (v, T, P) => v.vfx.projectile('sand_bolt', P.clone().add(new T.Vector3(-14, 2, 5)), P.clone().setY(P.y + 0.6), 0.9, 'line')],
+  ['f-regen', { dist: 10, pitch: 0.3, yaw: 0.3 }, 500, (v, T, P) => { for (let i = 0; i < 8; i++) setTimeout(() => v.vfx.sandTrickle(P, 3.2, 1.3), i * 60); }],
+  ['f-elephant', { dist: 16, pitch: 0.38, yaw: 0.3 }, 380, (v, T, P) => v.vfx.elephantTrample(P, 3)],
   ['keep-hit', { keep: true, dist: 34, pitch: 0.25, yaw: 3.6 }, 300, (v) => { for (let i = 0; i < 3; i++) v.vfx.keepHit(v.field.keep(0).hitPoint(), i === 0); }],
   ['keep-collapse', { keep: true, dist: 46, pitch: 0.3, yaw: 3.6 }, 900, (v) => { const k = v.field.keep(0); k.setStage(2); v.vfx.keepCollapse(k.position.clone()); }],
   ['keep-fire', { keep: true, dist: 40, pitch: 0.25, yaw: 3.6 }, 5200, (v) => { const k = v.field.keep(0); k.setStage(3); v.vfx.keepFire([0, 1, 2, 3].map(() => k.hitPoint()), 45, 1.2); }],
@@ -112,6 +129,7 @@ try {
       await page.evaluate((cam, C) => {
         const v = window.__rt.view;
         v.vfx.clear();
+        for (const q of v.units.slots) { q.chillUntil = -1; q.chillSand = false; q.ethereal = q.header.type === 'wraith_rider'; }
         v.setPlanning({ visible: false });
         v.camera.setMode('rts');
         const k = cam.keep ? v.field.keep(0).position : null;
@@ -126,7 +144,7 @@ try {
       await sleep(350);
       await page.evaluate(`(() => { const v = window.__rt.view, T = window.__rt.THREE; const P = new T.Vector3(${C.x}, v.field.heightAt(${C.x}, ${C.z}), ${C.z}); (${fn.toString()})(v, T, P); })()`);
       await sleep(ms);
-      await page.screenshot({ path: name.startsWith('skill-') ? `e2e/shots/${name}.png` : `e2e/shots/vfx-${name}.png` });
+      await page.screenshot({ path: name.startsWith('f-') ? `e2e/shots/vfx3-${name.slice(2)}.png` : process.env.TAG ? `e2e/shots/vfx2-${name}-${process.env.TAG}.png` : name.startsWith('skill-') ? `e2e/shots/${name}.png` : `e2e/shots/vfx-${name}.png` });
     };
     for (const [name, cam, ms, fn] of FX) {
       if (!want(name)) continue;

@@ -1,6 +1,7 @@
 // Headless bot-vs-bot matches and the balance report (DESIGN §8). Used by tools/tournament.ts and the smoke test.
-import { LORD_IDS } from './data/lords.ts';
-import { UNIT_TYPES } from './data/units.ts';
+import { FACTION_IDS } from './data/factions.ts';
+import { LORDS, LORD_IDS } from './data/lords.ts';
+import { UNITS, UNIT_TYPES } from './data/units.ts';
 import { SKILLS, SKILL_IDS, canEquip } from './data/skills.ts';
 import { botPlan } from './bot.ts';
 import { simulateBattle } from './battle.ts';
@@ -100,11 +101,21 @@ export interface Report {
   /** Match length percentiles (rounds). */
   roundsP50: number;
   roundsP95: number;
+  roundsP99?: number;
+  /** Share of matches over in 6 rounds or fewer, and share that went past round 12. */
+  roundsShort?: number;
+  roundsFinal?: number;
   roundsMax: number;
   /** stratMatrix[a][b] = win rate of strategy a vs strategy b. */
   stratMatrix: Record<string, Record<string, number>>;
   /** lordMatrix[a][b] = win rate of Lord a vs Lord b. */
   lordMatrix: Record<string, Record<string, number>>;
+  /** factionMatrix[a][b] = win rate of faction a vs faction b (mirrors are 50 by construction); factionRounds = average match length per pairing. */
+  factionMatrix?: Record<string, Record<string, number>>;
+  factionGames?: Record<string, Record<string, number>>;
+  factionRounds?: Record<string, Record<string, number>>;
+  /** Win rate of each faction against the other two. */
+  factions?: Record<string, number>;
   rounds: number;
   battleSec: number;
   /** Share of battles that ended with both armies standing (timeout or stalemate). */
@@ -130,6 +141,8 @@ export function aggregate(recs: MatchRecord[]): Report {
   const legendsH2H: Record<string, [number, number]> = {}, skillsH2H: Record<string, [number, number]> = {};
   const lens: number[] = [];
   const sm: Record<string, Record<string, [number, number]>> = {}, lm: Record<string, Record<string, [number, number]>> = {};
+  const fm: Record<string, Record<string, [number, number]>> = {}, fr: Record<string, Record<string, [number, number]>> = {};
+  const factions: Record<string, [number, number]> = {};
   const add2 = (m: Record<string, Record<string, [number, number]>>, a: string, b: string, win: number): void => {
     const e = ((m[a] ??= {})[b] ??= [0, 0]);
     e[0] += win; e[1]++;
@@ -159,6 +172,11 @@ export function aggregate(recs: MatchRecord[]): Report {
       if (r.strats[0] !== r.strats[1]) add(strats, r.strats[seat], w(r, seat));
       add2(sm, r.strats[seat], r.strats[1 - seat], w(r, seat));
       add2(lm, r.lords[seat], r.lords[1 - seat], w(r, seat));
+      const fa = LORDS[r.lords[seat]].faction, fb = LORDS[r.lords[1 - seat]].faction;
+      add2(fm, fa, fb, w(r, seat));
+      const e = ((fr[fa] ??= {})[fb] ??= [0, 0]);
+      e[0] += r.rounds; e[1]++;
+      if (fa !== fb) add(factions, fa, w(r, seat));
     }
     for (const b of r.battles) {
       battles++;
@@ -168,7 +186,7 @@ export function aggregate(recs: MatchRecord[]): Report {
       if (b.end === 'stalemate') stalemates++;
       if (b.winner === null) continue;
       const win = b.winner, lose = (1 - win) as Seat;
-      const hasAir = (g: Partial<Record<UnitType, number>>): boolean => !!(g.pegasus || g.wyvern || g.dragon);
+      const hasAir = (g: Partial<Record<UnitType, number>>): boolean => (Object.keys(g) as UnitType[]).some((u) => UNITS[u].tags.includes('flier'));
       const tot = (g: Partial<Record<UnitType, number>>): number => Object.values(g).reduce((a, x) => a + (x ?? 0), 0) || 1;
       const tw = tot(b.gold[win]), tl = tot(b.gold[lose]);
       for (const u of UNIT_TYPES) {
@@ -218,9 +236,14 @@ export function aggregate(recs: MatchRecord[]): Report {
     units: rate(units), unitSamples: samples(units), unitsNoAir: rate(unitsNoAir), legends: rate(legends), legendSamples: samples(legends),
     skills: rate(skills), skillSamples: samples(skills), skillWith: rate(skillWith), skillCtl: rate(skillCtl), skillWithSamples: samples(skillWith), skillCtlSamples: samples(skillCtl),
     legendsH2H: rate(legendsH2H), legendsH2HSamples: samples(legendsH2H), skillsH2H: rate(skillsH2H), skillsH2HSamples: samples(skillsH2H), lordShare: rate(lordShare), lordShareAll: ad ? ld / ad : 0,
-    roundsP50: pctl(0.5), roundsP95: pctl(0.95), roundsMax: lens.length ? lens[lens.length - 1] : 0,
+    roundsP50: pctl(0.5), roundsP95: pctl(0.95), roundsP99: pctl(0.99),
+    roundsShort: lens.filter((x) => x <= 6).length / Math.max(1, lens.length), roundsFinal: lens.filter((x) => x > 12).length / Math.max(1, lens.length), roundsMax: lens.length ? lens[lens.length - 1] : 0,
     stratMatrix: Object.fromEntries(Object.entries(sm).map(([a, row]) => [a, rate(row)])),
     lordMatrix: Object.fromEntries(Object.entries(lm).map(([a, row]) => [a, rate(row)])),
+    factionMatrix: Object.fromEntries(Object.entries(fm).map(([a, row]) => [a, rate(row)])),
+    factionGames: Object.fromEntries(Object.entries(fm).map(([a, row]) => [a, samples(row)])),
+    factionRounds: Object.fromEntries(Object.entries(fr).map(([a, row]) => [a, rate(row)])),
+    factions: rate(factions),
     rounds: rounds / Math.max(1, recs.length), battleSec: ticks / Math.max(1, battles) / 20, timeouts: timeouts / Math.max(1, battles),
     stalemates: stalemates / Math.max(1, battles), draws,
     roundHist: Object.fromEntries(Object.entries(roundHist).map(([k, n]) => [k, n / Math.max(1, recs.length)])),
@@ -233,19 +256,24 @@ const pct = (x: number): string => (100 * x).toFixed(1) + '%';
 export function formatReport(r: Report): string {
   const L: string[] = [];
   L.push(`matches ${r.matches} | P0 win ${pct(r.p0)} | avg rounds ${r.rounds.toFixed(2)} | avg battle ${r.battleSec.toFixed(1)} s | timeouts ${pct(r.timeouts)} (stalemates ${pct(r.stalemates ?? 0)}) | draws ${r.draws}`);
-  if (r.roundsP95) L.push(`Rounds: median ${r.roundsP50}, 95th percentile ${r.roundsP95}, longest ${r.roundsMax}`);
+  if (r.roundsP95) L.push(`Rounds: median ${r.roundsP50}, 95th percentile ${r.roundsP95}, 99th ${r.roundsP99 ?? '-'}, longest ${r.roundsMax}; 6 or fewer ${pct(r.roundsShort ?? 0)}, past round 12 ${pct(r.roundsFinal ?? 0)}`);
   if (r.roundHist) L.push('Match length: ' + Object.entries(r.roundHist).sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, v]) => `${k}r ${pct(v)}`).join(', '));
   if (r.marginHist) L.push(`Winner keep HP left: mean ${r.margin.toFixed(1)}% | 0-24% ${pct(r.marginHist[0])}, 25-49% ${pct(r.marginHist[1])}, 50-74% ${pct(r.marginHist[2])}, 75-100% ${pct(r.marginHist[3])}`);
-  L.push('Lords: ' + LORD_IDS.map((l) => `${l} ${pct(r.lords[l] ?? 0)}`).join(', '));
+  L.push('Lords: ' + LORD_IDS.filter((l) => r.lords[l] !== undefined).map((l) => `${l} ${pct(r.lords[l] ?? 0)}`).join(', '));
+  if (r.factions && Object.keys(r.factions).length > 1) {
+    L.push('Factions (vs the other two): ' + FACTION_IDS.filter((x) => r.factions![x] !== undefined).map((x) => `${x} ${pct(r.factions![x])}`).join(', '));
+    const ids = FACTION_IDS.filter((x) => r.factionMatrix![x]);
+    L.push('Faction pairings (row vs column: win rate, avg rounds, games): ' + ids.map((a) => ids.map((b) => (r.factionMatrix![a][b] === undefined ? '' : `${a} v ${b} ${pct(r.factionMatrix![a][b])} ${r.factionRounds![a][b].toFixed(2)}r n=${r.factionGames![a][b]}`)).filter(Boolean).join('; ')).join(' | '));
+  }
   L.push('Strategies: ' + Object.entries(r.strats).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)}`).join(', '));
-  L.push('Units (cost-normalised share in round winners): ' + UNIT_TYPES.map((u) => `${u} ${pct(r.units[u] ?? 0)} (n=${(r.unitSamples[u] ?? 0).toFixed(0)})`).join(', '));
+  L.push('Units (cost-normalised share in round winners): ' + UNIT_TYPES.filter((u) => r.units[u] !== undefined).map((u) => `${u} ${pct(r.units[u] ?? 0)} (n=${(r.unitSamples[u] ?? 0).toFixed(0)})`).join(', '));
   if (r.unitsNoAir) L.push('Units, battles without fliers: ' + UNIT_TYPES.filter((u) => r.unitsNoAir[u] !== undefined).map((u) => `${u} ${pct(r.unitsNoAir[u])}`).join(', '));
   L.push('Legendaries (wearer vs an army without it): ' + Object.entries(r.legends).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)} (n=${r.legendSamples[k]})`).join(', '));
   if (r.legendsH2H) L.push('Legendaries head-to-head (equal counts): ' + Object.entries(r.legendsH2H).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)} (n=${r.legendsH2HSamples![k]})`).join(', '));
   if (r.skillsH2H) L.push('Skills head-to-head (equal counts): ' + Object.entries(r.skillsH2H).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)} (n=${r.skillsH2HSamples![k]})`).join(', '));
   if (r.skills) L.push('Skills (wearer vs an army without it): ' + Object.entries(r.skills).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v)} (n=${r.skillSamples[k]})`).join(', '));
   if (r.skillWith) L.push('Skills vs control (round win rate wearing it / wearing a plain Rare instead): ' + Object.keys(r.skillWith).sort((a, b) => (r.skillWith[b] - (r.skillCtl[b] ?? 0)) - (r.skillWith[a] - (r.skillCtl[a] ?? 0))).map((k) => `${k} ${(100 * (r.skillWith[k] - (r.skillCtl[k] ?? 0))).toFixed(1).replace(/^(?!-)/, '+')} (${pct(r.skillWith[k])} / ${pct(r.skillCtl[k] ?? 0)}, n=${r.skillWithSamples[k]} / ${r.skillCtlSamples?.[k] ?? 0})`).join(', '));
-  if (r.lordShare) L.push(`Lord share of army damage: ${pct(r.lordShareAll)} overall; ` + LORD_IDS.map((l) => `${l} ${pct(r.lordShare[l] ?? 0)}`).join(', '));
+  if (r.lordShare) L.push(`Lord share of army damage: ${pct(r.lordShareAll)} overall; ` + LORD_IDS.filter((l) => r.lordShare[l] !== undefined).map((l) => `${l} ${pct(r.lordShare[l] ?? 0)}`).join(', '));
   const mat = (m: Record<string, Record<string, number>>, title: string): void => {
     const keys = Object.keys(m).sort();
     L.push(title.padEnd(10) + keys.map((k) => k.slice(0, 8).padStart(9)).join(''));

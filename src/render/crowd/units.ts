@@ -18,6 +18,8 @@ import type { VatClip } from './vat.ts';
 const BLEND = 0.18;
 const CORPSE_HOLD = 4;
 const CORPSE_SINK = 2.5;
+/** Strength of the body glow while a soldier is blessed (the flash channel, warm white). */
+const BLESS_GLOW = 0.22;
 
 interface Anim {
   clip: string;
@@ -64,6 +66,20 @@ export interface Slot {
   /** Planning: constant highlight glow 0..1, and its colour (0 warm white, 1 red = invalid). */
   glow: number;
   glowColor: number;
+  /** Battle time (s) until which the soldier is slowed: he takes a cold blue cast (`chill` eases toward it). */
+  chillUntil: number;
+  chill: number;
+  /** The current slow is a sandstorm (ochre cast) rather than cold (blue). */
+  chillSand: boolean;
+  /** Battle time (s) until which the soldier burns (`burnPlague`: festers with the Corpse Catapult's plague); the playback draws the flames. */
+  burnUntil: number;
+  burnPlague: boolean;
+  /** Battle time (s) until which a Sun Priest's blessing holds: a soft gold glow on the body. */
+  blessUntil: number;
+  /** A spectre (Wraith Riders): pale green, edge-lit and slightly see-through. */
+  ethereal: boolean;
+  /** Colour of the current `flash`: 0 warm white (a hit), 1 red (war cry). Resets when the flash has faded. */
+  flashTint: number;
 }
 
 class CrowdBatch {
@@ -111,12 +127,12 @@ class CrowdBatch {
   begin(): void {
     this.count = 0;
   }
-  push(m: THREE.Matrix4, a: [number, number, number], b: [number, number, number], blend: number, fade: number, flash: number, flashColor: number, team: THREE.Color, mirror = 1): void {
+  push(m: THREE.Matrix4, a: [number, number, number], b: [number, number, number], blend: number, fade: number, flash: number, flashColor: number, team: THREE.Color, mirror = 1, chill = 0): void {
     const i = this.count++;
     if (i >= this.capacity) return;
     this.mesh.setMatrixAt(i, m);
     this.iA.setXYZW(i, a[0], a[1], a[2], mirror);
-    this.iB.setXYZW(i, b[0], b[1], b[2], 0);
+    this.iB.setXYZW(i, b[0], b[1], b[2], chill);
     this.iC.setXYZW(i, blend, fade, flash, flashColor);
     this.iTeam.setXYZ(i, team.r, team.g, team.b);
   }
@@ -140,7 +156,7 @@ class HeroInst {
   readonly root: THREE.Object3D;
   readonly mixer: THREE.AnimationMixer;
   readonly actions = new Map<string, THREE.AnimationAction>();
-  readonly uniforms: { uTeam: { value: THREE.Color }; uFlash: { value: number }; uFade: { value: number } }[] = [];
+  readonly uniforms: { uTeam: { value: THREE.Color }; uFlash: { value: number }; uFade: { value: number }; uChill?: { value: number }; uFlashCol?: { value: number } }[] = [];
   readonly asset: HeroAsset;
   /** Creature head bone (dragon, wyvern mounts): breath and bolts leave from the snout, not the body. */
   readonly head: THREE.Object3D | null;
@@ -184,10 +200,12 @@ class HeroInst {
     }
     this.mixer.update(0);
   }
-  setFx(flash: number, fade: number): void {
+  setFx(flash: number, fade: number, chill = 0, flashCol = 0): void {
     for (const u of this.uniforms) {
       u.uFlash.value = flash;
       u.uFade.value = fade;
+      if (u.uChill) u.uChill.value = chill;
+      if (u.uFlashCol) u.uFlashCol.value = flashCol;
     }
   }
 }
@@ -255,7 +273,7 @@ export class UnitRenderer {
         index: i, header: h, arch, team, crowd: arch.render === 'crowd' ? this.batches.get(arch.key)! : null, hero,
         anim: { clip: 'idle', t0: 0, loopT: ph * 10, rate: 1, prevClip: 'idle', prevT0: 0, prevLoopT: 0, prevRate: 1, blendAt: -99, oneShot: null, oneShotAt: 0, oneShotRate: 1 },
         phase: ph, visible: false, pos: new THREE.Vector3(), yaw: 0, lastX: NaN, lastY: NaN, speed: 0, deadAt: -1, deathYaw: (hash(i + 7777) - 0.5) * 0.9,
-        flash: 0, fade: 1, hp: h.maxHp, lift: arch.flyHeight, moving: false, ghost: 1, glow: 0, glowColor: 0,
+        flash: 0, fade: 1, hp: h.maxHp, lift: arch.flyHeight, moving: false, ghost: 1, glow: 0, glowColor: 0, chillUntil: -1, chill: 0, chillSand: false, burnUntil: -1, burnPlague: false, blessUntil: -1, ethereal: h.type === 'wraith_rider', flashTint: 0,
       });
     });
     // lazily fetch art for the unit types present (procedural stand-ins until they arrive)
@@ -374,6 +392,7 @@ export class UnitRenderer {
         const s = this.slots[e.tgt];
         if (!s || e.miss) return;
         s.flash = e.crit ? 1 : 0.75;
+        s.flashTint = 0;
         if (s.hero && !s.anim.oneShot && this.hasClip(s, 'hit')) this.oneShot(s, 'hit', t);
         break;
       }
@@ -528,6 +547,14 @@ export class UnitRenderer {
     s.pos.set(wx, gy, wz);
     s.yaw = facingToYaw(tf.facing[i]) + (s.deadAt >= 0 ? s.deathYaw : 0);
     s.flash = Math.max(0, s.flash - Math.max(dt, 1 / 60) * 5);
+    if (s.flash <= 0) s.flashTint = 0;
+    // slowed: ease the cold cast in and out (seeking / pausing: dt = 0 snaps to the target)
+    const chillTo = s.deadAt < 0 && t < s.chillUntil ? 1 : 0;
+    s.chill = dt > 0 ? s.chill + (chillTo - s.chill) * Math.min(1, dt * 5) : chillTo;
+    if (s.chill < 0.004) s.chill = 0;
+    // blessed: a low, slow gold pulse under any hit flash (warm-white flash colour)
+    const bless = s.deadAt < 0 && t < s.blessUntil ? BLESS_GLOW * (0.75 + 0.25 * Math.sin(t * 4 + s.index)) : 0;
+    const flash = Math.max(s.flash, s.glow, bless);
 
     // clip sampling
     const curName = a.oneShot ?? a.clip;
@@ -544,7 +571,7 @@ export class UnitRenderer {
       this.s.setScalar(s.arch.scale * this.farScale);
       this.m.compose(s.pos, this.q, this.s);
       const mirror = s.deadAt >= 0 && (s.index & 1) === 1 && curName === 'death' ? -1 : 1;
-      b.push(this.m, this.fa, this.fb, wb, fade, Math.max(s.flash, s.glow), s.glowColor, s.team, mirror);
+      b.push(this.m, this.fa, this.fb, wb, fade, flash, Math.max(s.glowColor, s.flashTint), s.team, mirror, s.chill > 0 ? s.chill + (s.chillSand ? 1 : 0) : s.ethereal && fade >= 0.999 ? -1 : 0);
     } else if (s.hero) {
       const h = s.hero;
       h.root.visible = true;
@@ -554,7 +581,7 @@ export class UnitRenderer {
       const ac = h.asset.clips.get(curName) ?? h.asset.clips.get('idle')!;
       const pc = h.asset.clips.get(a.prevClip) ?? ac;
       h.pose(ac.name, clipTime(ac, curT, this.isLoop(s, curName)), pc.name, clipTime(pc, prevT, this.isLoop(s, a.prevClip)), wb);
-      h.setFx(Math.max(s.flash, s.glow), fade);
+      h.setFx(flash, fade, s.chill > 0 ? s.chill + (s.chillSand ? 1 : 0) : s.ethereal && fade >= 0.999 ? -1 : 0, s.flashTint);
     }
   }
 

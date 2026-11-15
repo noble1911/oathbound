@@ -71,6 +71,12 @@ override the defaults in `mesh.mjs` (the q8 set only ships the 512 flows); `BLEN
   fist = jab/cross; greataxe (Warden) = two-handed port-arms carry, overhead chop, horizontal cleave, both arms
   solved by IK onto the shaft, walk / jog retimed 1.25x / 1.14x slower. `assets.json` `clips` overrides single
   slots (the Marshal and Archmage run on `jog` / `jog_sword`: the library jog with its leg swing cut to 58 %).
+* **Clipsets after the animation audit** (`docs/art-review/ANIM-AUDIT.md`): `pike` = two-handed pike (pikemen); `staff` =
+  staff gripped in the fist and carried upright, raised to cast, thrust head-first (clerics; `attack` = cast, `attack2` =
+  strike); `spear` keeps its carry through hit / cast and releases it over the first 0.5 s of the deaths, thrusts lunge;
+  `bow` / `cast` have a ranged `attack_melee_a` too (the renderer alternates `attack` / `attack2` per soldier, so both must
+  be a shot / a cast); golem attacks are `slam` / `hook`; shield carriers run with the shield in guard. Every in-engine
+  clip sheet: `node e2e/anim-audit.mjs <tag> [units]`; Keep stages: `node e2e/anim-keep.mjs`.
 * **Clip ground speeds.** The mannequin's walk covers 1.06 m/s and its jog 5.9 m/s (x leg length / 0.92 m on a
   fitted rig); `anim_audit.py` prints what each unit's clips cover. `src/render/crowd/archetypes.ts`
   `walkSpeed` / `runSpeed` must be those numbers or planted feet slide (the Lords' and golem's are set from it).
@@ -241,3 +247,102 @@ Licences (all **CC0 1.0**, polyhaven.com): textures `sparse_grass`, `forest_leav
 * **Keep footprint contract**: the sim's siege constants (`KEEP_FRONT`, `KEEP_HALF_W`, `TOWER_FRONT` in
   `src/sim/battle.ts`) are measured from the art Keep as the renderer places it (front wall 3.4 m in front of
   the sim keep point, 18.2 m wide). Re-measure them if `keep.glb` or `terrain/keep.ts` placement changes.
+
+## 8. Factions: the Ashen Covenant and the Sun Caliphate
+
+Approved concept art: `docs/art-review/factions/{ashen,sun}_{1_lineup,2_battlefield}.png`. Review sheets:
+`docs/art-review/<id>.jpg` (+ `<id>_vat.jpg` for squads). In-engine line-ups: `node e2e/faction-shots.mjs` ->
+`e2e/shots/faction-{ashen,caliphate}-*.png`. Portraits: `node tools/art/ui-factions.mjs` (manuscript style, the
+concept as a reference image) -> `public/ui/unit_<id>.webp` (320) / `lord_<id>.webp` (512).
+
+| id | kind | path | clipset / builder | notes |
+|---|---|---|---|---|
+| `skeleton` | squad | rig.py + VAT | spear (one-handed, shield) | restyled: bronze helm, mail, spear + teardrop shield |
+| `grave_knight` | squad | rig.py + VAT | sword | bronze plate, plume + cape + shield face = team |
+| `bone_archer` | squad | rig.py + VAT | bow | hooded, mantle + sash = team |
+| `wraith_rider` | mounted squad | creature.py + VAT | spear; mount `skeletal_horse` | the renderer draws it as a spectre (screen-door) |
+| `grave_acolyte` | squad | rig.py + VAT | staff | hood + stole + sash = team (`grade.fur`) |
+| `bone_drake` | flier, hero | faction.py -> creature.py | `dragon_like`, `flap` | wing membranes carry a light team tint (0.3) |
+| `corpse_catapult` | siege | siege.py (trebuchet builder) | `flip` | bone throwing arm, skull-cage counterweight |
+| `bone_golem` | large, hero | rig.py | fist (slam / hook) | `hip` 0.35 |
+| `lord_lich` | Lord | rig.py | staff; staff R + lantern L | 2.25 m with the crown, albedo lifted |
+| `spear_levy` | squad | rig.py + VAT | spear (shield) | sash + scarf = team |
+| `scimitar` | squad | rig.py + VAT | sword | cloak + sash = team |
+| `camel_archer` | mounted squad | faction.py -> creature.py + VAT | bow; mount `camel` | pace walk, gallop |
+| `mamluk` | mounted squad | creature.py + VAT | spear; mount `mamluk_horse` | stock horse gaits |
+| `djinn_binder` | squad | rig.py + VAT | staff | mantle = team |
+| `sun_priest` | squad | rig.py + VAT | staff | veil + stole = team (`grade.fur`) |
+| `djinn` | flier, hero (squad of 2) | faction.py -> rig.py | cast; `float` | legs = smoke tail, no stepping |
+| `war_elephant` | large, hero | faction.py -> creature.py | `amble`, trunk chain | howdah + crew are part of the mesh (static) |
+| `sand_golem` | large, hero | rig.py | fist (slam / hook) | |
+| `lord_sultana` | Lord | rig.py | sword; scimitar R + banner on the back | sun banner is fixed turquoise, cloak = team |
+
+### What is new in the pipeline (all optional keys; nothing changes for assets without them)
+
+`assets.json`:
+* `team_hue` [lo, hi] / `team_sat`: the team-cloth key per asset. **Both factions are keyed on "vivid magenta"**, so the
+  Caliphate's turquoise and the Covenant's green fire can never land in the royal-blue window. TRELLIS turns magenta
+  into a saturated red, so the window is `[0.93, 1.055]` (it wraps through red) with saturation > 0.42, measured in
+  the stored (sRGB) texel values: leather and bronze sit at hue 0.06+ and saturation < 0.4, skin below 0.42.
+* `hue_map` [[lo, hi, to]]: TRELLIS also shifts green to cyan and turquoise to blue. The Covenant maps 0.44-0.66 back
+  to green (0.37), the Caliphate 0.54-0.72 back to turquoise (0.485); the Sultana's banner maps its red to turquoise.
+* `metal_max`: scales the baked metalness. Heroes keep their MR map in the engine and there is no environment map,
+  so fully metallic gold rendered black (the elephant's head plate, the banner). Faction heroes use 0.3.
+* `hold` (weapons): `shield`, `lantern` (hangs from the fist along the arm), `back` (strapped to `spine3`, upright in
+  every clip), default `fist`. `builder`: a per-asset build script (`faction.py`). `creature: true`: a standalone
+  creature.py build. `flip` (siege): the front / back rule guessed wrong. `float`: see below.
+* `hip` is needed on every unit with a tabard, loincloth or mail skirt between the legs (skeleton, spear levy, grave
+  knight, bone archer were fitted with hips at 0.5-0.6 m and waddled); check `anim_audit.py`'s `hips` line.
+
+`creatures.json` (read by `blender/faction.py`, which wraps creature.py without changing it): `gaits` (per-mount
+overrides of the walk / run footfall tables, `T` also sets the clip length), `amble` (run = a faster walk, no gallop
+rocking), `pace_roll`, `body_scale`, `flap`, `dragon_like`, `chains` (extra FK chains, e.g. the trunk).
+
+| mount | walk | run | renderer walkSpeed / runSpeed |
+|---|---|---|---|
+| `skeletal_horse`, `mamluk_horse` | 4-beat lateral walk, 0.67 s | transverse gallop, 0.5 s | 2.2 / 7 |
+| `camel` | pace (lateral pairs: LH 0, LF 0.08, RH 0.5, RF 0.58), duty 0.62, 0.92 s, body roll | gallop, 0.54 s | 1.8 / 5.5 |
+| `war_elephant` | lateral-sequence walk, duty 0.72, 1.67 s | fast amble, duty 0.58, 1.08 s, never airborne | 1.3 / 2.6 |
+
+Floaters (`float`, the Bound Djinn): rig.py with `retarget.bake` / `solve_and_key` wrapped: the leg chain follows the
+pelvis rigidly with a travelling wave (the smoke tail), walk / run are the idle upper body tipped 11 / 22 degrees
+into the flight direction with the tail trailing, the body bobs. The renderer's `flyHeight` lifts it.
+
+Contained jogs with the carries were added to the clip library (`jog_staff`, `jog_spear_shield`,
+`jog_sword_shield`): the faction squads move at 2.2-3.4 m/s and the full run covers 5-5.9 m/s.
+
+### Sizes (shipped files per model, MB)
+
+| faction | id | tris LOD0 / LOD1 | all files | loaded at runtime |
+|---|---|---|---|---|
+| Ashen Covenant | `skeleton` | 5506 / 1410 | 1.56 | 1.10 |
+| Ashen Covenant | `grave_knight` | 5908 / 1474 | 1.66 | 1.14 |
+| Ashen Covenant | `bone_archer` | 5908 / 1474 | 1.60 | 1.17 |
+| Ashen Covenant | `wraith_rider` | 7970 / 1391 | 2.97 | 1.25 |
+| Ashen Covenant | `grave_acolyte` | 5908 / 1474 | 1.58 | 1.06 |
+| Ashen Covenant | `bone_drake` | 14774 / 2954 | 1.55 | 1.12 |
+| Ashen Covenant | `corpse_catapult` | 14806 / 2984 | 1.26 | 0.98 |
+| Ashen Covenant | `bone_golem` | 14774 / 2954 | 1.84 | 1.42 |
+| Ashen Covenant | `lord_lich` | 14772 / 2952 | 1.47 | 1.05 |
+| **Ashen Covenant total** | 9 models | | **15.5** | **10.3** |
+| Sun Caliphate | `spear_levy` | 5506 / 1412 | 1.56 | 1.13 |
+| Sun Caliphate | `scimitar` | 5908 / 1474 | 1.61 | 1.12 |
+| Sun Caliphate | `camel_archer` | 8370 / 1466 | 2.90 | 1.32 |
+| Sun Caliphate | `mamluk` | 8370 / 1396 | 3.06 | 1.37 |
+| Sun Caliphate | `djinn_binder` | 5908 / 1474 | 1.67 | 1.17 |
+| Sun Caliphate | `sun_priest` | 5908 / 1474 | 1.70 | 1.20 |
+| Sun Caliphate | `djinn` | 14774 / 2954 | 2.68 | 1.99 |
+| Sun Caliphate | `war_elephant` | 14774 / 2954 | 1.43 | 1.04 |
+| Sun Caliphate | `sand_golem` | 14774 / 2954 | 1.47 | 1.07 |
+| Sun Caliphate | `lord_sultana` | 14772 / 2950 | 1.43 | 1.01 |
+| **Sun Caliphate total** | 10 models | | **19.5** | **12.4** |
+
+Portraits: Ashen 558 KB, Caliphate 625 KB. Runtime = crowd GLB + VAT + tint mask for squads, detail GLB + mask for heroes; the client only loads the units present in a match.
+
+### Known limits
+
+* No emissive: the renderer's art materials have no emissive channel, so soul-fire is bright green albedo only.
+* Hero weapons are not team-tinted by the renderer (`isWeapon`), which is why the Sultana's banner is turquoise.
+* The elephant's howdah crew, the catapult's counterweight cage and every cape / mantle are rigid or skinned to the
+  nearest bones; a caster's raised arm drags the mantle with it.
+* The corpse catapult's concept shows the arm released (counterweight down); it fires from that pose.
