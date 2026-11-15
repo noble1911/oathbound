@@ -103,6 +103,10 @@ def tassels(kit, pos, look, length=0.2, mirror=True, w=0.9):
 
 
 def _drape(args, ctx):
+    # `barrel` given: drape on that parametric barrel even when a body exists (a skeleton or a feathered body
+    # has no clean back surface to cast onto: ribs, wing roots and feathers catch the rays)
+    if args.get('barrel'):
+        return T.Drape(None, args['barrel'])
     return T.Drape(ctx.get('body'), args.get('barrel'))
 
 

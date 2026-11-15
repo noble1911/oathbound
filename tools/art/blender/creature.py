@@ -437,6 +437,15 @@ class Creature:
 
     # -- clips
     def pose_at(self, clip, f, n, impact=10):
+        """`_pose_at` + creatures.json `pose_fix` {bone: [[axis X|Y|Z, rad], ...]}: a static correction added in every pose
+        of every clip (a mesh whose head / neck TRELLIS kept turned as in a 3/4 concept: straighten it in play)."""
+        pose = self._pose_at(clip, f, n, impact)
+        for bn, lst in self.cfg.get('pose_fix', {}).items():
+            for ax, ang in lst:
+                pose.add(bn, {'X': X, 'Y': Y, 'Z': Z}[ax], ang)
+        return pose
+
+    def _pose_at(self, clip, f, n, impact=10):
         pose = Pose()
         ph = f / n
         u = f / max(1, n - 1)

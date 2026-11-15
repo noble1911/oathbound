@@ -79,7 +79,26 @@ def trapped(aid, a, spec):
         else:
             ar.setdefault('tex', a.get('tex', 512))
         ob = TR.build(name, ar, dict(id=aid, asset=a, body=None))
+        if lod and name == 'shield':
+            # crowd meshes count every triangle (<= 1.5k with the body): coarser grids until the shield fits its `lod1` budget
+            for nu, nv in ((4, 6), (4, 5), (3, 4), (3, 3), (2, 3)):
+                if L.tris(ob) <= a.get('lod1', 150):
+                    break
+                for img in [n.image for m in ob.data.materials for n in m.node_tree.nodes if getattr(n, 'image', None)]:
+                    img.name = img.name + '_drop'
+                bpy.data.objects.remove(ob, do_unlink=True)
+                ob = TR.build(name, dict(ar, nu=nu, nv=nv), dict(id=aid, asset=a, body=None))
         ob.name = nm; ob.data.name = nm
+        ti = ob.get('team_image')
+        if not lod:
+            # the LOD0 team mask as a file too: vat.py bakes the crowd tint mask from art-work/clean/<weapon>_team.png (the
+            # mask image is not referenced by a node, so it does not travel with the object into the rig blend)
+            mp = L.WORK / 'clean' / f'{aid}_team.png'
+            if ti and ti in bpy.data.images:
+                im = bpy.data.images[ti].copy()
+                im.filepath_raw = str(mp); im.file_format = 'PNG'; im.save(); bpy.data.images.remove(im)
+            elif mp.exists():
+                mp.unlink()                                   # stale mask of the former TRELLIS weapon
         print('[proc] trappings', name, nm, L.tris(ob), 'tris, atlas', ob['atlas'], 'team', round(ob['team_frac'], 3))
 
 

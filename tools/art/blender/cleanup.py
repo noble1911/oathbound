@@ -492,6 +492,27 @@ def make_lod(high, name, budget, tex, height, use_team, voxel, save_mask=False, 
     return low, L.tris(low), tf
 
 
+def glow_grade(c, G):
+    """`grade.glow` {hue [lo, hi], sat, val, to [r, g, b], gamma, gain}: texels in the hue window (soul-fire that a
+    TRELLIS run baked dark green-black) become the bright colour `to`, shaded by their own value. The renderer's art
+    materials have no emissive channel, so a glow is bright saturated albedo. Keyed by hue only, so it is applied to
+    the LOD0 and the LOD1 atlas alike."""
+    f32 = np.float32
+    mx = c.max(2); mn = c.min(2); d = mx - mn + 1e-6
+    r, gc, b = c[..., 0], c[..., 1], c[..., 2]
+    hh = np.where(mx == r, ((gc - b) / d) % 6, np.where(mx == gc, (b - r) / d + 2, (r - gc) / d + 4)) / 6.0
+    lo, hi = G.get('hue', [0.25, 0.5])
+    k = ((hh > lo) & (hh < hi) & (d / (mx + 1e-6) > G.get('sat', 0.25)) & (mx > G.get('val', 0.04))).astype(f32)
+    frac = float(k.mean())
+    if frac == 0:
+        return c, 0.0
+    ref = float(np.percentile(mx[k > 0.5], 85))
+    k = L.box_blur(k, 3)[..., None]
+    shade = np.clip(mx / ref, 0, 1) ** G.get('gamma', 0.5)
+    new = np.array(G.get('to', [0.35, 1.0, 0.45]), f32) * shade[..., None] * G.get('gain', 1.0)
+    return np.clip(c * (1 - k) + new * k, 0, 1).astype(f32), frac
+
+
 def grade(a, low):
     """Albedo / team-mask grading of the LOD0 bake, driven by assets.json `grade` (all optional):
       lift [gamma, gain]   brighten a dark TRELLIS bake (wyvern, dragon read near-black in the engine)
@@ -549,16 +570,21 @@ def grade(a, low):
     if 'sat' in g:
         l = rgb.mean(2, keepdims=True)
         rgb = np.clip(l + (rgb - l) * g['sat'], 0, 1)
+    if 'glow' in g:
+        rgb, gf = glow_grade(rgb, g['glow'])
+        print(f"[cleanup] grade glow: {gf * 100:.2f}% of the atlas")
     px[..., :3] = rgb
     L.np_img(base, px); base.pack()
     b1 = bpy.data.images.get(f'{aid}_lod1_base')
-    if b1 is not None and tier(a) == 'hero' and ('lift' in g or 'sat' in g):
+    if b1 is not None and tier(a) == 'hero' and ('lift' in g or 'sat' in g or 'glow' in g):
         # the low tier draws a hero's LOD1 (own atlas): same lift / saturation there
         p1 = L.img_np(b1); c1 = p1[..., :3]
         if 'lift' in g:
             c1 = np.clip(c1 ** g['lift'][0] * g['lift'][1], 0, 1)
         if 'sat' in g:
             l1 = c1.mean(2, keepdims=True); c1 = np.clip(l1 + (c1 - l1) * g['sat'], 0, 1)
+        if 'glow' in g:
+            c1 = glow_grade(c1, g['glow'])[0]
         p1[..., :3] = c1; L.np_img(b1, p1); b1.pack()
     L.save_gray(mask, mpath, MASK_SIZE, MASK_SIZE)
     tf = L.set_team_attr(low, mask)
@@ -603,7 +629,8 @@ def tex_cfg(a):
     """Texture sizes and sharpening per tier; assets.json `tex`, `tex_lod1`, `mask`, `unsharp` override."""
     t = tier(a)
     d = dict(hero=dict(tex=2048, tex_lod1=512, mask=1024, unsharp=[2, 0.6]),
-             squad=dict(tex=512, tex_lod1=256, mask=256, unsharp=[1, 0.35]),
+             # squads: the 1024 LOD0 atlas is the bake source of the 512 crowd atlas (vat.py ships the detail GLB at `detail_tex` 512)
+             squad=dict(tex=1024, tex_lod1=256, mask=256, unsharp=[1.5, 0.5]),
              prop=dict(tex=512, tex_lod1=256, mask=256, unsharp=[1, 0.35]),
              weapon=dict(tex=256, tex_lod1=256, mask=256, unsharp=None))[t]
     if a.get('tex') and 'unsharp' not in a:
@@ -614,7 +641,7 @@ def tex_cfg(a):
     return d
 
 
-def box_unwrap(ob, smooth=10):
+def box_unwrap(ob, smooth=10, edge=0.2):
     """Planar projection along the dominant axis of a SMOOTHED normal field: a few hundred large islands at a
     uniform texel density instead of smart-project's thousands of crumbs on a bumpy TRELLIS surface."""
     import bmesh
@@ -635,7 +662,7 @@ def box_unwrap(ob, smooth=10):
         np.add.at(cnt, (pairs[:, 0], lab[pairs[:, 1]]), 1); np.add.at(cnt, (pairs[:, 1], lab[pairs[:, 0]]), 1)
         cnt[np.arange(len(N)), lab] += 0.5
         lab = cnt.argmax(1)
-    bad = (N * D[lab]).sum(1) < 0.2                     # a face seen edge-on / from behind: use its own axis
+    bad = (N * D[lab]).sum(1) < edge                    # a face seen edge-on / from behind: use its own axis (`edge`: crowd meshes 0.06, fewer one-triangle islands)
     lab[bad] = (N[bad] @ D.T).argmax(1)
     uvl = bm.loops.layers.uv.verify()
     AX = {0: (1, 2, 1), 1: (1, 2, -1), 2: (0, 2, -1), 3: (0, 2, 1), 4: (0, 1, 1), 5: (0, 1, -1)}

@@ -443,7 +443,12 @@
      "R"
     ]
    ],
-   "clipset": "spear"
+   "clipset": "spear",
+   "team_hue": [
+    0.6,
+    0.86
+   ],
+   "team_sat": 0.3
   },
   {
    "id": "wyvern_rider",
@@ -474,13 +479,71 @@
    "id": "horse",
    "kind": "quadruped",
    "height": 1.75,
-   "lod0": 4000,
+   "lod0": 5000,
    "lod1": 750,
    "part": true,
    "style": "object",
    "grade": {
-    "mask_open": 9
-   }
+    "sat": 0.8,
+    "lift": [
+     0.95,
+     1.02
+    ]
+   },
+   "tier": "hero",
+   "tex": 1024,
+   "mask": 512,
+   "parts": [
+    {
+     "name": "caparison",
+     "builder": "caparison",
+     "args": {
+      "faction": "kingdom",
+      "y0": -0.42,
+      "y1": 0.52,
+      "hem": 0.74,
+      "off": 0.03,
+      "hem_shape": "scallop",
+      "hem_amp": 0.05,
+      "tassels": false,
+      "art": "caparison_kingdom",
+      "cols": 15,
+      "rows_top": 3,
+      "rows_low": 6,
+      "frame": {
+       "rig": true
+      }
+     }
+    },
+    {
+     "name": "saddle",
+     "builder": "saddle",
+     "bone": "m_body",
+     "args": {
+      "faction": "kingdom",
+      "y": 0.05,
+      "length": 0.46,
+      "width": 0.2,
+      "cloth_drop": 0,
+      "stirrups": true,
+      "frame": {
+       "rig": true
+      }
+     }
+    }
+   ],
+   "hue_map": [
+    [
+     0.9,
+     1,
+     0.055
+    ],
+    [
+     -0.01,
+     0.05,
+     0.06
+    ]
+   ]
   },
   {
    "id": "pegasus_mount",
@@ -501,9 +564,9 @@
      "args": {
       "faction": "kingdom",
       "y": 0.02,
-      "length": 0.36,
+      "length": 0.42,
       "width": 0.15,
-      "cloth_drop": 0.3,
+      "cloth_drop": 0.42,
       "pommel": 0.06,
       "cantle": 0.09,
       "frame": {
@@ -650,7 +713,8 @@
    "length": 0.7,
    "lod0": 400,
    "lod1": 100,
-   "style": "object"
+   "style": "object",
+   "procedural": true
   },
   {
    "id": "weapon_shield_kite",
@@ -659,7 +723,8 @@
    "length": 0.95,
    "lod0": 600,
    "lod1": 150,
-   "style": "object"
+   "style": "object",
+   "procedural": true
   },
   {
    "id": "rocks",
@@ -909,7 +974,24 @@
    },
    "metal_max": 0.3,
    "webp_q": 80,
-   "tex_lod1": 1024
+   "tex_lod1": 1024,
+   "grade": {
+    "glow": {
+     "hue": [
+      0.22,
+      0.5
+     ],
+     "sat": 0.25,
+     "val": 0.04,
+     "to": [
+      0.3,
+      1,
+      0.42
+     ],
+     "gamma": 0.45,
+     "gain": 1
+    }
+   }
   },
   {
    "id": "lord_lich",
@@ -1002,7 +1084,7 @@
    "id": "skeletal_horse",
    "kind": "quadruped",
    "height": 1.75,
-   "lod0": 4000,
+   "lod0": 5000,
    "lod1": 750,
    "part": true,
    "style": "object",
@@ -1017,6 +1099,42 @@
      0.66,
      0.37
     ]
+   ],
+   "tier": "hero",
+   "tex": 1024,
+   "mask": 512,
+   "parts": [
+    {
+     "name": "caparison",
+     "builder": "caparison",
+     "args": {
+      "faction": "ashen",
+      "y0": -0.38,
+      "y1": 0.46,
+      "hem": 0.82,
+      "off": 0.04,
+      "hem_shape": "tatter",
+      "hem_amp": 0.1,
+      "tassels": false,
+      "art": "caparison_ashen",
+      "cols": 15,
+      "rows_top": 3,
+      "rows_low": 6
+     }
+    },
+    {
+     "name": "saddle",
+     "builder": "saddle",
+     "bone": "m_body",
+     "args": {
+      "faction": "ashen",
+      "y": 0.02,
+      "length": 0.46,
+      "width": 0.2,
+      "cloth_drop": 0,
+      "stirrups": true
+     }
+    }
    ]
   },
   {
@@ -1049,7 +1167,8 @@
      0.66,
      0.37
     ]
-   ]
+   ],
+   "procedural": true
   },
   {
    "id": "weapon_sword_grave",
@@ -1660,7 +1779,7 @@
    "id": "camel",
    "kind": "quadruped",
    "height": 2.3,
-   "lod0": 4000,
+   "lod0": 5000,
    "lod1": 750,
    "part": true,
    "style": "object",
@@ -1675,13 +1794,52 @@
      0.72,
      0.485
     ]
+   ],
+   "mesh": {
+    "seed": 7
+   },
+   "tier": "hero",
+   "tex": 1024,
+   "mask": 512,
+   "parts": [
+    {
+     "name": "caparison",
+     "builder": "caparison",
+     "args": {
+      "faction": "caliphate",
+      "y0": -0.15,
+      "y1": 0.85,
+      "hem": 1.18,
+      "off": 0.04,
+      "hem_shape": "scallop",
+      "hem_amp": 0.05,
+      "tassels": false,
+      "art": "caparison_sun",
+      "cols": 15,
+      "rows_top": 3,
+      "rows_low": 6
+     }
+    },
+    {
+     "name": "saddle",
+     "builder": "saddle",
+     "bone": "m_body",
+     "args": {
+      "faction": "caliphate",
+      "y": 0.3,
+      "length": 0.6,
+      "width": 0.24,
+      "cloth_drop": 0,
+      "stirrups": true
+     }
+    }
    ]
   },
   {
    "id": "mamluk_horse",
    "kind": "quadruped",
    "height": 1.75,
-   "lod0": 4000,
+   "lod0": 6000,
    "lod1": 750,
    "part": true,
    "style": "object",
@@ -1696,7 +1854,45 @@
      0.72,
      0.485
     ]
-   ]
+   ],
+   "tier": "hero",
+   "tex": 1024,
+   "mask": 512,
+   "parts": [
+    {
+     "name": "caparison",
+     "builder": "caparison",
+     "args": {
+      "faction": "caliphate",
+      "y0": -0.36,
+      "y1": 0.5,
+      "hem": 0.78,
+      "off": 0.03,
+      "hem_shape": "scallop",
+      "hem_amp": 0.05,
+      "tassels": false,
+      "art": "caparison_sun",
+      "cols": 15,
+      "rows_top": 3,
+      "rows_low": 6
+     },
+     "bone": "m_body"
+    },
+    {
+     "name": "saddle",
+     "builder": "saddle",
+     "bone": "m_body",
+     "args": {
+      "faction": "caliphate",
+      "y": 0.05,
+      "length": 0.46,
+      "width": 0.2,
+      "cloth_drop": 0,
+      "stirrups": true
+     }
+    }
+   ],
+   "skin": "solid"
   },
   {
    "id": "weapon_shield_sun",
@@ -1718,7 +1914,8 @@
      0.72,
      0.485
     ]
-   ]
+   ],
+   "procedural": true
   },
   {
    "id": "weapon_scimitar",
@@ -1816,7 +2013,7 @@
    "clipset": "greataxe",
    "team_hue": [
     0.93,
-    1.055
+    1.03
    ],
    "team_sat": 0.42,
    "hue_map": [
@@ -1848,7 +2045,7 @@
    },
    "team_hue": [
     0.93,
-    1.055
+    1.03
    ],
    "team_sat": 0.42,
    "hue_map": [
@@ -1879,7 +2076,16 @@
      ]
     }
    ],
-   "tex_lod1": 1024
+   "tex_lod1": 1024,
+   "mesh": {
+    "seed": 7
+   },
+   "grade": {
+    "lift": [
+     0.8,
+     1.2
+    ]
+   }
   },
   {
    "id": "lord_drakerider",
@@ -1953,7 +2159,32 @@
    ],
    "metal_max": 0.3,
    "tier": "hero",
-   "tex_lod1": 1024
+   "tex_lod1": 1024,
+   "parts": [
+    {
+     "name": "saddle",
+     "builder": "saddle",
+     "bone": "m_body",
+     "args": {
+      "faction": "ashen",
+      "y": -0.45,
+      "length": 0.5,
+      "width": 0.2,
+      "cloth_drop": 0.5,
+      "barrel": {
+       "y0": -1,
+       "y1": 0.2,
+       "z": 1.64,
+       "rx": 0.28,
+       "rz": 0.28
+      },
+      "frame": {
+       "rig": true
+      }
+     }
+    }
+   ],
+   "skin": "solid"
   },
   {
    "id": "lord_vizier",
@@ -1976,20 +2207,20 @@
     {
      "name": "djinn",
      "id": "vizier_djinn",
-     "height": 0.9,
+     "height": 0.85,
      "pos": [
-      0.5,
-      0.1,
-      1.7
+      0.45,
+      0.25,
+      1.15
      ],
      "yaw": 0,
-     "bone": "spine3",
+     "bone": "hips",
      "lod0": 2500
     }
    ],
    "team_hue": [
     0.93,
-    1.055
+    1.03
    ],
    "team_sat": 0.42,
    "hue_map": [
@@ -2000,7 +2231,10 @@
     ]
    ],
    "metal_max": 0.3,
-   "tex_lod1": 1024
+   "tex_lod1": 1024,
+   "mesh": {
+    "seed": 7
+   }
   },
   {
    "id": "vizier_djinn",
@@ -2043,7 +2277,7 @@
    },
    "team_hue": [
     0.93,
-    1.055
+    1.03
    ],
    "team_sat": 0.42,
    "hue_map": [
@@ -2146,7 +2380,44 @@
    ],
    "metal_max": 0.3,
    "tier": "hero",
-   "tex_lod1": 1024
+   "tex_lod1": 1024,
+   "parts": [
+    {
+     "name": "saddle",
+     "builder": "saddle",
+     "bone": "m_body",
+     "args": {
+      "faction": "caliphate",
+      "y": -1.05,
+      "width": 0.2,
+      "cloth_drop": 0.85,
+      "length": 0.62,
+      "barrel": {
+       "y0": -1.6,
+       "y1": -0.5,
+       "z": 1.36,
+       "rx": 0.36,
+       "rz": 0.36
+      },
+      "frame": {
+       "rig": true,
+       "tilt": 55,
+       "pivot": [
+        0,
+        -1.15,
+        1.35
+       ]
+      }
+     }
+    }
+   ],
+   "grade": {
+    "sat": 0.78,
+    "lift": [
+     0.95,
+     1.05
+    ]
+   }
   },
   {
    "id": "weapon_greatsword_dk",

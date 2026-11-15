@@ -650,3 +650,28 @@ death`); new child nodes animate with them (the renderer plays clips by node nam
 Licences: flat art = Codex CLI / OpenAI image generation (outputs owned by the user per OpenAI terms); wood and iron
 tiles = CC0 Poly Haven `weathered_planks`, `dark_wooden_planks`, `metal_plate_02`, `rusty_metal_04`; all geometry and
 the other tiles are ours.
+
+### 10.y Squads and crowds (remodel v3, batch 2)
+
+Squads keep their per-instance cost (crowd mesh <= 1.5k triangles, one 512 basecolour + 256 MR crowd atlas, 256 tint
+mask, the VAT contract of section 4, a 512 detail GLB); the gain is in sharpness and in how the atlas is used.
+
+```
+node tools/art/run.mjs militia --from cleanup --stage        # TRELLIS 1024 body -> 1024 bake source -> crowd + VAT
+bash art-work/remodel/p4/build.sh <id> [from]                # the same + crowd atlas old | new sheet and coverage stats
+bash art-work/remodel/p4/mount.sh <mount>                    # clean a bare mount, print landmarks, joint grid sheet
+```
+
+| step | v2 | v3 |
+|---|---|---|
+| source mesh | TRELLIS 512, one run for body + weapons | TRELLIS 1024 body (4096 source atlas); weapons as before; shields from the trappings kit |
+| LOD0 (detail) bake | 512, smart project | **1024** (`cleanup.py: tex_cfg` squad tier) with the box unwrap: it is only the bake source of the crowd atlas; `vat.py` shrinks the detail images to `detail_tex` (512, MR 256) and re-exports `<id>.glb`, so the shipped detail GLB keeps today's texture size |
+| crowd atlas layout | smart project (thousands of crumbs, ~30 % of the atlas covered) | `vat.py: crowd_unwrap`: box projection of the 1.5k crowd mesh (3 smoothing rings, edge threshold 0.06), overlapping folds moved out as a second layer instead of one-triangle crumbs, head / helmet islands x1.35 and shield faces x1.4 texel density, margin 0.004: about **48-50 %** of the atlas covered (militia 0.31 -> 0.49, cavalier 0.27 -> 0.48) and ~25 % fewer glTF vertices (fewer seams). `crowd_unwrap: "smart"` in assets.json restores the old layout |
+| crowd albedo | lift `^0.85 * 1.08` | the same lift, then unsharp [1, 0.4] (`vat.py: CROWD_UNSHARP`) |
+| shields | TRELLIS weapons (blurred heraldry, keyed team field) | `weapon_shield_round / kite / grave / sun` = `procedural: true`: trappings-kit shields (flat heraldry, exact team field). `proc_weapon.py` fits the LOD1 shield to the weapon's `lod1` budget and writes `art-work/clean/<weapon>_team.png`; `vat.py: source_mask` prefers an authored part's own team image (a stale TRELLIS mask png used to win) |
+| mounts | TRELLIS mount with baked saddle / caparison | **bare** TRELLIS 1024 mount (new concept) + authored tack as `parts` (the mount is `tier: hero` with `tex` 1024 / `mask` 512 so `unit_main` assembles it, as P2 did for the pegasus): caparison (team cloth, flat faction art, hem above the knees so the legs stay free) + saddle on `m_body`. In the crowd mesh the tack is fused into the mount's LOD1 hull: no extra triangles |
+
+`creatures.json` `pose_fix` {bone: [[axis X|Y|Z, rad], ...]} (`creature.py: pose_at`): a static correction added to every
+pose of every clip. TRELLIS keeps the 3/4 concept's head turn of a horse (the bare `horse` looked 35 degrees to its
+right); the joints follow the turned neck and `pose_fix` on `m_neck`, `m_neck2`, `m_head` straightens it in play (+Z turns
+the head towards +X). Check it with the posed bone vectors, not the rest pose.

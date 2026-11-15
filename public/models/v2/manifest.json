@@ -2047,12 +2047,12 @@
     "lod1": 7880
    },
    "bytes": {
-    "bone_golem.glb": 2941524,
-    "bone_golem_lod1.glb": 1058008,
-    "bone_golem_team.png": 110400,
+    "bone_golem.glb": 2962228,
+    "bone_golem_lod1.glb": 1064644,
+    "bone_golem_team.png": 203934,
     "bone_golem_lod1_team.png": 18919
    },
-   "totalBytes": 4128851
+   "totalBytes": 4249725
   },
   "wraith_rider": {
    "kind": "mounted",
@@ -3075,6 +3075,7 @@
    "glb": "djinn.glb",
    "lod1": "djinn_lod1.glb",
    "tintMask": "djinn_team.png",
+   "lod1TintMask": "djinn_lod1_team.png",
    "clips": {
     "idle": "idle",
     "move": "walk",
@@ -3135,21 +3136,16 @@
    },
    "weapons": [],
    "tris": {
-    "lod0": 14774,
-    "lod1": 2954
+    "lod0": 29550,
+    "lod1": 7880
    },
    "bytes": {
-    "djinn.glb": 694080,
-    "djinn_binder.glb": 466024,
-    "djinn_binder.vat.json": 1628,
-    "djinn_binder.vat.pos.bin": 734320,
-    "djinn_binder_lod1.glb": 401076,
-    "djinn_binder_lod1_tint.png": 34623,
-    "djinn_binder_team.png": 30176,
-    "djinn_lod1.glb": 289076,
-    "djinn_team.png": 25060
+    "djinn.glb": 1594260,
+    "djinn_lod1.glb": 924376,
+    "djinn_team.png": 195365,
+    "djinn_lod1_team.png": 44146
    },
-   "totalBytes": 2676063
+   "totalBytes": 2758147
   },
   "keep_kingdom": {
    "kind": "structure",
@@ -3297,6 +3293,510 @@
     "arrow_tower_caliphate_lod1.glb": 18632
    },
    "totalBytes": 44204
+  },
+  "lord_deathknight": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 2.1,
+   "glb": "lord_deathknight.glb",
+   "lod1": "lord_deathknight_lod1.glb",
+   "tintMask": "lord_deathknight_team.png",
+   "lod1TintMask": "lord_deathknight_lod1_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.6667,
+     "loop": true
+    },
+    "run": {
+     "duration": 1.0417,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.5417,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.5417,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.5417,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5417,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_greatsword_dk_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 29548,
+    "lod1": 7878
+   },
+   "bytes": {
+    "lord_deathknight.glb": 2468816,
+    "lord_deathknight_lod1.glb": 990704,
+    "lord_deathknight_team.png": 227060,
+    "lord_deathknight_lod1_team.png": 72195
+   },
+   "totalBytes": 3758775
+  },
+  "lord_rajah": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 2.1,
+   "glb": "lord_rajah.glb",
+   "lod1": "lord_rajah_lod1.glb",
+   "tintMask": "lord_rajah_team.png",
+   "lod1TintMask": "lord_rajah_lod1_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_tulwar_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 29554,
+    "lod1": 7884
+   },
+   "bytes": {
+    "lord_rajah.glb": 1978340,
+    "lord_rajah_lod1.glb": 848156,
+    "lord_rajah_team.png": 187928,
+    "lord_rajah_lod1_team.png": 71204
+   },
+   "totalBytes": 3085628
+  },
+  "lord_vizier": {
+   "kind": "humanoid",
+   "scale": 1,
+   "height": 1.95,
+   "glb": "lord_vizier.glb",
+   "lod1": "lord_vizier_lod1.glb",
+   "tintMask": "lord_vizier_team.png",
+   "lod1TintMask": "lord_vizier_lod1_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "cast",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_lamp_L",
+     "bone": "hand.L"
+    }
+   ],
+   "tris": {
+    "lod0": 29548,
+    "lod1": 7874
+   },
+   "bytes": {
+    "lord_vizier.glb": 2274804,
+    "lord_vizier_lod1.glb": 1055012,
+    "lord_vizier_team.png": 244761,
+    "lord_vizier_lod1_team.png": 81812
+   },
+   "totalBytes": 3656389
+  },
+  "lord_ossuary": {
+   "kind": "large",
+   "scale": 1,
+   "height": 3.2,
+   "glb": "lord_ossuary.glb",
+   "lod1": "lord_ossuary_lod1.glb",
+   "tintMask": "lord_ossuary_team.png",
+   "lod1TintMask": "lord_ossuary_lod1_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.3333,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.9167,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_maul_bone_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 29556,
+    "lod1": 7885
+   },
+   "bytes": {
+    "lord_ossuary.glb": 2991388,
+    "lord_ossuary_lod1.glb": 1245964,
+    "lord_ossuary_team.png": 283101,
+    "lord_ossuary_lod1_team.png": 49174
+   },
+   "totalBytes": 4569627
+  },
+  "lord_drakerider": {
+   "kind": "flier",
+   "scale": 1,
+   "height": 3.8,
+   "glb": "lord_drakerider.glb",
+   "lod1": "lord_drakerider_lod1.glb",
+   "tintMask": "lord_drakerider_team.png",
+   "lod1TintMask": "lord_drakerider_lod1_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_melee_a",
+    "attack2": "attack_melee_b",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1.0833,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.8333,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.125,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1.2083,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_lance_barbed_R",
+     "bone": "hand.R"
+    }
+   ],
+   "tris": {
+    "lod0": 28572,
+    "lod1": 7880
+   },
+   "bytes": {
+    "lord_drakerider.glb": 2585760,
+    "lord_drakerider_lod1.glb": 1209120,
+    "lord_drakerider_team.png": 126041,
+    "lord_drakerider_lod1_team.png": 37855
+   },
+   "totalBytes": 3958776
+  },
+  "lord_rocrider": {
+   "kind": "flier",
+   "scale": 1,
+   "height": 3.8,
+   "glb": "lord_rocrider.glb",
+   "lod1": "lord_rocrider_lod1.glb",
+   "tintMask": "lord_rocrider_team.png",
+   "lod1TintMask": "lord_rocrider_lod1_team.png",
+   "clips": {
+    "idle": "idle",
+    "move": "walk",
+    "run": "run",
+    "attack": "attack_bow",
+    "attack2": "attack_melee_a",
+    "cast": "cast",
+    "hit": "hit",
+    "death": "death_a",
+    "death2": "death_b",
+    "victory": "victory"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 2.5,
+     "loop": true
+    },
+    "walk": {
+     "duration": 1,
+     "loop": true
+    },
+    "run": {
+     "duration": 0.8333,
+     "loop": true
+    },
+    "attack_melee_a": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "attack_melee_b": {
+     "duration": 1,
+     "loop": false
+    },
+    "attack_bow": {
+     "duration": 1.4583,
+     "loop": false
+    },
+    "cast": {
+     "duration": 1.5,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.3333,
+     "loop": false
+    },
+    "death_a": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "death_b": {
+     "duration": 2.375,
+     "loop": false
+    },
+    "victory": {
+     "duration": 1.9583,
+     "loop": true
+    }
+   },
+   "weapons": [
+    {
+     "node": "weapon_bow_sun_L",
+     "bone": "hand.L"
+    }
+   ],
+   "tris": {
+    "lod0": 28574,
+    "lod1": 7859
+   },
+   "bytes": {
+    "lord_rocrider.glb": 2976800,
+    "lord_rocrider_lod1.glb": 1234524,
+    "lord_rocrider_team.png": 208025,
+    "lord_rocrider_lod1_team.png": 95651
+   },
+   "totalBytes": 4515000
   }
  },
  "props": {

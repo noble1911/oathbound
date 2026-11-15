@@ -24,6 +24,7 @@ import numpy as np
 
 import art_lib as L
 import retarget as R
+import cleanup as CL
 from cleanup import emit_restore, unwrap
 
 OCT = 45
@@ -85,6 +86,13 @@ def emit_from(mat, what, mask_img=None):
 
 def source_mask(o):
     """LOD0 team mask png of a source object (body `<id>`, weapon `weapon_x_L` -> weapon_x)."""
+    for m in o.data.materials:                                 # authored pieces (trappings kit): the mask image is packed in the blend
+        ti = m and m.get('team_image')                         # (checked first: a stale png of the former TRELLIS weapon may still exist)
+        if ti and ti in bpy.data.images:
+            return bpy.data.images[ti]
+    ti = o.get('team_image')
+    if ti and ti in bpy.data.images:
+        return bpy.data.images[ti]
     sid = o.name if not o.name.startswith('weapon_') else o.name.rsplit('_', 1)[0]
     p = L.WORK / 'clean' / f'{sid}_unit_team.png'            # mounted units: rider + mount in one atlas
     if not p.exists():
@@ -94,6 +102,130 @@ def source_mask(o):
     img = bpy.data.images.load(str(p), check_existing=True)
     img.colorspace_settings.name = 'Non-Color'
     return img
+
+
+CROWD_UNSHARP = [1, 0.4]
+SMOOTH = 3                                  # normal-field smoothing rings of the crowd box projection (a 1.5k mesh: 10 over-smooths)
+EDGE = 0.06
+BOOST = dict(head=1.35, shield=1.4)        # crowd atlas texel density of the head / helmet and of shield faces (x the rest)
+
+
+def uv_islands(me):
+    """Polygon -> UV island index (polygons that share an edge with the same UVs on both sides)."""
+    import bmesh
+    bm = bmesh.new(); bm.from_mesh(me); bm.faces.ensure_lookup_table()
+    uvl = bm.loops.layers.uv.verify()
+    lab = np.full(len(bm.faces), -1, np.int32); n = 0
+    for f0 in bm.faces:
+        if lab[f0.index] >= 0:
+            continue
+        lab[f0.index] = n; stack = [f0]
+        while stack:
+            f = stack.pop()
+            for l in f.loops:
+                for o in l.link_loops:                         # the loops of the same edge on the neighbouring faces
+                    g = o.face
+                    if lab[g.index] >= 0:
+                        continue
+                    if (l[uvl].uv - o.link_loop_next[uvl].uv).length < 1e-5 and (l.link_loop_next[uvl].uv - o[uvl].uv).length < 1e-5:
+                        lab[g.index] = n; stack.append(g)
+        n += 1
+    bm.free()
+    return lab, n
+
+
+def crowd_unwrap(crowd, shield_faces, margin=0.004):
+    """Crowd atlas layout (remodel v3): box projection instead of smart project (large islands: far fewer texels lost
+    to margins at 512), with the head / helmet and the shield faces cut out as their own islands and given more
+    texels (BOOST). Returns the number of islands."""
+    me = crowd.data
+    CL.box_unwrap(crowd, SMOOTH, EDGE)
+    npoly = len(me.polygons)
+    # region per polygon: 0 body, 1 head (dominant bone head / neck), 2 shield
+    gi = {g.index: g.name for g in crowd.vertex_groups}
+    dom = []
+    for v in me.vertices:
+        w = max(v.groups, key=lambda g: g.weight, default=None)
+        dom.append(gi.get(w.group, '') if w else '')
+    reg = np.zeros(npoly, np.int32)
+    for p in me.polygons:
+        if sum(dom[i] in ('head', 'neck') for i in p.vertices) * 2 > len(p.vertices):
+            reg[p.index] = 1
+    reg[shield_faces] = 2
+    lt = np.empty(npoly, np.int32); me.polygons.foreach_get('loop_total', lt)
+    uv = np.empty(len(me.loops) * 2, np.float32); me.uv_layers.active.data.foreach_get('uv', uv); uv = uv.reshape(-1, 2)
+    uv[:, 1] += np.repeat(reg, lt) * 7.0                       # cut the regions apart (separate islands)
+    me.uv_layers.active.data.foreach_set('uv', uv.ravel())
+    L.select_only(crowd)
+    bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_mode(type='FACE')
+    bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.select_all(action='SELECT')
+    bpy.ops.uv.pack_islands(rotate=False, margin=0.003, scale=True)
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bad = CL.overlap_faces(crowd, 1024)
+    if bad:
+        # second layer: the overlapping polygons (folds: a cloak over a back, fingers) keep their projection but move
+        # out as islands of their own; only what still overlaps after that is smart-projected (one-triangle crumbs)
+        first = len(bad)
+        flat = np.empty(len(me.loops) * 2, np.float32); me.uv_layers.active.data.foreach_get('uv', flat); uv = flat.reshape(-1, 2)
+        b_ = np.zeros(npoly, bool); b_[list(bad)] = True
+        uv[np.repeat(b_, lt), 1] += 30.0
+        me.uv_layers.active.data.foreach_set('uv', uv.ravel())
+        bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.select_all(action='SELECT')
+        bpy.ops.uv.pack_islands(rotate=False, margin=0.003, scale=True)
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bad = CL.overlap_faces(crowd, 1024)
+        print(f'[vat] overlapping polygons: {first} -> {len(bad)} after the second layer')
+    sel = np.zeros(npoly, bool); sel[list(bad)] = True
+    me.polygons.foreach_set('select', sel)
+    bpy.ops.object.mode_set(mode='EDIT')
+    if bad:
+        bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.0, area_weight=0.0, correct_aspect=True, scale_to_bounds=False)
+    bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.select_all(action='SELECT')
+    bpy.ops.uv.average_islands_scale()
+    bpy.ops.object.mode_set(mode='OBJECT')
+    # texel boost per island (by the region most of its area belongs to)
+    isl, n = uv_islands(me)
+    cnt = np.bincount(isl, minlength=n)
+    print(f'[vat] islands by polygon count: 1: {int((cnt == 1).sum())}, 2-4: {int(((cnt > 1) & (cnt < 5)).sum())}, 5+: {int((cnt >= 5).sum())}')
+    area = np.empty(npoly, np.float32); me.polygons.foreach_get('area', area)
+    flat = np.empty(len(me.loops) * 2, np.float32); me.uv_layers.active.data.foreach_get('uv', flat); uv = flat.reshape(-1, 2)
+    lisl = np.repeat(isl, lt)
+    for i in range(n):
+        f = isl == i
+        ar = [float(area[f & (reg == r)].sum()) for r in range(3)]
+        k = (1.0, BOOST['head'], BOOST['shield'])[int(np.argmax(ar))]
+        if k != 1.0:
+            m = lisl == i
+            c = uv[m].mean(0); uv[m] = (uv[m] - c) * k + c
+    me.uv_layers.active.data.foreach_set('uv', uv.ravel())
+    bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.select_all(action='SELECT')
+    CL.pack_uv(margin)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    print(f'[vat] {crowd.name}: box unwrap, {n} islands, {len(bad)} of {npoly} polygons re-projected, head {int((reg == 1).sum())} / shield {int((reg == 2).sum())} polygons boosted')
+    return n
+
+
+def shrink_detail(objs, target):
+    """Squads bake their detail atlas at 1024 (the source of the crowd atlas) but ship it at `target` (512): scale
+    every image of the detail materials whose shorter side is above it (MR maps: half of it)."""
+    done = set()
+    for o in objs:
+        for m in o.data.materials:
+            if not m or not m.use_nodes:
+                continue
+            for nd in m.node_tree.nodes:
+                img = getattr(nd, 'image', None)
+                if nd.type != 'TEX_IMAGE' or img is None or img.name in done:
+                    continue
+                done.add(img.name)
+                w, h = img.size
+                lim = target // 2 if img.name.endswith('_mr') else target
+                if min(w, h) > lim:
+                    f = lim / min(w, h)
+                    img.scale(max(1, int(round(w * f))), max(1, int(round(h * f)))); img.pack()
+                    print(f'[vat] detail {img.name}: {w}x{h} -> {img.size[0]}x{img.size[1]}')
 
 
 def bake_atlas(crowd, sources, size, H):
@@ -134,6 +266,8 @@ def bake_atlas(crowd, sources, size, H):
     px = L.img_np(base)
     px[..., :3] = np.clip(px[..., :3] ** 0.85 * 1.08, 0, 1)
     L.np_img(base, px)
+    if CROWD_UNSHARP:
+        CL.unsharp(base, CROWD_UNSHARP)                        # remodel v3: the 512 crowd atlas is resampled from the 1024 detail bake
     mr = L.new_image(f'{crowd.name}_mr', size // 2, non_color=True)
     pk = np.ones_like(L.img_np(rough)); pk[..., 1] = L.img_np(rough)[..., 0]; pk[..., 2] = L.img_np(metal)[..., 0]
     L.np_img(mr, pk)
@@ -232,6 +366,7 @@ def main():
         parts.append(d)
     for p in parts:
         p.modifiers.clear()
+        CL.set_attr(p.data, '_SHIELD', 'FACE', 1.0 if 'shield' in p.name else 0.0)
     L.select_only(*parts); bpy.context.view_layer.objects.active = parts[0]
     bpy.ops.object.join()
     crowd = bpy.context.view_layer.objects.active
@@ -246,7 +381,12 @@ def main():
     for an in ("sharp_face", "sharp_edge", "custom_normal"):
         if an in crowd.data.attributes:
             crowd.data.attributes.remove(crowd.data.attributes[an])
-    unwrap(crowd, 0.008)
+    sh = CL.get_attr(crowd.data, '_SHIELD', 'FACE') > 0.5
+    crowd.data.attributes.remove(crowd.data.attributes['_SHIELD'])
+    if a.get('crowd_unwrap', 'box') == 'box':
+        crowd_unwrap(crowd, np.nonzero(sh)[0])
+    else:
+        unwrap(crowd, 0.008)
     vid = crowd.data.attributes.new('_VID', 'FLOAT', 'POINT')
     V = len(crowd.data.vertices)
     vid.data.foreach_set('value', np.arange(V, dtype=np.float32))
@@ -309,6 +449,13 @@ def main():
     facts['crowd'] = dict(glb=f'{aid}_lod1.glb', vat=f'{aid}.vat.json', tint=f'{aid}_lod1_tint.png', vertices=V,
                           gltf_vertices=int(len(order)))
     (L.WORK / 'clean' / f'{aid}.json').write_text(json.dumps(facts, indent=1))
+    # ---- the detail GLB ships at `detail_tex` (512): its 1024 atlas was only the bake source of the crowd atlas
+    dt = a.get('detail_tex', 512)
+    if dt:
+        L.webp_quality(aid)
+        shrink_detail([body0] + w0, dt)
+        R.set_action(rig, bpy.data.actions['idle'])
+        L.export_glb(L.OUT / f'{aid}.glb', [rig, body0] + w0, anims=True)
     bpy.ops.wm.save_as_mainfile(filepath=str(L.WORK / 'blend' / f'{aid}_crowd.blend'), compress=True)
     print(f'[vat] {aid}: crowd {tris} tris, {V} verts ({len(order)} glTF), {start} frames, '
           f'{tex.nbytes / 2 / 1e6:.2f} MB VAT')

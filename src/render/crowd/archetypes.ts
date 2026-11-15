@@ -105,7 +105,7 @@ export const ARCHETYPES: Record<string, Archetype> = {
   // tools/art/blender/anim_audit.py), so planted feet do not slide at their sim speeds (3.2 / 2.8 / 2.6 / 5.2 m/s)
   lord_marshal: human('lord_marshal', 'hero', { dust: 0.3, walkSpeed: 1.15, runSpeed: 3.95, runAbove: 2.3 }, 1.22),
   lord_archmage: human('lord_archmage', 'hero', { attackImpact: 0.45, muzzle: 2.4, walkSpeed: 1.1, runSpeed: 3.65, runAbove: 2.2 }, 1.22),
-  lord_warden: human('lord_warden', 'hero', { dust: 0.3, walkSpeed: 0.9, runSpeed: 2.45, runAbove: 1.65 }, 1.25),
+  lord_warden: human('lord_warden', 'hero', { dust: 0.3, walkSpeed: 0.9, runSpeed: 2.83, runAbove: 1.65 }, 1.25),
   lord_skylady: human('lord_skylady', 'hero', { walkSpeed: 0.8, runSpeed: 4.7, runAbove: 2.2 }, 1.22),
   golem: {
     key: 'golem', render: 'hero', build: () => buildGolem('golem'),
@@ -186,22 +186,22 @@ export const ARCHETYPES: Record<string, Archetype> = {
   // ---------------------------------------------------------------- Lords whose art ships ahead of the sim
   // Keyed by model id (and in LORD_KEY). Until each `lord_<id>` GLB is in the manifest they wear `fallback`.
   // walkSpeed / runSpeed are placeholders: set them from tools/art/blender/anim_audit.py once the models are built.
-  lord_deathknight: human('lord_deathknight', 'hero', { dust: 0.3, walkSpeed: 1.0, runSpeed: 3.0, runAbove: 1.9, fallback: ['lord_warden'] }, 1.25),
+  lord_deathknight: human('lord_deathknight', 'hero', { dust: 0.3, walkSpeed: 0.96, runSpeed: 3.91, runAbove: 2.3, fallback: ['lord_warden'] }, 1.25),
   lord_ossuary: {
     key: 'lord_ossuary', render: 'hero', build: () => buildGolem('lord_ossuary'),
-    walkSpeed: 1.4, runSpeed: 3, runAbove: 99, flyHeight: 0, muzzle: 2.4, chest: 2.0, scale: 1, attackImpact: 0.5, dust: 1.0, fallback: ['bone_golem'],
+    walkSpeed: 1.87, runSpeed: 3, runAbove: 99, flyHeight: 0, muzzle: 2.4, chest: 2.0, scale: 1, attackImpact: 0.5, dust: 1.0, fallback: ['bone_golem'],
   },
   lord_drakerider: {
     key: 'lord_drakerider', render: 'hero',
     build: () => buildDragon('lord_drakerider', { scale: 1.4, body: '#d9d4c2', belly: '#b9b29c', wing: '#77736c', glow: '#5fe08a', rider: riderLook({ weapon: 'lance', helmet: 'crown', metal: '#8a7a55' }) }),
-    walkSpeed: 3, runSpeed: 6, runAbove: 4.5, flyHeight: 7.5, muzzle: 2.4, chest: 1.8, scale: 1, attackImpact: 0.45, dust: 0, fallback: ['bone_drake'],
+    walkSpeed: 3, runSpeed: 6, runAbove: 4.5, flyHeight: 7.5, muzzle: 2.5, chest: 1.6, scale: 1, attackImpact: 0.45, dust: 0, fallback: ['bone_drake'],   // muzzle / chest measured on the v3 model (skeletal drake skull 2.45 m, chest 1.6 m); fliers have no ground contact, speeds as the wyvern
   },
-  lord_vizier: human('lord_vizier', 'hero', { attackImpact: 0.45, muzzle: 2.4, walkSpeed: 1.1, runSpeed: 3.6, runAbove: 2.2, dust: 0.1, fallback: ['lord_archmage'] }, 1.22),
-  lord_rajah: human('lord_rajah', 'hero', { dust: 0.4, walkSpeed: 1.0, runSpeed: 3.2, runAbove: 2.0, fallback: ['lord_marshal'] }, 1.25),
+  lord_vizier: human('lord_vizier', 'hero', { attackImpact: 0.45, muzzle: 2.4, walkSpeed: 1.1, runSpeed: 3.67, runAbove: 2.2, dust: 0.1, fallback: ['lord_archmage'] }, 1.22),
+  lord_rajah: human('lord_rajah', 'hero', { dust: 0.4, walkSpeed: 1.17, runSpeed: 3.94, runAbove: 2.3, fallback: ['lord_marshal'] }, 1.25),
   lord_rocrider: {
     key: 'lord_rocrider', render: 'hero',
     build: () => buildDragon('lord_rocrider', { scale: 1.4, body: '#c9a04a', belly: '#e9d9a8', wing: '#d9b25a', rider: riderLook({ weapon: 'bow', helmet: 'cap', metal: '#d9b25a' }) }),
-    walkSpeed: 3, runSpeed: 6, runAbove: 4.5, flyHeight: 7.5, muzzle: 2.4, chest: 1.8, scale: 1, attackImpact: 0.64, dust: 0, fallback: ['wyvern'],
+    walkSpeed: 3, runSpeed: 6, runAbove: 4.5, flyHeight: 7.5, muzzle: 2.3, chest: 1.5, scale: 1, attackImpact: 0.64, dust: 0, fallback: ['wyvern'],   // measured on the v3 model (roc head 2.25 m, chest 1.5 m)
   },
 };
 

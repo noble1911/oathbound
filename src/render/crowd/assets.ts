@@ -260,7 +260,7 @@ export class UnitAssets {
       const tier = this.engine.quality.tier;
       // low tier: a heavy hero is drawn from its LOD1 file (same skeleton, nodes and clips)
       // (its atlas is its own, so it needs its own team mask: manifest `lod1TintMask`; without one the LOD0 is kept)
-      const useLod1 = arch.render === 'hero' && tier === 'low' && !!e.lod1 && (e.tris?.lod0 ?? 0) > HERO_LOW_TRIS && (!e.tintMask || !!e.lod1TintMask);
+      const useLod1 = arch.render === 'hero' && (tier === 'low' || tier === 'medium') && !!e.lod1 && (e.tris?.lod0 ?? 0) > HERO_LOW_TRIS && (!e.tintMask || !!e.lod1TintMask);
       const file = useLod1 ? e.lod1! : e.glb;
       const [gltf, tintMap, mrMap] = await Promise.all([this.loader.loadAsync(this.url(file)), this.loadTex(useLod1 ? e.lod1TintMask : e.tintMask, false), this.loadTex(e.mr, false)]);
       const root = gltf.scene;
