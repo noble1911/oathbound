@@ -142,9 +142,12 @@ class HeroInst {
   readonly actions = new Map<string, THREE.AnimationAction>();
   readonly uniforms: { uTeam: { value: THREE.Color }; uFlash: { value: number }; uFade: { value: number } }[] = [];
   readonly asset: HeroAsset;
+  /** Creature head bone (dragon, wyvern mounts): breath and bolts leave from the snout, not the body. */
+  readonly head: THREE.Object3D | null;
   constructor(engine: Engine, asset: HeroAsset, root: THREE.Object3D, team: THREE.Color, makeMat: (src: THREE.Material, mesh: THREE.Mesh) => { material: THREE.Material; uniforms: HeroInst['uniforms'][number] }) {
     this.asset = asset;
     this.root = root;
+    this.head = root.getObjectByName('m_head') ?? null;
     root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
@@ -586,6 +589,8 @@ export class UnitRenderer {
 
   // ------------------------------------------------------------------ queries (VFX, camera)
 
+  private readonly tmpFwd = new THREE.Vector3();
+  private readonly tmpQ = new THREE.Quaternion();
   /** World position of a soldier at `height` above its feet (or its chest by default). */
   point(i: number, out = new THREE.Vector3(), height?: number): THREE.Vector3 | null {
     const s = this.slots[i];
@@ -595,6 +600,14 @@ export class UnitRenderer {
   muzzle(i: number, out = new THREE.Vector3()): THREE.Vector3 | null {
     const s = this.slots[i];
     if (!s) return null;
+    const head = s.hero?.head;
+    if (head && s.hero!.root.visible) {
+      // the snout: the head bone, pushed a little further along the body's facing
+      s.hero!.root.updateMatrixWorld(true);
+      head.getWorldPosition(out);
+      const fwd = this.tmpFwd.set(0, 0, 1).applyQuaternion(s.hero!.root.getWorldQuaternion(this.tmpQ)).setY(0).normalize();
+      return out.addScaledVector(fwd, 0.6 * (s.arch.scale || 1));
+    }
     return this.point(i, out, s.arch.muzzle);
   }
   /** Draw stats: instanced soldiers this frame + heroes. */
