@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 663,
- "width": 663,
+ "vertexCount": 664,
+ "width": 664,
  "rowsPerFrame": 1,
  "totalFrames": 128,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -1.0994,
-   -0.3312,
-   -2.7425
+   -1.1203,
+   -0.3448,
+   -2.7688
   ],
   "max": [
-   1.1141,
-   3.593,
-   2.1392
+   1.0936,
+   3.6048,
+   2.1168
   ]
  },
  "pos": "skeleton.vat.pos.bin",

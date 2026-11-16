@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 694,
- "width": 694,
+ "vertexCount": 605,
+ "width": 605,
  "rowsPerFrame": 1,
  "totalFrames": 121,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.843,
-   -0.7199,
-   -2.0738
+   -0.8476,
+   -0.6926,
+   -2.0813
   ],
   "max": [
-   2.6647,
-   4.3879,
-   2.3197
+   2.7456,
+   4.518,
+   2.3145
   ]
  },
  "pos": "wraith_rider.vat.pos.bin",

@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 583,
- "width": 583,
+ "vertexCount": 541,
+ "width": 541,
  "rowsPerFrame": 1,
  "totalFrames": 134,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -1.0538,
-   -0.0746,
-   -2.0602
+   -1.051,
+   -0.0614,
+   -2.0331
   ],
   "max": [
-   0.5293,
-   2.9283,
-   1.3241
+   0.5682,
+   2.9436,
+   1.3714
   ]
  },
  "pos": "grave_acolyte.vat.pos.bin",

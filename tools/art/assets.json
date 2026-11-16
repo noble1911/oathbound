@@ -883,6 +883,26 @@
    "hip": 0.47,
    "clips": {
     "run": "jog_up"
+   },
+   "grade": {
+    "fur": {
+     "to": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "team": 0.9,
+     "zmin": 0.62,
+     "grey": 0.55,
+     "val": 0.25,
+     "vmax": 0.62,
+     "sat": 0.18,
+     "region": {
+      "ymin": 0,
+      "zmin": 0.62,
+      "zmax": 0.86
+     }
+    }
    }
   },
   {
@@ -1924,21 +1944,21 @@
     {
      "name": "caparison",
      "builder": "caparison",
+     "bone": "m_body",
      "args": {
       "faction": "caliphate",
-      "y0": -0.36,
-      "y1": 0.5,
-      "hem": 0.78,
-      "off": 0.03,
+      "y0": -0.4,
+      "y1": 0.58,
+      "hem": 0.72,
+      "off": 0.035,
       "hem_shape": "scallop",
       "hem_amp": 0.05,
       "tassels": false,
       "art": "caparison_sun",
-      "cols": 15,
+      "cols": 17,
       "rows_top": 3,
-      "rows_low": 6
-     },
-     "bone": "m_body"
+      "rows_low": 7
+     }
     },
     {
      "name": "saddle",
@@ -1982,7 +2002,8 @@
     "shield",
     {
      "kind": "sun",
-     "back": "cloth_team"
+     "back": "cloth_team",
+     "art": "shield_sun_squad"
     }
    ]
   },

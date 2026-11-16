@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 679,
- "width": 679,
+ "vertexCount": 629,
+ "width": 629,
  "rowsPerFrame": 1,
  "totalFrames": 136,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.6109,
-   -0.6482,
-   -1.7435
+   -0.5972,
+   -0.6391,
+   -1.7862
   ],
   "max": [
-   1.1378,
-   2.1832,
-   0.8158
+   1.145,
+   2.1955,
+   0.7976
   ]
  },
  "pos": "bone_archer.vat.pos.bin",

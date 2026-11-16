@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 703,
- "width": 703,
+ "vertexCount": 740,
+ "width": 740,
  "rowsPerFrame": 1,
  "totalFrames": 128,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -1.0099,
-   -0.1903,
-   -2.1969
+   -1.0241,
+   -0.1532,
+   -2.1933
   ],
   "max": [
-   0.9365,
-   2.9623,
-   1.2693
+   0.9351,
+   2.9656,
+   1.2888
   ]
  },
  "pos": "grave_knight.vat.pos.bin",

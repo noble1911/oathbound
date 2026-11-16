@@ -545,7 +545,7 @@ def grade(a, low):
             m = L.img_np(mr)[:, :, 2]
             metal = np.kron(m, np.ones((h // m.shape[0], w // m.shape[1]), f32))
         mx = rgb.max(2); mn = rgb.min(2); sat = (mx - mn) / (mx + 1e-6)
-        sel = (mx > f.get('val', 0.5)) & (sat < f.get('sat', 0.25)) & (mask < 0.3) & (metal < 0.3)
+        sel = (mx > f.get('val', 0.5)) & (mx < f.get('vmax', 2.0)) & (sat < f.get('sat', 0.25)) & (mask < 0.3) & (metal < 0.3)   # `vmax`: leave bright bone / skin alone
         if f.get('region'):
             # `region` {ymin (m, +y = the unit's back), zmin, zmax (fractions of the height)}: only that part of the
             # body, e.g. the back of a mantle, so a unit with no team cloth behind shows its colour to the RTS camera

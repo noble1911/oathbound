@@ -1603,18 +1603,18 @@
     }
    ],
    "tris": {
-    "lod0": 5506,
-    "lod1": 1410
+    "lod0": 5396,
+    "lod1": 1400
    },
    "bytes": {
-    "skeleton.glb": 437848,
-    "skeleton.vat.json": 1628,
-    "skeleton.vat.pos.bin": 678912,
-    "skeleton_lod1.glb": 388304,
-    "skeleton_lod1_tint.png": 31548,
-    "skeleton_team.png": 23559
+    "skeleton.glb": 533456,
+    "skeleton_lod1.glb": 374860,
+    "skeleton_team.png": 38805,
+    "skeleton.vat.json": 1629,
+    "skeleton.vat.pos.bin": 679936,
+    "skeleton_lod1_tint.png": 40540
    },
-   "totalBytes": 1561799
+   "totalBytes": 1669226
   },
   "grave_knight": {
    "kind": "humanoid",
@@ -1696,18 +1696,18 @@
     }
    ],
    "tris": {
-    "lod0": 5908,
-    "lod1": 1474
+    "lod0": 5798,
+    "lod1": 1464
    },
    "bytes": {
-    "grave_knight.glb": 483916,
+    "grave_knight.glb": 562836,
+    "grave_knight_lod1.glb": 388656,
+    "grave_knight_team.png": 51955,
     "grave_knight.vat.json": 1642,
-    "grave_knight.vat.pos.bin": 719872,
-    "grave_knight_lod1.glb": 385952,
-    "grave_knight_lod1_tint.png": 28009,
-    "grave_knight_team.png": 44673
+    "grave_knight.vat.pos.bin": 757760,
+    "grave_knight_lod1_tint.png": 39572
    },
-   "totalBytes": 1664064
+   "totalBytes": 1802421
   },
   "bone_archer": {
    "kind": "humanoid",
@@ -1789,14 +1789,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "bone_archer.glb": 417680,
-    "bone_archer.vat.json": 1635,
-    "bone_archer.vat.pos.bin": 738752,
-    "bone_archer_lod1.glb": 413528,
-    "bone_archer_lod1_tint.png": 14368,
-    "bone_archer_team.png": 11834
+    "bone_archer.glb": 453336,
+    "bone_archer_lod1.glb": 402736,
+    "bone_archer_team.png": 47980,
+    "bone_archer.vat.json": 1634,
+    "bone_archer.vat.pos.bin": 684352,
+    "bone_archer_lod1_tint.png": 43324
    },
-   "totalBytes": 1597797
+   "totalBytes": 1633362
   },
   "grave_acolyte": {
    "kind": "humanoid",
@@ -1878,14 +1878,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "grave_acolyte.glb": 486584,
-    "grave_acolyte.vat.json": 1632,
-    "grave_acolyte.vat.pos.bin": 624976,
-    "grave_acolyte_lod1.glb": 406900,
-    "grave_acolyte_lod1_tint.png": 24385,
-    "grave_acolyte_team.png": 30616
+    "grave_acolyte.glb": 500452,
+    "grave_acolyte_lod1.glb": 415464,
+    "grave_acolyte_team.png": 33523,
+    "grave_acolyte.vat.json": 1631,
+    "grave_acolyte.vat.pos.bin": 579952,
+    "grave_acolyte_lod1_tint.png": 32757
    },
-   "totalBytes": 1575093
+   "totalBytes": 1563779
   },
   "lord_lich": {
    "kind": "humanoid",
@@ -2130,18 +2130,18 @@
     }
    ],
    "tris": {
-    "lod0": 7970,
-    "lod1": 1391
+    "lod0": 8970,
+    "lod1": 1400
    },
    "bytes": {
-    "wraith_rider.glb": 1619192,
+    "wraith_rider.glb": 832764,
+    "wraith_rider_lod1.glb": 554220,
+    "wraith_rider_team.png": 62934,
     "wraith_rider.vat.json": 1637,
-    "wraith_rider.vat.pos.bin": 671792,
-    "wraith_rider_lod1.glb": 547888,
-    "wraith_rider_lod1_tint.png": 32477,
-    "wraith_rider_team.png": 93738
+    "wraith_rider.vat.pos.bin": 585640,
+    "wraith_rider_lod1_tint.png": 29932
    },
-   "totalBytes": 2966724
+   "totalBytes": 2067127
   },
   "bone_drake": {
    "kind": "flier",
