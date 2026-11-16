@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 715,
- "width": 715,
+ "vertexCount": 711,
+ "width": 711,
  "rowsPerFrame": 1,
  "totalFrames": 134,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -1.0866,
-   -0.1006,
-   -2.1718
+   -1.0864,
+   -0.0913,
+   -2.169
   ],
   "max": [
-   0.5788,
-   2.8388,
-   1.1968
+   0.6021,
+   2.8405,
+   1.1972
   ]
  },
  "pos": "sun_priest.vat.pos.bin",

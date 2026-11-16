@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 663,
- "width": 663,
+ "vertexCount": 698,
+ "width": 698,
  "rowsPerFrame": 1,
  "totalFrames": 128,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.8731,
-   -0.1678,
-   -1.8941
+   -0.8598,
+   -0.1643,
+   -1.8745
   ],
   "max": [
-   0.8162,
-   2.7155,
-   1.0584
+   0.838,
+   2.6998,
+   1.0583
   ]
  },
  "pos": "scimitar.vat.pos.bin",

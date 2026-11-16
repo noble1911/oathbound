@@ -2364,18 +2364,18 @@
     }
    ],
    "tris": {
-    "lod0": 5506,
-    "lod1": 1412
+    "lod0": 5592,
+    "lod1": 1406
    },
    "bytes": {
-    "spear_levy.glb": 401096,
+    "spear_levy.glb": 438252,
+    "spear_levy_lod1.glb": 358320,
+    "spear_levy_team.png": 25857,
     "spear_levy.vat.json": 1635,
-    "spear_levy.vat.pos.bin": 716800,
-    "spear_levy_lod1.glb": 389588,
-    "spear_levy_lod1_tint.png": 23084,
-    "spear_levy_team.png": 27605
+    "spear_levy.vat.pos.bin": 719872,
+    "spear_levy_lod1_tint.png": 27944
    },
-   "totalBytes": 1559808
+   "totalBytes": 1571880
   },
   "scimitar": {
    "kind": "humanoid",
@@ -2457,18 +2457,18 @@
     }
    ],
    "tris": {
-    "lod0": 5908,
-    "lod1": 1474
+    "lod0": 5994,
+    "lod1": 1468
    },
    "bytes": {
-    "scimitar.glb": 469284,
-    "scimitar.vat.json": 1630,
-    "scimitar.vat.pos.bin": 678912,
-    "scimitar_lod1.glb": 404352,
-    "scimitar_lod1_tint.png": 32245,
-    "scimitar_team.png": 24742
+    "scimitar.glb": 494160,
+    "scimitar_lod1.glb": 387996,
+    "scimitar_team.png": 30326,
+    "scimitar.vat.json": 1629,
+    "scimitar.vat.pos.bin": 714752,
+    "scimitar_lod1_tint.png": 36175
    },
-   "totalBytes": 1611165
+   "totalBytes": 1665038
   },
   "djinn_binder": {
    "kind": "humanoid",
@@ -2550,14 +2550,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "djinn_binder.glb": 466024,
+    "djinn_binder.glb": 455096,
+    "djinn_binder_lod1.glb": 384256,
+    "djinn_binder_team.png": 35556,
     "djinn_binder.vat.json": 1628,
-    "djinn_binder.vat.pos.bin": 734320,
-    "djinn_binder_lod1.glb": 401076,
-    "djinn_binder_lod1_tint.png": 34623,
-    "djinn_binder_team.png": 30176
+    "djinn_binder.vat.pos.bin": 727888,
+    "djinn_binder_lod1_tint.png": 34345
    },
-   "totalBytes": 1667847
+   "totalBytes": 1638769
   },
   "sun_priest": {
    "kind": "humanoid",
@@ -2639,14 +2639,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "sun_priest.glb": 471012,
-    "sun_priest.vat.json": 1623,
-    "sun_priest.vat.pos.bin": 766480,
-    "sun_priest_lod1.glb": 405348,
-    "sun_priest_lod1_tint.png": 26810,
-    "sun_priest_team.png": 27963
+    "sun_priest.glb": 450008,
+    "sun_priest_lod1.glb": 399764,
+    "sun_priest_team.png": 30779,
+    "sun_priest.vat.json": 1622,
+    "sun_priest.vat.pos.bin": 762192,
+    "sun_priest_lod1_tint.png": 35896
    },
-   "totalBytes": 1699236
+   "totalBytes": 1680261
   },
   "lord_sultana": {
    "kind": "humanoid",
@@ -2808,18 +2808,18 @@
     }
    ],
    "tris": {
-    "lod0": 8370,
-    "lod1": 1466
+    "lod0": 9370,
+    "lod1": 1465
    },
    "bytes": {
-    "camel_archer.glb": 1498732,
+    "camel_archer.glb": 704372,
+    "camel_archer_lod1.glb": 528908,
+    "camel_archer_team.png": 62425,
     "camel_archer.vat.json": 1638,
-    "camel_archer.vat.pos.bin": 733200,
-    "camel_archer_lod1.glb": 550276,
-    "camel_archer_lod1_tint.png": 34713,
-    "camel_archer_team.png": 85551
+    "camel_archer.vat.pos.bin": 732160,
+    "camel_archer_lod1_tint.png": 35426
    },
-   "totalBytes": 2904110
+   "totalBytes": 2064929
   },
   "mamluk": {
    "kind": "mounted",

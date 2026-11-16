@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 685,
- "width": 685,
+ "vertexCount": 679,
+ "width": 679,
  "rowsPerFrame": 1,
  "totalFrames": 134,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -1.0903,
-   -0.0949,
-   -2.0291
+   -1.091,
+   -0.0568,
+   -2.0205
   ],
   "max": [
-   0.6389,
-   2.9288,
-   1.434
+   0.5893,
+   2.9306,
+   1.3875
   ]
  },
  "pos": "djinn_binder.vat.pos.bin",
