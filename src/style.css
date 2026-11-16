@@ -195,6 +195,21 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .st em.down { color: var(--bad-c); }
 .traits { margin: 0; padding-left: 1.1rem; color: var(--muted); }
 .ctr { display: grid; gap: 0.4rem; }
+/* the counter wheel line: "[icon] Line · Beats [icon] Cavalry · Weak to [icon] Giant" (units.ts classLine) */
+.wline { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.55rem; font-size: 0.78rem; color: var(--text); cursor: help; }
+.wline small { font: 700 0.62rem var(--sans); letter-spacing: 0.1em; text-transform: uppercase; margin-right: 0.25rem; }
+.wl-b small { color: var(--good-c); }
+.wl-w small { color: var(--bad-c); }
+.wl-b, .wl-w { display: inline-flex; align-items: center; }
+.wl-b.heal span { color: var(--dim); font-style: italic; }
+.wline.compact { gap: 0.2rem 0.4rem; font-size: 0.72rem; }
+.wline.compact small { font-size: 0.8rem; letter-spacing: 0; margin-right: 0.15rem; }
+.wcl { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.05rem 0.4rem 0.05rem 0.25rem; border-radius: 2px; background: var(--well); border: 1px solid var(--rule); white-space: nowrap; }
+.wcl.me { font-weight: 700; border-color: var(--slate-400); }
+.wcl .ico { width: 1.05em; height: 1.05em; }
+.wci { display: inline-flex; align-items: center; cursor: help; color: var(--steel-100); }
+.dpw { display: inline-flex; align-items: center; gap: 0.15rem; margin-left: 0.35rem; color: var(--steel-200); font-weight: 600; cursor: help; }
+.dpw .ico { width: 0.95em; height: 0.95em; }
 .ctr-b { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .ctr-b span { padding: 0.08rem 0.45rem; border-radius: 2px; background: var(--well); border: 1px solid var(--rule); color: var(--text); font-size: 0.76rem; }
 .ctr-row small { display: block; font: 700 0.68rem var(--sans); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.2rem; }
@@ -1168,6 +1183,14 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
 .rl-two { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1.6rem; align-items: center; }
 .rl-two.cards { grid-template-columns: 1fr 1fr; align-items: stretch; gap: 0.8rem; }
 .rl-two > div > p + p { margin-top: 0.5rem; }
+.whl { position: relative; width: 17rem; height: 17rem; flex: none; color: var(--ink-2); }
+.whl > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.whl-node { position: absolute; width: 4.6rem; margin: -1.55rem 0 0 -2.3rem; display: grid; justify-items: center; gap: 0.05rem; text-align: center; cursor: help; }
+.whl-node i { display: grid; place-items: center; width: 2.3rem; height: 2.3rem; border-radius: 50%; background: url('/ui/kit/boss.webp') center / 100% 100% no-repeat; color: var(--steel-100); filter: drop-shadow(0 2px 2px rgba(35, 27, 18, 0.5)); }
+.whl-node i .ico { width: 1.2rem; height: 1.2rem; }
+.whl-node b { font: 700 0.78rem var(--serif); color: var(--head); letter-spacing: 0.03em; }
+.whl-mid { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; justify-items: center; font: 700 1.5rem var(--serif); color: var(--head); }
+.whl-mid small { font: 0.66rem var(--sans); color: var(--muted); }
 .tri { position: relative; width: 17rem; height: 15.3rem; flex: none; color: var(--ink-2); }
 .tri > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .tri-node { position: absolute; width: 7.4rem; margin-left: -3.7rem; display: grid; justify-items: center; gap: 0.05rem; text-align: center; }

@@ -75,12 +75,21 @@ which units to unlock, what to deploy and where, which item to take and who wear
   - The schedule is the same for both players every round, whoever is ahead. There is no comeback gold and no
     underdog deployment (`PlayerState.comeback` is kept for older UIs and is always zeros).
   - Unspent gold carries over.
-- **Deployment limit (the per-round unit limit):** you may *deploy at most 2 new squads per round*, the same for both players. Only choices change it: your Lord's passive (Marshal makes it 3) and an "of Command" relic you picked. Upgrades and equipping have no limit.
+- **Deploy points (the per-round unit limit, weighted):** every round each player has **2 deploy points**, the same for both
+  players. A squad's **deploy weight** is set by its cost: **100 gold = ½**, **150–300 = 1**, **400+ = 1½**. So a round
+  can bring four cheap squads, two mid ones, or a Golem and a cheap squad. Only choices add to it: the Marshal's passive
+  (+1 point) and each "of Command" relic you picked (+1 point). In code the points are integer half-points
+  (`deployWeight` 1/2/3 against `DEPLOY_BUDGET` 4, `DEPLOY_BONUS` 2 per bonus; `PlayerState.deploysUsed` /
+  `deployLimit` are half-points), and the UI writes them "Deploys left: 1½". Selling a squad in its round refunds its
+  weight. Upgrades and equipping have no limit.
 - **Army cap:** 16 squads.
 - **Unit unlocks (no random drafts):** you start with your Lord's 2 signature units. Every round, round 1 included, you may unlock **any one** locked unit whose `minRound` has come: in round 1 any unit of the basic pool, from round 2 any unit at all (the Dragon from round 5). It is a free strategic choice from the full list, the same rule for both players (`unlockOptions`; `PlayerState.draftOptions` holds that list). This is the Mechabellum-style counter-picking arms race, without the luck of the draw.
 - **Squad level-ups:** gold upgrades a squad from Lv1 to Lv5. Every level costs the same, **40% of the unit's cost**
   (`LEVEL_COST_PCT`; a Lv5 squad costs 2.6× its price in all). Each level gives +25% HP and +20% damage, and Lv3 opens
-  the relic slot. Levelling is a real alternative to recruiting: a new squad is more raw power, a level is cheaper,
+  the relic slot. **Swarm squads level by adding soldiers instead** (`squadSizeAt`, `SWARM_GROWTH_PCT` = 25): each
+  level adds 25% of the base squad size, rounded down (Militia 12 → 15 → 18 → 21 → 24; Skeletons and Levy 10 → 12 → 15
+  → 17 → 20), with no per-soldier gain. A grown squad widens its formation (`formationCols`: 5 columns from 17
+  soldiers), and its ground footprint is always that of its Lv5 size, so a level-up never makes it overlap. Levelling is a real alternative to recruiting: a new squad is more raw power, a level is cheaper,
   needs no deployment and no army slot, and makes a squad's items count for more.
 - **Selling** in the round a squad was deployed is an undo: it refunds everything spent on it (its cost and any
   level-ups). A squad deployed in an earlier round refunds nothing.
@@ -97,28 +106,46 @@ The battlefield is continuous (not a grid): **80 m wide (x) × 120 m long (y)**.
 
 A squad is N identical soldiers with shared orders. Each soldier has its own HP and position.
 
-| Unit | Squad size | Role | Weapon | Cost | Notes (FE flavour) |
-|---|---|---|---|---|---|
-| Militia | 12 | chaff screen | sword | 100 | cheap; absorbs splash |
-| Pikemen | 8 | anti-cavalry | lance | 100 | ×2.5 vs mounted; brace |
-| Berserkers | 6 | melee DPS | axe | 150 | lifesteal 20%; fast attack |
-| Archers | 9 | ranged | bow | 100 | ×1.25 vs fliers; range 25 m |
-| Knights | 4 | tank | lance | 200 | armor: −60% from arrows and physical; weak to magic and hammers |
-| Cavaliers | 4 | flanker | sword | 200 | fast; charge: first hit ×2 |
-| Mages | 4 | AoE | fire tome | 200 | 3 m splash; ignores armor |
-| Clerics | 3 | support | staff | 150 | heal the nearest wounded ally squad; no attack |
-| Pegasus Knights | 3 | air raider | lance | 200 | flier: ignores terrain, only hit by bows, magic and fliers |
-| Ballista | 1 | anti-large | bolt | 200 | range 40 m; ×2 vs Large; pierces in a line |
-| Trebuchet | 1 | artillery | stone | 300 | range 60 m; 6 m splash; slow turn; min range 12 m |
-| Stone Golem | 1 | giant tank | fists | 400 | Large; huge HP; slow; stomp AoE |
-| Wyvern Riders | 2 | heavy air | axe | 300 | flier + Large; melee vs ground and air |
-| Dragon | 1 | late game | fire breath | 500 | flier + Large; cone AoE; unlockable from round 5 only |
+| Unit | Squad size | Wheel class | Role | Weapon | Cost | Notes (FE flavour) |
+|---|---|---|---|---|---|---|
+| Militia | 12 | Swarm | chaff screen | sword | 100 | cheap; absorbs splash; grows by soldiers |
+| Pikemen | 8 | Line | anti-cavalry | lance | 100 | brace |
+| Berserkers | 6 | Line | melee DPS | axe | 150 | lifesteal 20%; fast attack |
+| Archers | 9 | Ranged | ranged | bow | 100 | range 25 m |
+| Knights | 4 | Line | tank | lance | 200 | armor: −60% from arrows and physical; weak to magic |
+| Cavaliers | 4 | Cavalry | flanker | sword | 200 | fast; charge: first hit ×2 |
+| Mages | 4 | Magic | AoE | fire tome | 200 | 3 m splash; ignores armor |
+| Clerics | 3 | Magic | support | staff | 150 | heal the nearest wounded ally squad; no attack |
+| Pegasus Knights | 3 | Air | air raider | lance | 200 | flier: ignores terrain, only hit by bows, magic and fliers |
+| Ballista | 1 | Siege | bolt-thrower | bolt | 200 | range 40 m; pierces in a line |
+| Trebuchet | 1 | Siege | artillery | stone | 300 | range 60 m; 6 m splash; slow turn; min range 12 m |
+| Stone Golem | 1 | Giant | giant tank | fists | 400 | Large; huge HP; slow; stomp AoE |
+| Wyvern Riders | 2 | Air | heavy air | axe | 300 | flier + Large; melee vs ground and air |
+| Dragon | 1 | Air | late game | fire breath | 500 | flier + Large; cone AoE; unlockable from round 5 only |
 
-- **Fliers** ignore terrain and can only be hit by bows, magic, bolts and other fliers. Shots from the ground lose 30% against them (`FLIER_EVADE_PCT`), and Archers deal ×1.25 to fliers (it was ×2): with every unit freely unlockable, anti-air has to be an answer to an air army, not an automatic win over it.
-- **Weapon triangle:** Sword > Axe > Lance > Sword. The winner deals +25% damage and the loser −25%. This applies within the sword/axe/lance families.
-- **Tags:** `mounted`, `armored`, `flier`, `large`, `infantry`. Effectiveness multipliers key off these tags.
+- **The counter wheel (the one counter rule).** Every unit (`UnitDef.class`) and every Lord (`LordDef.class`) belongs
+  to exactly one of 8 classes. Each class beats the next one around the ring and is beaten by the one before it:
+  **Swarm → Giant → Line → Cavalry → Ranged → Air → Siege → Magic → Swarm** (`src/sim/data/wheel.ts`). A unit deals
+  **`COUNTER_PCT` = 150%** damage to a unit of the class it beats (`constants.ts`); every other pairing is neutral.
+  Ranged squads aim first at the class they beat (archers at fliers, siege at casters). Healers count as Magic. The
+  reasons: many bodies drag a giant down (Swarm > Giant); a giant tramples a packed formation (Giant > Line); braced
+  pikes and shields stop the charge (Line > Cavalry); riders ride down the archers (Cavalry > Ranged); bows shoot fliers
+  down (Ranged > Air); fliers dive on crews who cannot aim upwards (Air > Siege); siege outranges and splashes fragile
+  casters (Siege > Magic); splash wrecks packed weak men (Magic > Swarm). If playtests feel flat, the planned fallback
+  is a second, smaller bonus (×1.25) against the class two steps ahead; it is not built.
+- **Removed with the wheel (2026-11-16):** the weapon triangle (sword > axe > lance, ±25%), every per-unit tag bonus
+  (`UnitDef.effective`: Pikemen ×2.5 vs mounted, Skeleton Spearmen and Spear Levy ×2 vs mounted, Ballista ×2 vs Large,
+  Archers, Bone Archers and Camel Archers ×1.25 vs fliers), the crushing ×1.5 vs Armored (crushing still ignores half
+  of armour) and the brace −30% from mounted melee (brace still cancels the charge's double blow). Item affixes
+  ("Slaying"), legendary powers (Kingsbane: ×3 to Lords and the Giant class) and Lord passives stay: they are choices,
+  not the base rule.
+- **Kept as stats:** armour, magic resistance, splash and "melee cannot hit fliers". They must never contradict the
+  wheel (Line armour must not make Magic useless against it, and so on).
+- **Known gap:** the Sun Caliphate has no Siege unit, so nothing in its roster beats Magic (to be added later).
+- **Fliers** ignore terrain and can only be hit by bows, magic, bolts and other fliers. Shots from the ground lose 30% against them (`FLIER_EVADE_PCT`).
+- **Tags:** `mounted`, `armored`, `flier`, `large`, `infantry`. They drive mechanics (who can hit fliers, Slaying affixes, Lord passives), not counters.
 - **Stats:** the sim agent tunes HP, damage, attack interval, range, speed, armor and magic resist per soldier, and they live in `src/sim/data/units.ts`.
-- **Balance target:** no unit's cost-normalised win-rate is outside 40–60% across the bot tournament (§8), and every unit has at least one hard counter.
+- **Balance target:** no unit's cost-normalised win-rate is outside 40–60% across the bot tournament (§8); every unit has exactly one hard counter, the class before it on the wheel.
 
 ## 4. Lords (the "commander" / FE-Lord layer, also the ARPG hero)
 
@@ -126,10 +153,23 @@ At match start, each player picks a faction (§4b) and one of its four Lords. Ev
 - Is a single hero unit on the field, deployed like a squad. It does not count against the deployment limit.
 - Gains XP from kills, levels up during the match (to Lv10), and has **3 item slots** (weapon, armor, relic) from the start.
 - Has a passive and an active ability that fires automatically in battle.
+- Has a **wheel class** (§3): the class of its body or mount, checked against its data and model:
+  - Marshal Aldric: **Line** (armoured, on foot);
+  - Archmage Sefa: **Magic**;
+  - Warden Hrolf: **Line**;
+  - Skylady Ione: **Air** (pegasus);
+  - Lich-Priest Morthen: **Magic**;
+  - Sultana Zahira: **Line**. She fights on foot: her model is a warrior queen with a scimitar and a sun banner, and her tags are `infantry`;
+  - Death Knight Vaelric: **Line**. He is on foot too: a plate-armoured knight with a greatsword, tagged `infantry`;
+  - Ossuary Warden Gorrath: **Giant**. His body is a hulking bone-and-iron colossus (one of the largest Lord models);
+  - Drake Rider Nyssara: **Air**;
+  - Grand Vizier Kasim: **Magic**;
+  - Rajah Bahadur: **Giant** (the war elephant);
+  - Roc Rider Amira: **Air**.
 
 | Lord | Signature units | Passive | Auto ability |
 |---|---|---|---|
-| **Marshal Aldric** (sword) | Militia, Cavaliers | +1 squad deployment per round | Rally: +40% attack speed to squads within 20 m for 10 s |
+| **Marshal Aldric** (sword) | Militia, Cavaliers | +1 deploy point per round | Rally: +40% attack speed to squads within 20 m for 10 s |
 | **Archmage Sefa** (tome) | Mages, Clerics | Magic damage +70% | Meteor: a 10 m AoE at the densest enemy cluster (18 + 3 per Lord level) |
 | **Warden Hrolf** (axe) | Berserkers, Knights | Keep +800 HP; squads +10% HP | Bulwark: allies within 12 m take −40% damage for 6 s |
 | **Skylady Ione** (lance) | Pegasus, Archers | Loot picks see 4 items instead of 3 | Skyfall: dive on the furthest enemy ranged squad |
@@ -142,7 +182,7 @@ constants above each Lord) and are what the tournament tuned; the text the game 
 | Lord (role, plays like) | Signature units | Passive | Auto ability (one mechanic each) |
 |---|---|---|---|
 | **Death Knight Vaelric** (greatsword; Ashen; infantry, like the Marshal) | Skeleton Spearmen, Wraith Riders | Infantry squads (and he) deal +15% damage | **Soul Reaping**: allies within 20 m drain 35% of the damage they deal as life for 10 s (Rally's aura, with life instead of speed) |
-| **Ossuary Warden Gorrath** (bone maul; Ashen; armour, like the Warden) | Grave Knights, Bone Archers | Keep +500 HP; squads +12 armour | **Grave Taunt**: needs 3 enemies within 10 m; they must attack him for 5 s while he takes 40% less damage |
+| **Ossuary Warden Gorrath** (bone maul; Ashen; armour, like the Warden) | Grave Knights, Bone Archers | Keep +500 HP; squads +8 armour | **Grave Taunt**: needs 3 enemies within 10 m; they must attack him for 5 s while he takes 40% less damage |
 | **Drake Rider Nyssara** (lance, flier; Ashen; fliers, like the Skylady) | Wraith Riders, Bone Archers | Squads move 10% faster | **Plague Breath**: dives onto the densest enemy cluster within 30 m (3 or more within 4.5 m): 120% of her damage as magic, then a plague of 10 (+1 per level) a second for 3 s |
 | **Grand Vizier Kasim** (staff; Caliphate; magic, like the Archmage) | Djinn-Binders, Sun Priests | Magic squads attack 20% faster | **Djinn Whirlwind**: on the densest enemy cluster within 40 m, 4 s: each second 10 (+2 per level) magic damage within 5 m and a 40% slow |
 | **Rajah Bahadur** (war elephant, Large; Caliphate; armour and giants, like the Warden) | Scimitar Guard, Mamluk Lancers | Giants (and he) +20% life and +10 armour | **Stampede**: charges through the nearest ground enemy within 12 m, trampling everything within 2.8 m of the path for 40 (+6 per level) and throwing it 2 m aside; he ends the charge where it stops |
@@ -169,8 +209,8 @@ match start, then one of its Lords. Either player can pick any faction, includin
 - **Picking** (`lordPick` phase): `{t:'pickFaction', faction}` is optional and can be changed until the Lord is picked;
   `{t:'pickLord', lord}` must name a Lord of that faction, and a Lord picked without a faction implies its own. The
   enemy's faction and Lord stay hidden until both have picked.
-- Every unit names the Kingdom unit it plays **like** (`UnitDef.like`), so the bots and the counter table understand
-  all three rosters. Unit ids are also the renderer's model ids.
+- Every unit has a **wheel class** (§3), the one counter rule for all three rosters, and names the Kingdom unit it
+  plays **like** (`UnitDef.like`), its battlefield role, which the bots use for formations. Unit ids are also the renderer's model ids.
 - **Balance levers** (`src/sim/data/balance.ts`): `UNIT_POWER` per unit, `LORD_POWER` per Lord, and `FACTION_POWER`
   per faction in per mille, applied to every unit of the faction. The target is equal-level play (Hard vs Hard), as
   two humans play; see `docs/BALANCE.md`.
@@ -179,16 +219,16 @@ match start, then one of its Lords. Either player can pick any faction, includin
 
 **2. The Ashen Covenant** (bone white, ash grey, tarnished bronze, green soul-fire). No healers; the fallen rise instead.
 
-| Unit (id) | Size | Cost | Class | Plays like | What it does |
+| Unit (id) | Size | Cost | Kind (wheel class) | Plays like | What it does |
 |---|---|---|---|---|---|
-| Skeleton Spearmen (`skeleton`) | 10 | 100 | infantry | Pikemen | chaff; ×2 against mounted, braces against charges |
-| Grave Knights (`grave_knight`) | 4 | 200 | infantry | Knights | heavy armour (55%); drains 10% of its damage as life |
-| Bone Archers (`bone_archer`) | 9 | 100 | ranged | Archers | 24 m bows; ×1.25 against fliers |
-| Wraith Riders (`wraith_rider`) | 4 | 200 | mounted | Cavaliers | charge and raid the backline; **ethereal**: 45% less physical damage, 40% more magic damage; spectral steeds are not `mounted`, so anti-cavalry bonuses miss them (a braced spear wall still stops the charge) |
-| Grave Acolytes (`grave_acolyte`) | 3 | 200 | caster | Mages | 18 m soul bolts that drain 30% as life; **raise the fallen** as skeletons (3 + squad level per battle) |
-| Bone Drake (`bone_drake`) | 1 | 300 | flier | Wyvern | Large flier, 2 m sweep; arrows rattle through its ribs (40% armour), magic is the answer |
-| Corpse Catapult (`corpse_catapult`) | 1 | 300 | siege | Trebuchet | 55 m, 5 m splash; **plague**: hits fester for 4 damage a second over 3 s |
-| Bone Golem (`bone_golem`) | 1 | 400 | giant | Golem | Large, stomps, crushes armour |
+| Skeleton Spearmen (`skeleton`) | 10 | 100 | infantry (Swarm) | Pikemen | chaff; braces against charges; grows by soldiers |
+| Grave Knights (`grave_knight`) | 4 | 200 | infantry (Line) | Knights | heavy armour (55%); drains 10% of its damage as life |
+| Bone Archers (`bone_archer`) | 9 | 100 | ranged (Ranged) | Archers | 24 m bows |
+| Wraith Riders (`wraith_rider`) | 4 | 200 | mounted (Cavalry) | Cavaliers | charge and raid the backline; **ethereal**: 45% less physical damage, 40% more magic damage; spectral steeds are not `mounted` (Slaying-vs-mounted misses them), but they are Cavalry on the wheel |
+| Grave Acolytes (`grave_acolyte`) | 3 | 200 | caster (Magic) | Mages | 18 m soul bolts that drain 30% as life; **raise the fallen** as skeletons (3 + squad level per battle) |
+| Bone Drake (`bone_drake`) | 1 | 300 | flier (Air) | Wyvern | Large flier, 2 m sweep; arrows rattle through its ribs (40% armour), magic is the answer |
+| Corpse Catapult (`corpse_catapult`) | 1 | 300 | siege (Siege) | Trebuchet | 55 m, 5 m splash; **plague**: hits fester for 4 damage a second over 3 s |
+| Bone Golem (`bone_golem`) | 1 | 400 | giant (Giant) | Golem | Large, stomps, crushing blows ignore half of armour |
 
 Lords: the **Death Knight** (`deathknight`), the **Lich-Priest** (`lich`, a soul-lantern caster), the **Ossuary Warden** (`ossuary`) and the **Drake Rider** (`drakerider`); models `lord_<id>`. Raised skeletons (by Acolytes, the Lich
 or the Gravebloom legendary) are summoned soldiers of type `skeleton` (120 life, 16 damage a blow): they fight until the
@@ -197,17 +237,17 @@ Each side can raise a given corpse once; Lords and Large units leave no usable c
 
 **3. The Sun Caliphate** (white, ochre, turquoise, gold). Fast, blessed and hard to pin down.
 
-| Unit (id) | Size | Cost | Class | Plays like | What it does |
+| Unit (id) | Size | Cost | Kind (wheel class) | Plays like | What it does |
 |---|---|---|---|---|---|
-| Spear Levy (`spear_levy`) | 10 | 100 | infantry | Pikemen | chaff; ×2 against mounted, braces |
-| Scimitar Guard (`scimitar`) | 6 | 150 | infantry | Berserkers | fast sword line (beats axes, loses to lances) |
-| Camel Archers (`camel_archer`) | 4 | 200 | ranged | Archers | mounted bows: 18 m range, fast, tougher than foot archers; ×1.25 against fliers |
-| Mamluk Lancers (`mamluk`) | 4 | 200 | mounted | Cavaliers | armoured shock cavalry: charge, raid the backline |
-| Djinn-Binders (`djinn_binder`) | 4 | 200 | caster | Mages | whirlwind: 3 m splash that **slows 25%** for 2 s |
-| Sun Priests (`sun_priest`) | 3 | 150 | caster | Clerics | heal; **bless**: what they heal attacks 15% faster for 4 s; **radiant**: their sunbolts deal 50% more to the undead |
-| Bound Djinn (`djinn`) | 2 | 300 | flier | Pegasus | flier with wind-blades: a sword in the weapon triangle that deals magic damage; not Large (bolt-throwers get no bonus) |
-| War Elephant (`war_elephant`) | 1 | 400 | giant | Golem | Large, tramples (3 m); **howdah archers** let it strike fliers in reach; from round 3 |
-| Sand Golem (`sand_golem`) | 1 | 300 | giant | Golem | Large; **regenerates 1.5% of its life a second** |
+| Spear Levy (`spear_levy`) | 10 | 100 | infantry (Swarm) | Pikemen | chaff; braces; grows by soldiers |
+| Scimitar Guard (`scimitar`) | 6 | 150 | infantry (Line) | Berserkers | fast sword line |
+| Camel Archers (`camel_archer`) | 4 | 200 | ranged (Ranged) | Archers | mounted bows: 18 m range, fast, tougher than foot archers |
+| Mamluk Lancers (`mamluk`) | 4 | 200 | mounted (Cavalry) | Cavaliers | armoured shock cavalry: charge, raid the backline |
+| Djinn-Binders (`djinn_binder`) | 4 | 200 | caster (Magic) | Mages | whirlwind: 3 m splash that **slows 25%** for 2 s |
+| Sun Priests (`sun_priest`) | 3 | 150 | caster (Magic) | Clerics | heal; **bless**: what they heal attacks 15% faster for 4 s; **radiant**: their sunbolts deal 50% more to the undead |
+| Bound Djinn (`djinn`) | 2 | 300 | flier (Air) | Pegasus | flier with wind-blades: melee that deals magic damage; not Large |
+| War Elephant (`war_elephant`) | 1 | 400 | giant (Giant) | Golem | Large, tramples (3 m); **howdah archers** let it strike fliers in reach; from round 3 |
+| Sand Golem (`sand_golem`) | 1 | 300 | giant (Giant) | Golem | Large; **regenerates 1.5% of its life a second** |
 
 Lords: the **Sultana** (`sultana`, a sun-banner commander), the **Grand Vizier** (`vizier`), the **Rajah** (`rajah`) and the
 **Roc Rider** (`rocrider`); models `lord_<id>`. Sunlight burns the dead: the Sultana's blade and her Radiance deal 50% more
@@ -220,65 +260,77 @@ Future work: one or two faction-flavoured item skills.
 After every round, each player picks **1 item from 3**, in the next planning phase. **Both players are offered
 exactly the same items** (`rollLoot`, seeded by the match and the round only), and simply pick differently:
 
-- **One item per slot** (weapon, armor, relic), so there is always something usable. The offer does not look at
-  either army. Skylady's passive adds a fourth item of the round's lowest tier.
-- **A fixed rarity schedule by round** (`lootSchedule`), with no rarity rolls and no bonus tier for the loser:
+- **One item per slot, one kind per slot.** Every offer is a **weapon (offence)**, an **armor (defence)** and a
+  **relic (utility)**, so there is always something usable. The offer does not look at either army. Skylady's passive
+  adds a fourth item of the same rarity in a rolled slot (two Skyladies see the same one).
+- **Equal power.** All items of one offer share **one rarity** (`lootRarity`) and so **one power budget**
+  (`itemBudget`: `ITEM_BUDGET[rarity]` at item level 1, +`BUDGET_GROWTH`% per level). After rolling, an item's
+  implicit and affixes are scaled so its `itemPower` equals the budget (flags such as Phoenix and Command, the skill
+  and the legendary power are counted first). The choice is "what does my army need against this enemy?", never
+  "take the biggest number".
+- **A fixed rarity schedule by round**, applied to the whole offer, with no rarity rolls and no bonus tier for the loser:
 
   | Rounds | Offer |
   |---|---|
-  | 1–2 | Magic, Magic, Magic |
-  | 3–5 | Rare, Magic, Magic |
-  | 6–8 | Rare, Rare, Magic |
-  | 9 on | Rare, Rare, Rare |
-  | every 3rd round (3, 6, 9, 12) | the best item is a **Legendary** instead |
+  | 1–2 | 3 Magic |
+  | 4 on | 3 Rare |
+  | every 3rd round (3, 6, 9, 12...) | **3 Legendary** |
 
-- The slot of the best item rotates (`lootTopSlot`): the Legendary rounds 3, 6 and 9 visit all three slots, and the
-  match seed sets where the rotation starts, for both players alike.
 - Affix values, legendary powers and skills still vary from round to round (rolled from the shared seed), and one
   offer never shows the same legendary power or skill twice.
 
 **Rarity tiers and affix counts** (ARPG-style, Diablo-like naming and colours):
 
-| Rarity | Colour | Affixes |
-|---|---|---|
-| Common | white | 0 + base implicit (not offered any more; kept for old items) |
-| Magic | blue | 1–2 |
-| Rare | yellow | 3–4 (or 2–3 and an active skill) |
-| Legendary | orange | 2 affixes + 1 legendary power |
+| Rarity | Colour | Affixes | Budget at ilvl 1 |
+|---|---|---|---|
+| Common | white | 0 + base implicit (not offered any more; kept for old items) | 10 |
+| Magic | blue | 2 | 20 |
+| Rare | yellow | 3 (or 2 and an active skill) | 36 |
+| Legendary | orange | 2 affixes + 1 legendary power (worth `LEGENDARY_POWER` = 16) | 40 |
 
 - **Slots:** a squad has Weapon and Armor from Lv1 and Relic from Lv3. The Lord has all three from the start. An item applies to *every soldier in the squad*.
-- **Bases** (by slot):
-  - Weapon: e.g. "Steel Blade" with implicit +10% dmg, "Ironbark Bow" with +10% range.
-  - Armor: "Mail Hauberk" with +12% HP, "Warded Robe" with +20% magic resist.
-  - Relic: "Bone Charm", "Sun Medallion", "Oath Ring".
-- **Affix pool** (prefix/suffix, rolled with ranges):
-  - "Keen" +x% crit.
-  - "Vicious" +x% damage.
-  - "of Haste" +x% attack speed.
-  - "of the Leech" x% lifesteal.
-  - "Stalwart" +x% HP.
-  - "of Warding" +x% magic resist.
-  - "Fleet" +x% move speed.
-  - "of Thorns" reflects x%.
-  - "Slaying" +x% vs {mounted|armored|flier|large}.
-  - "of Embers" attacks burn for x dps over 3 s.
-  - "of Frost" attacks slow 20% for 2 s.
-  - "Far-reaching" +x m range (ranged only).
-  - "of the Phoenix" the first soldier death per battle is revived.
-  - "of Command" +1 deployment next round (rare, Relic only).
-- **Legendary powers** (examples; ~12 total):
-  - **Stormcaller**: attacks chain lightning to 3 targets.
-  - **Kingsbane**: ×3 damage vs Lords and Large.
-  - **Undying Oath**: the squad's soldiers revive once at 30% HP.
-  - **Ember Crown**: the squad's deaths explode for AoE fire.
-  - **Mirror Aegis**: the first 3 projectiles per soldier are reflected.
-  - **Warhorn of Valor**: +2 squad size.
-  - **Gravebloom**: slain enemies rise as skeletons for you for the rest of the battle.
+- **Bases** (by slot; the implicit is of the slot's kind):
+  - Weapon: Steel Blade (+damage), Ironbark Bow (Slaying fliers), War Axe (attack speed), Ash Spear (Slaying
+    mounted), Grimoire (crit).
+  - Armor: Mail Hauberk (+life), Warded Robe (+magic resist), Plate Cuirass (+armour), Studded Jerkin (thorns).
+  - Relic: Bone Charm (leech), Sun Medallion (range), Rime Ring (frost), War Banner (move speed).
+- **Affix pool by kind** (every affix rolls on exactly one slot):
+
+  | Kind (slot) | Affixes |
+  |---|---|
+  | Offence (weapon) | Keen (+crit), Vicious (+damage), Slaying (+damage vs a tag), of Haste (+attack speed), of Embers (burn) |
+  | Defence (armor) | Stalwart (+life), Plated (+physical reduction), of Warding (+magic resist), of Thorns (reflect melee), of the Phoenix (first death revived) |
+  | Utility (relic) | Fleet (+move speed), Far-reaching (+range, ranged only), of the Leech (lifesteal), of Frost (slow on hit, stacks to 50%), of Command (+1 deploy next round, Rare+) |
+
+  Leech sits in utility rather than offence or defence: it is sustain that only works through damage dealt, so it
+  suits neither pure kind, and it keeps the relic worth taking for melee armies.
+- **Legendary powers: narrow and build-defining.** Each power works **only on the wheel classes it is built for**
+  (`LegendaryDef.best`; a Lord counts as the class of its body or mount). On any other squad the item is just its two
+  affixes, so a Legendary that does not fit your army is a genuine pass. Tooltips show "Best on: <classes>".
+
+  | Legendary | Slot | Power | Best on |
+  |---|---|---|---|
+  | Stormcaller | weapon | chain lightning to 3 nearby enemies for 30% | Magic, Air |
+  | Kingsbane | weapon | triple damage to Lords and Giants | Siege, Cavalry |
+  | Bloodthirst | weapon | each kill heals 10% and gives +10% attack speed (x3) | Cavalry, Air |
+  | Earthshaker | weapon | every 4th attack deals full damage within 3 m | Giant, Line |
+  | Frostheart | weapon | 40% slow; +30% damage to slowed enemies | Ranged, Magic |
+  | Hydra Volley | weapon | strikes 2 more enemies for 40% | Ranged, Siege |
+  | Undying Oath | armor | each soldier rises once at 50% life | Line, Magic |
+  | Mirror Aegis | armor | the first 3 projectiles per soldier are reflected | Air, Giant |
+  | Sunfire Mantle | armor | burns enemies within 4 m | Line, Giant |
+  | Lifebinder | armor | regenerates 1.5% life per second | Giant, Siege |
+  | Ember Crown | relic | fallen soldiers explode for fire damage | Swarm |
+  | Warhorn of Valor | relic | Swarm +4 soldiers, Line +2 (a Line Lord: +35% life and damage) | Swarm, Line |
+  | Gravebloom | relic | slain enemies rise as skeletons (max 14) | Swarm, Cavalry |
+  | Windrunner | relic | +40% move, +25% attack speed, 300% first strike | Cavalry, Ranged |
+
+  Every class has at least one Legendary built for it.
 - **Skill items:** a Rare item has a 50% chance to grant an **active skill** in place of its last affix (§5b). Skill
   items are class-locked and their tooltip shows the skill block and "Usable by: ...". The offer is the same for both
   players, so a skill item may suit one army better than the other: that is part of the choice.
 - **Unequipping:** items can be moved between squads freely during planning. A sold squad's items go to your stash.
-- **Balance:** item power is budgeted, so one item ≈ 20–35% of the squad's base value. Legendaries are capped by a budget. Affix values scale with the round (item level). Offers are rolled once per round from the match seed, so both players get the same items.
+- **Balance:** item power is budgeted (see above), so one item ≈ 20–35% of the squad's base value, and every item of an offer is worth the same. Affix values scale with the round (item level). Offers are rolled once per round from the match seed, so both players get the same items.
 
 ## 5b. Skills
 

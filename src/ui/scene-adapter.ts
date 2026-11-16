@@ -19,6 +19,8 @@ export interface SquadVisual {
   pos: Vec2;
   facing: number;
   level: number;
+  /** Soldiers in the squad (grown Swarm squads, Warhorn); default the unit's level-1 squad size. */
+  size?: number;
   /** Best rarity equipped (aura colour), null = none. */
   rarity?: Rarity | null;
 }

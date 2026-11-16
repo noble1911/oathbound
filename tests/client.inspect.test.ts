@@ -7,7 +7,7 @@ import type { DecodedReplay, Seat } from '../src/sim/types.ts';
 import { SKILLS } from '../src/sim/data/skills.ts';
 import { castEvents, causeLabel, causeShares, cycleRows, inspectModel, inspectRow, ordinal, pairModel, rankHint, rowOfSoldier, rowOfSquad, sparkPath, tickClock, SPARK_MIN_S } from '../src/ui/inspect-data.ts';
 import { draftLines, draftOrder } from '../src/ui/loot.ts';
-import { UNITS, UNIT_TYPES } from '../src/sim/data/units.ts';
+import { UNIT_TYPES } from '../src/sim/data/units.ts';
 
 function battle(seed: number, lords: [sim.LordId, sim.LordId] = ['archmage', 'warden']): DecodedReplay {
   const s = sim.newMatch(seed, lords);
@@ -315,9 +315,10 @@ describe('recruit cards', () => {
     expect(draftLines('clerics')[0]).toMatchObject({ label: 'Supports', text: 'Heals nearby squads' });
     const arch = draftLines('archers')[0];
     expect(arch.label).toBe('Beats');
-    expect(arch.text).toMatch(/Flier/);
-    expect(arch.text).toContain(`×${((UNITS.archers.effective?.flier ?? 100) / 100).toFixed((UNITS.archers.effective?.flier ?? 100) % 100 ? 1 : 0)}`);
-    expect(draftLines('pikemen')[0].text).toMatch(/Cavaliers/);
+    expect(arch.text).toBe('Air');
+    expect(arch.tip).toContain('×1.5');
+    expect(draftLines('pikemen')[0].text).toBe('Cavalry');
+    expect(draftLines('pikemen')[0].tip).toMatch(/Cavaliers/);
   });
   it('the picker order groups classes and keeps every option', () => {
     const opts = UNIT_TYPES.slice();

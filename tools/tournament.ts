@@ -48,7 +48,7 @@ async function main(): Promise<void> {
     return i >= 0 ? process.argv[i + 1] : def;
   };
   const seeds = Number(arg('seeds', '2'));
-  const threads = Number(arg('threads', String(Math.max(1, availableParallelism() - 2))));
+  const threads = Number(arg('threads', String(Math.max(1, Number(process.env.OB_THREADS) || availableParallelism() - 2))));
   const strats = (arg('strats', '') ? arg('strats', '').split(',') : [...TOURNAMENT_STRATEGIES, ...(process.argv.includes('--best') ? ['best'] : [])]) as BotStrategy[];
   const entries: [BotStrategy, LordId][] = [];
   // --lords marshal,lich,...  restricts the entries to these Lords (default: all six, i.e. all three factions).

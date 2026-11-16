@@ -88,7 +88,7 @@ export function outcome(r: BattleResult, seat: Seat): 1 | 0.5 | 0 {
 }
 
 /** Run `jobs` through `script`'s exported `work(job)` on worker threads; results in job order. */
-export async function pool<J, R>(script: URL, jobs: J[], threads = Math.max(1, availableParallelism() - 4)): Promise<R[]> {
+export async function pool<J, R>(script: URL, jobs: J[], threads = Math.max(1, Number(process.env.OB_THREADS) || availableParallelism() - 4)): Promise<R[]> {
   const chunks: { idx: number; job: J }[][] = Array.from({ length: threads }, () => []);
   jobs.forEach((job, idx) => chunks[idx % threads].push({ idx, job }));
   const out: R[] = new Array(jobs.length);

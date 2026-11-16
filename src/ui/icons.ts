@@ -1,4 +1,4 @@
-// Inline SVG icons (24x24, drawn with currentColor) for weapons, unit tags, slots and HUD glyphs.
+// Inline SVG icons (24x24, drawn with currentColor) for weapons, unit tags, slots, wheel classes and HUD glyphs.
 // Kept as path data so they scale crisply from 1280x720 to 4K and need no image requests.
 
 const P: Record<string, string> = {
@@ -66,6 +66,15 @@ const P: Record<string, string> = {
   mirror: '<path d="M12 3v18" stroke-dasharray="2 2.4" /><path d="M9 7l-6 5 6 5zM15 7l6 5-6 5z" fill="currentColor" fill-opacity=".3" />',
   route: '<circle cx="6" cy="19" r="2" /><path d="M7.6 17.6c4-3.6-1.6-6.6 3-10.2 2.4-1.9 5.4-2.4 8.4-3.4" stroke-dasharray="2.4 2.2" /><path d="M16 3l3.4 1-1.2 3.2" />',
   sync: '<path d="M20 3v18" /><path d="M3 7h12M7 12h8M10 17h5" /><path d="M13 5l2 2-2 2M13 10l2 2-2 2M13 15l2 2-2 2" />',
+  // the counter wheel's eight classes (cls_<WheelClass>): flat carved stamps, one idea each
+  cls_swarm: '<circle cx="6" cy="8.5" r="2" /><circle cx="12" cy="6" r="2" /><circle cx="18" cy="8.5" r="2" /><path d="M2.5 20v-4.5a3.5 3.5 0 017 0M8.5 20v-7a3.5 3.5 0 017 0v7M14.5 15.5a3.5 3.5 0 017 0V20" />',
+  cls_giant: '<path d="M10 3h4v3h-4z" /><path d="M6 21v-5H4V9.5L7 6.5h10l3 3V16h-2v5M9 21v-4h6v4M9 10v3M15 10v3" />',
+  cls_line: '<path d="M4 4h11v8.5c0 4.2-2.8 6.8-5.5 8C6.8 19.3 4 16.7 4 12.5z" /><path d="M9.5 4v16M4 10h11" /><path d="M19.5 2v20M18 5l1.5-3 1.5 3" />',
+  cls_cavalry: '<path d="M18 21c0-6-1-10.5-4-14.5L13.2 3l-1.7 2.6C8 7 5.4 9 4 11.2l1.6 2.3 4-1.1c.6 3-1 5.8-1.6 8.6" /><path d="M14 6.5c2 .5 4 2 5 4" /><circle cx="10.5" cy="8.6" r=".9" fill="currentColor" />',
+  cls_ranged: '<path d="M12 21V4" /><path d="M8 8l4-5 4 5" /><path d="M9 21l3-3 3 3M9 17.5l3-3 3 3" />',
+  cls_air: '<path d="M12 12C10 7.5 6.5 5.5 2 5.5c.8 4.2 3.6 7.2 8 8.3M12 12c2-4.5 5.5-6.5 10-6.5-.8 4.2-3.6 7.2-8 8.3" /><path d="M12 9.5V20M9.5 18l2.5 2 2.5-2M6 9l2 1.5M18 9l-2 1.5" />',
+  cls_siege: '<path d="M3 21h18M6.5 21l5.5-9.5 5.5 9.5" /><path d="M4.5 6.5L19 14.5" /><circle cx="4.5" cy="4.5" r="2" fill="currentColor" fill-opacity=".35" /><path d="M17 13.4l2.5-3" />',
+  cls_magic: '<path d="M12 2.5v6M12 15.5v6M2.5 12h6M15.5 12h6M5.6 5.6l3.2 3.2M15.2 15.2l3.2 3.2M18.4 5.6l-3.2 3.2M8.8 15.2l-3.2 3.2" /><circle cx="12" cy="12" r="2.2" fill="currentColor" fill-opacity=".35" />',
 };
 
 export type IconName = keyof typeof P | string;

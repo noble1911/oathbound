@@ -5,7 +5,8 @@ import { UNITS } from '../../src/sim/data/units.ts';
 import type { LordId, MatchState, Seat } from '../../src/sim/types.ts';
 import { arg, botPlanX, KNOB, lordPairs, playMatch, pool, type Planner } from './lib.ts';
 interface Job { seed: number; lords: [LordId, LordId] }
-interface R { unlocks: [number, string][]; deploys: [number, string][]; loot: { round: number; offered: string[]; took: string }[]; win: Seat | null; seat: Seat }
+interface Pick { round: number; offered: string[]; took: string; slots: string[]; legs: (string | null)[]; k: number }
+interface R { unlocks: [number, string][]; deploys: [number, string][]; loot: Pick[]; win: Seat | null; seat: Seat }
 export function work(j: Job): R[] {
   const out: R[] = [0, 1].map((seat) => ({ unlocks: [], deploys: [], loot: [], win: null, seat: seat as Seat }));
   const mk = (seat: Seat): Planner => (s: MatchState) => {
@@ -13,6 +14,8 @@ export function work(j: Job): R[] {
     const ul = new Set(p.unlocked), ids = new Set(p.squads.map((q) => q.id));
     const offer = p.lootOffer ? p.lootOffer.map((i) => i.rarity) : null;
     const offerIds = p.lootOffer ? p.lootOffer.map((i) => i.id) : [];
+    const slots = p.lootOffer ? p.lootOffer.map((i) => i.slot as string) : [];
+    const legs = p.lootOffer ? p.lootOffer.map((i) => i.legendary as string | null) : [];
     KNOB.noLevel = false; KNOB.noLayout = false;
     botPlanX(s, seat, 'hard', seat + 1);
     for (const u of p.unlocked) if (!ul.has(u)) out[seat].unlocks.push([s.round, u]);
@@ -20,7 +23,7 @@ export function work(j: Job): R[] {
     if (offer) {
       const owned = new Set([...p.stash.map((i) => i.id), ...p.squads.flatMap((q) => Object.values(q.items).filter(Boolean).map((i) => i!.id))]);
       const k = offerIds.findIndex((id) => owned.has(id));
-      out[seat].loot.push({ round: s.round, offered: offer, took: k >= 0 ? offer[k] : 'none' });
+      out[seat].loot.push({ round: s.round, offered: offer, took: k >= 0 ? offer[k] : 'none', slots, legs, k });
     }
   };
   const { s } = playMatch(j.seed, j.lords, [mk(0), mk(1)]);
@@ -46,6 +49,15 @@ async function main(): Promise<void> {
   const took = L.filter((l) => l.took !== 'none'); const best = took.filter((l) => l.took === top(l.offered)).length;
   console.log(`loot picks ${took.length}, took the highest rarity ${(100 * best / took.length).toFixed(1)}%`);
   const leg = took.filter((l) => l.offered.includes('legendary')); console.log(`legendary offered ${leg.length}, taken ${(100 * leg.filter((l) => l.took === 'legendary').length / leg.length).toFixed(1)}%`);
-  const mixed = took.filter((l) => l.offered.includes('rare') && l.offered.includes('magic') && !l.offered.includes('legendary')); console.log(`rare+magic offers ${mixed.length}, took rare ${(100 * mixed.filter((l) => l.took === 'rare').length / mixed.length).toFixed(1)}%`);
+  // Pick share by slot (all picks, and legendary rounds), and the take rate of each legendary power.
+  const bySlot = (xs: Pick[]) => { const m = new Map<string, number>(); for (const l of xs) m.set(l.slots[l.k], (m.get(l.slots[l.k]) ?? 0) + 1); return ['weapon', 'armor', 'relic'].map((sl) => `${sl} ${(100 * (m.get(sl) ?? 0) / Math.max(1, xs.length)).toFixed(1)}%`).join(', '); };
+  console.log(`pick share by slot: ${bySlot(took)}`);
+  console.log(`  legendary rounds: ${bySlot(leg)}`);
+  console.log(`  other rounds:     ${bySlot(took.filter((l) => !l.offered.includes('legendary')))}`);
+  const lo = new Map<string, [number, number]>();
+  for (const l of L) l.legs.forEach((g, i) => { if (!g) return; const v = lo.get(g) ?? [0, 0]; v[0]++; if (l.k === i) v[1]++; lo.set(g, v); });
+  console.log('legendary | offered | taken | take rate');
+  for (const [g, [o, t]] of [...lo].sort((a, b) => b[1][1] / b[1][0] - a[1][1] / a[1][0])) console.log(`  ${g.padEnd(14)} ${String(o).padStart(5)} ${String(t).padStart(5)}  ${(100 * t / o).toFixed(1)}%`);
+  const mixed = took.filter((l) => l.offered.includes('rare') && l.offered.includes('magic') && !l.offered.includes('legendary')); if (mixed.length) console.log(`rare+magic offers ${mixed.length}, took rare ${(100 * mixed.filter((l) => l.took === 'rare').length / mixed.length).toFixed(1)}%`); // (none since offers share one rarity)
 }
 if (isMainThread && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

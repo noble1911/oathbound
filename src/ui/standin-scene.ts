@@ -486,7 +486,7 @@ export class StandInScene implements SceneAdapter {
     const test = (list: SquadVisual[], ghost: boolean) => {
       for (const s of list) {
         const d = Math.hypot(s.pos[0] - g[0], s.pos[1] - g[1]);
-        if (d < squadRadius(s.type) && d < bd) {
+        if (d < squadRadius(s.type, s.size) && d < bd) {
           bd = d;
           best = { id: s.id, ghost };
         }
@@ -529,7 +529,7 @@ export class StandInScene implements SceneAdapter {
   private placeSquad(inst: Instances, s: SquadVisual, color: THREE.Color): void {
     const lk = look(s.type);
     const yaw = (s.facing / 256) * TWO_PI;
-    for (const [dx, dy] of formation(s.type, s.facing, s.lord)) inst.add(s.pos[0] + dx, s.pos[1] + dy, yaw, lk, color);
+    for (const [dx, dy] of formation(s.type, s.facing, s.lord, s.size)) inst.add(s.pos[0] + dx, s.pos[1] + dy, yaw, lk, color);
   }
 
   private drawArmy(): void {
@@ -542,7 +542,7 @@ export class StandInScene implements SceneAdapter {
       if (s.level >= 3) c.offsetHSL(0, 0, 0.08);
       this.placeSquad(this.solid, s, c);
       if (s.rarity && s.rarity !== 'common' && na < 40) {
-        const r = squadRadius(s.type) / 100;
+        const r = squadRadius(s.type, s.size) / 100;
         m.compose(new THREE.Vector3(wx(s.pos[0]), 0, wz(s.pos[1])), new THREE.Quaternion(), new THREE.Vector3(r, 1, r));
         this.auras.setMatrixAt(na, m);
         this.auras.setColorAt(na, new THREE.Color(RARITY_CSS[s.rarity]));
@@ -578,7 +578,7 @@ export class StandInScene implements SceneAdapter {
     const put = (ring: THREE.Mesh, s: SquadVisual | null) => {
       ring.visible = !!s && this.mode === 'planning';
       if (!s) return;
-      const r = squadRadius(s.type) / 100;
+      const r = squadRadius(s.type, s.size) / 100;
       ring.scale.set(r, 1, r);
       ring.position.set(wx(s.pos[0]), 0.08, wz(s.pos[1]));
     };

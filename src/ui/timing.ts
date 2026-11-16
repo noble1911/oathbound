@@ -7,7 +7,7 @@
 // The march is the sim's squad-anchor walk (BattleSim.squadPass) replayed for one squad against a
 // standing enemy: the enemy is where it stood last round (the ghosts), because that is all a player
 // can know. It ignores the straggler gate and fights on the way, so it is a forecast, not a replay.
-import { AGGRO, T_FLIER, T_LARGE, buildStats } from '../sim/battle.ts';
+import { AGGRO, T_FLIER, buildStats } from '../sim/battle.ts';
 import { FIELD_H, FIELD_W, TICK_HZ } from '../sim/constants.ts';
 import { deployZone, freeSpotNear, overlappingSquad, squadFootprint } from '../sim/match.ts';
 import { DIRS, MOVE_PCT, RIVER_Y0, RIVER_Y1, cellOf, navFor } from '../sim/terrain.ts';
@@ -18,6 +18,8 @@ export interface MarchFoe {
   pos: Vec2;
   tags: number;
   backline: boolean;
+  /** Wheel class index (buildStats' wc), for the ranged aim bias. */
+  wc?: number;
 }
 
 export interface MarchPoint {
@@ -50,7 +52,7 @@ export function marchFoes(army: readonly Squad[] | null | undefined, lord: LordI
   if (!army) return [];
   return army.map((s) => {
     const st = buildStats(s, s.type === 'lord' ? lord : null);
-    return { pos: s.pos, tags: st.tags, backline: st.backline };
+    return { pos: s.pos, tags: st.tags, backline: st.backline, wc: st.wc };
   });
 }
 
@@ -93,8 +95,7 @@ export function marchOf(sq: MarchSquad, lord: LordId | null, seat: Seat, terrain
       for (const e of foes) {
         if (e.tags & T_FLIER && !st.canHitAir) continue;
         let score = Math.trunc(Math.hypot(e.pos[0] - ax, e.pos[1] - ay));
-        if (st.prefLarge && e.tags & T_LARGE) score -= 2500;
-        if (st.prefFlier && e.tags & T_FLIER) score -= 1500;
+        if (st.prefCls && e.wc === st.beats) score -= 2000;
         if (st.raider && e.backline) score -= 4000;
         if (!macro || score < best) {
           macro = e;

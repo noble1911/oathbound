@@ -9,10 +9,14 @@ import { playLordLine } from '../audio/voice.ts';
 import { $, el, esc } from './dom.ts';
 import { icon } from './icons.ts';
 import { itemIcon, itemTooltip } from './items.ts';
-import { SKILLS, canEquip, usableByText, UNIT_CLASS, UNIT_CLASSES, CLASS_NAME } from '../sim/data/skills.ts';
+import { SKILLS, canEquip, usableByText } from '../sim/data/skills.ts';
 import { bestFit, counters, RARITY_LABEL, rarityRank, SLOT_LABEL, slotOpen, tagsOf, TAG_LABEL, unitName, type Fit } from './gamedata.ts';
-import { SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
-import { crest, unitTooltip } from './units.ts';
+import { ITEM_KIND, SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
+import { bestOnText, legendaryFits } from '../sim/loot.ts';
+import { classTag, crest, deployChip, unitTooltip, wheelTip } from './units.ts';
+import type { WheelClass } from '../sim/types.ts';
+import { WHEEL, WHEEL_NAME, WHEEL_WHY } from '../sim/data/wheel.ts';
+import { COUNTER_TEXT } from './gamedata.ts';
 import { tip } from './dom.ts';
 
 /**
@@ -25,10 +29,12 @@ function fitLine(item: Item, me: PlayerState, fit: Fit | null): string {
   if (fit) {
     const who = esc(unitName(fit.squad.type, me.lord));
     const dead = fit.dead ? ` <em>${fit.dead} line${fit.dead === 1 ? '' : 's'} wasted</em>` : '';
-    return `<span class="fit good">${icon('ready')}Best on: <b>${who}</b>${fit.replaces ? ' (replaces its ' + slot + ')' : ''}${dead}</span>`;
+    return `<span class="fit good">${icon('ready')}Suits: <b>${who}</b>${fit.replaces ? ' (replaces its ' + slot + ')' : ''}${dead}</span>`;
   }
   // a skill item nobody in the army has the class for
   if (item.skill && !me.squads.some((q) => canEquip(item, q.type, me.lord))) return `<span class="fit none">${icon('lock')}Only ${esc(usableByText(item.skill))} can use ${esc(SKILLS[item.skill].name)}: nobody in your army can yet</span>`;
+  // a legendary built for classes the army does not field: only its affixes would work
+  if (item.legendary && !me.squads.some((q) => legendaryFits(item.legendary!, q.type, me.lord))) return `<span class="fit none">${icon('lock')}Built for ${esc(bestOnText(item.legendary))}: no squad of yours can wake its power</span>`;
   const open = me.squads.some((s) => slotOpen(s, item.slot));
   if (!open) return `<span class="fit none">${icon('lock')}No open ${slot} slot yet: squads open it at level ${SLOT_UNLOCK_LEVEL[item.slot]}</span>`;
   return `<span class="fit none">${icon('bag')}No upgrade for your army right now</span>`;
@@ -49,7 +55,7 @@ export class LootModal {
       <header class="loot-head">
         <small class="eyebrow">After the battle</small>
         <h2>Spoils of War</h2>
-        <p>Choose one. It goes to your stash; equip it on a squad or your Lord. <span class="loot-same">Your opponent is offered the same items.</span></p>
+        <p>Choose one: a weapon (offence), an armor (defence) or a relic (utility), all of the same rarity and power. It goes to your stash; equip it on a squad or your Lord. <span class="loot-same">Your opponent is offered the same items.</span></p>
       </header>
       <div class="loot-row n${offer.length}">
         ${offer
@@ -62,7 +68,7 @@ export class LootModal {
             const cmp = on ? { compare: cur, compareLabel: cur ? `vs ${onName}'s ${SLOT_LABEL[it.slot].toLowerCase()}` : `On ${onName} (empty ${SLOT_LABEL[it.slot].toLowerCase()} slot)`, on: { type: on.type, lord: me.lord } } : {};
             return `<div class="drop r-${it.rarity}" data-i="${i}" style="--d:${i * 0.45 + 0.3}s">
               <div class="beam"></div><div class="glow"></div>
-              <div class="drop-icon">${itemIcon(it, { size: 'lg' })}<span class="drop-rar">${RARITY_LABEL[it.rarity]} ${SLOT_LABEL[it.slot]}</span></div>
+              <div class="drop-icon">${itemIcon(it, { size: 'lg' })}<span class="drop-rar">${RARITY_LABEL[it.rarity]} ${SLOT_LABEL[it.slot]} · ${ITEM_KIND[it.slot]}</span></div>
               <div class="drop-tip">${itemTooltip(it, cmp)}</div>
               <div class="drop-fit">${fitLine(it, me, fit)}</div>
               <button class="btn primary take">Claim</button>
@@ -116,35 +122,26 @@ export class LootModal {
   }
 }
 
-/** The recruit picker's order: by class (line, ranged, casters, riders, fliers, siege, giants), then by cost. */
+/** The recruit picker's order: round the counter wheel (Swarm, Giant, Line, Cavalry, Ranged, Air, Siege, Magic), then by cost. */
 export function draftOrder(options: UnitType[]): UnitType[] {
-  return [...options].sort((x, y) => UNIT_CLASSES.indexOf(UNIT_CLASS[x]) - UNIT_CLASSES.indexOf(UNIT_CLASS[y]) || UNITS[x].cost - UNITS[y].cost || options.indexOf(x) - options.indexOf(y));
+  return [...options].sort((x, y) => WHEEL.indexOf(UNITS[x].class) - WHEEL.indexOf(UNITS[y].class) || UNITS[x].cost - UNITS[y].cost || options.indexOf(x) - options.indexOf(y));
 }
 
-export interface DraftLine { label: 'Beats' | 'Supports' | 'Role' | 'Fears'; tone: 'good' | 'bad' | 'info'; text: string; tip: string }
+export interface DraftLine { label: 'Beats' | 'Supports' | 'Fears'; tone: 'good' | 'bad' | 'info'; text: string; tip: string; cls?: WheelClass }
 
 /**
- * The two lines under a recruit card, never empty: what the unit is for (the squads it beats; for a
- * healer what it supports; for a unit with a damage bonus but no hard counter, the bonus), and what
- * it fears (or that nothing counters it outright).
+ * The two lines under a recruit card, never empty, read off the counter wheel: the class it beats (a
+ * healer supports instead: it never attacks), and the class that beats it. The tip names the rival
+ * units of that class (the enemy roster once it is known).
  */
 export function draftLines(u: UnitType): [DraftLine, DraftLine] {
   const d = UNITS[u];
   const c = counters(u);
-  const short = (list: UnitType[]): string => list.slice(0, 3).map((x) => UNITS[x].name.replace(/ (Knights|Riders)$/, '')).join(', ');
-  const full = (list: UnitType[]): string => list.map((x) => UNITS[x].name).join(', ');
-  let first: DraftLine;
-  if (d.traits.includes('healer')) first = { label: 'Supports', tone: 'good', text: 'Heals nearby squads', tip: 'Restores the life of wounded allies in range instead of fighting on the line' };
-  else if (c.strongVs.length) first = { label: 'Beats', tone: 'good', text: short(c.strongVs), tip: full(c.strongVs) };
-  else {
-    // no hard counter of its own: say what its damage bonus is against (Archers: fliers), else its job
-    const bonus = (Object.entries(d.effective ?? {}) as [keyof typeof TAG_LABEL, number][]).filter(([, m]) => m > 100).map(([tag, m]) => `${tag === 'flier' ? 'Fliers' : tag === 'infantry' ? 'Infantry' : `${TAG_LABEL[tag]} units`} ×${(m / 100).toFixed(m % 100 ? 1 : 0)}`);
-    const ranged = d.range >= 400 ? (bonus.length ? '' : 'Anything in range, fliers included') : '';
-    first = bonus.length ? { label: 'Beats', tone: 'good', text: bonus.join(', '), tip: `Deals bonus damage to ${bonus.join(' and ')}${d.range >= 400 ? '; one of the few units that can hit fliers' : ''}` }
-      : ranged ? { label: 'Beats', tone: 'good', text: ranged, tip: 'A ranged unit: it can hit fliers, and whatever it outranges' }
-      : { label: 'Role', tone: 'info', text: d.role, tip: d.role };
-  }
-  const second: DraftLine = c.weakTo.length ? { label: 'Fears', tone: 'bad', text: short(c.weakTo), tip: full(c.weakTo) } : { label: 'Fears', tone: 'info', text: 'No hard counter', tip: 'No unit counters it outright' };
+  const names = (list: UnitType[]): string => (list.length ? ` (${list.map((x) => UNITS[x].name).join(', ')})` : '');
+  const first: DraftLine = d.traits.includes('healer')
+    ? { label: 'Supports', tone: 'good', text: 'Heals nearby squads', tip: 'Restores the life of wounded allies in range instead of fighting on the line' }
+    : { label: 'Beats', tone: 'good', text: WHEEL_NAME[c.beats], cls: c.beats, tip: `${COUNTER_TEXT} damage to ${WHEEL_NAME[c.beats]}${names(c.prey)}: ${WHEEL_WHY[c.cls]}` };
+  const second: DraftLine = { label: 'Fears', tone: 'bad', text: WHEEL_NAME[c.weakTo], cls: c.weakTo, tip: `${WHEEL_NAME[c.weakTo]}${names(c.threats)} deals it ${COUNTER_TEXT} damage: ${WHEEL_WHY[c.weakTo]}` };
   return [first, second];
 }
 
@@ -164,13 +161,13 @@ export class DraftModal {
     const fallback = me.draftOptions[0];
     const card = (u: UnitType): string => {
       const d = UNITS[u];
-      const row = (l: DraftLine): string => `<span class="dc-ctr ${l.tone}"><small>${l.label}</small><span class="dc-m"><span data-tip="${esc(l.tip)}">${esc(l.text)}</span></span></span>`;
+      const row = (l: DraftLine): string => `<span class="dc-ctr ${l.tone}"><small>${l.label}</small><span class="dc-m"><span data-tip="${esc(l.tip)}">${l.cls ? classTag(l.cls) : esc(l.text)}</span></span></span>`;
       return `<button class="dcard" data-u="${u}">
         ${u === fallback ? '<em class="dc-def" data-tip="Recruited for you if planning ends before you choose">Default</em>' : ''}
         ${crest(u, null, 'lg')}
         <b>${esc(d.name)}</b>
-        <small>${esc(d.role)} · ${esc(CLASS_NAME[UNIT_CLASS[u]])}</small>
-        <span class="dc-cost">${icon('gold')}${d.cost} <em>×${d.squadSize}</em><span class="dc-tags">${tagsOf(u).map((g) => `<i data-tip="${esc(TAG_LABEL[g])}">${icon(g)}</i>`).join('')}</span></span>
+        <span class="dc-cls" data-tip="${esc(wheelTip(u))}">${classTag(d.class, 'me')}<small>${esc(d.role)}</small></span>
+        <span class="dc-cost">${icon('gold')}${d.cost} <em>×${d.squadSize}</em>${deployChip(u)}<span class="dc-tags">${tagsOf(u).map((g) => `<i data-tip="${esc(TAG_LABEL[g])}">${icon(g)}</i>`).join('')}</span></span>
         ${draftLines(u).map(row).join('')}
       </button>`;
     };

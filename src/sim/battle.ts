@@ -9,7 +9,7 @@
 //  * Per-soldier counters (crit, attack stagger) are keyed by the squad's index in its own army and the soldier's
 //    index in the squad — never by the seat or the match seed.
 //  * Seat 1's flow field is the exact mirror of seat 0's.
-import { CELL, FIELD_H, FIELD_W, GRID_W, KEYFRAME_TICKS, MARCH_TICKS, MAX_BATTLE_TICKS } from './constants.ts';
+import { CELL, COUNTER_PCT, FIELD_H, FIELD_W, GRID_W, KEYFRAME_TICKS, MARCH_TICKS, MAX_BATTLE_TICKS } from './constants.ts';
 import {
   ARCHMAGE_MAGIC_PCT, LICH_DMG_PCT, LORDS, LORD_LEVEL_DMG, LORD_LEVEL_HP, METEOR_BASE, METEOR_PER_LEVEL, NECRO_BASE, NECRO_LEVELS_PER, NECRO_RANGE,
   RADIANCE_BASE, RADIANCE_PER_LEVEL, RADIANCE_RANGE, RALLY_PCT, RALLY_RANGE, BULWARK_RANGE, METEOR_REACH, LORD_TRIGGER_RANGE, SULTANA_HASTE_PCT, SULTANA_HOLY, SUN_PRIEST_HOLY,
@@ -19,10 +19,11 @@ import {
   TALON_REACH, TALON_STUN, TALON_THROW,
 } from './data/lords.ts';
 import { ABILITY_CD, SKILLS, SKILL_START_CD, canEquip, classesOf, skillNum } from './data/skills.ts';
-import { UNITS } from './data/units.ts';
+import { UNITS, formationCols, growsBySize, squadSizeAt } from './data/units.ts';
+import { WHEEL, beatsClass, wheelIndex } from './data/wheel.ts';
 import { FACTION_POWER, LORD_POWER, UNIT_POWER } from './data/balance.ts';
 import { angleOf, icos, idiv, isin, isqrt } from './fixed.ts';
-import { modsOf, type ItemMods } from './loot.ts';
+import { modsOf, warhornSoldiers, type ItemMods } from './loot.ts';
 import { LEVEL_DMG_PCT, LEVEL_HP_PCT, keepDamageOf } from './match.ts';
 import {
   ABILITY_CODES, ARC_CODES, EK, FrameEncoder, KEEP_SRC_BASE, PROJ_CODES, REPLAY_VERSION, REVIVE_CODES, SKILL_CODES, STAT_CAUSES, TALLY_TICKS, WEAPON_CODES,
@@ -64,6 +65,8 @@ export const BLESS_PCT = 15;
 export const BLESS_TICKS = 80;
 /** Legendary numbers (the item texts in data/items.ts quote these). */
 const HYDRA_PCT = 40, KINGSBANE_PCT = 300, FROSTHEART_PCT = 30, STORM_PCT = 30, BLOOD_HEAL_PCT = 10, BLOOD_HASTE = 10, GRAVE_MAX = 14;
+/** Kingsbane's triple damage hits Lords and the Giant class. */
+const KINGSBANE_WC = wheelIndex('giant');
 const KEEP_Y = 150;
 /** Keep centre -> its front wall face, half the wall's width, and tower centre -> its foot (cm).
  *  Must match the castle the renderer draws (src/render/terrain/keep.ts: the art Keep's footprint). */
@@ -83,7 +86,10 @@ export const POINTS_MARGIN = 5;
 /** Army value of the Lord for points: LORD_POINTS_BASE + LORD_POINTS_PER_LEVEL x level. */
 const LORD_POINTS_BASE = 300, LORD_POINTS_PER_LEVEL = 30;
 
-const TRIANGLE: Partial<Record<WeaponKind, WeaponKind>> = { sword: 'axe', axe: 'lance', lance: 'sword' };
+/** Wheel index of the raised skeletons' class (Swarm). */
+const SKELETON_WC = wheelIndex('swarm');
+/** How much nearer (cm) a ranged squad / soldier counts a target of the class it beats on the wheel. */
+const PREF_CLASS_SQUAD = 2000, PREF_CLASS_SOL = 1500;
 
 
 // ---------------------------------------------------------------- internal types
@@ -109,7 +115,9 @@ interface Stats {
   weapon: WeaponKind;
   dmgType: DamageType;
   proj: ProjectileKind;
-  eff: Partial<Record<Tag, number>>;
+  /** Wheel class (index into WHEEL) and the index of the class it beats. */
+  wc: number;
+  beats: number;
   slay: Partial<Record<Tag, number>>;
   ranged: boolean;
   canHitAir: boolean;
@@ -123,8 +131,8 @@ interface Stats {
   ignoresArmor: boolean;
   crushing: boolean;
   backline: boolean;
-  prefLarge: boolean;
-  prefFlier: boolean;
+  /** Ranged: aims first at targets of the class it beats on the wheel (archers at fliers, siege at casters...). */
+  prefCls: boolean;
   /** Cavalry / pegasus: hunt the enemy backline (ranged, healers, artillery). */
   raider: boolean;
   /** Faction traits: raises skeletons from corpses; heals also quicken; regeneration (tenths of a percent of max life per second). */
@@ -263,12 +271,12 @@ function hasL(m: ItemMods, l: string): boolean {
 
 /** Battle stats of a squad (per soldier; hp / dmg / heal in centi-HP). Exported for squadSheet (sheet.ts). */
 export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: LordId | null): Stats {
-  const m = modsOf(sq.items);
+  // Legendary powers count only on the wheel classes they are built for (legendaryFits).
+  const m = modsOf(sq.items, sq.type, lordOf);
   let base;
   let lvlHp: number, lvlDmg: number;
   let traits: string[] = [];
   let tags: number;
-  let eff: Partial<Record<Tag, number>> = {};
   let heal = 0, lifesteal = 0, minRange = 0, splash = 0, radius = 60, innateBurn = 0, innateSlow = 0, regen = 0;
   if (sq.type === 'lord') {
     const L = LORDS[lordOf!];
@@ -283,12 +291,13 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
   } else {
     const U = UNITS[sq.type];
     base = U;
-    lvlHp = 100 + LEVEL_HP * (sq.level - 1);
-    lvlDmg = 100 + LEVEL_DMG * (sq.level - 1);
+    // Swarm squads level by adding soldiers (squadSize), not by making each soldier stronger.
+    const grow = growsBySize(sq.type);
+    lvlHp = grow ? 100 : 100 + LEVEL_HP * (sq.level - 1);
+    lvlDmg = grow ? 100 : 100 + LEVEL_DMG * (sq.level - 1);
     tags = 0;
     for (const t of U.tags) tags |= TAG_BIT[t];
     traits = U.traits;
-    eff = U.effective;
     heal = U.heal;
     lifesteal = U.lifesteal;
     minRange = U.minRange;
@@ -308,6 +317,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
   let dmgPct = 100 + m.dmg + (lordOf === 'lich' ? LICH_DMG_PCT : 0) + (lordOf === 'deathknight' && cls.includes('infantry') ? DK_INFANTRY_PCT : 0)
     + (lordOf === 'rocrider' && cls.includes('ranged') ? ROC_RANGED_PCT : 0);
   const size = sq.type === 'lord' ? 1 : UNITS[sq.type].squadSize;
+  const wc = wheelIndex(sq.type === 'lord' ? LORDS[lordOf!].class : UNITS[sq.type].class);
   if (hasL(m, 'warhorn') && size <= 2) { hpPct += 35; dmgPct += 35; }
   const ranged = base.range > 400;
   const weapon = base.weapon;
@@ -337,7 +347,8 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
     weapon,
     dmgType: base.damageType,
     proj: base.projectile,
-    eff,
+    wc,
+    beats: wheelIndex(beatsClass(WHEEL[wc])),
     slay: m.slay,
     ranged,
     canHitAir: (ranged && weapon !== 'stone') || traits.includes('howdah') ? true : (tags & T_FLIER) !== 0,
@@ -351,9 +362,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
     ignoresArmor: traits.includes('ignoresArmor') || base.damageType === 'magic',
     crushing: traits.includes('crushing'),
     backline: traits.includes('backline'),
-    // Bolt-throwers hunt Large units and bowmen hunt fliers (any unit with that bonus, in every faction).
-    prefLarge: ranged && (eff.large ?? 0) > 100,
-    prefFlier: ranged && (eff.flier ?? 0) > 100,
+    prefCls: ranged,
     raider: traits.includes('raider'),
     raise: traits.includes('raise'),
     bless: traits.includes('bless'),
@@ -375,18 +384,19 @@ function skeletonStats(): Stats {
   return {
     hp: SKELETON.hp, dmg: SKELETON.dmg, atk: SKELETON.atk, range: SKELETON.range, minRange: 0, speed: SKELETON.speed, armor: 0, mr: 0, splash: 0,
     radius: SKELETON.radius, crit: 0, leech: 0, thorns: 0, burn: 0, frost: 0, heal: 0, tags: T_INFANTRY, weapon: 'sword', dmgType: 'physical',
-    proj: 'none', eff: {}, slay: {}, ranged: false, canHitAir: false, healer: false, brace: false, charge: false, pierce: false, stomp: false,
-    cone: false, slowTurn: false, ignoresArmor: false, crushing: false, backline: false, prefLarge: false, prefFlier: false, raider: false, raise: false, bless: false, regen: 0, holy: 100, undead: true, magicBonus: 0,
+    proj: 'none', wc: SKELETON_WC, beats: wheelIndex(beatsClass('swarm')), slay: {}, ranged: false, canHitAir: false, healer: false, brace: false, charge: false, pierce: false, stomp: false,
+    cone: false, slowTurn: false, ignoresArmor: false, crushing: false, backline: false, prefCls: false, raider: false, raise: false, bless: false, regen: 0, holy: 100, undead: true, magicBonus: 0,
     L: new Set(), ilvl: 1, phoenix: false, skills: [],
   };
 }
 
 /** Soldiers in the squad at the start of a battle (Warhorn adds some). */
-export function squadSize(sq: Pick<Squad, 'type' | 'items'>): number {
+export function squadSize(sq: Pick<Squad, 'type' | 'items'> & { level?: number }): number {
   if (sq.type === 'lord') return 1;
-  const n = UNITS[sq.type].squadSize;
-  const m = modsOf(sq.items);
-  if (m.legend.has('warhorn')) return n >= 6 ? n + 3 : n >= 3 ? n + 1 : n;
+  // Swarm squads grow by level (squadSizeAt); others keep their size.
+  const n = squadSizeAt(sq.type, sq.level ?? 1);
+  const m = modsOf(sq.items, sq.type, null);
+  if (m.legend.has('warhorn')) return n + warhornSoldiers(sq.type);
   return n;
 }
 
@@ -493,7 +503,7 @@ class Battle {
       sourceSquad: sq,
     };
     // Formation: rows across the facing direction.
-    const cols = n <= 1 ? 1 : n <= 4 ? 2 : n <= 6 ? 3 : 4;
+    const cols = formationCols(n);
     const spacing = stats.radius * 2 + 50;
     const rows = Math.ceil(n / cols);
     const fx = icos(b.facing), fy = isin(b.facing); // forward
@@ -637,8 +647,7 @@ class Battle {
           if ((e.st.tags & T_FLIER) && !b.st.canHitAir) continue;
           const dx = idiv(e.c2x - b.c2x, 2), dy = idiv(e.c2y - b.c2y, 2);
           let score = isqrt(dx * dx + dy * dy);
-          if (b.st.prefLarge && e.st.tags & T_LARGE) score -= 2500;
-          if (b.st.prefFlier && e.st.tags & T_FLIER) score -= 1500;
+          if (b.st.prefCls && e.st.wc === b.st.beats) score -= PREF_CLASS_SQUAD;
           if (b.st.raider && e.st.backline) score -= 4000;
           if (!best || score < bestScore || (score === bestScore && e.sideIdx < best.sideIdx)) { best = e; bestScore = score; }
         }
@@ -1250,8 +1259,7 @@ class Battle {
       if (e.spawnTick > this.t || !this.canHit(s, e)) return;
       if (d2 < min2) return;
       let score = isqrt(d2);
-      if (st.prefLarge && e.st.tags & T_LARGE) score -= 2000;
-      if (st.prefFlier && e.st.tags & T_FLIER) score -= 1200;
+      if (st.prefCls && e.st.wc === st.beats) score -= PREF_CLASS_SOL;
       if (st.raider && e.st.backline) score -= 1500;
       if (!best || score < bestScore || (score === bestScore && e.key < best.key)) { best = e; bestScore = score; }
     });
@@ -1475,27 +1483,22 @@ class Battle {
   damage(a: Stats, aSol: Sol | null, d: Sol, mul: number, crit: boolean, hill: boolean, ranged: boolean, dmgType: DamageType, baseOverride: number): { dmg: number; eff: boolean; tri: number; mit: number } {
     let dmg = baseOverride > 0 ? baseOverride : a.dmg;
     dmg = idiv(dmg * mul, 100);
-    let tri = 0;
-    if (TRIANGLE[a.weapon] && TRIANGLE[d.st.weapon]) {
-      if (TRIANGLE[a.weapon] === d.st.weapon) tri = 1;
-      else if (TRIANGLE[d.st.weapon] === a.weapon) tri = -1;
-    }
-    if (tri) dmg = idiv(dmg * (100 + 25 * tri), 100);
+    // The counter wheel: the one counter rule (there is no weapon triangle and no per-unit bonus against tags).
+    const counter = a.beats === d.st.wc;
+    if (counter) dmg = idiv(dmg * COUNTER_PCT, 100);
+    const tri = 0;
     // The sun burns the dead: Sun Priests and the Sultana deal more to Ashen units, the Lich and raised skeletons.
     if (a.holy > 100 && d.st.undead) dmg = idiv(dmg * a.holy, 100);
     let effPct = 100;
     const tags = d.st.tags;
-    for (const tag in a.eff) if (tags & TAG_BIT[tag as Tag]) effPct = Math.max(effPct, a.eff[tag as Tag]!);
-    if (a.L.has('kingsbane') && tags & (T_LORD | T_LARGE)) effPct = Math.max(effPct, KINGSBANE_PCT);
-    if (a.crushing && tags & T_ARMORED) effPct = Math.max(effPct, 150);
+    if (a.L.has('kingsbane') && (tags & T_LORD || d.st.wc === KINGSBANE_WC)) effPct = Math.max(effPct, KINGSBANE_PCT);
     let slay = 0;
     for (const tag in a.slay) if (tags & TAG_BIT[tag as Tag]) slay += a.slay[tag as Tag]!;
     if (aSol && aSol.firstStrike && baseOverride === 0) effPct = Math.max(effPct, 300);
-    const eff = effPct > 100 || slay > 0;
+    const eff = counter || effPct > 100 || slay > 0;
     dmg = idiv(dmg * (effPct + slay), 100);
     // Charge (not vs braced pikemen).
     if (aSol && aSol.chargeReady && baseOverride === 0) dmg = d.st.brace ? dmg : dmg * 2;
-    if (d.st.brace && a.tags & T_MOUNTED && !ranged) dmg = idiv(dmg * 70, 100);
     if (hill) dmg = idiv(dmg * 115, 100);
     if (a.L.has('frostheart') && d.slowUntil > this.t) dmg = idiv(dmg * (100 + FROSTHEART_PCT), 100);
     if (crit) dmg = idiv(dmg * CRIT_MULT, 100);

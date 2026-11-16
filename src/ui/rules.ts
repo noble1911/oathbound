@@ -1,23 +1,24 @@
 // The rules codex ("How to play"): a tabbed panel that opens from the title, the lobby and the
 // settings popover. Everything a new commander needs, with the numbers read from the sim's own
-// tables (so a balance change never leaves the codex lying): how a match is won, the weapon
-// triangle and counters, fliers and anti-air, terrain, loot / slots / levels, the economy and
+// tables (so a balance change never leaves the codex lying): how a match is won, the counter
+// wheel, fliers and anti-air, terrain, loot / slots / levels, the economy and
 // catch-up, and the controls.
-import type { FactionId, UnitType } from '../sim/types.ts';
+import type { FactionId, UnitType, WheelClass } from '../sim/types.ts';
 import { FACTIONS, FACTION_IDS } from '../sim/data/factions.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { SLOT_UNLOCK_LEVEL, LEGENDARY_EVERY } from '../sim/data/items.ts';
 import { lootSchedule } from '../sim/loot.ts';
 import type { Rarity } from '../sim/types.ts';
-import { ARMY_CAP, BASE_DEPLOY_LIMIT, KEEP_HP, LEVEL_COST_PCT, MAX_SQUAD_LEVEL, START_GOLD, deployZone, income } from '../sim/match.ts';
+import { ARMY_CAP, BASE_DEPLOY_LIMIT, DEPLOY_BONUS, deployPointsText, KEEP_HP, LEVEL_COST_PCT, MAX_SQUAD_LEVEL, START_GOLD, deployZone, income } from '../sim/match.ts';
 import { RIVER_Y0 } from '../sim/terrain.ts';
 import { LORDS, LORD_ROLE, LORD_ROLES, LORD_ROLE_NAME } from '../sim/data/lords.ts';
 import { TICK_HZ } from '../sim/constants.ts';
 import { sound } from '../audio.ts';
 import { $, el, esc, store } from './dom.ts';
 import { icon } from './icons.ts';
-import { crest } from './units.ts';
-import { TAG_LABEL, factionContext } from './gamedata.ts';
+import { classTag, crest } from './units.ts';
+import { COUNTER_TEXT, factionContext } from './gamedata.ts';
+import { WHEEL, WHEEL_NAME, WHEEL_WHY, beatenBy, beatsClass } from '../sim/data/wheel.ts';
 import { factionMechanics } from './lordpick.ts';
 
 export type TabId = 'match' | 'factions' | 'combat' | 'air' | 'terrain' | 'loot' | 'gold' | 'keys';
@@ -45,8 +46,6 @@ export function codexFaction(): FactionId {
   return last && FACTION_IDS.includes(last) ? last : 'kingdom';
 }
 const roster = (): UnitType[] => FACTIONS[codexFaction()].units;
-/** What that roster is measured against: the enemy's units once their faction is known, else every faction's. */
-const foes = (): UnitType[] => { const e = factionContext().enemy; return e ? FACTIONS[e].units : FACTION_IDS.flatMap((f) => FACTIONS[f].units); };
 const names = (l: UnitType[], n = 3): string => l.slice(0, n).map((u) => UNITS[u].name).join(', ');
 /** March speed in m/s (the sim's speed is cm per tick). */
 const mps = (u: UnitType): number => (UNITS[u].speed * TICK_HZ) / 100;
@@ -111,36 +110,36 @@ function factionsPage(): string {
     </div>`;
 }
 
-function triangle(): string {
-  const node = (cls: string, w: string, label: string, units: string) => `<div class="tri-node ${cls}"><i>${icon(w)}</i><span class="tri-l"><b>${label}</b><small>${units}</small></span></div>`;
-  const of = (w: string) => roster().filter((u) => UNITS[u].weapon === w).map((u) => UNITS[u].name).join(', ') || '–';
-  return `<div class="tri">
-    <svg viewBox="0 0 200 180" aria-hidden="true">
-      <defs><marker id="tri-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
-      <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-        <path d="M113 36 L152 106" marker-end="url(#tri-a)"/>
-        <path d="M140 128 L62 128" marker-end="url(#tri-a)"/>
-        <path d="M48 106 L87 36" marker-end="url(#tri-a)"/>
-      </g>
+/** The counter wheel as a ring of eight class stamps, each arrow pointing at the class it beats. */
+function wheel(): string {
+  const R = 41, n = WHEEL.length;
+  const at = (i: number): [number, number] => {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+    return [50 + R * Math.cos(a), 50 + R * Math.sin(a)];
+  };
+  const arrows = WHEEL.map((_, i) => {
+    // a short arc segment between two neighbouring stamps, in the 200x200 viewBox
+    const a0 = -Math.PI / 2 + ((i + 0.28) * 2 * Math.PI) / n, a1 = -Math.PI / 2 + ((i + 0.72) * 2 * Math.PI) / n;
+    const p = (a: number) => `${(100 + 82 * Math.cos(a)).toFixed(1)} ${(100 + 82 * Math.sin(a)).toFixed(1)}`;
+    return `<path d="M${p(a0)} A82 82 0 0 1 ${p(a1)}" marker-end="url(#whl-a)"/>`;
+  }).join('');
+  const units = (c: WheelClass) => roster().filter((u) => UNITS[u].class === c).map((u) => UNITS[u].name).join(', ') || '–';
+  return `<div class="whl">
+    <svg viewBox="0 0 200 200" aria-hidden="true">
+      <defs><marker id="whl-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">${arrows}</g>
     </svg>
-    ${node('n-sword', 'sword', 'Sword', esc(of('sword')))}
-    ${node('n-axe', 'axe', 'Axe', esc(of('axe')))}
-    ${node('n-lance', 'lance', 'Lance', esc(of('lance')))}
-    <span class="tri-mid">beats</span>
+    ${WHEEL.map((c, i) => { const [x, y] = at(i); return `<div class="whl-node" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%" data-tip="${esc(`${WHEEL_NAME[c]}: ${units(c)}`)}"><i>${icon(`cls_${c}`)}</i><b>${WHEEL_NAME[c]}</b></div>`; }).join('')}
+    <span class="whl-mid">${COUNTER_TEXT}<small>to the next</small></span>
   </div>`;
 }
 
-function effectiveRows(): string {
-  const rows: string[] = [];
-  for (const u of roster()) {
-    const d = UNITS[u];
-    for (const [tag, m] of Object.entries(d.effective ?? {})) {
-      if (!m || m <= 100) continue;
-      const prey = foes().filter((v) => UNITS[v].tags.includes(tag as never)).slice(0, 4);
-      rows.push(`<div class="rl-row">${chip(u)}<b class="x">×${(m / 100).toFixed(m % 100 ? 1 : 0)}</b><span>vs ${TAG_LABEL[tag as keyof typeof TAG_LABEL]}</span><div class="rl-prey">${chips(prey)}</div></div>`);
-    }
-  }
-  return rows.join('');
+/** One row per class: what it beats and why, with the codex faction's units of that class. */
+function wheelRows(): string {
+  return WHEEL.map((c) => {
+    const mine = roster().filter((u) => UNITS[u].class === c);
+    return `<div class="rl-row">${classTag(c, 'me')}<b class="x">›</b>${classTag(beatsClass(c))}<span>${esc(WHEEL_WHY[c])}</span><div class="rl-prey">${mine.length ? chips(mine) : `<em class="bad">${esc(FACTIONS[codexFaction()].short)} has none</em>`}</div></div>`;
+  }).join('');
 }
 
 /** The viewer's deploy limit this round, when they are in a match (set by the app); null otherwise. */
@@ -150,24 +149,24 @@ export function setRulesContext(limit: () => number | null): void {
 }
 const marshalBonus = (): string => {
   const m = Object.values(LORDS).find((l) => l.id === 'marshal');
-  return m ? `${BASE_DEPLOY_LIMIT + 1} with ${esc(m.title)} ${esc(m.name)}` : 'some Lords add one';
+  return m ? `${deployPointsText(BASE_DEPLOY_LIMIT + DEPLOY_BONUS)} with ${esc(m.title)} ${esc(m.name)}` : 'some Lords add one';
 };
-/** "3 new squads" for the viewer's own limit in a match, else the base rule with its exceptions. */
+/** "2 deploy points" for the viewer's own limit in a match (half-points in the sim), else the base rule with its exceptions. */
 function deployText(): { n: string; note: string } {
   const mine = deployLimit();
-  if (mine && mine > 0) return { n: `${mine} new squad${mine === 1 ? '' : 's'}`, note: mine === BASE_DEPLOY_LIMIT ? ` (the base limit; ${marshalBonus()}, and some relics add more)` : ` this round (the base limit is ${BASE_DEPLOY_LIMIT}; your Lord and relics add the rest)` };
-  return { n: `${BASE_DEPLOY_LIMIT} new squads`, note: ` (${marshalBonus()}; some relics add more)` };
+  if (mine && mine > 0) return { n: `${deployPointsText(mine)} deploy points`, note: mine === BASE_DEPLOY_LIMIT ? ` (the base limit; ${marshalBonus()}, and some relics add more)` : ` this round (the base limit is ${deployPointsText(BASE_DEPLOY_LIMIT)}; your Lord and relics add the rest)` };
+  return { n: `${deployPointsText(BASE_DEPLOY_LIMIT)} deploy points`, note: ` (${marshalBonus()}; some relics add more)` };
 }
 
 const RARITY_NAME: Record<Rarity, string> = { common: 'Common', magic: 'Magic', rare: 'Rare', legendary: 'Legendary' };
 
 /**
- * The loot schedule as the sim rolls it (lootSchedule): the same three rarities for both commanders
- * every round, in bands ("Rounds 3-5: 1 Rare, 2 Magic"), with every Nth round's best item Legendary.
+ * The loot schedule as the sim rolls it (lootSchedule): one rarity for all three items, the same for both
+ * commanders, in bands ("Rounds 1-2: 3 Magic"); every Nth round is all Legendary (shown apart).
  */
 export function lootBands(maxRound = 12): { from: number; to: number | null; counts: [Rarity, number][] }[] {
   const legendary = (r: number): boolean => r >= LEGENDARY_EVERY && r % LEGENDARY_EVERY === 0;
-  // a Legendary round belongs to the band of the rounds after it (its best item is swapped, the rest is the band's)
+  // a Legendary round belongs to the band of the rounds after it (the band says what the other rounds bring)
   const sig = (r: number): string => [...lootSchedule(legendary(r) ? r + 1 : r)].sort().join(',');
   const bands: { from: number; to: number | null; counts: [Rarity, number][] }[] = [];
   for (let r = 1; r <= maxRound; r++) {
@@ -184,7 +183,7 @@ export function lootBands(maxRound = 12): { from: number; to: number | null; cou
 function lootTable(): string {
   const bands = lootBands();
   return `<div class="rl-sched">${bands.map((b) => `<div><small>${b.to === null ? `Round ${b.from}+` : b.from === b.to ? `Round ${b.from}` : `Rounds ${b.from}–${b.to}`}</small><p>${b.counts.map(([x, n]) => `<span class="r-${x}">${n} ${RARITY_NAME[x]}</span>`).join('')}</p></div>`).join('')}
-    <div class="leg"><small>Every ${LEGENDARY_EVERY === 3 ? '3rd' : `${LEGENDARY_EVERY}th`} round</small><p><span class="r-legendary">1 Legendary</span></p></div></div>`;
+    <div class="leg"><small>Every ${LEGENDARY_EVERY === 3 ? '3rd' : `${LEGENDARY_EVERY}th`} round</small><p><span class="r-legendary">3 Legendary</span></p></div></div>`;
 }
 
 /** " (Knights, Stone Golem)" for the units of the codex's faction that match, or nothing. */
@@ -192,10 +191,10 @@ function listOf(test: (d: (typeof UNITS)[UnitType]) => boolean): string {
   const l = roster().filter((u) => test(UNITS[u]));
   return l.length ? ` (${esc(names(l))})` : '';
 }
-/** "Archers deal ×1.3 to fliers." for the faction's best answer to wings. */
+/** "Ranged deals ×1.5 to Air." for the faction's answer to wings. */
 function antiAirLine(): string {
-  const best = roster().map((u) => ({ u, m: UNITS[u].effective?.flier ?? 0 })).sort((a, b) => b.m - a.m)[0];
-  return best && best.m > 100 ? `${esc(UNITS[best.u].name)} deal <b>×${(best.m / 100).toFixed(best.m % 100 ? 1 : 0)}</b> to fliers.` : 'Bows and magic are the answer to fliers.';
+  const r = roster().filter((u) => UNITS[u].class === beatenBy('air'));
+  return `${WHEEL_NAME[beatenBy('air')]}${r.length ? ` (${esc(names(r))})` : ''} deals <b>${COUNTER_TEXT}</b> to Air on the counter wheel.`;
 }
 
 /** One tab of the codex as HTML (exported for the tests: every faction unit must appear in it). */
@@ -211,7 +210,7 @@ function page(id: TabId): string {
       return `<h3>Break their Keep</h3>
         <p class="lead">Each commander holds a <b>Keep with ${KEEP_HP.toLocaleString('en-US')} life</b>. Bring the enemy Keep to zero and the war is yours.</p>
         <div class="rl-flow">
-          <div class="rl-step"><i>1</i><b>Plan</b><p>Both commanders plan in secret, at the same time. Deploy up to <b>${deployText().n}</b> a round on your half${deployLimit() ? '' : ` (${marshalBonus()})`}, level squads up, equip loot. Press <kbd>Space</kbd> when ready.</p></div>
+          <div class="rl-step"><i>1</i><b>Plan</b><p>Both commanders plan in secret, at the same time. Deploy up to <b>${deployText().n}</b> a round on your half${deployLimit() ? '' : ` (${marshalBonus()})`}: a 100-gold squad costs ½, a 150 to 300-gold one 1, a 400-gold one 1½. Level squads up, equip loot. Press <kbd>Space</kbd> when ready.</p></div>
           <div class="rl-step"><i>2</i><b>Battle</b><p>The armies fight on their own: no orders. A battle ends when one army is wiped out, or after <b>1:30</b>.</p></div>
           <div class="rl-step"><i>3</i><b>Siege</b><p>The winner's <b>surviving squads march on the enemy Keep</b>. Costlier and higher-level survivors hit harder, and later rounds add more. A narrow win adds less than a clear one.</p></div>
           <div class="rl-step"><i>4</i><b>Spoils</b><p>Pick <b>1 item of 3</b> and unlock <b>a new unit type</b>. Then plan again.</p></div>
@@ -225,14 +224,14 @@ function page(id: TabId): string {
     case 'factions':
       return factionsPage();
     case 'combat':
-      return `${scope()}<h3>The weapon triangle</h3>
-        <div class="rl-two">${triangle()}
-          <div><p class="lead">Sword beats Axe, Axe beats Lance, Lance beats Sword.</p>
-          <p>The winner deals <b class="good">+25% damage</b> and the loser <b class="bad">−25%</b>. Bows, magic and siege weapons stand outside the triangle.</p>
-          <p>Hover any unit card to see what it is <span class="good">strong against</span> and what <span class="bad">counters it</span>.</p></div>
+      return `${scope()}<h3>The counter wheel</h3>
+        <div class="rl-two">${wheel()}
+          <div><p class="lead">Every unit and every Lord has <b>one class</b>. Each class <b>beats the next</b> one around the ring and is beaten by the one before it.</p>
+          <p>A counter deals <b class="good">${COUNTER_TEXT} damage</b> to the class it beats. Every other match-up is even: there is no other counter rule. A Lord counts as the class of its body or mount.</p>
+          <p>Hover any unit card for its class, what it <span class="good">beats</span> and what it is <span class="bad">weak to</span>. Look at the enemy's ghosts and bring the class that beats what they fielded.</p></div>
         </div>
-        <h3>Hard counters</h3>
-        <div class="rl-table">${effectiveRows()}</div>
+        <h3>Why each class wins</h3>
+        <div class="rl-table">${wheelRows()}</div>
         <ul class="rl-list">
           <li><b>Armor</b>${listOf((d) => d.armor >= 40)} cuts physical damage. <b>Magic ignores armor</b>, and crushing blows break it.</li>
           <li><b>Splash</b>${listOf((d) => !!d.splash)} shreds big squads of small soldiers; cheap chaff soaks it up.</li>
@@ -266,10 +265,11 @@ function page(id: TabId): string {
         ${timingSection()}`;
     case 'loot':
       return `<h3>Loot</h3>
-        <p class="lead">After every round you choose <b>1 item of 3</b>: a weapon, an armor and a relic. An item works on <b>every soldier</b> of the squad that carries it.</p>
-        <p>The offer follows a <b>fixed schedule</b>, and <b>your opponent is offered the same items</b>. Nothing is rolled for luck.</p>
+        <p class="lead">After every round you choose <b>1 item of 3</b>: a <b>weapon</b> (offence: damage, crits, attack speed, burn, slaying), an <b>armor</b> (defence: life, armour, resistance, thorns, revival) and a <b>relic</b> (utility: speed, range, frost, leech, command). An item works on <b>every soldier</b> of the squad that carries it.</p>
+        <p>The three share <b>one rarity and one power budget</b>, so the choice is what your army needs against this enemy, not the biggest number. The offer follows a <b>fixed schedule</b>, and <b>your opponent is offered the same items</b>. Nothing is rolled for luck.</p>
         ${lootTable()}
-        <div class="rl-rar"><span class="r-magic">Magic · 1–2 affixes</span><span class="r-rare">Rare · 3–4 affixes</span><span class="r-legendary">Legendary · a unique power</span></div>
+        <div class="rl-rar"><span class="r-magic">Magic · 2 affixes</span><span class="r-rare">Rare · 3 affixes (or 2 and a skill)</span><span class="r-legendary">Legendary · 2 affixes and a power</span></div>
+        <p>Every Legendary power is <b>built for some classes</b> of the counter wheel, and its tooltip says which (<b>Best on</b>). On any other squad the power does nothing and only its affixes work, so a Legendary that does not fit your army is a fair pass.</p>
         <h3>Slots and levels</h3>
         <div class="rl-slots">
           <div class="rl-slot"><i>${icon('weapon')}</i><b>Weapon</b><small>from level 1</small></div>

@@ -10,11 +10,14 @@ import { esc } from './dom.ts';
 import { art, glyphVars } from './art.ts';
 import { icon } from './icons.ts';
 import { cooldownText, skillGlyph } from './items.ts';
-import { costTier, counters, dps, soldierStats, tagsOf, TAG_LABEL, unitName, WEAPON_LABEL, RARITY_CSS, SLOTS } from './gamedata.ts';
+import { costTier, counters, COUNTER_TEXT, dps, soldierStats, tagsOf, TAG_LABEL, unitName, WEAPON_LABEL, RARITY_CSS, SLOTS, wheelOf } from './gamedata.ts';
+import { WHEEL_NAME, WHEEL_WHY } from '../sim/data/wheel.ts';
+import { DEPLOY_BUDGET, deployPointsText, deployWeight } from '../sim/match.ts';
+import type { WheelClass } from '../sim/types.ts';
 
 const TIER_CLASS = ['', 't1', 't2', 't3', 't4'];
 const TRAIT_TEXT: Record<string, string> = {
-  brace: 'Brace: braced against charges',
+  brace: 'Brace: charges deal it no double damage',
   charge: 'Charge: first hit deals ×2',
   pierce: 'Pierce: bolts pass through lines',
   stomp: 'Stomp: melee hits splash',
@@ -22,7 +25,7 @@ const TRAIT_TEXT: Record<string, string> = {
   slowTurn: 'Slow to turn',
   healer: 'Heals the nearest wounded ally squad',
   ignoresArmor: 'Ignores armor',
-  crushing: 'Crushing blows vs armor',
+  crushing: 'Crushing blows: ignores half of armor',
   backline: 'Holds back behind the front line',
 };
 
@@ -157,12 +160,54 @@ function unitChips(list: UnitType[]): string {
   return list.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('');
 }
 
+/**
+ * A unit's deploy weight as a chip: "[deploy] ½" (100 gold), "1" (150-300) or "1½" (400+), of the 2 deploy
+ * points a round.
+ */
+export function deployChip(u: UnitType): string {
+  const w = deployWeight(u);
+  return `<span class="dpw" data-tip="${esc(`Deploy weight ${deployPointsText(w)}: you have ${deployPointsText(DEPLOY_BUDGET)} deploy points a round (100 gold units cost ½, 150 to 300 cost 1, 400 and up cost 1½)`)}">${icon('deploy')}${deployPointsText(w)}</span>`;
+}
+
+/** A wheel class as a token: its glyph and name. */
+export function classTag(c: WheelClass, cls = ''): string {
+  return `<span class="wcl ${cls}">${icon(`cls_${c}`)}<span>${WHEEL_NAME[c]}</span></span>`;
+}
+/** Just the class glyph of a unit, for small cards (the shop): its tooltip is the wheel line. */
+export function classIcon(t: SquadType, lord?: LordId | null): string {
+  const w = wheelOf(t, lord);
+  return `<i class="wci" data-tip="${esc(`${WHEEL_NAME[w.cls]}: beats ${WHEEL_NAME[w.beats]}, weak to ${WHEEL_NAME[w.weakTo]}`)}">${icon(`cls_${w.cls}`)}</i>`;
+}
+/** The tooltip text of a wheel line: why it beats what it beats, and the one number. */
+const healerType = (t: SquadType): boolean => t !== 'lord' && UNITS[t].traits.includes('healer');
+export function wheelTip(t: SquadType, lord?: LordId | null): string {
+  const w = wheelOf(t, lord);
+  if (healerType(t)) return `A healer counts as ${WHEEL_NAME[w.cls]} on the counter wheel, but it never attacks. ${WHEEL_NAME[w.weakTo]} deals ${COUNTER_TEXT} damage to it: ${WHEEL_WHY[w.weakTo]}.`;
+  return `${WHEEL_NAME[w.cls]} deals ${COUNTER_TEXT} damage to ${WHEEL_NAME[w.beats]}: ${WHEEL_WHY[w.cls]}. ${WHEEL_NAME[w.weakTo]} deals ${COUNTER_TEXT} to it: ${WHEEL_WHY[w.weakTo]}. Every other match-up is even.`;
+}
+/**
+ * The class line of every unit card and tooltip: "[icon] Line · Beats [icon] Cavalry · Weak to [icon] Giant".
+ * `compact` drops the words "Beats" / "Weak to" for the arrows (small cards).
+ */
+export function classLine(t: SquadType, lord?: LordId | null, compact = false): string {
+  const w = wheelOf(t, lord);
+  // a healer is Magic on the wheel (Siege beats it) but never attacks, so it beats nothing
+  const heals = healerType(t);
+  const beats = heals ? `<span class="wl-b heal"><small>Heals</small>${compact ? '' : '<span>never attacks</span>'}</span>` : `<span class="wl-b"><small>${compact ? '›' : 'Beats'}</small>${classTag(w.beats)}</span>`;
+  return `<div class="wline${compact ? ' compact' : ''}" data-tip="${esc(wheelTip(t, lord))}">${classTag(w.cls, 'me')}${beats}<span class="wl-w"><small>${compact ? '‹' : 'Weak to'}</small>${classTag(w.weakTo)}</span></div>`;
+}
+
+/**
+ * The counter block of a unit: its wheel line, the rival units in the classes it beats and fears (the enemy
+ * roster once it is known), and the facts of how it fights that are not the wheel (ignores armor, splash).
+ */
 export function countersBlock(t: UnitType): string {
   const c = counters(t);
   return `<div class="ctr">
-    ${c.bonuses.length ? `<div class="ctr-b">${c.bonuses.map((b) => `<span>${esc(b)}</span>`).join('')}</div>` : ''}
-    ${c.strongVs.length ? `<div class="ctr-row good"><small>Strong vs</small><div>${unitChips(c.strongVs)}</div></div>` : ''}
-    ${c.weakTo.length ? `<div class="ctr-row bad"><small>Countered by</small><div>${unitChips(c.weakTo)}</div></div>` : ''}
+    ${classLine(t)}
+    ${c.prey.length ? `<div class="ctr-row good"><small>Deals ${COUNTER_TEXT} to</small><div>${unitChips(c.prey)}</div></div>` : ''}
+    ${c.threats.length ? `<div class="ctr-row bad"><small>Takes ${COUNTER_TEXT} from</small><div>${unitChips(c.threats)}</div></div>` : ''}
+    ${c.facts.length ? `<div class="ctr-b">${c.facts.map((b) => `<span>${esc(b)}</span>`).join('')}</div>` : ''}
   </div>`;
 }
 
@@ -189,6 +234,7 @@ export function lordTooltip(lord: LordId, level = 1): string {
   return `<div class="utip">
     <div class="utip-h">${crest('lord', lord, 'md')}<div><b>${esc(L.title)} ${esc(L.name)}</b><small>Lord · Lv ${level} · ${WEAPON_LABEL[L.weapon]}</small></div></div>
     ${statBlock('lord', level, lord)}
+    ${classLine('lord', lord)}
     <div class="lt-pass"><small>Passive</small>${esc(L.passive)}</div>
     <div class="lt-abil"><small>${esc(L.abilityName)}</small>${esc(L.abilityText)}</div>
   </div>`;
@@ -201,6 +247,7 @@ export function squadTooltip(sq: Squad, lord: LordId | null, opts: { ghost?: boo
   const s = soldierStats(sq.type, sq.level, lord);
   return `<div class="sqtip ${opts.ghost ? 'ghost' : ''}">
     <div class="utip-h">${crest(sq.type, lord, 'sm')}<div><b>${esc(name)}</b><small>${opts.ghost ? 'Enemy · last round · ' : ''}Level ${sq.level}${sq.type !== 'lord' ? ` · ${s.size} soldiers` : ''}</small></div></div>
+    ${classLine(sq.type, lord, true)}
     <div class="sqtip-st"><span>${icon('heart')}${s.hp}</span><span>${icon('sword')}${dps(s.dmg, s.attackTicks).toFixed(1)} dps</span><span>${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + ' m' : 'melee'}</span></div>
     ${items.length ? `<div class="sqtip-items">${items.map((it) => `<span style="color:${RARITY_CSS[it!.rarity]}">${esc(itemShort(it!))}</span>`).join('')}</div>` : ''}
     ${opts.hint ? `<div class="it-hint">${esc(opts.hint)}</div>` : ''}

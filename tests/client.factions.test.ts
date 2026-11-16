@@ -77,18 +77,12 @@ describe('faction rosters in the UI', () => {
       expect(codexFaction()).toBe(f);
       const combat = codexPage('combat');
       expect(combat).toContain(FACTIONS[f].name);
-      // the counter table's hunters (the first chip of each row) are that faction's own units
-      const hunters = [...combat.matchAll(/<div class="rl-row"><span class="uchip">.*?<\/div>([^<]+)<\/span>/g)].map((m) => m[1]);
-      expect(hunters.length).toBeGreaterThan(0);
+      // the wheel table has one row per class, and the units it names in them are that faction's own
+      expect([...combat.matchAll(/<div class="rl-row">/g)].length).toBe(8);
+      const listed = [...combat.matchAll(/<div class="rl-prey">(.*?)<\/div><\/div>/g)].flatMap((m) => [...m[1]!.matchAll(/<\/div>([^<]+)<\/span>/g)].map((x) => x[1]));
+      expect(listed.length).toBe(FACTIONS[f].units.length);
       const own = new Set(FACTIONS[f].units.map((u) => UNITS[u].name));
-      for (const h of hunters) expect(own.has(h!), `${h} hunts for ${f}`).toBe(true);
-      // and once the enemy is known, their prey is the enemy's
-      for (const enemy of FACTION_IDS) {
-        setFactionContext(() => ({ mine: f, enemy }));
-        const foe = new Set(FACTIONS[enemy].units.map((u) => UNITS[u].name));
-        const prey = [...codexPage('combat').matchAll(/<div class="rl-prey">(.*?)<\/div><\/div>/g)].flatMap((m) => [...m[1]!.matchAll(/<\/div>([^<]+)<\/span>/g)].map((x) => x[1]));
-        for (const x of prey) expect(foe.has(x!), `${x} is ${enemy}'s`).toBe(true);
-      }
+      for (const h of listed) expect(own.has(h!), `${h} listed for ${f}`).toBe(true);
       setFactionContext(() => ({ mine: f, enemy: null }));
       const air = codexPage('air');
       for (const u of FACTIONS[f].units.filter((x) => UNITS[x].tags.includes('flier'))) expect(air).toContain(UNITS[u].name);
@@ -134,7 +128,7 @@ describe('counters against the enemy faction', () => {
       for (const enemy of FACTION_IDS) {
         for (const u of FACTIONS[mine].units) {
           const c = counters(u, enemy);
-          for (const x of [...c.strongVs, ...c.weakTo]) {
+          for (const x of [...c.prey, ...c.threats]) {
             expect(factionOfUnit(x), `${u} vs ${enemy}: ${x}`).toBe(enemy);
             expect(x).not.toBe(u);
           }
@@ -147,11 +141,12 @@ describe('counters against the enemy faction', () => {
     expect(rivals('militia', null).length).toBe(UNIT_TYPES.length - 1);
     setFactionContext(() => ({ mine: 'kingdom', enemy: 'caliphate' }));
     const c = counters('pikemen');
-    for (const x of [...c.strongVs, ...c.weakTo]) expect(factionOfUnit(x)).toBe('caliphate');
-    // pikes still hunt the enemy's riders, whatever they are called
-    expect(c.strongVs.some((x) => UNITS[x].tags.includes('mounted'))).toBe(true);
-    // the Covenant's spectral riders carry no 'mounted' tag: pikes get no bonus on them
-    expect(counters('pikemen', 'ashen').strongVs.some((x) => x === 'wraith_rider' && UNITS[x].tags.includes('mounted'))).toBe(false);
+    for (const x of [...c.prey, ...c.threats]) expect(factionOfUnit(x)).toBe('caliphate');
+    // pikes (Line) hunt the enemy's Cavalry, whatever it is called, and fear its Giants
+    expect(c.prey).toEqual(['mamluk']);
+    expect(c.threats).toEqual(['war_elephant', 'sand_golem']);
+    // the Covenant's spectral riders carry no 'mounted' tag, but they are Cavalry on the wheel all the same
+    expect(counters('pikemen', 'ashen').prey).toEqual(['wraith_rider']);
     setFactionContext(() => ({ mine: null, enemy: null }));
   });
   it('every unit still has two card lines against each enemy faction', () => {

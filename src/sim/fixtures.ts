@@ -8,7 +8,8 @@ import { UNIT_TYPES } from './data/units.ts';
 export function bigBattle(seed: number, heavy = false, lords: [LordId, LordId] = ['warden', 'archmage']): MatchState {
   const s = newMatch(seed, lords);
   const army: [UnitType, number][] = heavy
-    ? [['militia', 5], ['knights', 4], ['clerics', 3], ['archers', 3], ['pikemen', 1]]
+    // (three Militia, not five: at Lv3 a Swarm squad has grown to 18 soldiers)
+    ? [['militia', 3], ['knights', 4], ['clerics', 3], ['archers', 3], ['pikemen', 1]]
     : [['militia', 5], ['archers', 3], ['pikemen', 2], ['knights', 2], ['mages', 2], ['clerics', 1], ['cavaliers', 1]];
   for (const seat of [0, 1] as Seat[]) {
     const p = s.players[seat];

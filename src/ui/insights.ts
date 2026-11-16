@@ -7,7 +7,10 @@ import type { BattleEnd, DecodedReplay, LordId, Seat, SquadType, UnitType } from
 import { UNITS } from '../sim/data/units.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { replaySquads, squadDamagePairs, squadStatsAt } from '../sim/stats.ts';
-import { counters, unitName } from './gamedata.ts';
+import { classOf, factionContext, unitName, unitsOfClass } from './gamedata.ts';
+import { FACTIONS } from '../sim/data/factions.ts';
+import { UNIT_TYPES } from '../sim/data/units.ts';
+import { WHEEL_NAME, beatenBy, classBeats } from '../sim/data/wheel.ts';
 
 export interface SquadStat {
   id: number;
@@ -179,14 +182,14 @@ export function battleHints(st: BattleStats, me: Seat, ctx: { gold?: number; max
     add(4, 'good', `Your ${nameOf(top)} out-ranged them: ${pct(myRangedShare)} of your damage landed before they closed in.`);
   }
 
-  // counters that decided a fight (who actually killed whom)
+  // wheel counters that decided a fight (who actually killed whom)
   const seen = new Set<string>();
   for (const a of st.squads) {
-    if (a.type === 'lord') continue;
-    const strong = counters(a.type as UnitType).strongVs;
+    if (a.type === 'lord' || UNITS[a.type as UnitType].traits.includes('healer')) continue;
+    const cls = classOf(a.type);
     for (const [bid, dmg] of st.pair.get(a.id) ?? []) {
       const b = st.squads.find((q) => q.id === bid);
-      if (!b || b.type === 'lord' || b.side === a.side || !strong.includes(b.type as UnitType)) continue;
+      if (!b || b.type === 'lord' || b.side === a.side || !classBeats(cls, classOf(b.type))) continue;
       if (b.taken <= 0 || dmg / b.taken < 0.5 || b.lost / Math.max(1, b.size) < 0.6) continue;
       const key = `${a.side}:${a.type}>${b.type}`;
       if (seen.has(key)) continue;
@@ -221,7 +224,7 @@ export function battleHints(st: BattleStats, me: Seat, ctx: { gold?: number; max
   if (st.end === 'timeout') add(6.5, 'info', 'Time ran out at 1:30 with both armies standing, so each side dealt only half Keep damage. Bring more damage to finish the fight.');
   else if (st.end === 'stalemate')
     add(6.5, 'info', `The battle was called at ${clock(st.ticks)}: neither army could still harm the other, so each side dealt only half Keep damage. Bring something that can reach what they had left (bows, magic and fliers hit the air).`);
-  if (won === false && (ctx.gold ?? 0) >= 200) add(5.5, 'info', `You went into battle with ${ctx.gold} gold unspent. Level up squads (+25% life, +20% damage) when you have no deploys left.`);
+  if (won === false && (ctx.gold ?? 0) >= 200) add(5.5, 'info', `You went into battle with ${ctx.gold} gold unspent. Level up squads (more life and damage, or more soldiers for a Swarm) when you have no deploys left.`);
   if (!out.length) {
     if (won === true) add(1, 'good', 'A clean win: your army out-fought theirs across the line.');
     else if (won === false) add(1, 'info', 'They simply had more army on the field. Level up your best squads and counter what they fielded this round.');
@@ -231,8 +234,10 @@ export function battleHints(st: BattleStats, me: Seat, ctx: { gold?: number; max
   return out.slice(0, max).map(({ text, tone }) => ({ text, tone }));
 }
 
-/** "Pikemen or Archers": what to bring against a unit type. */
+/** "Giant (Stone Golem or War Elephant)": the wheel class that beats a unit type, with your faction's units of it. */
 function counterAdvice(t: UnitType): string {
-  const weak = counters(t).weakTo.slice(0, 2).map((u) => UNITS[u].name);
-  return weak.length ? weak.join(' or ') : 'a different matchup';
+  const c = beatenBy(classOf(t));
+  const mine = factionContext().mine;
+  const own = unitsOfClass(c, mine ? FACTIONS[mine].units : UNIT_TYPES).slice(0, 2).map((u) => UNITS[u].name);
+  return own.length ? `${WHEEL_NAME[c]} (${own.join(' or ')})` : `${WHEEL_NAME[c]} units`;
 }

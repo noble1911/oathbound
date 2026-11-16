@@ -104,7 +104,8 @@ describe('skill loot', () => {
     let rares = 0, withSkill = 0;
     const seen = new Set<string>();
     for (let seed = 0; seed < 600; seed++) {
-      for (const it of rollLoot(seed, 9, 3, () => 0)) {
+      // round 10 is all Rare (round 9 is an all-Legendary round)
+      for (const it of rollLoot(seed, 10, 3, () => 0)) {
         const n = it.affixes.length;
         if (it.rarity !== 'rare') { expect(it.skill ?? null).toBe(null); continue; }
         rares++;
@@ -112,8 +113,8 @@ describe('skill loot', () => {
           withSkill++;
           seen.add(it.skill);
           expect(SKILLS[it.skill].slot).toBe(it.slot);
-          expect(n >= 2 && n <= 3).toBe(true);
-        } else expect(n >= 3 && n <= 4).toBe(true);
+          expect(n).toBe(2);
+        } else expect(n).toBe(3);
       }
     }
     expect(withSkill / rares).toBeGreaterThan(0.3);
@@ -162,11 +163,13 @@ describe('skill loot', () => {
 describe('skill lists (innate, Lord, item)', () => {
   it('unitSkills exposes every trait with real numbers', () => {
     const ids = (u: UnitType): string[] => unitSkills(u).map((s) => s.id);
-    expect(ids('pikemen')).toEqual(expect.arrayContaining(['anti_mounted', 'brace']));
+    expect(ids('pikemen')).toEqual(expect.arrayContaining(['brace']));
+    // no per-unit tag bonuses any more: the counter wheel is the one counter rule
+    for (const u of UNIT_TYPES) expect(unitSkills(u).some((s) => s.id.startsWith('anti_'))).toBe(false);
     expect(ids('cavaliers')).toEqual(expect.arrayContaining(['charge', 'raider']));
     expect(ids('clerics')).toContain('heal');
-    expect(ids('archers')).toEqual(expect.arrayContaining(['anti_flier', 'ranged']));
-    expect(ids('ballista')).toEqual(expect.arrayContaining(['anti_large', 'pierce']));
+    expect(ids('archers')).toEqual(expect.arrayContaining(['ranged']));
+    expect(ids('ballista')).toEqual(expect.arrayContaining(['pierce']));
     expect(ids('golem')).toEqual(expect.arrayContaining(['stomp', 'crushing', 'armored']));
     expect(ids('dragon')).toEqual(expect.arrayContaining(['cone', 'flier', 'magic']));
     expect(FLIER_EVADE).toBe(FLIER_EVADE_PCT);
@@ -176,7 +179,6 @@ describe('skill lists (innate, Lord, item)', () => {
     expect(heal.kind).toBe('active');
     expect(heal.cooldown).toBe(UNITS.clerics.attackTicks / TICK_HZ);
     expect(heal.text).toContain(String(UNITS.clerics.heal));
-    expect(unitSkills('pikemen').find((s) => s.id === 'anti_mounted')!.text).toContain('x2.5');
     for (const u of UNIT_TYPES) for (const s of unitSkills(u)) { expect(s.source).toBe('innate'); expect(s.name && s.text).toBeTruthy(); }
   });
 
@@ -205,7 +207,8 @@ describe('every skill triggers and has its effect', () => {
     fireball: { mine: [['mages', 2, [4000, 3000], 'fireball'], ['knights', 2, front]], theirs: [['militia', 1, front], ['militia', 1, [4600, 3900]]] },
     chain_lightning: { mine: [['mages', 2, [4000, 3000], 'chain_lightning'], ['knights', 2, front]], theirs: [['militia', 1, front]] },
     frost_nova: { mine: [['mages', 4, front, 'frost_nova']], theirs: [['cavaliers', 2, front]] },
-    mending_light: { mine: [['clerics', 4, [4000, 3000], 'mending_light'], ['knights', 2, front]], theirs: [['berserkers', 2, front], ['berserkers', 2, [4600, 3900]]] },
+    // (Giants beat Line: the Golem hurts the Knights enough for the clerics to mend them.)
+    mending_light: { mine: [['clerics', 4, [4000, 3000], 'mending_light'], ['knights', 2, front]], theirs: [['berserkers', 2, front], ['golem', 2, [4600, 3900]]] },
     shield_wall: { mine: [['knights', 2, front, 'shield_wall']], theirs: [['berserkers', 1, front]] },
     war_cry: { mine: [['militia', 4, front, 'war_cry'], ['berserkers', 1, [4700, 3900]]], theirs: [['knights', 2, front], ['knights', 2, [4700, 3900]]] },
     cleave: { mine: [['berserkers', 2, front, 'cleave']], theirs: [['militia', 1, front], ['militia', 1, [4500, 3900]]] },

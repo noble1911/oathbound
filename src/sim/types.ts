@@ -47,6 +47,12 @@ export type SoldierType = SquadType;
 export type Tag = 'mounted' | 'armored' | 'flier' | 'large' | 'infantry';
 export type WeaponKind = 'sword' | 'axe' | 'lance' | 'bow' | 'tome' | 'staff' | 'bolt' | 'stone' | 'fists' | 'breath';
 export type DamageType = 'physical' | 'magic';
+/**
+ * The counter wheel (DESIGN §3): every unit and every Lord belongs to exactly one class, and each class beats the next
+ * one around the ring, dealing COUNTER_PCT% damage to it: Swarm > Giant > Line > Cavalry > Ranged > Air > Siege > Magic
+ * > Swarm. WHEEL (data/wheel.ts) holds the ring order.
+ */
+export type WheelClass = 'swarm' | 'giant' | 'line' | 'cavalry' | 'ranged' | 'air' | 'siege' | 'magic';
 /** What flies through the air. 'none' = melee swing (no projectile). */
 export type ProjectileKind = 'none' | 'arrow' | 'bolt' | 'stone' | 'fireball' | 'firebreath' | 'lightning' | 'tower_arrow';
 /** Flight path for the renderer: 'arc' = ballistic parabola (arrows, stones), 'line' = straight (bolts, fireballs, breath). */
@@ -63,6 +69,8 @@ export interface UnitDef {
   like: KingdomUnit;
   /** Round-1 unit: may be unlocked from round 1 (others from round 2, or their minRound). */
   basic: boolean;
+  /** Its class on the counter wheel. */
+  class: WheelClass;
   name: string;
   /** Renderer model key (public/models/v2/<modelId>.glb). */
   modelId: string;
@@ -89,8 +97,6 @@ export interface UnitDef {
   magicResist: number;
   /** Splash radius in cm, 0 = single target. */
   splash: number;
-  /** Damage multipliers (percent, 100 = x1) vs targets carrying a tag. */
-  effective: Partial<Record<Tag, number>>;
   /** Soldier body radius in cm (separation / melee reach). */
   radius: number;
   /** Heal per cast (clerics); 0 otherwise. */
@@ -125,6 +131,8 @@ export interface LordDef {
   damageType: DamageType;
   projectile: ProjectileKind;
   signature: [UnitType, UnitType];
+  /** Its class on the counter wheel: the class of its body or mount. */
+  class: WheelClass;
   tags: Tag[];
   hp: number;
   dmg: number;
@@ -302,9 +310,11 @@ export interface PlayerState {
   squads: Squad[];
   /** Unequipped items. */
   stash: Item[];
-  /** Squads deployed this planning phase (not counting the Lord). */
+  /** Deploy points used this planning phase, in HALF-points: the sum of the deploy weights (deployWeight: 1, 2 or 3) of
+   *  the squads deployed this round (the Lord costs nothing). */
   deploysUsed: number;
-  /** New squads allowed this round (2, Marshal 3, + 'of Command' relics). */
+  /** Deploy points allowed this round, in half-points: DEPLOY_BUDGET (4 = 2 points), +2 for the Marshal and +2 per
+   *  'of Command' relic (at most +4). */
   deployLimit: number;
   lordXp: number;
   ready: boolean;

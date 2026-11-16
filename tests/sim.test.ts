@@ -4,11 +4,13 @@ import { join } from 'node:path';
 import {
   newMatch, applyIntent, simulateBattle, applyBattle, nextRound, viewFor, botPlan, allReady, forceReady,
   decodeReplay, sampleReplay, makeTransforms, replayHash, itemName, itemLines, rollLoot, income, deployZone, levelUpCost,
-  UNITS, LORDS, LEGENDARIES, mirrorPos, KEEP_HP, ARMY_CAP, ANIM_STATES, KEEP_SRC_BASE, BASIC_POOL, UNIT_TYPES, lootSchedule, lootTopSlot,
+  UNITS, LORDS, LEGENDARIES, mirrorPos, KEEP_HP, ARMY_CAP, ANIM_STATES, KEEP_SRC_BASE, BASIC_POOL, UNIT_TYPES, lootSchedule, lootRarity, itemPower, itemBudget, legendaryFits,
 } from '../src/sim/index.ts';
 import type { Item, MatchState, Seat } from '../src/sim/types.ts';
 import { isqrt, angleOf, isin, icos } from '../src/sim/fixed.ts';
 import { rollItem } from '../src/sim/loot.ts';
+import { AFFIXES } from '../src/sim/data/items.ts';
+import { squadSize } from '../src/sim/battle.ts';
 import { KEEP_DMG_BASE_PER_ROUND, KEEP_DMG_PER_TIER, LORD_KEEP_DMG } from '../src/sim/match.ts';
 import { Rng } from '../src/sim/rng.ts';
 import { genTerrain, navFor } from '../src/sim/terrain.ts';
@@ -105,8 +107,9 @@ describe('match rules', () => {
       expect(p.draftPicks).toBe(1);
       expect(p.keepHp).toBe(KEEP_HP);
     }
-    expect(s.players[0].deployLimit).toBe(3); // Marshal
-    expect(s.players[1].deployLimit).toBe(2);
+    // Deploy points in half-points: 2 points (4), the Marshal 3 (6).
+    expect(s.players[0].deployLimit).toBe(6); // Marshal
+    expect(s.players[1].deployLimit).toBe(4);
     expect(income(2)).toBe(250);
     expect(income(20)).toBe(500);
     // A level-up costs the same at every level: LEVEL_COST_PCT of the unit's cost.
@@ -145,10 +148,13 @@ describe('match rules', () => {
     p0.gold = 10000;
     const r = applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [3500, 2000] });
     expect(r).toEqual({ ok: false, error: 'deployment limit reached' });
-    // Marshal gets 3.
-    for (let i = 0; i < 2; i++) expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [3000 + i * 700, 9000] }).ok).toBe(true);
+    // The Marshal gets 3 points (6 half-points): Militia weigh ½ each, so six in all, and then a Cavalier (1) no longer fits.
     s.players[1].gold = 10000;
-    expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [2000, 9000] }).ok).toBe(false);
+    for (let i = 0; i < 4; i++) expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [1000 + i * 1000, 9000] }).ok).toBe(true);
+    expect(s.players[1].deploysUsed).toBe(5);
+    expect(applyIntent(s, 1, { t: 'deploy', unit: 'cavaliers', pos: [2000, 10500] })).toEqual({ ok: false, error: 'not enough deploy points left for that unit' });
+    expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [5500, 10500] }).ok).toBe(true);
+    expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [2000, 10500] })).toEqual({ ok: false, error: 'deployment limit reached' });
     // Army cap.
     p0.deployLimit = 99;
     for (let i = 0; i < ARMY_CAP - 2; i++) expect(applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [500 + (i % 7) * 1100, i < 7 ? 600 : 3000] }).ok).toBe(true);
@@ -264,40 +270,69 @@ describe('loot', () => {
     expect(rollLoot(42, 4, 3, () => id++)).toEqual(a);
     id = 1;
     expect(rollLoot(43, 4, 3, () => id++)).not.toEqual(a);
+    // one rarity for the whole offer: Magic, then Rare, and every 3rd round all Legendary
     expect(lootSchedule(1)).toEqual(['magic', 'magic', 'magic']);
-    expect(lootSchedule(3)).toEqual(['legendary', 'magic', 'magic']);
-    expect(lootSchedule(4)).toEqual(['rare', 'magic', 'magic']);
-    expect(lootSchedule(6)).toEqual(['legendary', 'rare', 'magic']);
-    expect(lootSchedule(8)).toEqual(['rare', 'rare', 'magic']);
-    expect(lootSchedule(9)).toEqual(['legendary', 'rare', 'rare']);
+    expect(lootSchedule(2)).toEqual(['magic', 'magic', 'magic']);
+    expect(lootSchedule(3)).toEqual(['legendary', 'legendary', 'legendary']);
+    expect(lootSchedule(4)).toEqual(['rare', 'rare', 'rare']);
+    expect(lootSchedule(6)).toEqual(['legendary', 'legendary', 'legendary']);
+    expect(lootSchedule(8)).toEqual(['rare', 'rare', 'rare']);
+    expect(lootSchedule(9)).toEqual(['legendary', 'legendary', 'legendary']);
     expect(lootSchedule(10)).toEqual(['rare', 'rare', 'rare']);
-    // the three Legendary rounds of a match visit the three slots
-    for (let seed = 0; seed < 20; seed++) expect(new Set([3, 6, 9].map((r) => lootTopSlot(seed, r))).size).toBe(3);
-    const rank = { common: 0, magic: 1, rare: 2, legendary: 3 };
+    expect(lootSchedule(12)).toEqual(['legendary', 'legendary', 'legendary']);
     for (let seed = 0; seed < 200; seed++) {
       for (const round of [1, 2, 3, 4, 5, 6, 8, 9, 12, 13]) {
         const offer = rollLoot(seed, round, 3, () => 0);
         // always one weapon, one armor, one relic: something is usable whatever the army
         expect(offer.map((it) => it.slot)).toEqual(['weapon', 'armor', 'relic']);
-        // the rarities are the schedule's, exactly: nothing is rolled
-        expect(offer.map((it) => it.rarity).sort()).toEqual([...lootSchedule(round)].sort());
-        // the best item visits every slot in turn
-        const best = offer.reduce((x, y) => (rank[y.rarity] > rank[x.rarity] ? y : x));
-        if ((round >= 3 && round <= 6) || round % 3 === 0) expect(best.slot).toBe(lootTopSlot(seed, round));
+        // the rarities are the schedule's, exactly: nothing is rolled, and all three share one
+        expect(offer.map((it) => it.rarity)).toEqual(lootSchedule(round));
         for (const it of offer) {
           expect(it.ilvl).toBe(round);
           const n = it.affixes.length;
-          if (it.rarity === 'magic') expect(n >= 1 && n <= 2).toBe(true);
-          if (it.rarity === 'rare') expect(n + (it.skill ? 1 : 0) >= 3 && n + (it.skill ? 1 : 0) <= 4).toBe(true); // a granted skill takes an affix's place
+          if (it.rarity === 'magic') expect(n).toBe(2);
+          if (it.rarity === 'rare') expect(n + (it.skill ? 1 : 0)).toBe(3); // a granted skill takes an affix's place
           if (it.rarity === 'legendary') { expect(n).toBe(2); expect(LEGENDARIES[it.legendary!].slot).toBe(it.slot); }
           if (it.affixes.some((x) => x.id === 'command')) { expect(it.slot).toBe('relic'); expect(['rare', 'legendary']).toContain(it.rarity); }
+          // each slot is one kind: every line of a weapon is offence, of an armor defence, of a relic utility
+          for (const x of [it.implicit, ...it.affixes]) expect(AFFIXES[x.id].slots).toEqual([it.slot]);
         }
-        // Skylady's fourth item is of the round's lowest tier, and the first three are unchanged
+        // equal power: every item of the offer is worth its rarity's budget (within rounding)
+        const budget = itemBudget(lootRarity(round), round);
+        for (const it of offer) expect(Math.abs(itemPower(it) - budget)).toBeLessThanOrEqual(1);
+        // one offer never repeats a legendary power
+        const legs = offer.map((it) => it.legendary).filter(Boolean);
+        expect(new Set(legs).size).toBe(legs.length);
+        // Skylady's fourth item is of the same rarity and budget, and the first three are unchanged
         const four = rollLoot(seed, round, 4, () => 0);
         expect(four.slice(0, 3)).toEqual(offer);
-        expect(four[3].rarity).toBe(lootSchedule(round)[2]);
+        expect(four[3].rarity).toBe(lootRarity(round));
+        expect(Math.abs(itemPower(four[3]) - budget)).toBeLessThanOrEqual(1);
       }
     }
+  });
+  it('legendary powers work only on the wheel classes they are built for', () => {
+    for (const L of Object.values(LEGENDARIES)) {
+      expect(L.best.length).toBeGreaterThan(0);
+      expect(L.power).toBe(LEGENDARIES.stormcaller.power);
+      for (const u of UNIT_TYPES) expect(legendaryFits(L.id, u, null)).toBe(L.best.includes(UNITS[u].class));
+      for (const l of Object.keys(LORDS) as (keyof typeof LORDS)[]) expect(legendaryFits(L.id, 'lord', l)).toBe(L.best.includes(LORDS[l].class));
+    }
+    // every class has a legendary built for it
+    const covered = new Set(Object.values(LEGENDARIES).flatMap((L) => L.best));
+    for (const c of ['swarm', 'giant', 'line', 'cavalry', 'ranged', 'air', 'siege', 'magic'] as const) expect(covered.has(c)).toBe(true);
+    // the tooltip says what it is built for
+    const leg: Item = { id: 1, base: 'ironbark_bow', slot: 'weapon', rarity: 'legendary', ilvl: 3, implicit: { id: 'vicious', value: 9 }, affixes: [], legendary: 'hydra_volley' };
+    expect(itemLines(leg).some((l) => l.text.startsWith('Best on: Ranged, Siege'))).toBe(true);
+  });
+  it('a dormant legendary changes nothing in battle', () => {
+    // Warhorn on a Swarm squad adds soldiers; on a Ranged squad it sleeps.
+    const horn: Item = { id: 1, base: 'war_banner', slot: 'relic', rarity: 'legendary', ilvl: 3, implicit: { id: 'fleet', value: 1 }, affixes: [], legendary: 'warhorn' };
+    const swarm = UNIT_TYPES.find((u) => UNITS[u].class === 'swarm')!;
+    const ranged = UNIT_TYPES.find((u) => UNITS[u].class === 'ranged')!;
+    const none = { weapon: null, armor: null, relic: null };
+    expect(squadSize({ type: swarm, items: { ...none, relic: horn } })).toBe(squadSize({ type: swarm, items: none }) + 4);
+    expect(squadSize({ type: ranged, items: { ...none, relic: horn } })).toBe(squadSize({ type: ranged, items: none }));
   });
   it('affix values scale with item level', () => {
     let lo = 0, hi = 0;

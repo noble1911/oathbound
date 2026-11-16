@@ -11,7 +11,7 @@ import { factionOfLord } from '../sim/data/factions.ts';
 import type { RoomView } from '../net/protocol.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { LORDS, lordAuraRing } from '../sim/data/lords.ts';
-import { inDeployZone, levelUpCost, sellRefund, ARMY_CAP, MAX_SQUAD_LEVEL, LORD_XP_LEVELS, MAX_LORD_LEVEL, overlappingSquad, freeSpotNear } from '../sim/match.ts';
+import { deployPointsText, inDeployZone, levelUpCost, sellRefund, ARMY_CAP, MAX_SQUAD_LEVEL, LORD_XP_LEVELS, MAX_LORD_LEVEL, overlappingSquad, freeSpotNear } from '../sim/match.ts';
 import { SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
 import { sound } from '../audio.ts';
 import { playLordLine } from '../audio/voice.ts';
@@ -20,10 +20,11 @@ import type { SceneAdapter, SquadVisual } from './scene-adapter.ts';
 import { $, el, esc, hideTip, num, showTipAt, store, tip, toast } from './dom.ts';
 import { icon } from './icons.ts';
 import { deadSummary, equipRefusal, itemIcon, itemTooltip, itemTooltipPair, slotLockText } from './items.ts';
-import { crest, squadTooltip, statBlock, countersBlock, sheetStats, skillChips, skillTooltip, tagIcons, unitTooltip } from './units.ts';
+import { classIcon, crest, deployChip, squadTooltip, statBlock, countersBlock, sheetStats, skillChips, skillTooltip, tagIcons, unitTooltip } from './units.ts';
 import { squadSheet } from '../sim/sheet.ts';
+import { squadSize } from '../sim/battle.ts';
 import { squadSkills } from '../sim/data/skills.ts';
-import { defaultFacing, dps, rarityRank, SHOP_KEYS, SLOT_LABEL, SLOTS, slotOpen, soldierStats, unitName, allItems } from './gamedata.ts';
+import { defaultFacing, deployRefusal, dps, levelGainText, rarityRank, SHOP_KEYS, SLOT_LABEL, SLOTS, slotOpen, soldierStats, unitName, allItems } from './gamedata.ts';
 import { niceError, TopBar } from './hud.ts';
 import { DraftModal, LootModal } from './loot.ts';
 import { frontLine, groupPlace, itemsKey, marchFoes, marchOf, mirrorPlace, planMoves, snapPos, syncBySpeed, type March, type MarchFoe, type Placed } from './timing.ts';
@@ -66,7 +67,7 @@ function bestRarity(sq: Squad): SquadVisual['rarity'] {
 }
 
 export function visual(sq: Squad, lord: LordId | null): SquadVisual {
-  return { id: sq.id, type: sq.type, lord: sq.type === 'lord' ? lord : null, owner: sq.owner, pos: sq.pos, facing: sq.facing, level: sq.level, rarity: bestRarity(sq) };
+  return { id: sq.id, type: sq.type, lord: sq.type === 'lord' ? lord : null, owner: sq.owner, pos: sq.pos, facing: sq.facing, level: sq.level, size: squadSize(sq), rarity: bestRarity(sq) };
 }
 
 export class PlanningScreen {
@@ -146,7 +147,7 @@ export class PlanningScreen {
       </div>
       <aside class="stash panel"><header>${icon('bag')}<b>Stash</b><small></small></header><div class="stash-grid"></div><p class="stash-hint">Drag items onto a squad or its slots. Drag here to unequip.</p></aside>
       <div class="bottom">
-        <div class="deploy-badge" data-tip="New squads you may still deploy this round. Levelling up and equipping are unlimited."><small>Deploys left</small><b>2</b><span>of 2 this round</span></div>
+        <div class="deploy-badge" data-tip="Deploy points left this round. A 100-gold squad costs ½, a 150 to 300-gold squad 1, a 400-gold one 1½. Levelling up and equipping are unlimited."><small>Deploys left</small><b>2</b><span>of 2 this round</span></div>
         <div class="shop"></div>
         <div class="ready-box"></div>
       </div>
@@ -416,8 +417,9 @@ export class PlanningScreen {
     $(g, 'span').textContent = has ? 'Enemy positions: last round' : 'No intel until round 2';
     g.dataset.tip = has ? GHOST_TIP : GHOST_TIP_NONE;
     const badge = $(this.root, '.deploy-badge');
-    $(badge, 'b').textContent = String(left);
-    $(badge, 'span').textContent = `of ${me.deployLimit} this round`;
+    // deploy points are half-points in the sim: "1½ of 2 this round"
+    $(badge, 'b').textContent = deployPointsText(left);
+    $(badge, 'span').textContent = `of ${deployPointsText(me.deployLimit)} this round`;
     badge.classList.toggle('none', left === 0);
   }
 
@@ -426,7 +428,8 @@ export class PlanningScreen {
     const me = this.me;
     if (!me) return 'Spectating';
     if (me.ready) return 'You are Ready (un-ready to change your army)';
-    if (me.deploysUsed >= me.deployLimit) return `No deploys left this round (${me.deployLimit}/${me.deployLimit} used)`;
+    const dw = deployRefusal(u, me.deploysUsed, me.deployLimit);
+    if (dw) return dw;
     if (me.squads.filter((s) => s.type !== 'lord').length >= ARMY_CAP) return `Army is full (${ARMY_CAP} squads)`;
     if (me.gold < UNITS[u].cost) return `Not enough gold (need ${UNITS[u].cost}, have ${me.gold})`;
     return null;
@@ -452,8 +455,8 @@ export class PlanningScreen {
           ${k ? `<kbd>${k}</kbd>` : ''}
           ${crest(u, null, 'md')}
           <b>${esc(d.name)}</b>
-          <div class="uc-meta"><span class="uc-cost">${icon('gold')}${d.cost}</span><span class="uc-size">×${d.squadSize}</span></div>
-          <div class="uc-tags">${tagIcons(u)}<span class="uc-role">${esc(d.role)}</span></div>
+          <div class="uc-meta"><span class="uc-cost">${icon('gold')}${d.cost}</span><span class="uc-size">×${d.squadSize}</span>${deployChip(u)}</div>
+          <div class="uc-tags">${classIcon(u)}${tagIcons(u)}<span class="uc-role">${esc(d.role)}</span></div>
         </button>`;
       })
       .join('');
@@ -665,7 +668,7 @@ export class PlanningScreen {
       const opens = sq.level + 1 === SLOT_UNLOCK_LEVEL.armor ? ', opens the Armor slot' : sq.level + 1 === SLOT_UNLOCK_LEVEL.relic ? ', opens the Relic slot' : '';
       const whyNot = maxed ? 'Max level' : me.ready ? 'You are Ready: un-ready to make changes' : me.gold < cost ? `Not enough gold (need ${cost}, have ${me.gold})` : '';
       actions = `<div class="sp-acts">
-        <button class="btn primary lvl" ${can ? '' : 'disabled'} data-tip="${maxed ? 'Max level' : `+25% life, +20% damage${opens} [U]${whyNot ? '. ' + whyNot : ''}`}">
+        <button class="btn primary lvl" ${can ? '' : 'disabled'} data-tip="${maxed ? 'Max level' : `${levelGainText(sq.type as UnitType, sq.level)}${opens} [U]${whyNot ? '. ' + whyNot : ''}`}">
           ${icon('up')}<span>${maxed ? 'Max level' : `Level ${sq.level + 1}`}</span>${maxed ? '' : `<em>${icon('gold')}${cost}</em>`}</button>
         <button class="btn danger sell ${armed ? 'armed' : ''}" ${me.ready ? 'disabled' : ''} data-tip="${refund ? 'Refunds 100%: a sale in the round it was deployed is an undo. Items go to your stash.' : 'No refund: this squad was deployed in an earlier round. Items go to your stash.'} Press twice to confirm. [Del]">${icon('sell')}<span>${armed ? 'Confirm' : 'Sell'}</span><em>${refund ? `+${refund}` : '0'}</em></button>
       </div>`;

@@ -22,12 +22,15 @@ export { ANIM_STATES, EVENT_KINDS } from './types.ts';
 export {
   newMatch, applyIntent, applyBattle, nextRound, viewFor, allReady, forceReady,
   income, deployZone, inDeployZone, levelUpCost, sellRefund, keepDamageOf, roundBonus, ROUND_BONUS_FULL_MARGIN, squadKeepDamage, lordLevelForXp,
-  START_GOLD, KEEP_HP, ARMY_CAP, BASE_DEPLOY_LIMIT, MAX_SQUAD_LEVEL, MAX_LORD_LEVEL, LORD_XP_LEVELS,
+  START_GOLD, KEEP_HP, ARMY_CAP, BASE_DEPLOY_LIMIT, DEPLOY_BUDGET, DEPLOY_BONUS, deployWeight, deployPointsText, MAX_SQUAD_LEVEL, MAX_LORD_LEVEL, LORD_XP_LEVELS,
   roundOutcome, roundOutcomeText, comebackFor, keepPct, usableSlots, slotOpen, squadFootprint, overlappingSquad, freeSpotNear,
   CATCHUP_GOLD, CATCHUP_PER_ROUND, CATCHUP_PER_DEFICIT, UNDERDOG_DEFICIT,
 } from './match.ts';
 // roundOutcomeText(summaryOrResult, seat): {outcome: 'won'|'lost'|'draw', title, detail} — the one wording for round results
 // comebackFor(): Comeback                              — deprecated: always zeros (there is no catch-up; both players are equal)
+// deployWeight(type): 1 | 2 | 3                       — deploy weight in half-points (100 gold = 1, 150-300 = 2, 400+ = 3);
+//                                                       PlayerState.deployLimit / deploysUsed are half-points too (budget 4)
+// deployPointsText(half): "1½"                          — half-points as the UI writes them
 // usableSlots(player): Slot[]                          — slots with an empty open slot to fill (informational)
 // squadFootprint(type) / overlappingSquad(squads, type, pos, ignoreId?) / freeSpotNear(squads, seat, type, pos, ignoreId?)
 //                                                     — deploy/move footprints: squads of one player may not overlap
@@ -77,17 +80,22 @@ export { botPlan, BOT_STRATEGIES } from './bot.ts';
 // botPlan(state, seat, strategy: BotStrategy, rngSalt?: number): void — applies a full planning turn for `seat`
 // through applyIntent (so it obeys the same rules), including lord pick, drafts, loot pick, equips, deploys and ready.
 
-export { itemName, itemLines, itemPower, rollLoot, lootSchedule, lootTopSlot, RARITY_COLOR, SKILL_CHANCE } from './loot.ts';
-// rollLoot(seed, round, count, nextId): Item[]   the round's offer, identical for both players: one item per slot
-// lootSchedule(round): [Rarity, Rarity, Rarity]  the fixed rarities of that offer (no rarity rolls)
+export { itemName, itemLines, itemPower, itemBudget, rollLoot, lootRarity, lootSchedule, legendaryFits, bestOnText, wheelClassOf, RARITY_COLOR, SKILL_CHANCE } from './loot.ts';
+// rollLoot(seed, round, count, nextId): Item[]   the round's offer, identical for both players: weapon (offence),
+//                                                armor (defence), relic (utility), one rarity and one power budget
+// lootRarity(round): Rarity                      the offer's rarity (Magic, then Rare; every 3rd round all Legendary)
+// legendaryFits(id, type, lord): boolean         a legendary power works only on the wheel classes it is built for
 // itemName(item): string          e.g. "Vicious Ironbark Bow of Haste"
 // itemLines(item): ItemLine[]     ARPG tooltip lines (name, base type, implicit, affixes, legendary power, flavour)
 
-export { UNITS, UNIT_TYPES, BASIC_POOL, unitDef, like } from './data/units.ts';
+export { UNITS, UNIT_TYPES, BASIC_POOL, unitDef, like, squadSizeAt, growsBySize, SWARM_GROWTH_PCT, formationCols } from './data/units.ts';
+// squadSizeAt(type, level): soldiers before items — Swarm squads grow +25% of their base size per level
+export { WHEEL, WHEEL_NAME, WHEEL_WHY, beatsClass, beatenBy, classBeats } from './data/wheel.ts';
+// The counter wheel (DESIGN §3): UnitDef.class / LordDef.class; beatsClass(c) / beatenBy(c); COUNTER_PCT damage to the class beaten
 export { LORDS, LORD_IDS } from './data/lords.ts';
 export { FACTIONS, FACTION_IDS, factionOfLord, factionOfUnit } from './data/factions.ts';
 // FACTIONS[id]: { name, short, blurb, identity, colors, lords, units, basic } — the three factions (DESIGN §4b)
 // Lord pick phase: {t:'pickFaction', faction} (optional, changeable) then {t:'pickLord', lord}; a Lord implies its faction.
 export { BASES, AFFIXES, LEGENDARIES, RARITIES, SLOT_UNLOCK_LEVEL } from './data/items.ts';
-export { FIELD_W, FIELD_H, TICK_HZ, TICK_MS, KEYFRAME_TICKS, MAX_BATTLE_TICKS, MARCH_TICKS, mirrorPos, mirrorFacing } from './constants.ts';
+export { FIELD_W, FIELD_H, TICK_HZ, TICK_MS, KEYFRAME_TICKS, MAX_BATTLE_TICKS, MARCH_TICKS, COUNTER_PCT, mirrorPos, mirrorFacing } from './constants.ts';
 export { terrainAt, genTerrain } from './terrain.ts';

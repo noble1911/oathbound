@@ -8,7 +8,7 @@ import type { FactionId, LordId, UnitType } from '../types.ts';
  * has to balance units against each other and LORD_POWER the Lords within a faction. Per mille because equal-level
  * play is very sensitive: with no catch-up and no dice, 1% of unit power is worth about 7 points of win rate.
  */
-export const FACTION_POWER: Record<FactionId, number> = { kingdom: 962, ashen: 1066, caliphate: 987 };
+export const FACTION_POWER: Record<FactionId, number> = { kingdom: 964, ashen: 1045, caliphate: 1006 };
 
 export const UNIT_POWER: Record<UnitType, number> = { militia: 136, pikemen: 129, berserkers: 150, archers: 70, knights: 110, cavaliers: 150, mages: 86, clerics: 150, pegasus: 119, ballista: 92, trebuchet: 73, golem: 98, wyvern: 122, dragon: 80, skeleton: 129, grave_knight: 130, bone_archer: 70, wraith_rider: 123, grave_acolyte: 137, bone_drake: 70, corpse_catapult: 125, bone_golem: 104, spear_levy: 124, scimitar: 150, camel_archer: 127, mamluk: 119, djinn_binder: 100, sun_priest: 110, djinn: 94, war_elephant: 93, sand_golem: 141 };
-export const LORD_POWER: Record<LordId, number> = { marshal: 118, archmage: 40, warden: 135, skylady: 68, lich: 99, sultana: 126, deathknight: 113, ossuary: 130, drakerider: 73, vizier: 45, rajah: 108, rocrider: 98 };
+export const LORD_POWER: Record<LordId, number> = { marshal: 171, archmage: 40, warden: 125, skylady: 65, lich: 94, sultana: 172, deathknight: 161, ossuary: 78, drakerider: 85, vizier: 42, rajah: 91, rocrider: 123 };

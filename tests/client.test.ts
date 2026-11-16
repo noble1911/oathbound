@@ -1,7 +1,7 @@
 // Client-side pure helpers (src/ui/gamedata.ts, hud.ts) and the local dev-harness match
 // (src/ui/local.ts) driving the real sim through RoomView snapshots like the server does.
 import { describe, expect, it, vi } from 'vitest';
-import { compareItems, counters, formation, itemStats, soldierStats, squadRadius, triangle, slotOpen, rarityRank } from '../src/ui/gamedata.ts';
+import { compareItems, counters, formation, itemStats, soldierStats, squadRadius, slotOpen, wheelText, deployRefusal, levelGainText, rarityRank } from '../src/ui/gamedata.ts';
 import { niceError } from '../src/ui/hud.ts';
 import { LocalMatch } from '../src/ui/local.ts';
 import type { Item, Replay, Seat } from '../src/sim/types.ts';
@@ -15,17 +15,24 @@ const item = (over: Partial<Item> = {}): Item => ({
 });
 
 describe('unit readings', () => {
-  it('weapon triangle: sword > axe > lance > sword', () => {
-    expect(triangle('sword', 'axe')).toBe(1);
-    expect(triangle('axe', 'lance')).toBe(1);
-    expect(triangle('lance', 'sword')).toBe(1);
-    expect(triangle('axe', 'sword')).toBe(-1);
-    expect(triangle('bow', 'sword')).toBe(0);
+  it('reads the counter wheel: every unit has a class it beats and one it is weak to', () => {
+    expect(wheelText('pikemen')).toBe('Line · Beats Cavalry · Weak to Giant');
+    expect(wheelText('lord', 'rajah')).toBe('Giant · Beats Line · Weak to Swarm');
+    for (const u of UNIT_TYPES) {
+      const c = counters(u);
+      expect(c.threats.length, u).toBeGreaterThan(0);
+      for (const x of c.threats) expect(UNITS[x].class).toBe(c.weakTo);
+    }
+    expect(counters('pikemen').prey).toContain('cavaliers');
+    expect(counters('archers').prey).toContain('pegasus');
+    expect(counters('clerics').prey).toEqual([]); // healers hunt nothing
   });
-  it('every unit has at least one listed counter, and pikemen counter cavalry', () => {
-    for (const u of UNIT_TYPES) expect(counters(u).weakTo.length, u).toBeGreaterThan(0);
-    expect(counters('pikemen').strongVs).toContain('cavaliers');
-    expect(counters('archers').bonuses.join()).toMatch(/Flier/);
+  it('says why a unit does not fit the deploy points left, and what a level gives', () => {
+    expect(deployRefusal('militia', 3, 4)).toBeNull();
+    expect(deployRefusal('golem', 2, 4)).toBe('Needs 1½ deploy points, 1 left');
+    expect(deployRefusal('knights', 4, 4)).toMatch(/No deploy points left/);
+    expect(levelGainText('militia', 1)).toBe('+3 soldiers');
+    expect(levelGainText('knights', 1)).toMatch(/life/);
   });
   it('formation has one offset per soldier, centred, and turns with facing', () => {
     for (const u of UNIT_TYPES) {

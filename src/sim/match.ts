@@ -5,7 +5,7 @@ import { SLOT_UNLOCK_LEVEL } from './data/items.ts';
 import { canEquip, classError, classesOf } from './data/skills.ts';
 import { FACTIONS, FACTION_IDS } from './data/factions.ts';
 import { LORDS, LORD_IDS, OSSUARY_KEEP_BONUS } from './data/lords.ts';
-import { UNITS } from './data/units.ts';
+import { UNITS, formationCols, squadSizeAt } from './data/units.ts';
 import { modsOf, rollLoot } from './loot.ts';
 import { genTerrain } from './terrain.ts';
 import type {
@@ -17,7 +17,24 @@ export const START_GOLD = 300;
 export const KEEP_HP = 4000;
 export const WARDEN_KEEP_BONUS = 800;
 export const ARMY_CAP = 16;
-export const BASE_DEPLOY_LIMIT = 2;
+/**
+ * Deploy points (DESIGN §2), counted in HALF-points: every round each player may deploy squads whose deploy weights
+ * (deployWeight) add up to DEPLOY_BUDGET (4 = 2 points). The Marshal and each 'of Command' relic add DEPLOY_BONUS
+ * (one point). Kept under its old name: it is the base limit, now in half-points.
+ */
+export const BASE_DEPLOY_LIMIT = 4;
+export const DEPLOY_BUDGET = BASE_DEPLOY_LIMIT;
+export const DEPLOY_BONUS = 2;
+/** Deploy weight of a unit in half-points, by its cost: 100 gold = 1 (half a point), 150-300 = 2, 400 and up = 3. */
+export function deployWeight(type: UnitType): number {
+  const c = UNITS[type].cost;
+  return c <= 100 ? 1 : c < 400 ? 2 : 3;
+}
+/** Half-points as the UI says them: 3 -> "1½", 4 -> "2", 1 -> "½". */
+export function deployPointsText(half: number): string {
+  const whole = Math.trunc(half / 2), frac = half % 2 ? '½' : '';
+  return whole === 0 && frac ? frac : `${whole}${frac}`;
+}
 export const MAX_SQUAD_LEVEL = 5;
 export const MAX_LORD_LEVEL = 10;
 /**
@@ -149,9 +166,11 @@ function newPlayer(seat: Seat): PlayerState {
  * Mirrors the formation in battle.ts (cols by squad size, spacing = 2 x radius + 50).
  */
 export function squadFootprint(type: SquadType): number {
-  const n = type === 'lord' ? 1 : UNITS[type].squadSize;
+  // A Swarm squad grows as it levels (squadSizeAt): it reserves the ground of its largest size, so a level-up never
+  // makes it overlap a neighbour.
+  const n = type === 'lord' ? 1 : squadSizeAt(type, MAX_SQUAD_LEVEL);
   const radius = type === 'lord' ? 65 : UNITS[type].radius;
-  const cols = n <= 1 ? 1 : n <= 4 ? 2 : n <= 6 ? 3 : 4;
+  const cols = formationCols(n);
   const rows = Math.ceil(n / cols);
   const spacing = radius * 2 + 50;
   return Math.trunc((Math.max(cols, rows) - 1) * spacing / 2) + radius;
@@ -247,7 +266,7 @@ export function unlockOptions(p: Pick<PlayerState, 'unlocked'> & { faction?: Fac
 }
 
 function deployLimitFor(p: PlayerState, commandBonus: number): number {
-  return BASE_DEPLOY_LIMIT + (p.lord === 'marshal' ? 1 : 0) + commandBonus;
+  return DEPLOY_BUDGET + DEPLOY_BONUS * ((p.lord === 'marshal' ? 1 : 0) + commandBonus);
 }
 
 /** Each round a player may unlock any ONE locked unit whose minRound has come: a free choice, nothing is rolled. */
@@ -368,12 +387,12 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       if (p.faction && def.faction !== p.faction) return err('that unit belongs to another faction');
       if (!Array.isArray(intent.pos) || !inDeployZone(seat, intent.pos)) return err('outside deploy zone');
       if (!validFacing(intent.facing)) return err('bad facing');
-      if (p.deploysUsed >= p.deployLimit) return err('deployment limit reached');
+      if (p.deploysUsed + deployWeight(intent.unit) > p.deployLimit) return err(p.deploysUsed >= p.deployLimit ? 'deployment limit reached' : 'not enough deploy points left for that unit');
       if (p.squads.filter((q) => q.type !== 'lord').length >= ARMY_CAP) return err('army cap reached');
       if (p.gold < def.cost) return err('not enough gold');
       if (overlappingSquad(p.squads, intent.unit, intent.pos)) return err('overlaps another squad: each squad needs its own ground');
       p.gold -= def.cost;
-      p.deploysUsed++;
+      p.deploysUsed += deployWeight(intent.unit);
       p.squads.push({
         id: s.nextId++, owner: seat, type: intent.unit, level: 1, pos: [intent.pos[0], intent.pos[1]],
         facing: intent.facing ?? (seat === 0 ? 64 : 192), items: { weapon: null, armor: null, relic: null }, deployedRound: s.round, spent: def.cost,
@@ -396,7 +415,7 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       const sq = p.squads[i];
       if (sq.type === 'lord') return err('cannot sell the Lord');
       p.gold += sellRefund(sq, s.round);
-      if (sq.deployedRound === s.round) p.deploysUsed = Math.max(0, p.deploysUsed - 1);
+      if (sq.deployedRound === s.round) p.deploysUsed = Math.max(0, p.deploysUsed - deployWeight(sq.type));
       for (const slot of ['weapon', 'armor', 'relic'] as Slot[]) if (sq.items[slot]) p.stash.push(sq.items[slot]!);
       p.squads.splice(i, 1);
       return OK;

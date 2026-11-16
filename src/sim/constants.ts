@@ -23,3 +23,9 @@ export function mirrorPos(p: Vec2): Vec2 {
 export function mirrorFacing(f: number): number {
   return (f + 128) & 255;
 }
+
+/**
+ * The counter wheel (DESIGN §3, data/wheel.ts): a unit deals COUNTER_PCT percent damage to a unit of the class its own
+ * class beats. Every other pairing is neutral. The one counter number of the game.
+ */
+export const COUNTER_PCT = 150;

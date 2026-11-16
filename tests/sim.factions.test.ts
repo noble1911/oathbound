@@ -6,8 +6,14 @@ import {
 } from '../src/sim/index.ts';
 import { income } from '../src/sim/match.ts';
 import { RAISE_BASE } from '../src/sim/battle.ts';
+import { WHEEL } from '../src/sim/data/wheel.ts';
+import { DEPLOY_BONUS } from '../src/sim/match.ts';
+import { modsOf } from '../src/sim/loot.ts';
 import { UNIT_POWER, LORD_POWER } from '../src/sim/data/balance.ts';
-import type { BotStrategy, DecodedReplay, FactionId, Item, LordId, MatchState, Seat, UnitType, Vec2 } from '../src/sim/types.ts';
+import type { BotStrategy, DecodedReplay, FactionId, Item, LordId, MatchState, PlayerState, Seat, UnitType, Vec2 } from '../src/sim/types.ts';
+
+/** The deploy limit without what 'of Command' relics add (a choice, not a rule difference). */
+const baseLimit = (p: PlayerState): number => p.deployLimit - DEPLOY_BONUS * Math.min(2, p.squads.reduce((a, q) => a + modsOf(q.items).command, 0));
 
 type Spec = [unit: UnitType, level: number, pos: Vec2];
 /** A hand-built battle (positions in each seat's own frame); Lords parked in a corner unless `lordsFight`. */
@@ -62,7 +68,9 @@ describe('faction data', () => {
       expect(F.basic.some((u) => UNITS[u].range > 400 && UNITS[u].weapon !== 'stone')).toBe(true);
       expect(F.units.some((u) => UNITS[u].tags.includes('flier'))).toBe(true);
       expect(F.units.some((u) => UNITS[u].tags.includes('large'))).toBe(true);
-      expect(F.units.some((u) => (UNITS[u].effective.mounted ?? 0) > 100)).toBe(true);
+      // every class of the counter wheel, but for the Caliphate's known gap (no Siege unit yet: DESIGN §3)
+      const have = new Set(F.units.map((u) => UNITS[u].class));
+      for (const c of WHEEL) if (!(f === 'caliphate' && c === 'siege')) expect(have.has(c), `${f} has a ${c} unit`).toBe(true);
       expect(F.units.some((u) => UNITS[u].damageType === 'magic')).toBe(true);
     }
   });
@@ -154,7 +162,7 @@ describe('picking a faction and a Lord', () => {
         const [a, b] = s.players;
         const strip = (items: Item[] | null): unknown => (items ?? []).map((it) => ({ ...it, id: 0 }));
         expect(strip(b.lootOffer), `loot ${lords} round ${s.round}`).toEqual(strip(a.lootOffer));
-        expect(b.deployLimit).toBe(a.deployLimit);
+        expect(baseLimit(b)).toBe(baseLimit(a));
         expect(b.draftPicks <= 1 && a.draftPicks <= 1).toBe(true);
         for (const p of s.players) {
           expect(p.draftOptions).toEqual(unlockOptions(p, s.round));
@@ -217,7 +225,8 @@ describe('faction mechanics', () => {
       return q.mitigated / Math.max(1, q.taken + q.mitigated);
     };
     expect(lost('militia')).toBeGreaterThan(0.35); // steel: nearly half is shrugged off
-    expect(lost('mages')).toBeLessThan(0.2); // magic: nothing is (only terrain cover can still help)
+    // magic: nothing is (only terrain cover, and the enemy Lord's axe, still count)
+    expect(lost('mages')).toBeLessThan(0.3);
   });
 
   it('negative resistance never corrupts the replay (Sunfire Mantle against ethereal Wraith Riders)', () => {

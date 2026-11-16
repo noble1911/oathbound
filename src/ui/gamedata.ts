@@ -1,10 +1,13 @@
-// UI-side readings of the sim's data tables: counters, level stats, formations for the deploy
+// UI-side readings of the sim's data tables: the counter wheel, deploy weights, level stats, formations for the deploy
 // ghost, item stat totals and comparison deltas. Pure (no DOM), unit-tested in tests/client.test.ts.
-import type { Affix, Item, LordId, Rarity, Seat, Slot, Squad, SquadType, Tag, UnitDef, UnitType, Vec2, WeaponKind, FactionId } from '../sim/types.ts';
-import { UNITS, UNIT_TYPES } from '../sim/data/units.ts';
+import type { Affix, Item, LordId, Rarity, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2, WeaponKind, FactionId, WheelClass } from '../sim/types.ts';
+import { UNITS, UNIT_TYPES, squadSizeAt, growsBySize } from '../sim/data/units.ts';
+import { WHEEL_NAME, beatsClass, beatenBy } from '../sim/data/wheel.ts';
+import { COUNTER_PCT } from '../sim/constants.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { AFFIXES, LEGENDARIES } from '../sim/data/items.ts';
-import { slotOpen as simSlotOpen } from '../sim/match.ts';
+import { bestOnText, legendaryFits } from '../sim/loot.ts';
+import { slotOpen as simSlotOpen, deployWeight, deployPointsText } from '../sim/match.ts';
 import { SKILLS, canEquip as classFits } from '../sim/data/skills.ts';
 
 export const RARITY_CSS: Record<Rarity, string> = { common: '#bfc3c9', magic: '#6f9dff', rare: '#e6bd3c', legendary: '#f58b25' };
@@ -16,20 +19,76 @@ export const WEAPON_LABEL: Record<WeaponKind, string> = {
   sword: 'Sword', axe: 'Axe', lance: 'Lance', bow: 'Bow', tome: 'Tome', staff: 'Staff', bolt: 'Bolt', stone: 'Stone', fists: 'Fists', breath: 'Breath',
 };
 
-/** Sword > Axe > Lance > Sword. */
-const BEATS: Partial<Record<WeaponKind, WeaponKind>> = { sword: 'axe', axe: 'lance', lance: 'sword' };
-export function triangle(a: WeaponKind, b: WeaponKind): -1 | 0 | 1 {
-  if (BEATS[a] === b) return 1;
-  if (BEATS[b] === a) return -1;
-  return 0;
-}
-
 export function unitName(t: SquadType, lord?: LordId | null): string {
   if (t === 'lord') return lord ? `${LORDS[lord].title} ${LORDS[lord].name}` : 'Lord';
   return UNITS[t].name;
 }
 
-/** Stats of one soldier of a squad (Lv bonuses: +25% HP and +20% damage per level; Lords use their own growth). */
+// ---------------------------------------------------------------- the counter wheel
+
+/** A unit's (or a Lord's) class on the counter wheel. */
+export function classOf(t: SquadType, lord?: LordId | null): WheelClass {
+  return t === 'lord' ? LORDS[lord ?? 'marshal'].class : UNITS[t].class;
+}
+export interface WheelPlace {
+  cls: WheelClass;
+  /** The class it deals COUNTER_PCT damage to. */
+  beats: WheelClass;
+  /** The class that deals COUNTER_PCT damage to it. */
+  weakTo: WheelClass;
+}
+export function wheelOf(t: SquadType, lord?: LordId | null): WheelPlace {
+  const cls = classOf(t, lord);
+  return { cls, beats: beatsClass(cls), weakTo: beatenBy(cls) };
+}
+/** "×1.5" for COUNTER_PCT. */
+export const COUNTER_TEXT = `×${(COUNTER_PCT / 100).toFixed(COUNTER_PCT % 100 ? (COUNTER_PCT % 10 ? 2 : 1) : 0)}`;
+/** "Line · Beats Cavalry · Weak to Giant": the one-line wheel summary of a unit. */
+export function wheelText(t: SquadType, lord?: LordId | null): string {
+  const w = wheelOf(t, lord);
+  return `${WHEEL_NAME[w.cls]} · Beats ${WHEEL_NAME[w.beats]} · Weak to ${WHEEL_NAME[w.weakTo]}`;
+}
+/** The unit types of class `c` among `pool` (the enemy roster when known, see rivals). */
+export function unitsOfClass(c: WheelClass, pool: readonly UnitType[] = UNIT_TYPES): UnitType[] {
+  return pool.filter((u) => UNITS[u].class === c);
+}
+
+// ---------------------------------------------------------------- deploy weight
+
+/** "½", "1" or "1½": the deploy points a unit costs (the sim's deployWeight, in half-points). */
+export function deployCostText(u: UnitType): string {
+  return deployPointsText(deployWeight(u));
+}
+/**
+ * Why a unit does not fit the deploy points left this round ("Needs 1½ deploy points, ½ left"), or null.
+ * `used` and `limit` are the PlayerState half-points.
+ */
+export function deployRefusal(u: UnitType, used: number, limit: number): string | null {
+  const left = Math.max(0, limit - used);
+  const w = deployWeight(u);
+  if (used + w <= limit) return null;
+  if (left === 0) return `No deploy points left this round (${deployPointsText(limit)} used)`;
+  return `Needs ${deployPointsText(w)} deploy point${w === 2 ? '' : 's'}, ${deployPointsText(left)} left`;
+}
+
+// ---------------------------------------------------------------- levels
+
+/**
+ * What one level-up gives a squad: Swarm squads gain soldiers ("+3 soldiers"), every other unit +25% life and
+ * +20% damage per soldier. `level` is the level it has now.
+ */
+export function levelGainText(t: UnitType, level: number): string {
+  if (growsBySize(t)) {
+    const n = squadSizeAt(t, level + 1) - squadSizeAt(t, level);
+    return `+${n} soldier${n === 1 ? '' : 's'}`;
+  }
+  return '+25% life, +20% damage';
+}
+
+/**
+ * Stats of one soldier of a squad. Level bonuses: +25% HP and +20% damage per level, except Swarm squads, which
+ * grow by soldiers instead (squadSizeAt); Lords use their own growth. `size` is before items (Warhorn).
+ */
 export function soldierStats(t: SquadType, level: number, lord?: LordId | null) {
   if (t === 'lord') {
     const L = LORDS[lord ?? 'marshal'];
@@ -37,8 +96,8 @@ export function soldierStats(t: SquadType, level: number, lord?: LordId | null) 
     return { hp: Math.round(L.hp * (1 + 0.1 * f)), dmg: Math.round(L.dmg * (1 + 0.08 * f)), attackTicks: L.attackTicks, range: L.range, minRange: 0, speed: L.speed, armor: L.armor, magicResist: L.magicResist, size: 1, splash: L.splash };
   }
   const d = UNITS[t];
-  const f = level - 1;
-  return { hp: Math.round(d.hp * (1 + 0.25 * f)), dmg: Math.round(d.dmg * (1 + 0.2 * f)), attackTicks: d.attackTicks, range: d.range, minRange: d.minRange, speed: d.speed, armor: d.armor, magicResist: d.magicResist, size: d.squadSize, splash: d.splash };
+  const f = growsBySize(t) ? 0 : level - 1;
+  return { hp: Math.round(d.hp * (1 + 0.25 * f)), dmg: Math.round(d.dmg * (1 + 0.2 * f)), attackTicks: d.attackTicks, range: d.range, minRange: d.minRange, speed: d.speed, armor: d.armor, magicResist: d.magicResist, size: squadSizeAt(t, level), splash: d.splash };
 }
 
 /** Damage per second of one soldier. */
@@ -53,37 +112,6 @@ export function slotOpen(sq: Pick<Squad, 'type' | 'level'>, slot: Slot): boolean
 
 export function tagsOf(t: SquadType, lord?: LordId | null): Tag[] {
   return t === 'lord' ? LORDS[lord ?? 'marshal'].tags : UNITS[t].tags;
-}
-
-function canHit(att: UnitDef, def: UnitDef): boolean {
-  // fliers are only hit by bows, magic and other fliers
-  if (!def.tags.includes('flier')) return true;
-  return att.weapon === 'bow' || att.damageType === 'magic' || att.tags.includes('flier') || att.weapon === 'bolt';
-}
-
-/** How strongly `a` counters `b` (0 = not a counter). */
-function counterScore(a: UnitDef, b: UnitDef): number {
-  if (!canHit(a, b) || a.dmg === 0 || a.traits.includes('healer')) return 0;
-  let s = 0;
-  for (const tag of b.tags) {
-    const m = a.effective[tag];
-    if (m && m > 100) s += (m - 100) / 50;
-  }
-  if (triangle(a.weapon, b.weapon) === 1) s += 1.5;
-  // fast melee divers reach fragile backliners
-  if (b.traits.includes('backline') && a.range < 400 && a.speed >= 20) s += 1.5;
-  if (b.tags.includes('armored') && (a.damageType === 'magic' || a.traits.includes('ignoresArmor') || a.traits.includes('crushing'))) s += 1.5;
-  if (b.tags.includes('flier') && !canHit(b, a)) s += 1;
-  // splash shreds big squads of small soldiers
-  if (a.splash >= 250 && b.squadSize >= 8) s += 1.5;
-  return s;
-}
-
-export interface Counters {
-  /** Readable advantages, e.g. "×2.5 vs Mounted". */
-  bonuses: string[];
-  strongVs: UnitType[];
-  weakTo: UnitType[];
 }
 
 /**
@@ -102,17 +130,27 @@ export function rivals(t: UnitType, enemy: FactionId | null = factionCtx().enemy
   return (enemy ? UNIT_TYPES.filter((u) => UNITS[u].faction === enemy) : UNIT_TYPES).filter((u) => u !== t);
 }
 
+export interface Counters extends WheelPlace {
+  /** Facts about how it fights that are not the wheel: "Ignores armor", "3 m splash". */
+  facts: string[];
+  /** Units of the class it beats / is beaten by, among its rivals (the enemy roster when known). */
+  prey: UnitType[];
+  threats: UnitType[];
+}
+
+/** The wheel place of a unit, with the rival units in the classes it beats and fears. */
 export function counters(t: UnitType, enemy: FactionId | null = factionCtx().enemy): Counters {
   const d = UNITS[t];
-  const bonuses: string[] = [];
-  for (const [tag, m] of Object.entries(d.effective) as [Tag, number][]) if (m > 100) bonuses.push(`×${(m / 100).toFixed(m % 100 ? 1 : 0)} vs ${TAG_LABEL[tag]}`);
-  if (BEATS[d.weapon]) bonuses.push(`${WEAPON_LABEL[d.weapon]} beats ${WEAPON_LABEL[BEATS[d.weapon]!]}`);
-  if (d.traits.includes('ignoresArmor')) bonuses.push('Ignores armor');
-  if (d.splash) bonuses.push(`${(d.splash / 100).toFixed(0)} m splash`);
+  const w = wheelOf(t);
+  const facts: string[] = [];
+  if (d.traits.includes('ignoresArmor')) facts.push('Ignores armor');
+  if (d.traits.includes('crushing')) facts.push('Ignores half of armor');
+  if (d.damageType === 'magic' && !d.traits.includes('healer')) facts.push('Magic damage');
+  if (d.splash) facts.push(`${(d.splash / 100).toFixed(0)} m splash`);
   const others = rivals(t, enemy);
-  const strongVs = others.filter((u) => counterScore(d, UNITS[u]) >= 1.5).sort((a, b) => counterScore(d, UNITS[b]) - counterScore(d, UNITS[a])).slice(0, 4);
-  const weakTo = others.filter((u) => counterScore(UNITS[u], d) >= 1.5).sort((a, b) => counterScore(UNITS[b], d) - counterScore(UNITS[a], d)).slice(0, 4);
-  return { bonuses, strongVs, weakTo };
+  // a healer is Magic on the wheel but never attacks: it hunts nothing
+  const prey = d.traits.includes('healer') ? [] : unitsOfClass(w.beats, others);
+  return { ...w, facts, prey, threats: unitsOfClass(w.weakTo, others) };
 }
 
 export function costTier(cost: number): number {
@@ -123,9 +161,12 @@ export function costTier(cost: number): number {
 
 const FACE = (f: number) => (f / 256) * Math.PI * 2;
 
-/** Soldier offsets (cm, field axes) of a squad formation centred on 0,0 facing `facing`. */
-export function formation(t: SquadType, facing: number, lord?: LordId | null): Vec2[] {
-  const n = t === 'lord' ? 1 : UNITS[t].squadSize;
+/**
+ * Soldier offsets (cm, field axes) of a squad formation centred on 0,0 facing `facing`. `size` is the squad's
+ * soldier count (the sim's squadSize: grown Swarm squads, Warhorn), default the level-1 size.
+ */
+export function formation(t: SquadType, facing: number, lord?: LordId | null, size?: number): Vec2[] {
+  const n = t === 'lord' ? 1 : size ?? UNITS[t].squadSize;
   const r = t === 'lord' ? 60 : UNITS[t].radius;
   const gap = Math.max(110, r * 2.6);
   const cols = n <= 1 ? 1 : n <= 4 ? n : Math.ceil(Math.sqrt(n * 2));
@@ -148,8 +189,8 @@ export function formation(t: SquadType, facing: number, lord?: LordId | null): V
 }
 
 /** Radius (cm) that covers a squad's formation, for picking and selection rings. */
-export function squadRadius(t: SquadType): number {
-  const offs = formation(t, 64);
+export function squadRadius(t: SquadType, size?: number): number {
+  const offs = formation(t, 64, null, size);
   let m = 0;
   for (const [x, y] of offs) m = Math.max(m, Math.hypot(x, y));
   const r = t === 'lord' ? 60 : UNITS[t].radius;
@@ -195,7 +236,7 @@ export function compareItems(next: Item, cur: Item | null): Delta[] {
   for (const k of keys) {
     const d = (a.get(k) ?? 0) - (b.get(k) ?? 0);
     if (d === 0) continue;
-    const flag = ['phoenix', 'command', 'frost'].includes(k.split(':')[0]!);
+    const flag = ['phoenix', 'command'].includes(k.split(':')[0]!);
     if (flag) out.push({ text: (d > 0 ? 'Gains: ' : 'Loses: ') + statText(k, Math.abs(a.get(k) || b.get(k) || 1)), good: d > 0 });
     else out.push({ text: statText(k, d).replace(/^(?=\d)/, d > 0 ? '+' : ''), good: d > 0 });
   }
@@ -242,13 +283,16 @@ export function affixDead(a: Affix, t: SquadType, lord?: LordId | null): string 
   return null;
 }
 
-export function legendaryDead(item: Item, t: SquadType): string | null {
-  return item.legendary && OFFENSIVE_LEGENDS.has(item.legendary) && isHealer(t) ? 'healers never attack' : null;
+/** Why an item's legendary power does nothing on this squad (not a class it is built for; healers never attack), or null. */
+export function legendaryDead(item: Item, t: SquadType, lord?: LordId | null): string | null {
+  if (!item.legendary) return null;
+  if (!legendaryFits(item.legendary, t, lord)) return `built for ${bestOnText(item.legendary)} squads`;
+  return OFFENSIVE_LEGENDS.has(item.legendary) && isHealer(t) ? 'healers never attack' : null;
 }
 
 /** Which of an item's lines are dead on a squad: [implicit, ...affixes] in tooltip order, and the legendary power. */
 export function deadLines(item: Item, t: SquadType, lord?: LordId | null): { affix: (string | null)[]; legendary: string | null } {
-  return { affix: [item.implicit, ...item.affixes].map((a) => affixDead(a, t, lord)), legendary: legendaryDead(item, t) };
+  return { affix: [item.implicit, ...item.affixes].map((a) => affixDead(a, t, lord)), legendary: legendaryDead(item, t, lord) };
 }
 
 /** What the squad is worth on the field (gold-ish): items are worth more on bigger squads. */
@@ -261,7 +305,7 @@ function squadWorth(sq: Pick<Squad, 'type' | 'level'>): number {
 export function itemUse(item: Item, sq: Pick<Squad, 'type' | 'level'>, lord?: LordId | null): number {
   let p = 0;
   for (const a of [item.implicit, ...item.affixes]) if (!affixDead(a, sq.type, lord)) p += a.value * AFFIXES[a.id].power;
-  if (item.legendary && !legendaryDead(item, sq.type)) p += LEGENDARIES[item.legendary].power;
+  if (item.legendary && !legendaryDead(item, sq.type, lord)) p += LEGENDARIES[item.legendary].power;
   if (item.skill && classFits(item, sq.type, lord)) p += SKILLS[item.skill].power;
   return (p * squadWorth(sq)) / 100;
 }

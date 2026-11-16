@@ -16,6 +16,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { canEquip } from '../src/sim/data/skills.ts';
 import { LORD_IDS } from '../src/sim/data/lords.ts';
+import { DEPLOY_BONUS, DEPLOY_BUDGET } from '../src/sim/match.ts';
+import { modsOf } from '../src/sim/loot.ts';
+import type { PlayerState } from '../src/sim/types.ts';
+
+/** The deploy limit without what 'of Command' relics add (DEPLOY_BONUS each, at most two). */
+const baseLimit = (p: PlayerState): number => p.deployLimit - DEPLOY_BONUS * Math.min(2, p.squads.reduce((a, q) => a + modsOf(q.items).command, 0));
 
 const squad = (s: MatchState, seat: Seat, type: Squad['type'], pos: [number, number], level = 1): Squad => {
   const q: Squad = { id: s.nextId++, owner: seat, type, level, pos, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: s.round, spent: type === 'lord' ? 0 : UNITS[type].cost * level };
@@ -183,8 +189,8 @@ describe('equal conditions: no catch-up, no random offers', () => {
     nextRound(s);
     expect(w.gold - gold[0]).toBe(250);
     expect(l.gold - gold[1]).toBe(250);
-    expect(l.deployLimit).toBe(2);
-    expect(w.deployLimit).toBe(2);
+    expect(l.deployLimit).toBe(DEPLOY_BUDGET);
+    expect(w.deployLimit).toBe(DEPLOY_BUDGET);
   });
 
   it('fairness: for a match seed and round, both players get identical loot, unlock options, income and deploy limit', () => {
@@ -206,7 +212,8 @@ describe('equal conditions: no catch-up, no random offers', () => {
           expect(b.lootOffer!.map(itemName)).toEqual(a.lootOffer.map(itemName));
           expect(new Set([...a.lootOffer, ...b.lootOffer!].map((it) => it.id)).size).toBe(2 * a.lootOffer.length);
         }
-        expect(b.deployLimit).toBe(a.deployLimit);
+        // (an 'of Command' relic is a choice: it is taken out before comparing)
+        expect(baseLimit(b)).toBe(baseLimit(a));
         expect(b.draftPicks).toBe(a.draftPicks);
         // unlock options: everything still locked and of age, for each player
         for (const p of s.players) expect(p.draftOptions).toEqual(unlockOptions(p, s.round));

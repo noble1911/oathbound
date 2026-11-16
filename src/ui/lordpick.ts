@@ -13,7 +13,7 @@ import { sound } from '../audio.ts';
 import { playLordLine } from '../audio/voice.ts';
 import { $, el, esc, secsLeft, store } from './dom.ts';
 import { icon } from './icons.ts';
-import { crest, LORD_HUE } from './units.ts';
+import { classLine, crest, LORD_HUE } from './units.ts';
 import { art } from './art.ts';
 import { dps, soldierStats, WEAPON_LABEL } from './gamedata.ts';
 
@@ -159,6 +159,7 @@ export class LordPickScreen {
       ${lordPortrait(id)}
       <div class="lc-body">
       <div class="lc-name"><small>${esc(L.title)} <i class="lc-role">${esc(LORD_ROLE_NAME[LORD_ROLE[id]])}</i></small><b>${esc(L.name)}</b><span class="lc-wpn">${icon(L.weapon)}${WEAPON_LABEL[L.weapon]}</span></div>
+      ${classLine('lord', id)}
       <div class="lc-sig"><small>Signature units</small><div>${L.signature.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('')}</div></div>
       <div class="lc-block"><small>Passive</small><p>${esc(L.passive)}</p></div>
       <div class="lc-block abil"><small>${icon('lightning')}${esc(L.abilityName)}</small><p>${esc(L.abilityText)}</p></div>

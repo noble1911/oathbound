@@ -192,7 +192,6 @@ export function classError(item: Pick<Item, 'skill'>): string {
 
 const m = (cm: number): string => String(Math.round(cm / 10) / 10);
 const sec = (ticks: number): number => Math.round((ticks / TICK_HZ) * 10) / 10;
-const TAGN: Record<string, string> = { mounted: 'Mounted', armored: 'Armored', flier: 'Flying', large: 'Large', infantry: 'Infantry' };
 
 /** Lord ability cooldowns in ticks (battle.ts uses these). */
 export const ABILITY_CD = {
@@ -213,11 +212,7 @@ export function unitSkills(type: UnitType): SkillInfo[] {
   if (u.traits.includes('bless')) add('bless', 'Sun blessing', 'Soldiers it heals attack 15% faster for 4 s');
   if (u.id === 'sun_priest') add('radiant', 'Radiant', 'Its sunbolts deal 50% more damage to the undead (Ashen units, the Lich-Priest, raised skeletons)');
   if (u.traits.includes('healer')) add('heal', 'Heal', `Heals the most wounded ally within ${m(u.range)} m for ${u.heal} life (grows with level); attacks only when nobody needs healing`, 'active', sec(u.attackTicks));
-  for (const tag of Object.keys(u.effective)) {
-    const pct = u.effective[tag as keyof typeof u.effective]!;
-    add(`anti_${tag}`, `${TAGN[tag]} bane`, `Deals x${pct / 100} damage to ${TAGN[tag]} units`);
-  }
-  if (u.traits.includes('brace')) add('brace', 'Brace', 'Negates the cavalry charge bonus and takes 30% less melee damage from Mounted units');
+  if (u.traits.includes('brace')) add('brace', 'Brace', 'Braced against charges: a charge deals it no double damage');
   if (u.traits.includes('charge')) add('charge', 'Charge', 'The first hit of a charge deals double damage; re-arms after 5 s out of combat');
   if (u.traits.includes('raider')) add('raider', 'Raider', 'Hunts the enemy backline: archers, casters, healers and siege engines');
   if (u.lifesteal) add('lifesteal', u.faction === 'ashen' ? 'Life drain' : 'Bloodlust', `Heals for ${u.lifesteal}% of the damage it deals`);
@@ -231,7 +226,7 @@ export function unitSkills(type: UnitType): SkillInfo[] {
   else if (u.traits.includes('cone')) add('cone', 'Fire breath', `Breathes fire in a cone ${m(u.range)} m long, burning everything inside it`);
   else if (u.splash) add('splash', 'Splash', `Attacks hit everything within ${m(u.splash)} m of the impact (half damage at the edge)`);
   if (u.damageType === 'magic') add('magic', 'Magic', 'Magic damage ignores armor; only magic resistance reduces it');
-  if (u.traits.includes('crushing')) add('crushing', 'Crushing', 'Ignores half of the target\'s armor and deals x1.5 damage to Armored units');
+  if (u.traits.includes('crushing')) add('crushing', 'Crushing', 'Ignores half of the target\'s armor');
   if (u.minRange) add('min_range', 'Siege engine', `Cannot hit anything closer than ${m(u.minRange)} m or in the air; slow to aim`);
   if (u.tags.includes('flier')) add('flier', 'Flying', `Ignores terrain; only bows, magic, bolts and other fliers can hit it, and shots from the ground deal ${FLIER_EVADE}% less`);
   if (u.armor >= 30) add('armored', 'Heavy armor', `Takes ${u.armor}% less physical damage`);

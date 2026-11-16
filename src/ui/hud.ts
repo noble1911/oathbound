@@ -137,6 +137,7 @@ export class TopBar {
 
 const NICE: [RegExp, string][] = [
   [/deployment limit/, 'No deploys left this round'],
+  [/not enough deploy points/, 'Not enough deploy points left for that unit this round'],
   [/army cap/, 'Your army is at the 16-squad cap'],
   [/not enough gold/, 'Not enough gold'],
   [/outside deploy zone/, 'Deploy inside your half of the field'],

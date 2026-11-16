@@ -366,7 +366,7 @@ export class EngineScene implements SceneAdapter {
       this.pending = false;
       if (this.view.battle) return;
       const list: ArmySquad[] = [];
-      const add = (s: SquadVisual) => list.push({ id: s.id, owner: this.inSeat(s.owner), type: s.type, lord: s.lord ?? null, pos: this.inPos([s.pos[0], s.pos[1]]), facing: this.inFacing(s.facing), level: s.level });
+      const add = (s: SquadVisual) => list.push({ id: s.id, owner: this.inSeat(s.owner), type: s.type, lord: s.lord ?? null, pos: this.inPos([s.pos[0], s.pos[1]]), facing: this.inFacing(s.facing), level: s.level, size: s.size });
       for (const s of this.army) if (s.id !== this.hidden) add(s);
       for (const s of this.ghosts ?? []) add(s);
       const p = this.preview;
