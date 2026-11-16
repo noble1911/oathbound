@@ -1438,7 +1438,8 @@
      "R"
     ]
    ],
-   "clipset": "spear"
+   "clipset": "spear",
+   "builder": "faction.py"
   },
   {
    "id": "djinn_binder",
@@ -1947,9 +1948,9 @@
      "bone": "m_body",
      "args": {
       "faction": "caliphate",
-      "y0": -0.36,
-      "y1": 0.62,
-      "hem": 0.7,
+      "y0": -0.1,
+      "y1": 0.6,
+      "hem": 0.74,
       "off": 0.03,
       "hem_shape": "scallop",
       "hem_amp": 0.05,
@@ -1974,7 +1975,14 @@
      }
     }
    ],
-   "skin": "solid"
+   "skin": "solid",
+   "grade": {
+    "lift": [
+     0.95,
+     1.02
+    ]
+   },
+   "metal_max": 0.3
   },
   {
    "id": "weapon_shield_sun",

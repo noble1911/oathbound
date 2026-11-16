@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 801,
- "width": 801,
+ "vertexCount": 785,
+ "width": 785,
  "rowsPerFrame": 1,
  "totalFrames": 121,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.6226,
-   -1.3087,
-   -2.7881
+   -0.5722,
+   -1.5633,
+   -2.8769
   ],
   "max": [
-   3.0509,
-   4.7957,
-   2.9148
+   3.339,
+   5.0122,
+   3.2283
   ]
  },
  "pos": "mamluk.vat.pos.bin",

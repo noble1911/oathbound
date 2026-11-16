@@ -317,6 +317,8 @@ Contained jogs with the carries were added to the clip library (`jog_staff`, `jo
 
 ### Sizes (shipped files per model, MB)
 
+(v2 figures, before the remodel; the current sizes of every model are in section 10.z.)
+
 | faction | id | tris LOD0 / LOD1 | all files | loaded at runtime |
 |---|---|---|---|---|
 | Ashen Covenant | `skeleton` | 5506 / 1410 | 1.56 | 1.10 |
@@ -675,3 +677,89 @@ bash art-work/remodel/p4/mount.sh <mount>                    # clean a bare moun
 pose of every clip. TRELLIS keeps the 3/4 concept's head turn of a horse (the bare `horse` looked 35 degrees to its
 right); the joints follow the turned neck and `pose_fix` on `m_neck`, `m_neck2`, `m_head` straightens it in play (+Z turns
 the head towards +X). Check it with the posed bone vectors, not the rest pose.
+
+### 10.z What shipped (remodel v3, 2026-11-16) and how to ship more
+
+Every unit and Lord model in `public/models/v2` was rebuilt (43 models: the 37 of v2 and six new Lords; Keeps and arrow
+towers are untouched). The v2 files are kept in `art-work/backup_v2/pre_remodel/` with that date's `assets.json`,
+`creatures.json` and `manifest.json`. The work log, per-unit decisions and problems: `art-work/remodel/PROGRESS.md`.
+
+**Ship pass** (per batch; nothing reaches `public/` before it):
+1. `node tools/art/run.mjs <ids> --stage`, review: `node e2e/with-gpu-lock.mjs "review" -- node e2e/model-compare.mjs <batch> <ids>`
+   (old | new at the overhead, mid-battle and close-up cameras, both team colours, motion strips) and
+   `node e2e/slide-check.mjs <tag> <ids>`.
+2. Power gate: copy the ids' staged files + a manifest holding only their entries into a temporary stage folder, then
+   `LORDS=a,b node e2e/with-gpu-lock.mjs "power-ab" -- node e2e/power-ab.mjs out.txt --stage <dir> --rounds 3 --tiers medium,low --sets cur,new`.
+   Only the new / old ratio of one run means anything (absolute fps follows the machine load); idle and hidden must be 0.
+3. `node tools/art/ship.mjs <ids>`, then `npx tsc --noEmit`, `npx vitest run`, `npx vite build`.
+
+**GPU etiquette.** One GPU job at a time (`art-work/fx_gpu.lock`). `e2e/with-gpu-lock.mjs` also waits while a process in
+`GPU_GATE` (default `Wow.exe`) runs: power numbers and captures are meaningless while the user plays. The mesh queue has
+the same gate as an opt-in (`MESH_GATE=Wow.exe`).
+
+**Rules the review enforced** (keep them for new units):
+* A faction must read at a glance: Kingdom = steel, oak / leather, cool neutrals; Ashen Covenant = bone, grey, bronze,
+  green soul-fire; Sun Caliphate = white, sand / terracotta, gold, turquoise accents. A 1024 TRELLIS bake drifts in hue
+  and saturation against the 512 one (orange berserker pelt, crimson horse, red sand golem, brown bone drake): pull it
+  back with `hue_map`, `grade.lift` / `sat`, `grade.tone` (hue window -> colour), `grade.glow` (dark soul-fire -> bright).
+* Team colour must dominate from the RTS side (behind) AND from the front (the enemy faces the camera): shields carry a
+  team-coloured FIELD and a team-cloth back; units with no cloth behind get `grade.fur.region`; mounts get an authored
+  team caparison.
+* Renderer side (`src/render/crowd/assets.ts`): low and medium draw a heavy hero's `lod1` file (8k triangles, own 1024
+  atlas, needs manifest `lod1TintMask`) and cap hero textures at 1024; high and ultra draw LOD0 at 2048.
+
+**Sizes, before -> after** (runtime = what a client on the high tier downloads for the unit: crowd mesh + VAT + tint for
+squads, detail GLB + mask for heroes; low / medium load the hero `lod1` file + its mask instead, 0.9-1.3 MB):
+
+| id | tris LOD0 / LOD1 before | after | all files MB before | after | high-tier runtime MB before | after |
+|---|---|---|---|---|---|---|
+| `militia` | 5906 / 1474 | 5994 / 1468 | 1.62 | 1.65 | 1.17 | 1.16 |
+| `pikeman` | 5506 / 1412 | 5506 / 1412 | 1.46 | 1.43 | 1.11 | 1.04 |
+| `berserker` | 5908 / 1474 | 5908 / 1474 | 1.69 | 1.70 | 1.12 | 1.14 |
+| `archer` | 5908 / 1474 | 5908 / 1474 | 1.57 | 1.54 | 1.16 | 1.15 |
+| `knight` | 5908 / 1474 | 5798 / 1464 | 1.69 | 1.65 | 1.22 | 1.15 |
+| `mage` | 5908 / 1476 | 5908 / 1476 | 1.81 | 1.77 | 1.36 | 1.33 |
+| `cleric` | 5908 / 1474 | 5908 / 1474 | 1.65 | 1.69 | 1.16 | 1.20 |
+| `cavalier` | 8370 / 1474 | 9370 / 1472 | 2.77 | 1.93 | 1.28 | 1.24 |
+| `pegasus` | 8370 / 1442 | 10354 / 1470 | 2.93 | 2.20 | 1.37 | 1.32 |
+| `wyvern` | 14280 / 3239 | 28574 / 7876 | 2.19 | 3.87 | 1.63 | 2.58 |
+| `ballista` | 14816 / 2978 | 5292 / 2112 | 1.15 | 1.68 | 0.90 | 1.48 |
+| `trebuchet` | 14806 / 2986 | 6922 / 2342 | 0.97 | 1.64 | 0.73 | 1.45 |
+| `golem` | 14774 / 2954 | 29550 / 7880 | 1.15 | 3.14 | 0.84 | 2.14 |
+| `dragon` | 14774 / 2954 | 29550 / 7880 | 1.48 | 3.69 | 1.12 | 2.57 |
+| `lord_marshal` | 14774 / 2953 | 29548 / 7878 | 1.23 | 2.98 | 0.86 | 2.04 |
+| `lord_archmage` | 14774 / 2942 | 29548 / 7878 | 1.49 | 3.25 | 1.02 | 2.26 |
+| `lord_warden` | 14774 / 2954 | 29548 / 7878 | 1.37 | 3.65 | 1.01 | 2.57 |
+| `lord_skylady` | 14774 / 2920 | 29548 / 7878 | 1.35 | 2.97 | 0.97 | 1.99 |
+| `skeleton` | 5506 / 1410 | 5396 / 1400 | 1.56 | 1.67 | 1.10 | 1.10 |
+| `grave_knight` | 5908 / 1474 | 5798 / 1464 | 1.66 | 1.80 | 1.14 | 1.19 |
+| `bone_archer` | 5908 / 1474 | 5908 / 1474 | 1.60 | 1.63 | 1.17 | 1.13 |
+| `grave_acolyte` | 5908 / 1474 | 5908 / 1474 | 1.58 | 1.56 | 1.06 | 1.03 |
+| `lord_lich` | 14772 / 2952 | 29548 / 7876 | 1.47 | 4.00 | 1.05 | 2.91 |
+| `bone_golem` | 14774 / 2954 | 29550 / 7880 | 1.84 | 4.25 | 1.42 | 3.17 |
+| `wraith_rider` | 7970 / 1391 | 8970 / 1400 | 2.97 | 2.07 | 1.25 | 1.17 |
+| `bone_drake` | 14774 / 2954 | 29550 / 7880 | 1.55 | 3.95 | 1.12 | 2.79 |
+| `corpse_catapult` | 14806 / 2984 | 11946 / 2986 | 1.26 | 1.77 | 0.98 | 1.58 |
+| `spear_levy` | 5506 / 1412 | 5592 / 1406 | 1.56 | 1.57 | 1.13 | 1.11 |
+| `scimitar` | 5908 / 1474 | 5994 / 1468 | 1.61 | 1.67 | 1.12 | 1.14 |
+| `djinn_binder` | 5908 / 1474 | 5908 / 1474 | 1.67 | 1.64 | 1.17 | 1.15 |
+| `sun_priest` | 5908 / 1474 | 5908 / 1474 | 1.70 | 1.68 | 1.20 | 1.20 |
+| `lord_sultana` | 14772 / 2950 | 29560 / 7888 | 1.43 | 3.23 | 1.01 | 2.27 |
+| `camel_archer` | 8370 / 1466 | 9370 / 1465 | 2.90 | 2.06 | 1.32 | 1.30 |
+| `mamluk` | 8370 / 1396 | 10354 / 1421 | 3.06 | 2.29 | 1.37 | 1.37 |
+| `war_elephant` | 14774 / 2954 | 39038 / 13915 | 1.43 | 3.96 | 1.04 | 2.90 |
+| `sand_golem` | 14774 / 2954 | 29550 / 7880 | 1.47 | 3.79 | 1.07 | 2.67 |
+| `djinn` | 14774 / 2954 | 29550 / 7880 | 2.68 | 2.76 | 0.72 | 1.79 |
+| `lord_deathknight` | new | 29548 / 7878 | - | 3.76 | - | 2.70 |
+| `lord_rajah` | new | 29554 / 7884 | - | 3.09 | - | 2.17 |
+| `lord_vizier` | new | 29548 / 7874 | - | 3.66 | - | 2.52 |
+| `lord_ossuary` | new | 29556 / 7885 | - | 4.57 | - | 3.27 |
+| `lord_drakerider` | new | 28572 / 7880 | - | 3.96 | - | 2.71 |
+| `lord_rocrider` | new | 28574 / 7859 | - | 4.51 | - | 3.18 |
+
+**Known limits after v3.** No emissive channel (soul-fire is bright albedo). Dragon / wyvern wing roots still twist
+seen from below. Siege `hit` is a small jolt. Capes, cloaks and manes have no secondary motion. The in-engine slide
+check cannot read contained jog clips and counts low cloth hems as planted points (archer, spear levy): trust the
+Blender bone audit (`anim_audit.py`) there. The mamluk's gallop has a worst planted-hoof error of about 19 cm in the
+build log (7 cm before; not visible in the run strip). Mounted heroes use a 3072 x 2048 atlas (mount 2048 + rider 1024).
+

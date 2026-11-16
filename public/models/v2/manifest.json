@@ -2897,18 +2897,18 @@
     }
    ],
    "tris": {
-    "lod0": 8370,
-    "lod1": 1396
+    "lod0": 10354,
+    "lod1": 1421
    },
    "bytes": {
-    "mamluk.glb": 1597680,
-    "mamluk.vat.json": 1620,
-    "mamluk.vat.pos.bin": 775368,
-    "mamluk_lod1.glb": 548220,
-    "mamluk_lod1_tint.png": 44391,
-    "mamluk_team.png": 92658
+    "mamluk.glb": 835072,
+    "mamluk_lod1.glb": 551516,
+    "mamluk_team.png": 88858,
+    "mamluk.vat.json": 1619,
+    "mamluk.vat.pos.bin": 759880,
+    "mamluk_lod1_tint.png": 55159
    },
-   "totalBytes": 3059937
+   "totalBytes": 2292104
   },
   "war_elephant": {
    "kind": "large",
