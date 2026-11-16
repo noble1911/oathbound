@@ -667,7 +667,7 @@ export class PlanningScreen {
       actions = `<div class="sp-acts">
         <button class="btn primary lvl" ${can ? '' : 'disabled'} data-tip="${maxed ? 'Max level' : `+25% life, +20% damage${opens} [U]${whyNot ? '. ' + whyNot : ''}`}">
           ${icon('up')}<span>${maxed ? 'Max level' : `Level ${sq.level + 1}`}</span>${maxed ? '' : `<em>${icon('gold')}${cost}</em>`}</button>
-        <button class="btn danger sell ${armed ? 'armed' : ''}" ${me.ready ? 'disabled' : ''} data-tip="${refund ? 'Refunds 100%: a sale in the round it was deployed is an undo. Items go to your stash.' : 'No refund: this squad was deployed in an earlier round. Items go to your stash.'} Press twice to confirm. [Del]">${icon('sell')}<span>${armed ? 'Confirm sell' : 'Sell'}</span><em>${refund ? `+${refund}` : '0'}</em></button>
+        <button class="btn danger sell ${armed ? 'armed' : ''}" ${me.ready ? 'disabled' : ''} data-tip="${refund ? 'Refunds 100%: a sale in the round it was deployed is an undo. Items go to your stash.' : 'No refund: this squad was deployed in an earlier round. Items go to your stash.'} Press twice to confirm. [Del]">${icon('sell')}<span>${armed ? 'Confirm' : 'Sell'}</span><em>${refund ? `+${refund}` : '0'}</em></button>
       </div>`;
     }
     const slots = SLOTS.map((slot) => {
@@ -754,7 +754,7 @@ export class PlanningScreen {
       this.sellArmed = { id: sq.id, until: now + 4000 };
       sound.click();
       const refund = sellRefund(sq, this.round);
-      toast(`Sell ${UNITS[sq.type as UnitType].name} for ${refund ? `+${refund} gold` : 'no refund'}? Press Del again or click Confirm sell.`, 'info', 3600);
+      toast(`Sell ${UNITS[sq.type as UnitType].name} for ${refund ? `+${refund} gold` : 'no refund'}? Press Del again or click Confirm.`, 'info', 3600);
       this.renderPanel();
       setTimeout(() => {
         if (this.sellArmed && this.sellArmed.until <= performance.now()) {

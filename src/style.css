@@ -380,12 +380,17 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .lp-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 17rem)); grid-auto-rows: minmax(0, max-content); gap: 1.5rem; justify-content: center; align-content: center; min-height: 0; overflow: hidden auto; padding: 0.8rem 0.8rem; }
 /* a faction with one Lord: one wide charter, the portrait beside the text */
 .lp-cards[data-n='1'] { grid-template-columns: minmax(0, 46rem); }
-.lp-cards[data-n='1'] .lcard { grid-template-columns: 17rem minmax(0, 1fr); grid-template-rows: auto auto auto auto 1fr; column-gap: 0.4rem; padding: 0.4rem 0 0.9rem; }
+.lp-cards[data-n='1'] .lcard { grid-template-columns: 17rem minmax(0, 1fr); grid-template-rows: 1fr; column-gap: 0.4rem; padding: 0.4rem 0 0.9rem; }
 .lp-cards[data-n='1'] .lcard > .lport { grid-row: 1 / -1; height: auto; min-height: 15rem; margin: 0 0 0 0.4rem; }
 .lp-cards[data-n='1'] .lcard > :not(.lport) { grid-column: 2; }
 .lp-cards[data-n='2'] { grid-template-columns: repeat(2, minmax(0, 19rem)); }
 .lp-cards[data-n='3'] { grid-template-columns: repeat(3, minmax(0, 18rem)); }
-.lcard { --hue: var(--steel-300); min-width: 0; display: grid; grid-template-rows: minmax(4.5rem, 8.5rem) auto auto auto auto 1fr; gap: 0.55rem; padding: 0 0 0.9rem; text-align: left; transition: transform 0.2s, opacity 0.3s, filter 0.3s; animation: cardin 0.6s both; }
+.lcard { --hue: var(--steel-300); min-width: 0; display: grid; grid-template-rows: minmax(4.5rem, 8.5rem) 1fr; gap: 0.55rem; padding: 0 0 0.9rem; text-align: left; transition: transform 0.2s, opacity 0.3s, filter 0.3s; animation: cardin 0.6s both; }
+/* several cards: each card is a two-row subgrid (portrait, body) of the row's shared tracks, so the portraits all give up
+   the same height when the screen is short (the card with the longest text no longer gets a shorter portrait) */
+.lp-cards:not([data-n='1']) { grid-template-rows: minmax(4.5rem, 8.5rem) auto; grid-auto-rows: auto; row-gap: 0; }
+.lp-cards:not([data-n='1']) .lcard { grid-row: 1 / span 2; grid-template-rows: subgrid; }
+.lc-body { min-width: 0; display: grid; grid-template-rows: auto auto auto auto 1fr; gap: 0.55rem; }
 .lcard:nth-child(2) { animation-delay: 0.08s; }
 .lcard:nth-child(3) { animation-delay: 0.16s; }
 .lcard:nth-child(4) { animation-delay: 0.24s; }
@@ -1241,8 +1246,9 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
 .coach[data-slot='foot'] { width: min(72rem, calc(100vw - 2rem)); padding-block: 0.6rem 0.45rem; gap: 0.2rem; }
 #ui:has(.coach.on[data-slot='foot']) .lordpick { padding-bottom: var(--coach-foot, 10rem); gap: 0.35rem; }
 #ui:has(.coach.on[data-slot='foot']) .lp-cards { padding-block: 0.5rem 0.2rem; }
-#ui:has(.coach.on[data-slot='foot']) .lcard { gap: 0.4rem; }
+#ui:has(.coach.on[data-slot='foot']) :is(.lcard, .lc-body) { gap: 0.4rem; }
 #ui:has(.coach.on[data-slot='foot']) .lcard > .lport { height: 5.6rem; }
+#ui:has(.coach.on[data-slot='foot']) .lp-cards:not([data-n='1']) { grid-template-rows: 5.6rem auto; }
 #ui:has(.coach.on[data-slot='foot']) .lp-foot { display: none; }
 /* it reads above a tooltip that opens over it (tooltips are z-index 90) */
 #ui:has(.tip-layer.on) .coach { z-index: 91; }
@@ -1290,7 +1296,9 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .over::before, .over::after { display: none; }
   .ready-btn { border-width: 0.9rem 1.2rem; border-image-width: 0.9rem 1.55rem; }
   .lp-cards { grid-template-columns: repeat(4, minmax(0, 17rem)); gap: 1.1rem; }
-  .lcard { gap: 0.4rem; grid-template-rows: minmax(3.6rem, 6rem) auto auto auto auto 1fr; }
+  .lcard, .lc-body { gap: 0.4rem; }
+  .lcard { grid-template-rows: minmax(3.6rem, 6rem) 1fr; }
+  .lp-cards:not([data-n='1']) { grid-template-rows: minmax(3.6rem, 6rem) auto; }
   .lcard > :not(.lport) { margin: 0 0.6rem; }
   .lport { height: 6rem; }
   .lc-name b { font-size: 1.25rem; }
@@ -1328,6 +1336,7 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .coach { width: 15.5rem; }
   .coach[data-slot='foot'] { width: calc(100vw - 2rem); }
   #ui:has(.coach.on[data-slot='foot']) .lcard > .lport { height: 3.6rem; }
+  #ui:has(.coach.on[data-slot='foot']) .lp-cards:not([data-n='1']) { grid-template-rows: 3.6rem auto; }
   #ui:has(.coach.on[data-slot='foot']) .lp-head .eyebrow { display: none; }
   #ui:has(.coach.on[data-slot='foot']) .lcard { gap: 0.3rem; }
   #ui:has(.coach.on[data-slot='foot']) .lp-cards { padding-block: 0.3rem 0; }
