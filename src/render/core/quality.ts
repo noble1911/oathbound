@@ -106,19 +106,43 @@ export function gpuName(renderer: THREE.WebGLRenderer): string {
   return String(s ?? '');
 }
 
+/** CPU / memory hints the browser gives (`deviceMemory` is Chromium-only and capped at 8; either may be missing). */
+export interface DeviceHints {
+  mobile: boolean;
+  cores?: number;
+  memoryGb?: number;
+}
+
+export function deviceHints(): DeviceHints {
+  const nav = typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { deviceMemory?: number });
+  return { mobile: isMobile(), cores: nav?.hardwareConcurrency || undefined, memoryGb: nav?.deviceMemory || undefined };
+}
+
 /**
  * First guess from the GPU string (power-aware): strong discrete GPUs get 'high' (ultra is opt-in),
- * integrated / mobile / software GPUs get 'low', everything unknown gets 'medium'. The frame probe
- * only ever lowers it.
+ * integrated / mobile / software / entry-level discrete GPUs get 'low', everything unknown gets
+ * 'medium'. A weak CPU or little memory lowers the guess (an unknown GPU on a 4-thread / 4 GB machine
+ * is most likely integrated), because the frame probe only ever lowers it and takes a while to do so.
  */
-export function guessTier(renderer: THREE.WebGLRenderer): QualityTier {
-  const g = gpuName(renderer).toLowerCase();
+export function guessTierFrom(gpu: string, hints: DeviceHints): QualityTier {
+  const g = gpu.toLowerCase();
   if (/swiftshader|llvmpipe|software|basic render/.test(g)) return 'low';
-  if (isMobile()) return /apple gpu|adreno \(tm\) 7[4-9]|immortalis/.test(g) ? 'medium' : 'low';
+  if (hints.mobile) return /apple gpu|adreno \(tm\) 7[4-9]|immortalis/.test(g) ? 'medium' : 'low';
   if (/intel|uhd|iris|vega \d|radeon\(tm\) graphics|radeon graphics|780m|680m|mali|adreno/.test(g)) return 'low';
-  if (/apple m\d (pro|max|ultra)/.test(g)) return 'medium';
-  if (/rtx [2-5]0[6-9]0|rtx 50|rx [679][6-9]\d\d|radeon pro w7/.test(g)) return 'high';
-  return 'medium';
+  // entry-level / old discrete: GeForce MX / GT, GTX 9xx and older, Radeon R5-R9 / HD
+  if (/geforce (mx|gt )|gtx [4-9]\d0(?!\d)|radeon (r[5-9] |hd )/.test(g)) return 'low';
+  const weak = (hints.cores !== undefined && hints.cores <= 2) || (hints.memoryGb !== undefined && hints.memoryGb <= 2);
+  const modest = (hints.cores !== undefined && hints.cores <= 4) || (hints.memoryGb !== undefined && hints.memoryGb <= 4);
+  if (weak) return 'low';
+  let t: QualityTier = 'medium';
+  if (/apple m\d (pro|max|ultra)/.test(g)) t = 'medium';
+  else if (/rtx [2-5]0[6-9]0|rtx 50|rx [679][6-9]\d\d|radeon pro w7/.test(g)) t = 'high';
+  else if (modest) return 'low'; // unknown GPU on a small machine
+  return modest && t === 'high' ? 'medium' : t;
+}
+
+export function guessTier(renderer: THREE.WebGLRenderer): QualityTier {
+  return guessTierFrom(gpuName(renderer), deviceHints());
 }
 
 /**
