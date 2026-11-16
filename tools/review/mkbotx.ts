@@ -16,7 +16,7 @@ for (const fn of ['placeFor', 'threatsOf', 'hardLayout', 'applyLayout']) swap(`\
 swap('const HARD_LEVEL_BIAS = ', 'const HARD_LEVEL_BIAS_SHIPPED = ');
 swap('\nfunction planHard(', '\nexport const KNOB = { noLevel: false, noLayout: false, bias: HARD_LEVEL_BIAS_SHIPPED, sync: HARD_SPEED_SYNC, from: HARD_LEVEL_FROM };\nfunction planHard(');
 swap('lv.w * HARD_LEVEL_BIAS > bw', 'lv.w * KNOB.bias > bw');
-swap('const lv = s.round < HARD_LEVEL_FROM ? null : hardLevelPick(s, seat, threats, salt);', 'const lv = KNOB.noLevel || s.round < KNOB.from ? null : hardLevelPick(s, seat, threats, salt);');
+swap('const lv = s.round < HARD_LEVEL_FROM ? null : hardLevelPick(s, seat, threats, salt, hold);', 'const lv = KNOB.noLevel || s.round < KNOB.from ? null : hardLevelPick(s, seat, threats, salt, hold);');
 swap('\n  applyLayout(s, seat, hardLayout(p, threats', '\n  if (!KNOB.noLayout) applyLayout(s, seat, hardLayout(p, threats');
 swap('if (HARD_SPEED_SYNC) speedStagger', 'if (KNOB.sync) speedStagger');
 writeFileSync(out, s);

@@ -48,7 +48,7 @@ const rows: Record<UnitType, Row> = {
   clerics: {
     class: 'magic',
     name: 'Clerics', role: 'Healer', cost: 150, squadSize: 3, tags: ['infantry'], weapon: 'staff', damageType: 'magic', projectile: 'lightning',
-    hp: 95, dmg: 9, attackTicks: 30, range: 1500, speed: 13, radius: 42, armor: 0, magicResist: 40, heal: 34, traits: ['healer', 'backline'],
+    hp: 95, dmg: 9, attackTicks: 30, range: 1500, speed: 13, radius: 42, armor: 0, magicResist: 40, heal: 46, traits: ['healer', 'backline'],
   },
   pegasus: {
     class: 'air',

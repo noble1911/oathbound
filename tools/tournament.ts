@@ -1,10 +1,10 @@
 // Bot round robin (DESIGN §8). Every (strategy, Lord) entry plays every other entry on both sides across many seeds.
-// Usage: node tools/tournament.ts [--seeds 2] [--threads 16] [--strats rush,ranged,...] [--lords marshal,lich,...] [--same] [--tune N] [--tune-what units,lords,factions (default units,lords)] [--json out.json] [--best]
+// Usage: node tools/tournament.ts [--seeds 2] [--fields hard:40,normal:40,classic:1 [--full]] [--gain 0.5] [--threads 16] [--strats rush,ranged,...] [--lords marshal,lich,...] [--same] [--tune N] [--tune-what units,lords,factions (default units,lords)] [--json out.json] [--best]
 //   --best  also includes the 'best' strategy (the vs-AI bot) as an entry.
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { aggregate, formatReport, playMatch, TOURNAMENT_STRATEGIES, type MatchRecord } from '../src/sim/tournament.ts';
+import { aggregate, formatReport, playMatch, TOURNAMENT_STRATEGIES, type MatchRecord, type Report } from '../src/sim/tournament.ts';
 import { LORDS, LORD_IDS } from '../src/sim/data/lords.ts';
 import type { BotStrategy, LordId } from '../src/sim/types.ts';
 
@@ -42,6 +42,23 @@ function writeBalance(b: { units: Record<string, number>; lords: Record<string, 
     .replace(/(export const FACTION_POWER[^=]*= \{)[^}]*(\})/, `$1 ${fmt(b.factions)} $2`));
 }
 
+/** One line per gate for a field (the --fields summary). */
+function gateLine(name: string, rep: Report): string {
+  const p = (x: number): string => (100 * x).toFixed(1);
+  const lords = LORD_IDS.filter((l) => rep.lords[l] !== undefined);
+  const us = Object.keys(rep.units).filter((u) => (rep.unitSamples[u] ?? 0) >= 100);
+  const ls = Object.keys(rep.legends).filter((l) => (rep.legendSamples[l] ?? 0) >= 100);
+  const ext = (ks: string[], m: Record<string, number>): string => {
+    if (!ks.length) return '-';
+    const lo = ks.reduce((a, k) => (m[k] < m[a] ? k : a)), hi = ks.reduce((a, k) => (m[k] > m[a] ? k : a));
+    return `${p(m[lo])} ${lo} .. ${p(m[hi])} ${hi}`;
+  };
+  return `[${name}] n=${rep.matches} seat0 ${p(rep.p0)} | rounds ${rep.rounds.toFixed(2)} (p95 ${rep.roundsP95}, past 12: ${p(rep.roundsFinal ?? 0)}%) | blowouts ${p(rep.marginHist[3])}%\n`
+    + `  factions ${Object.entries(rep.factions ?? {}).map(([k, v]) => `${k} ${p(v)}`).join(', ')}\n`
+    + `  lords ${lords.map((l) => `${l} ${p(rep.lords[l])}`).join(', ')}\n`
+    + `  units ${ext(us, rep.units)} | legendaries ${ext(ls, rep.legends)}`;
+}
+
 async function main(): Promise<void> {
   const arg = (name: string, def: string): string => {
     const i = process.argv.indexOf('--' + name);
@@ -49,45 +66,72 @@ async function main(): Promise<void> {
   };
   const seeds = Number(arg('seeds', '2'));
   const threads = Number(arg('threads', String(Math.max(1, Number(process.env.OB_THREADS) || availableParallelism() - 2))));
-  const strats = (arg('strats', '') ? arg('strats', '').split(',') : [...TOURNAMENT_STRATEGIES, ...(process.argv.includes('--best') ? ['best'] : [])]) as BotStrategy[];
-  const entries: [BotStrategy, LordId][] = [];
-  // --lords marshal,lich,...  restricts the entries to these Lords (default: all six, i.e. all three factions).
+  // --lords marshal,lich,...  restricts the entries to these Lords (default: all twelve, i.e. all three factions).
   const lords = (arg('lords', '') ? arg('lords', '').split(',') : LORD_IDS) as LordId[];
-  for (const s of strats) for (const l of lords) entries.push([s, l]);
-  const jobs: Job[] = [];
   const same = process.argv.includes('--same');
   // --tune-what lords | units | both (default both): which multipliers --tune may move.
   const tuneWhat = arg('tune-what', 'both');
-  let seed = Number(arg('seed0', '1000'));
-  for (let k = 0; k < seeds; k++) {
-    for (let a = 0; a < entries.length; a++) {
-      for (let b = 0; b < entries.length; b++) {
-        if (a === b) continue;
-        // --same: equal-level play only (Hard vs Hard, Normal vs Normal...), which is what two humans play.
-        if (same && entries[a][0] !== entries[b][0]) continue;
-        jobs.push({ seed: seed++, lords: [entries[a][1], entries[b][1]], strats: [entries[a][0], entries[b][0]] });
+  const seed0 = Number(arg('seed0', '1000'));
+  const roundRobin = (strats: BotStrategy[], n: number, from: number): Job[] => {
+    const entries: [BotStrategy, LordId][] = [];
+    for (const s of strats) for (const l of lords) entries.push([s, l]);
+    const jobs: Job[] = [];
+    let seed = from;
+    for (let k = 0; k < n; k++) {
+      for (let a = 0; a < entries.length; a++) {
+        for (let b = 0; b < entries.length; b++) {
+          if (a === b) continue;
+          // --same: equal-level play only (Hard vs Hard, Normal vs Normal...), which is what two humans play.
+          if (same && entries[a][0] !== entries[b][0]) continue;
+          jobs.push({ seed: seed++, lords: [entries[a][1], entries[b][1]], strats: [entries[a][0], entries[b][0]] });
+        }
       }
     }
-  }
+    return jobs;
+  };
+  // --fields hard:40,normal:40,classic:1  runs several fields in one go (name:seeds; 'classic' is the mixed field of the
+  // six tournament strategies, any other name one strategy against itself) and prints one gate summary per field. With
+  // --tune, the multipliers follow the MEAN of the fields' rates, so one set of numbers is balanced for every bot level.
+  const fieldArg = arg('fields', '');
+  const fields: { name: string; jobs: Job[] }[] = fieldArg
+    ? fieldArg.split(',').map((f, i) => {
+      const [name, n] = f.split(':');
+      return { name, jobs: roundRobin(name === 'classic' ? TOURNAMENT_STRATEGIES : [name as BotStrategy], Number(n ?? seeds), seed0 + i * 1000000) };
+    })
+    : [{ name: '', jobs: roundRobin((arg('strats', '') ? arg('strats', '').split(',') : [...TOURNAMENT_STRATEGIES, ...(process.argv.includes('--best') ? ['best'] : [])]) as BotStrategy[], seeds, seed0) }];
   const tune = Number(arg('tune', '0'));
   for (let it = 0; it <= tune; it++) {
     const t0 = performance.now();
-    // Fresh seeds each tuning iteration so the tuner does not overfit one seed set.
-    const js = tune ? jobs.map((j) => ({ ...j, seed: j.seed + it * 100000 })) : jobs;
-    const recs = await runAll(js, threads);
-    const rep = aggregate(recs);
-    console.log((tune ? `--- iteration ${it}
-` : '') + formatReport(rep));
-    console.log(`(${js.length} matches, ${entries.length} entries, ${threads} threads, ${((performance.now() - t0) / 1000).toFixed(1)} s)`);
-    const json = arg('json', '');
-    if (json) writeFileSync(json, JSON.stringify(rep, null, 1));
+    const reps: Report[] = [];
+    let played = 0;
+    if (tune) console.log(`--- iteration ${it}`);
+    for (const f of fields) {
+      // Fresh seeds each tuning iteration so the tuner does not overfit one seed set.
+      const js = tune ? f.jobs.map((j) => ({ ...j, seed: j.seed + it * 100000 })) : f.jobs;
+      const rep = aggregate(await runAll(js, threads));
+      reps.push(rep);
+      played += js.length;
+      if (!fieldArg || process.argv.includes('--full')) console.log((fieldArg ? `===== field ${f.name}\n` : '') + formatReport(rep));
+      if (fieldArg) console.log(gateLine(f.name, rep));
+      const json = arg('json', '');
+      if (json) writeFileSync(fieldArg ? json.replace(/(\.json)?$/, `.${f.name}.json`) : json, JSON.stringify(rep, null, 1));
+    }
+    console.log(`(${played} matches, ${threads} threads, ${((performance.now() - t0) / 1000).toFixed(1)} s)`);
     if (it === tune) break;
+    // The rates the tuner follows: the mean over the fields (a unit counts in a field once it has 100 samples there).
+    const mean = (pick: (r: Report) => Record<string, number> | undefined, ok: (r: Report, k: string) => boolean = () => true): Record<string, number> => {
+      const sum: Record<string, [number, number]> = {};
+      for (const r of reps) for (const [k, v] of Object.entries(pick(r) ?? {})) if (ok(r, k)) { const e = (sum[k] ??= [0, 0]); e[0] += v; e[1]++; }
+      return Object.fromEntries(Object.entries(sum).map(([k, [a, n]]) => [k, a / n]));
+    };
+    const rep = { units: mean((r) => r.units, (r, k) => (r.unitSamples?.[k] ?? 0) >= 100), lords: mean((r) => r.lords), factions: mean((r) => r.factions) };
     // Nudge power multipliers towards 50% (power ~ multiplier^2, so a small step goes a long way).
     const b = readBalance();
+    const gain = Number(arg('gain', '0.5'));
     const step = (wr: number, k: number): number => Math.max(-0.08, Math.min(0.08, k * (0.5 - wr)));
     const what = tuneWhat === 'both' ? ['units', 'lords'] : tuneWhat.split(',');
     // Units seen in fewer than 100 round-winner samples are left alone: their rate is mostly noise.
-    if (what.includes('units')) for (const [u, wr] of Object.entries(rep.units)) if (b.units[u] !== undefined && (rep.unitSamples?.[u] ?? 0) >= 100) b.units[u] = Math.max(70, Math.min(150, Math.round(b.units[u] * (1 + step(wr, 0.5)))));
+    if (what.includes('units')) for (const [u, wr] of Object.entries(rep.units)) if (b.units[u] !== undefined) b.units[u] = Math.max(60, Math.min(170, Math.round(b.units[u] * (1 + step(wr, gain / 2)))));
     if (what.includes('factions')) {
       // Faction multipliers (per mille; small steps: 1% of power is worth about 7 points) follow the faction's win rate against the other two; Lords are then tuned towards the
       // average of their own faction's Lords (a single-Lord faction leaves its Lord alone).
@@ -99,10 +143,10 @@ async function main(): Promise<void> {
           const xs = byF[LORDS[l as LordId].faction];
           if (xs.length < 2 || b.lords[l] === undefined) continue;
           const mean = xs.reduce((a, x) => a + x, 0) / xs.length;
-          b.lords[l] = Math.max(40, Math.min(180, Math.round(b.lords[l] * (1 + step(wr - mean + 0.5, 0.5)))));
+          b.lords[l] = Math.max(40, Math.min(180, Math.round(b.lords[l] * (1 + step(wr - mean + 0.5, gain)))));
         }
       }
-    } else if (what.includes('lords')) for (const [l, wr] of Object.entries(rep.lords)) if (b.lords[l] !== undefined) b.lords[l] = Math.max(40, Math.min(180, Math.round(b.lords[l] * (1 + step(wr, 0.5)))));
+    } else if (what.includes('lords')) for (const [l, wr] of Object.entries(rep.lords)) if (b.lords[l] !== undefined) b.lords[l] = Math.max(40, Math.min(180, Math.round(b.lords[l] * (1 + step(wr, gain)))));
     writeBalance(b);
     console.log('balance ->', JSON.stringify(b));
   }
