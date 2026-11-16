@@ -175,7 +175,7 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .sqtip { width: 17rem; border-top-color: var(--me); }
 .sqtip.ghost { border-top-color: var(--foe); }
 .utip-h { display: flex; align-items: center; gap: 0.6rem; }
-.utip-h > div { flex: 1; min-width: 0; }
+.utip-h > div:not(.crest) { flex: 1; min-width: 0; }
 .utip-h b { display: block; font: 700 1.2rem/1.1 var(--serif); color: var(--head); letter-spacing: 0.02em; }
 .utip-h small { color: var(--muted); }
 .utip-cost { display: flex; align-items: center; gap: 0.2rem; font: 700 1.2rem var(--serif); color: var(--coin); }
