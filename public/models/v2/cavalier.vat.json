@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 733,
- "width": 733,
+ "vertexCount": 726,
+ "width": 726,
  "rowsPerFrame": 1,
  "totalFrames": 121,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.9949,
-   -0.2017,
-   -1.4234
+   -1.0128,
+   -0.2053,
+   -1.6144
   ],
   "max": [
-   2.0491,
-   3.5495,
-   1.3095
+   2.0223,
+   3.5333,
+   1.3774
   ]
  },
  "pos": "cavalier.vat.pos.bin",

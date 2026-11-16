@@ -33,12 +33,31 @@ mkdirSync(join(MESH, 'v1'), { recursive: true });
 
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 let held = false;
+/** Optional gate: blocks while any process in MESH_GATE (comma list, e.g. `MESH_GATE=Wow.exe`; default none: the user
+ *  said the TRELLIS queue may run while they play) is running; polls every 2 min and resumes by itself.
+ *  e2e/with-gpu-lock.mjs (power runs, in-engine captures) keeps its own gate, GPU_GATE, default Wow.exe. */
+const GATE = (process.env.MESH_GATE ?? '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+function gaming() {
+  if (!GATE.length || process.platform !== 'win32') return null;
+  const out = (spawnSync('tasklist', ['/FO', 'CSV', '/NH'], { encoding: 'utf8' }).stdout ?? '').toLowerCase();
+  return GATE.find((g) => out.includes(`"${g}"`)) ?? null;
+}
+function gate() {
+  let said = false;
+  for (let g; (g = gaming());) {
+    if (!said) { console.log(`paused: ${g} is running (no GPU work while the user plays); polling every 2 min  [${new Date().toLocaleTimeString()}]`); said = true; }
+    sleep(120000);
+  }
+  if (said) console.log(`resumed  [${new Date().toLocaleTimeString()}]`);
+}
 function lock(purpose) {
+  gate();
   let said = false;
   while (existsSync(LOCK)) {
     if (!said) { console.log(`waiting for the GPU: ${readFileSync(LOCK, 'utf8').trim()}`); said = true; }
     sleep(400);                                          // poll fast: other lock users (e2e/with-gpu-lock.mjs) do too, a slow poll never wins the lock
   }
+  if (gaming()) return lock(purpose);                     // the game started while we waited for the lock
   writeFileSync(LOCK, `tools/art/mesh.mjs: ${purpose} (pid ${process.pid}, ${new Date().toISOString()})\n`);
   held = true;
 }

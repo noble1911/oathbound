@@ -564,6 +564,18 @@ def grade(a, low):
                 rgb = rgb * (1 - hi[..., None]) + np.clip(f.get('grey', 0.6) * shade, 0, 1)[..., None] * hi[..., None]
                 mask = np.maximum(mask, f['team'] * hi)
             print(f"[cleanup] grade fur: {sel.mean() * 100:.1f}% of the atlas recoloured")
+    for hlo, hhi, smin, to in g.get('tone', []):
+        # `tone` [[hue lo, hue hi, min saturation, [r, g, b]], ...]: saturated texels in a hue window -> colour `to`, shading kept
+        # (faction palette: the 1024 bake gave the berserker a fox-orange pelt, the Sun Caliphate's colour, instead of brown)
+        mx = rgb.max(2); mn = rgb.min(2); d = mx - mn + 1e-6
+        hue = np.where(mx == rgb[..., 0], ((rgb[..., 1] - rgb[..., 2]) / d) % 6, np.where(mx == rgb[..., 1], (rgb[..., 2] - rgb[..., 0]) / d + 2, (rgb[..., 0] - rgb[..., 1]) / d + 4)) / 6.0
+        sat = d / (mx + 1e-6)
+        k = (((hue > hlo) & (hue < hhi)) | ((hue + 1 > hlo) & (hue + 1 < hhi))) * np.clip((sat - smin) / 0.12, 0, 1) * (mask < 0.3)
+        k = L.box_blur(k.astype(f32), 3)[..., None]
+        lum = rgb.mean(2, keepdims=True)
+        ref = float(np.median(lum[k[..., 0] > 0.5])) if (k > 0.5).any() else 0.3
+        rgb = rgb * (1 - k) + np.clip(np.array(to, f32) * np.clip(lum / ref, 0.4, 1.5), 0, 1) * k
+        print(f"[cleanup] grade tone hue {hlo}-{hhi}: {float((k > 0.5).mean()) * 100:.1f}% of the atlas")
     if 'lift' in g:
         gamma, gain = g['lift']
         rgb = np.clip(rgb ** gamma * gain, 0, 1)

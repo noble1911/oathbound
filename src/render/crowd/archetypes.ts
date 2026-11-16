@@ -85,7 +85,7 @@ export const ARCHETYPES: Record<string, Archetype> = {
   // rate matched to their speed instead of skating on a walk clip clamped at 1.8x.
   militia: human('militia', 'crowd', { walkSpeed: 0.63, runSpeed: 3.37, runAbove: 1.6 }),
   pikemen: human('pikemen', 'crowd', { walkSpeed: 0.8, runSpeed: 4.27, runAbove: 1.8 }),
-  berserkers: human('berserkers', 'crowd', { attackImpact: 0.42, walkSpeed: 0.75, runSpeed: 4.03, runAbove: 1.8 }),
+  berserkers: human('berserkers', 'crowd', { attackImpact: 0.42, walkSpeed: 0.75, runSpeed: 3.79, runAbove: 1.8 }),
   archers: human('archers', 'crowd', { attackImpact: 0.64, walkSpeed: 1.07, runSpeed: 3.5, runAbove: 2.0 }),
   knights: human('knights', 'crowd', { walkSpeed: 0.64, runSpeed: 3.44, runAbove: 1.5, dust: 0.35 }),
   mages: human('mages', 'crowd', { walkSpeed: 1.04, runSpeed: 3.44, runAbove: 2.0, attackImpact: 0.45, muzzle: 2.0 }),

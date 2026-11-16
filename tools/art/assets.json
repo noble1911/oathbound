@@ -64,7 +64,19 @@
      "zmin": 0.45,
      "grey": 0.45
     },
-    "mask_open": 5
+    "mask_open": 5,
+    "tone": [
+     [
+      -0.02,
+      0.075,
+      0.56,
+      [
+       0.2,
+       0.15,
+       0.115
+      ]
+     ]
+    ]
    }
   },
   {
@@ -558,6 +570,35 @@
    "mask": 512,
    "parts": [
     {
+     "name": "caparison",
+     "builder": "caparison",
+     "bone": "m_body",
+     "args": {
+      "faction": "kingdom",
+      "y0": -0.2,
+      "y1": 0.34,
+      "hem": 0.42,
+      "off": 0.02,
+      "hem_shape": "scallop",
+      "hem_amp": 0.04,
+      "tassels": false,
+      "art": "caparison_kingdom",
+      "cols": 13,
+      "rows_top": 3,
+      "rows_low": 6,
+      "frame": {
+       "rig": true
+      },
+      "barrel": {
+       "y0": -0.5,
+       "y1": 0.35,
+       "z": 0.72,
+       "rx": 0.18,
+       "rz": 0.2
+      }
+     }
+    },
+    {
      "name": "saddle",
      "builder": "saddle",
      "bone": "m_body",
@@ -566,7 +607,7 @@
       "y": 0.02,
       "length": 0.42,
       "width": 0.15,
-      "cloth_drop": 0.42,
+      "cloth_drop": 0,
       "pommel": 0.06,
       "cantle": 0.09,
       "frame": {
@@ -714,7 +755,14 @@
    "lod0": 400,
    "lod1": 100,
    "style": "object",
-   "procedural": true
+   "procedural": true,
+   "trap": [
+    "shield",
+    {
+     "kind": "round",
+     "back": "cloth_team"
+    }
+   ]
   },
   {
    "id": "weapon_shield_kite",
@@ -724,7 +772,14 @@
    "lod0": 600,
    "lod1": 150,
    "style": "object",
-   "procedural": true
+   "procedural": true,
+   "trap": [
+    "shield",
+    {
+     "kind": "kite",
+     "back": "cloth_team"
+    }
+   ]
   },
   {
    "id": "rocks",
@@ -1168,7 +1223,14 @@
      0.37
     ]
    ],
-   "procedural": true
+   "procedural": true,
+   "trap": [
+    "shield",
+    {
+     "kind": "grave",
+     "back": "cloth_team"
+    }
+   ]
   },
   {
    "id": "weapon_sword_grave",
@@ -1915,7 +1977,14 @@
      0.485
     ]
    ],
-   "procedural": true
+   "procedural": true,
+   "trap": [
+    "shield",
+    {
+     "kind": "sun",
+     "back": "cloth_team"
+    }
+   ]
   },
   {
    "id": "weapon_scimitar",

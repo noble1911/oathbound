@@ -91,18 +91,18 @@
     }
    ],
    "tris": {
-    "lod0": 5906,
-    "lod1": 1474
+    "lod0": 5994,
+    "lod1": 1468
    },
    "bytes": {
-    "militia.glb": 424604,
-    "militia.vat.json": 1627,
-    "militia.vat.pos.bin": 744448,
-    "militia_lod1.glb": 384600,
-    "militia_lod1_tint.png": 36150,
-    "militia_team.png": 29374
+    "militia.glb": 451480,
+    "militia_lod1.glb": 345600,
+    "militia_team.png": 36078,
+    "militia.vat.json": 1626,
+    "militia.vat.pos.bin": 774144,
+    "militia_lod1_tint.png": 38356
    },
-   "totalBytes": 1620803
+   "totalBytes": 1647284
   },
   "pikeman": {
    "kind": "humanoid",
@@ -184,14 +184,14 @@
     "lod1": 1412
    },
    "bytes": {
-    "pikeman.glb": 334656,
-    "pikeman.vat.json": 1626,
-    "pikeman.vat.pos.bin": 722944,
-    "pikeman_lod1.glb": 357864,
-    "pikeman_lod1_tint.png": 24585,
-    "pikeman_team.png": 19274
+    "pikeman.glb": 358864,
+    "pikeman_lod1.glb": 344400,
+    "pikeman_team.png": 22828,
+    "pikeman.vat.json": 1625,
+    "pikeman.vat.pos.bin": 667648,
+    "pikeman_lod1_tint.png": 29908
    },
-   "totalBytes": 1460949
+   "totalBytes": 1425273
   },
   "berserker": {
    "kind": "humanoid",
@@ -273,14 +273,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "berserker.glb": 516532,
-    "berserker.vat.json": 1633,
+    "berserker.glb": 504556,
+    "berserker_lod1.glb": 335332,
+    "berserker_team.png": 56954,
+    "berserker.vat.json": 1632,
     "berserker.vat.pos.bin": 758784,
-    "berserker_lod1.glb": 326540,
-    "berserker_lod1_tint.png": 36776,
-    "berserker_team.png": 53297
+    "berserker_lod1_tint.png": 47157
    },
-   "totalBytes": 1693562
+   "totalBytes": 1704415
   },
   "archer": {
    "kind": "humanoid",
@@ -362,14 +362,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "archer.glb": 384080,
-    "archer.vat.json": 1618,
-    "archer.vat.pos.bin": 793152,
-    "archer_lod1.glb": 342152,
-    "archer_lod1_tint.png": 27408,
-    "archer_team.png": 26416
+    "archer.glb": 364136,
+    "archer_lod1.glb": 354488,
+    "archer_team.png": 28313,
+    "archer.vat.json": 1619,
+    "archer.vat.pos.bin": 758336,
+    "archer_lod1_tint.png": 31910
    },
-   "totalBytes": 1574826
+   "totalBytes": 1538802
   },
   "knight": {
    "kind": "humanoid",
@@ -451,18 +451,18 @@
     }
    ],
    "tris": {
-    "lod0": 5908,
-    "lod1": 1474
+    "lod0": 5798,
+    "lod1": 1464
    },
    "bytes": {
-    "knight.glb": 451868,
+    "knight.glb": 487528,
+    "knight_lod1.glb": 374624,
+    "knight_team.png": 10981,
     "knight.vat.json": 1623,
-    "knight.vat.pos.bin": 805888,
-    "knight_lod1.glb": 385212,
-    "knight_lod1_tint.png": 24313,
-    "knight_team.png": 17432
+    "knight.vat.pos.bin": 757760,
+    "knight_lod1_tint.png": 17536
    },
-   "totalBytes": 1686336
+   "totalBytes": 1650052
   },
   "mage": {
    "kind": "humanoid",
@@ -544,14 +544,14 @@
     "lod1": 1476
    },
    "bytes": {
-    "mage.glb": 418128,
+    "mage.glb": 403476,
+    "mage_lod1.glb": 362492,
+    "mage_team.png": 40411,
     "mage.vat.json": 1746,
-    "mage.vat.pos.bin": 927520,
-    "mage_lod1.glb": 385412,
-    "mage_lod1_tint.png": 46909,
-    "mage_team.png": 33832
+    "mage.vat.pos.bin": 912640,
+    "mage_lod1_tint.png": 52034
    },
-   "totalBytes": 1813547
+   "totalBytes": 1772799
   },
   "cleric": {
    "kind": "humanoid",
@@ -633,14 +633,14 @@
     "lod1": 1474
    },
    "bytes": {
-    "cleric.glb": 458752,
-    "cleric.vat.json": 1611,
-    "cleric.vat.pos.bin": 725744,
-    "cleric_lod1.glb": 398392,
-    "cleric_lod1_tint.png": 38180,
-    "cleric_team.png": 27886
+    "cleric.glb": 454660,
+    "cleric_lod1.glb": 387640,
+    "cleric_team.png": 31932,
+    "cleric.vat.json": 1610,
+    "cleric.vat.pos.bin": 766480,
+    "cleric_lod1_tint.png": 45012
    },
-   "totalBytes": 1650565
+   "totalBytes": 1687334
   },
   "cavalier": {
    "kind": "mounted",
@@ -718,18 +718,18 @@
     }
    ],
    "tris": {
-    "lod0": 8370,
-    "lod1": 1474
+    "lod0": 9370,
+    "lod1": 1472
    },
    "bytes": {
-    "cavalier.glb": 1426592,
+    "cavalier.glb": 647748,
+    "cavalier_lod1.glb": 505320,
+    "cavalier_team.png": 41234,
     "cavalier.vat.json": 1627,
-    "cavalier.vat.pos.bin": 709544,
-    "cavalier_lod1.glb": 534280,
-    "cavalier_lod1_tint.png": 36165,
-    "cavalier_team.png": 61583
+    "cavalier.vat.pos.bin": 702768,
+    "cavalier_lod1_tint.png": 29456
    },
-   "totalBytes": 2769791
+   "totalBytes": 1928153
   },
   "pegasus": {
    "kind": "flier",
@@ -807,18 +807,18 @@
     }
    ],
    "tris": {
-    "lod0": 8370,
-    "lod1": 1442
+    "lod0": 10354,
+    "lod1": 1470
    },
    "bytes": {
-    "pegasus.glb": 1513256,
+    "pegasus.glb": 819460,
+    "pegasus_lod1.glb": 549256,
+    "pegasus_team.png": 59575,
     "pegasus.vat.json": 1621,
-    "pegasus.vat.pos.bin": 771496,
-    "pegasus_lod1.glb": 581156,
-    "pegasus_lod1_tint.png": 17737,
-    "pegasus_team.png": 41055
+    "pegasus.vat.pos.bin": 734712,
+    "pegasus_lod1_tint.png": 35201
    },
-   "totalBytes": 2926321
+   "totalBytes": 2199825
   },
   "wyvern": {
    "kind": "flier",

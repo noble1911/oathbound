@@ -19,9 +19,21 @@ let held = false;
 const release = () => { if (held && existsSync(LOCK) && readFileSync(LOCK, 'utf8') === mine) rmSync(LOCK, { force: true }); held = false; };
 process.on('exit', release);
 for (const s of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(s, () => { release(); process.exit(130); });
+// Standing rule: no GPU work while the user is gaming (same gate as tools/art/mesh.mjs). GPU_GATE = comma list of process
+// names (default Wow.exe; empty = no gate); polls every 2 min and resumes by itself.
+const GATE = (process.env.GPU_GATE ?? 'Wow.exe').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+const gaming = () => {
+  if (!GATE.length || process.platform !== 'win32') return null;
+  const out = (spawnSync('tasklist', ['/FO', 'CSV', '/NH'], { encoding: 'utf8' }).stdout ?? '').toLowerCase();
+  return GATE.find((g) => out.includes(`"${g}"`)) ?? null;
+};
 const t0 = Date.now();
 let said = false;
 for (;;) {
+  for (let g, told = false; (g = gaming());) {
+    if (!told) { told = true; console.error(`paused: ${g} is running (no GPU work while the user plays); polling every 2 min`); }
+    sleep(120000);
+  }
   try { writeFileSync(LOCK, mine, { flag: 'wx' }); } catch {
     if (!said) { said = true; try { console.error(`waiting for the GPU: ${readFileSync(LOCK, 'utf8').trim()}`); } catch { /* gone again */ } }
     sleep(20);

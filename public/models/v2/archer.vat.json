@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 729,
- "width": 729,
+ "vertexCount": 697,
+ "width": 697,
  "rowsPerFrame": 1,
  "totalFrames": 136,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.583,
-   -0.518,
-   -1.7099
+   -0.5832,
+   -0.5327,
+   -1.7881
   ],
   "max": [
-   1.1114,
-   2.2128,
-   0.7631
+   1.1116,
+   2.2044,
+   0.697
   ]
  },
  "pos": "archer.vat.pos.bin",

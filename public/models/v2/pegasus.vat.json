@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 797,
- "width": 797,
+ "vertexCount": 759,
+ "width": 759,
  "rowsPerFrame": 1,
  "totalFrames": 121,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -1.1505,
-   -1.5536,
-   -2.4165
+   -1.1663,
+   -1.7453,
+   -2.8555
   ],
   "max": [
-   3.83,
-   4.5504,
-   3.2869
+   3.9881,
+   4.709,
+   3.234
   ]
  },
  "pos": "pegasus.vat.pos.bin",

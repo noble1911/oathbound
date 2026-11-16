@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 727,
- "width": 727,
+ "vertexCount": 756,
+ "width": 756,
  "rowsPerFrame": 1,
  "totalFrames": 128,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -0.9096,
-   -0.0862,
-   -2.0724
+   -0.9184,
+   -0.0738,
+   -2.086
   ],
   "max": [
-   0.8407,
-   2.7054,
-   1.2884
+   0.8488,
+   2.7175,
+   1.3046
   ]
  },
  "pos": "militia.vat.pos.bin",

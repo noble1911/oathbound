@@ -1,7 +1,7 @@
 {
  "version": 1,
- "vertexCount": 677,
- "width": 677,
+ "vertexCount": 715,
+ "width": 715,
  "rowsPerFrame": 1,
  "totalFrames": 134,
  "format": "f16",
@@ -81,14 +81,14 @@
  ],
  "bounds": {
   "min": [
-   -1.0615,
-   -0.0208,
-   -2.2402
+   -1.0658,
+   -0.0122,
+   -2.2319
   ],
   "max": [
-   0.4975,
-   2.8128,
-   1.1211
+   0.7044,
+   2.8376,
+   1.147
   ]
  },
  "pos": "cleric.vat.pos.bin",
