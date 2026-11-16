@@ -179,8 +179,8 @@ export const LORDS: Record<LordId, LordDef> = {
     id: 'rajah', faction: 'caliphate', name: 'Bahadur', title: 'Rajah', modelId: 'lord_rajah', weapon: 'fists', damageType: 'physical', projectile: 'none',
     signature: ['scimitar', 'mamluk'], tags: ['large', 'mounted'],
     hp: 1400, dmg: 40, attackTicks: 30, range: 260, speed: 12, armor: 30, magicResist: 10, splash: 0,
-    passive: `Giants (and he) +${RAJAH_GIANT_HP}% life and +${RAJAH_GIANT_ARMOR} armour`,
-    ability: 'stampede', abilityName: 'Stampede', abilityText: `His elephant charges through the nearest ground enemy within ${STAMPEDE_REACH / 100} m, trampling everything in its path for ${STAMPEDE_BASE} (+${STAMPEDE_PER_LEVEL} per Lord level) damage and throwing it ${STAMPEDE_KNOCK / 100} m aside.`,
+    passive: `He and giants: +${RAJAH_GIANT_HP}% life, +${RAJAH_GIANT_ARMOR} armour`,
+    ability: 'stampede', abilityName: 'Stampede', abilityText: `His elephant charges the nearest ground enemy within ${STAMPEDE_REACH / 100} m, trampling all in its path for ${STAMPEDE_BASE} (+${STAMPEDE_PER_LEVEL} per Lord level) damage and throwing them ${STAMPEDE_KNOCK / 100} m aside.`,
   },
   rocrider: {
     id: 'rocrider', faction: 'caliphate', name: 'Amira', title: 'Roc Rider', modelId: 'lord_rocrider', weapon: 'bow', damageType: 'physical', projectile: 'arrow',
