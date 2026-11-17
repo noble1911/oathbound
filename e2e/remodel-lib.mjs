@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const OLD_DIR = path.join(ROOT, 'art-work/backup_v2/pre_remodel');
+export const OLD_DIR = path.resolve(ROOT, process.env.OLD_DIR ?? 'art-work/backup_v2/pre_remodel');   // OLD_DIR env: compare against another set (e.g. public/models/v2 before a ship)
 export const PUBLIC_DIR = path.join(ROOT, 'public/models/v2');
 export const CHROME = [process.env.CHROME, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].filter(Boolean).find((p) => fs.existsSync(p));
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -57,6 +57,10 @@ FRAMES = dict(idle=48, walk=16, run=12, attack_melee_a=30, attack_melee_b=30, at
 FLAP = {'pegasus_mount': dict(walk=16, run=12, other=18), 'wyvern_mount': dict(walk=20, run=16, other=22),
         'dragon': dict(walk=26, run=20, other=28)}
 
+# wing-root skinning defaults (creatures.json `wing_root_band` [lo, hi] / `wing_twist` override per mount)
+WING_ROOT_BAND = [0.25, 0.8]
+WING_TWIST = 4
+
 
 def smooth(x):
     x = min(1.0, max(0.0, x))
@@ -203,6 +207,8 @@ class Creature:
             self.tail_bend.append(math.atan2(a.x * b.y - a.y * b.x, a.x * b.x + a.y * b.y))
         self.prev_th = {}
         self.ik_err = 0.0
+        # wing-root twist helpers (add_wing_twist): {helper: (first wing bone, fraction of its rotation)}
+        self.twist = {n: (B[n]['twist_of'], float(B[n]['twist_frac'])) for n in self.mbones if 'twist_of' in B[n]}
 
     # -- helpers
     def q_local(self, bone, axis, ang):
@@ -304,6 +310,14 @@ class Creature:
             else:
                 q = self.local(n, pose)
             M[n] = parentM @ self.rel[n] @ q.to_matrix().to_4x4()
+            Q[n] = (q, None)
+        for n, (w1, frac) in self.twist.items():
+            # a twist helper shares the first wing bone's rest frame and takes `frac` of its local rotation
+            qw = Q[w1][0].copy()
+            if qw.w < 0:
+                qw.negate()
+            q = Quaternion().slerp(qw, frac)
+            M[n] = M[self.rig.data.bones[n].parent.name] @ self.rel[n] @ q.to_matrix().to_4x4()
             Q[n] = (q, None)
         return M, Q
 
@@ -681,13 +695,18 @@ def key_mount(rig, Q, prev, frame):
 
 # ----------------------------------------------------------------------------------------------- checks
 def owned(ob, rig, thr=0.25):
-    """{bone: number of vertices it influences with weight >= thr}."""
-    names = {g.index: g.name for g in ob.vertex_groups}
+    """{bone: number of vertices it influences with weight >= thr}. A wing-root twist helper's weight counts for the
+    wing bone it splits (add_wing_twist), so the root keeps owning the skin it hands over to its helpers."""
+    alias = {b.name: b['twist_of'] for b in rig.data.bones if 'twist_of' in b}
+    names = {g.index: alias.get(g.name, g.name) for g in ob.vertex_groups}
     cnt = {}
     for v in ob.data.vertices:
+        acc = {}
         for g in v.groups:
-            if g.weight >= thr:
-                cnt[names[g.group]] = cnt.get(names[g.group], 0) + 1
+            acc[names[g.group]] = acc.get(names[g.group], 0.0) + g.weight
+        for n, w in acc.items():
+            if w >= thr:
+                cnt[n] = cnt.get(n, 0) + 1
     return cnt
 
 
@@ -766,6 +785,139 @@ def mat_images(ob):
     def up(sock):
         return L._upstream_image(sock.links[0].from_node) if sock.is_linked else None
     return up(p.inputs['Base Color']), up(p.inputs['Normal']), up(p.inputs['Roughness'])
+
+
+def clean_wing_root(rig, info, meshes, band):
+    """Bone heat on a TRELLIS creature whose wings are held up beside the neck bleeds the wing bones across the whole
+    upper back: on the dragon 1 in 6 neck / head vertices followed the left wing by ~0.17, the back midline followed
+    BOTH wings, and the wing root followed the head. With the root rolled 30-66 degrees in flight, that shared skin
+    was pulled between opposite rotations and wrapped round the shoulder. Here every vertex's wing-k share is capped
+    by a ramp across the shoulder joint, along wing_k_1: d = (p - root) . dir(wing_k_1), none below d = -lo, full
+    wing weight allowed only from d = +hi (smoothstep between; `band` = [lo, hi] in wing_1 lengths). A tight inner
+    edge cuts the bleed into the neck / head / back, a wider outer one lets the roll fade in along the arm. What a wing gives up goes back to the vertex's
+    own body bones (m_chest if it had none). Weights are only ever taken off a wing, never added, so legs, tail and
+    the membranes keep their skin; the opposite wing's bleed (d far below -band) goes away entirely."""
+    B = rig.data.bones
+    sides = {}
+    for k, names in info['wings'].items():
+        b = B[names[0]]
+        h = b.head_local.copy(); dvec = (b.tail_local - b.head_local)
+        lo, hi = (band, band) if isinstance(band, (int, float)) else band
+        sides[k] = (set(names), h, dvec.normalized(), (lo * dvec.length, hi * dvec.length))
+    wing_all = set().union(*(v[0] for v in sides.values()))
+    tot_fix = 0
+    for ob in meshes:
+        names = {g.index: g.name for g in ob.vertex_groups}
+        idx = {n: i for i, n in names.items()}
+        if 'm_chest' not in idx:
+            idx['m_chest'] = ob.vertex_groups.new(name='m_chest').index; names[idx['m_chest']] = 'm_chest'
+        nfix = 0
+        for v in ob.data.vertices:
+            ws = {g.group: g.weight for g in v.groups if g.weight > 0}
+            tot = sum(ws.values())
+            if tot <= 0:
+                continue
+            new = dict(ws)
+            changed = False
+            for k, (wn, h, dvec, r) in sides.items():
+                wk = [i for i in new if names[i] in wn]
+                W = sum(new[i] for i in wk)
+                if W <= 1e-5:
+                    continue
+                d = (v.co - h).dot(dvec)
+                t = min(1.0, max(0.0, (d + r[0]) / (r[0] + r[1]))); t = t * t * (3 - 2 * t)
+                cap = t * tot
+                if W <= cap + 1e-5:
+                    continue
+                give = W - cap
+                for i in wk:
+                    new[i] *= cap / W
+                body = [i for i in new if names[i] not in wing_all and new[i] > 0]
+                bw = sum(new[i] for i in body)
+                if bw > 1e-6:
+                    for i in body:
+                        new[i] += give * new[i] / bw
+                else:
+                    new[idx['m_chest']] = new.get(idx['m_chest'], 0.0) + give
+                changed = True
+            if not changed:
+                continue
+            for i, w in new.items():
+                if w > 1e-4:
+                    ob.vertex_groups[i].add([v.index], w, 'REPLACE')
+                elif i in ws:
+                    ob.vertex_groups[i].remove([v.index])
+            nfix += 1
+        print(f'[creature] {ob.name}: wing-root bleed trimmed on {nfix} vertices (band {band} x wing_1)')
+        tot_fix += nfix
+    return tot_fix
+
+
+def add_wing_twist(rig, info, meshes, segs):
+    """Wing-root twist helpers. The meshes hold their wings "displayed", so every flight pose rolls the first wing
+    bone 30-66 degrees about its span (`wing_pron`) on top of the beat: linear blend skinning across the chest /
+    wing_1 seam then averages two matrices that differ by up to ~120 degrees and the shoulder skin collapses into a
+    twisted ribbon (candy wrapper). Fix: `segs - 1` helper bones per wing on the wing root, each taking an even
+    share of wing_1's rotation (Creature.mount_matrices), and the chest -> wing_1 weight ramp of every seam vertex
+    re-spread over the chain chest, helper 1, .., wing_1 (piecewise linear). Neighbouring influences then differ by
+    1/segs of the rotation and the skin keeps its volume (blend scale cos(theta / 2 segs) instead of cos(theta / 2)).
+    The total wing weight of every vertex is unchanged, so the wing team mask and the bone checks see the same skin."""
+    if segs < 2:
+        return 0
+    L.select_only(rig); bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = rig.data.edit_bones
+    helpers = {}
+    for k, names in info['wings'].items():
+        w1 = eb[names[0]]
+        hs = []
+        for j in range(1, segs):
+            b = eb.new(f'm_wing_{k}_t{j}')
+            b.head = w1.head; b.tail = w1.head + (w1.tail - w1.head) * 0.3; b.roll = w1.roll
+            b.parent = w1.parent; b.use_connect = False
+            hs.append(b.name)
+        helpers[names[0]] = hs
+    bpy.ops.object.mode_set(mode='OBJECT')
+    for w1, hs in helpers.items():
+        for j, h in enumerate(hs):
+            rig.data.bones[h]['twist_of'] = w1; rig.data.bones[h]['twist_frac'] = (j + 1) / segs
+    wing_all = {b for ns in info['wings'].values() for b in ns}
+    nfix = 0
+    for ob in meshes:
+        gi = {g.name: g.index for g in ob.vertex_groups}
+        for hs in helpers.values():
+            for h in hs:
+                if h not in gi:
+                    gi[h] = ob.vertex_groups.new(name=h).index
+        name_of = {i: n for n, i in gi.items()}
+        for w1, hs in helpers.items():
+            chain = [gi[h] for h in hs] + [gi[w1]]
+            i1 = gi[w1]
+            for v in ob.data.vertices:
+                ws = {g.group: g.weight for g in v.groups}
+                a = ws.get(i1, 0.0)
+                if a <= 1e-4:
+                    continue
+                base = {i: w for i, w in ws.items() if name_of[i] not in wing_all and not name_of[i].startswith('m_wing_')}
+                c = sum(base.values())
+                if c <= 1e-4:
+                    continue
+                s_ = a + c; x = a / s_ * segs          # position along chest (0) .. wing_1 (segs)
+                share = [max(0.0, 1 - abs(x - i)) for i in range(segs + 1)]
+                for i, w in base.items():
+                    if share[0] > 1e-6:
+                        ob.vertex_groups[i].add([v.index], w / c * s_ * share[0], 'REPLACE')
+                    else:
+                        ob.vertex_groups[i].remove([v.index])
+                for i, gidx in enumerate(chain):
+                    w = s_ * share[i + 1]
+                    if w > 1e-5:
+                        ob.vertex_groups[gidx].add([v.index], w, 'REPLACE')
+                    elif gidx == i1:
+                        ob.vertex_groups[gidx].remove([v.index])
+                nfix += 1
+    print(f'[creature] wing-root twist: {segs - 1} helper(s) per wing, {nfix} seam vertices re-spread')
+    return nfix
 
 
 def wing_team(m0, info, strength):
@@ -946,6 +1098,13 @@ def main():
         # hero tier: the low graphics tier draws LOD1, which has its own atlases -> one atlas + one mask there too
         wings1 = wing_team(m1, info, cfg['team_wings']) if cfg.get('team_wings') and info['wings'] else None
         unit_atlas(uid, [(m1, mount_id)] + [(o, rider_id) for o in meshes1[1:]], {mount_id: wings1}, lod='_lod1')
+    if info['wings']:
+        # wing-root skin (seen from below in flight it wrapped round the shoulder): trim the bone-heat bleed, then
+        # spread the root's roll over twist helpers. creatures.json `wing_root_band` / `wing_twist` tune or (0 / 1) disable.
+        band = cfg.get('wing_root_band', WING_ROOT_BAND)
+        if band:
+            clean_wing_root(rig, info, [m0, m1], band)
+        add_wing_twist(rig, info, [m0, m1], int(cfg.get('wing_twist', WING_TWIST)))
     cr = Creature(rig, info, cfg, mount_id, flier)
     # ---- clips
     impact = int(round(a.get('impact', 0.42) * FPS))

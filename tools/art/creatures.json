@@ -159,6 +159,8 @@
   }
  },
  "pegasus_mount": {
+  "wing_root_band": 0,
+  "wing_twist": 1,
   "yaw": 154,
   "dx": 0,
   "seat": [

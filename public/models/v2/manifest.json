@@ -897,12 +897,12 @@
     "lod1": 7876
    },
    "bytes": {
-    "wyvern.glb": 2338404,
-    "wyvern_lod1.glb": 1197888,
+    "wyvern.glb": 2361992,
+    "wyvern_lod1.glb": 1221672,
     "wyvern_team.png": 238064,
     "wyvern_lod1_team.png": 97352
    },
-   "totalBytes": 3871708
+   "totalBytes": 3919080
   },
   "ballista": {
    "kind": "siege",
@@ -1180,12 +1180,12 @@
     "lod1": 7880
    },
    "bytes": {
-    "dragon.glb": 2358456,
-    "dragon_lod1.glb": 1076528,
+    "dragon.glb": 2383620,
+    "dragon_lod1.glb": 1101232,
     "dragon_team.png": 207767,
     "dragon_lod1_team.png": 46137
    },
-   "totalBytes": 3688888
+   "totalBytes": 3738756
   },
   "lord_marshal": {
    "kind": "humanoid",
@@ -2215,12 +2215,12 @@
     "lod1": 7880
    },
    "bytes": {
-    "bone_drake.glb": 2572980,
-    "bone_drake_lod1.glb": 1111564,
+    "bone_drake.glb": 2597820,
+    "bone_drake_lod1.glb": 1134488,
     "bone_drake_team.png": 215751,
     "bone_drake_lod1_team.png": 50400
    },
-   "totalBytes": 3950695
+   "totalBytes": 3998459
   },
   "corpse_catapult": {
    "kind": "siege",
@@ -3707,12 +3707,12 @@
     "lod1": 7880
    },
    "bytes": {
-    "lord_drakerider.glb": 2585760,
-    "lord_drakerider_lod1.glb": 1209120,
+    "lord_drakerider.glb": 2613460,
+    "lord_drakerider_lod1.glb": 1235068,
     "lord_drakerider_team.png": 126041,
     "lord_drakerider_lod1_team.png": 37855
    },
-   "totalBytes": 3958776
+   "totalBytes": 4012424
   },
   "lord_rocrider": {
    "kind": "flier",
@@ -3791,12 +3791,12 @@
     "lod1": 7859
    },
    "bytes": {
-    "lord_rocrider.glb": 2976800,
-    "lord_rocrider_lod1.glb": 1234524,
+    "lord_rocrider.glb": 3006452,
+    "lord_rocrider_lod1.glb": 1260396,
     "lord_rocrider_team.png": 208025,
     "lord_rocrider_lod1_team.png": 95651
    },
-   "totalBytes": 4515000
+   "totalBytes": 4570524
   }
  },
  "props": {

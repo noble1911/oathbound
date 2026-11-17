@@ -194,6 +194,7 @@ varying float vFade;
 varying vec3 vRest;
 varying vec2 vObUv;
 varying float vMirror;
+float obTeamMask = 0.0;
 ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
   fs = after(fs, 'void main() {', `
   // ethereal units are a little see-through (screen-door: no blending, no sorting, no extra pass)
@@ -208,6 +209,7 @@ ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
     float mask = vTintMask;
     ${opts.tintMap ? 'mask = max(mask, texture2D(uTintMap, vObUv).r);' : ''}
     diffuseColor.rgb *= mix(vec3(1.0), vTeam, mask);
+    obTeamMask = mask;
     float dn = ob_noise(vRest.xy * 38.0 + vRest.z * 17.0) * 0.5 + ob_noise(vRest.zy * 9.0) * 0.5;
     diffuseColor.rgb *= 0.86 + 0.26 * dn;
     // soft knee on near-white albedo (fur mantles, white horses): keeps shading instead of
@@ -222,8 +224,9 @@ ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
       float amt = vChill - sandy;
       diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.42, 0.62, 1.0), vec3(1.25, 0.9, 0.42), sandy) * (cl * 1.15 + 0.08 + 0.1 * sandy), amt * mix(0.55, 0.75, sandy));
     } else if (vChill < -0.5) {
+      // the body washes to a pale soul-green; its team cloth keeps (and glows in) the team colour
       float gl = dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1));
-      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.45, 0.95, 0.7) * (gl * 1.1 + 0.06), 0.6);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5, 0.9, 0.72) * (gl * 1.1 + 0.06), 0.6 * (1.0 - obTeamMask));
     }
   }`);
   // mirrored instances (death2) have reversed winding: flip the face direction back
@@ -246,9 +249,10 @@ ${opts.tintMap ? 'uniform sampler2D uTintMap;' : ''}`);
     float obCold = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.5);
     totalEmissiveRadiance += vec3(0.1, 0.3, 0.75) * (vChill * (0.04 + 0.6 * obCold));
   } else if (vChill < -0.5) {
-    // a spectre: lit from within along its edges
+    // a spectre: lit from within along its edges. The edge light burns in the team colour (with a little soul-green
+    // left in it) and the team cloth glows, so whose spectre it is reads from the battle camera on every tier
     float obGhost = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 1.8);
-    totalEmissiveRadiance += vec3(0.12, 0.7, 0.4) * (0.08 + 1.1 * obGhost);
+    totalEmissiveRadiance += vec3(0.12, 0.7, 0.4) * 0.1 + mix(vec3(0.12, 0.7, 0.4), vTeam, 0.85) * (1.2 * obGhost) + vTeam * obTeamMask * 0.45;
   }
   // hit flash / highlight: a warm lift on top of the lit surface (never a flat white silhouette)
   totalEmissiveRadiance += vFlash * mix(vec3(0.5, 0.42, 0.34) + diffuseColor.rgb * 0.6, vec3(2.6, 0.3, 0.2), vFlashCol);`);

@@ -87,6 +87,18 @@ override the defaults in `mesh.mjs` (the q8 set only ships the 512 flows); `BLEN
   step with `GAITS` or hooves slide). Fliers have no ground clips: `idle` hovers, `walk` / `run` cruise, every
   clip keeps the wings beating (downstroke 58 % of the cycle, outer wing folds and lags on the upstroke), the
   pegasus gallops on the air. The renderer supplies the flight height; death clips end lying on a flank at y = 0.
+* **Wing roots** (`creature.py: clean_wing_root`, `add_wing_twist`): the meshes hold their wings "displayed", so every
+  flight pose rolls `m_wing_*_1` 30-66 deg about its span (`wing_pron`). Bone heat had also bled the wing bones over
+  the neck, head and back (the back midline followed both wings), and linear blend skinning across a ~120 deg seam
+  wrapped the shoulder skin. Each wing's share of a vertex is now capped by a smoothstep across the shoulder along
+  `m_wing_*_1` (none below -0.25, full from +0.8 wing_1 lengths; weight only ever leaves a wing), and 3 helper bones
+  `m_wing_<k>_t1..3` (rest frame of wing_1, parent `m_chest`, keyed at 1/4 .. 3/4 of wing_1's rotation) carry the
+  chest -> wing_1 ramp. `creatures.json` `wing_root_band` [lo, hi] / `wing_twist` (segments; 1 = off) override per mount.
+  Rebuilt and shipped: dragon, wyvern, bone drake, Drake Rider, Roc Rider. Shoulder triangles squashed below half
+  their rest area over the clips: dragon 2.2 -> 0.8 %, wyvern 0.6 -> 0.4 %, Drake Rider 2.7 -> 2.3 %, Roc Rider
+  1.1 -> 0.9 %, bone drake 0.3 -> 0.4 % (noise; its root never collapsed much). The pegasus opts out (`wing_pron` 0, no
+  roll to spread, no measurable gain) and keeps its shipped crowd VAT. Before / after renders:
+  `docs/reviews/shots-2026-11-17/art/wingroot-*`.
 * **Mount rig frame**: `creatures.json` gives a yaw / x shift per mount mesh (TRELLIS returned the wyvern 30 deg
   and the dragon 60 deg off axis) so every creature faces +Z, then its joints in metres. Author it with
   `creature_view.py` + `creature_grid.py` (orthographic views with a metric grid and the joints drawn in).
@@ -264,7 +276,7 @@ Approved concept art: `docs/art-review/factions/{ashen,sun}_{1_lineup,2_battlefi
 | `skeleton` | squad | rig.py + VAT | spear (one-handed, shield) | restyled: bronze helm, mail, spear + teardrop shield |
 | `grave_knight` | squad | rig.py + VAT | sword | bronze plate, plume + cape + shield face = team |
 | `bone_archer` | squad | rig.py + VAT | bow | hooded, mantle + sash = team |
-| `wraith_rider` | mounted squad | creature.py + VAT | spear; mount `skeletal_horse` | the renderer draws it as a spectre (screen-door) |
+| `wraith_rider` | mounted squad | creature.py + VAT | spear; mount `skeletal_horse` | the renderer draws it as a spectre (screen-door): a pale soul-green body whose edge light burns in the team colour and whose team cloth glows (`vat.ts`, `vChill < 0`) |
 | `grave_acolyte` | squad | rig.py + VAT | staff | hood + stole + sash = team (`grade.fur`) |
 | `bone_drake` | flier, hero | faction.py -> creature.py | `dragon_like`, `flap` | wing membranes carry a light team tint (0.3) |
 | `corpse_catapult` | siege | siege.py (trebuchet builder) | `flip` | bone throwing arm, skull-cage counterweight |
@@ -757,8 +769,8 @@ squads, detail GLB + mask for heroes; low / medium load the hero `lod1` file + i
 | `lord_drakerider` | new | 28572 / 7880 | - | 3.96 | - | 2.71 |
 | `lord_rocrider` | new | 28574 / 7859 | - | 4.51 | - | 3.18 |
 
-**Known limits after v3.** No emissive channel (soul-fire is bright albedo). Dragon / wyvern wing roots still twist
-seen from below. Siege `hit` is a small jolt. Capes, cloaks and manes have no secondary motion. The in-engine slide
+**Known limits after v3.** No emissive channel (soul-fire is bright albedo). (Wing-root twist: fixed 2026-11-17, see
+section 2 **Wing roots**.) Siege `hit` is a small jolt. Capes, cloaks and manes have no secondary motion. The in-engine slide
 check cannot read contained jog clips and counts low cloth hems as planted points (archer, spear levy): trust the
 Blender bone audit (`anim_audit.py`) there. The mamluk's gallop has a worst planted-hoof error of about 19 cm in the
 build log (7 cm before; not visible in the run strip). Mounted heroes use a 3072 x 2048 atlas (mount 2048 + rider 1024).
