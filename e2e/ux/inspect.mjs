@@ -51,7 +51,12 @@ async function clickSquad(row, opts = {}) {
       await p.mouse.click(xy.x, xy.y);
       if (opts.shift) await p.keyboard.up('Shift');
       await sleep(350);
-      return (await sel()).includes(row);
+      if ((await sel()).includes(row) || opts.shift) return (await sel()).includes(row);
+      // a soldier of a neighbouring squad stood in front (melee scrum, an escort around the Lord): try again a moment later
+      console.log(`     the click on row ${row} picked rows ${JSON.stringify(await sel())}; retrying`);
+      await p.keyboard.press('Escape');
+      await sleep(250);
+      continue;
     }
     await sleep(400);
   }
@@ -82,8 +87,10 @@ try {
   const hit = (a, b) => a && b && a.x < b.r && a.r > b.x && a.y < b.b && a.b > b.y;
   const [feed, ctrl, tally, corner] = [await box('.b-feed'), await box('.b-ctrl'), await box('.b-tally'), await box('.shell .corner')];
   check(!hit(feed, ctrl) && !hit(feed, corner) && !hit(tally, corner), 'battle log, controls, tally and corner tools do not overlap');
+  // the slim top HUD: the view is inset by the plaques' (or the tally's) bottom edge, and by the controls below
   const ins = await p.evaluate(() => window.__ob.app.scene.view?.engine.insets ?? null);
-  check(!ins || (ins.top > 60 && ins.bottom > 30), `the engine is told the HUD insets (${JSON.stringify(ins)})`);
+  const hudB = await p.evaluate(() => Math.max(document.querySelector('.battle .topbar')?.getBoundingClientRect().bottom ?? 0, document.querySelector('.b-tally')?.getBoundingClientRect().bottom ?? 0));
+  check(!ins || (ins.top >= hudB - 2 && ins.top > 30 && ins.bottom > 30), `the engine is told the HUD insets (${JSON.stringify(ins)}, HUD bottom ${Math.round(hudB)})`);
   check((await text('.tb-clock small')) === '/ 1:30', 'the clock shows its limit');
 
   // ---- click to inspect: the Lord

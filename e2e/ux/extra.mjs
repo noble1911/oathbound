@@ -60,12 +60,14 @@ try {
     // hover a flier: tooltip beside, not over
     const peg = r.find((x) => x.type === 'pegasus');
     await p.mouse.move(peg.mx, peg.my);
-    await sleep(400);
+    // the hover card comes up after a short delay: wait for it rather than a fixed sleep
+    await waitFor(p, () => !!document.querySelector('.tip-layer.on'), null, 3000);
+    await sleep(200);
     const tip = await p.evaluate(() => { const n = document.querySelector('.tip-layer.on'); if (!n) return null; const b = n.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; });
     check(!!tip && !(peg.mx >= tip[0] && peg.mx <= tip[2] && peg.my >= tip[1] && peg.my <= tip[3]) && (tip[0] > peg.mx + 20 || tip[2] < peg.mx - 20), `flier hover tooltip sits beside the squad (${JSON.stringify(tip?.map(Math.round))} vs ${peg.mx},${peg.my})`);
     await shot(p, 'pick-flier-hover');
     await p.mouse.click(peg.mx, peg.my);
-    await sleep(400);
+    await waitFor(p, () => /Pegasus/.test(document.querySelector('.sqpanel .sp-t b')?.textContent ?? ''), null, 3000);
     const sel = await p.$eval('.sqpanel .sp-t b', (n) => n.textContent).catch(() => null);
     check(/Pegasus/.test(sel ?? ''), `clicking the airborne model selects it (${sel})`);
     await shot(p, 'pick-flier-selected');
@@ -82,7 +84,7 @@ try {
     await sleep(800);
     await shot(p, 'idle-lord-toast');
     check(toasts.some((t) => /auto/.test(t) && /was chosen to lead your host/.test(t)), `toast: the Lord chosen for an idle player (${JSON.stringify(toasts)})`);
-    check(await waitFor(p, () => !!document.querySelector('.battle'), null, 90000), 'planning timed out into battle');
+    check(await waitFor(p, () => !!document.querySelector('.battle'), null, 160000), 'planning timed out into battle'); // PLANNING_MS (120 s) + slack
     await sleep(1500);
     await p.keyboard.press('End');
     check(await waitFor(p, () => ['results', 'over'].includes(window.__ob.app.room?.phase), null, 20000), 'results');

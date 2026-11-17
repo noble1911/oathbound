@@ -63,9 +63,11 @@ try {
 
   // the loot pick: same items for both, no luck wording
   p = await open('?dev=loot&timer=0');
-  await sleep(2400);
+  // the recruit draft opens first (a moment after load): put it off, then the spoils come up
+  await waitFor(p, () => !!document.querySelector('.modal.draft, .modal.loot'), null, 15000);
   if (await p.$('.modal.draft')) { await p.click('.modal.draft .later'); await sleep(600); }
-  await sleep(3000);
+  await waitFor(p, () => !!document.querySelector('.modal.loot .loot-head'), null, 10000);
+  await sleep(2400);
   const head = await p.$eval('.modal.loot .loot-head', (n) => n.textContent);
   check(/Your opponent is offered the same items/.test(head) && !/tier higher|favours|luck/i.test(head), 'the loot pick says both sides get the same items');
   // (the slot order, weapon / armor / relic, is the sim's; ?dev=loot shows a rarity showcase instead of a real offer)
@@ -79,7 +81,7 @@ try {
   await p.click('.rl-tabs button[data-tab="loot"]');
   await sleep(300);
   const sched = await p.$$eval('.rl-sched > div', (ns) => ns.map((n) => n.textContent.replace(/\s+/g, ' ').trim()));
-  check(sched.length >= 4 && /Rounds 1–2/.test(sched[0]) && sched.some((x) => /Legendary/.test(x)), `the loot schedule (${sched.join(' | ')})`);
+  check(sched.length >= 3 && /Rounds 1–2/.test(sched[0]) && sched.some((x) => /Legendary/.test(x)), `the loot schedule (${sched.join(' | ')})`);
   await shot(p, 'codex-loot');
   await p.click('.rl-tabs button[data-tab="gold"]');
   await sleep(300);

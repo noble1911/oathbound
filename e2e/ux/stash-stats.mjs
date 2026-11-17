@@ -1,4 +1,5 @@
-// The stash must never cover the player's deploy zone, and every stat display (shop tooltip, squad hover card,
+// The stash and the formation toolbar (Undo/Mirror/Sync/Routes/Snap) must never cover the player's deploy zone, the
+// toolbar must not run into the left button column (rail buttons and the stash bag), and every stat display (shop tooltip, squad hover card,
 // squad panel) must show the same, sim-derived numbers. Offline on ?dev=planning (no server).
 // Screenshots: docs/reviews/shots-2026-11-17/after-<W>-stash.jpg and after-<W>-stats-*.jpg.
 //   npx vite --port 5193 &   BASE=http://127.0.0.1:5193/ W=1024 H=768 node e2e/ux/stash-stats.mjs
@@ -51,7 +52,23 @@ try {
     const notes = [...document.querySelectorAll('.notices > *')].map((x) => x.getBoundingClientRect());
     const onNotice = fly ? notes.some((r) => r.left < fly.right && r.right > fly.left && r.top < fly.bottom && r.bottom > fly.top) : false;
     const hud = document.querySelector('.topbar')?.getBoundingClientRect();
-    return { what, rects: rects.map((r) => [r.left, r.top, r.right, r.bottom].map(Math.round)), hit, n, onNotice, underHud: !!(fly && hud && fly.top < hud.bottom - 2), items: app.room.view.you.stash.length };
+    // the formation toolbar: none of the zone under it, and clear of the left button column
+    const tools = document.querySelector('.ptools')?.getBoundingClientRect();
+    let toolHit = 0;
+    if (tools && tools.width > 0) for (let i = 0; i <= 40; i++) for (let j = 0; j <= 40; j++) {
+      const pos = [Math.round(z.x0 + ((z.x1 - z.x0) * i) / 40), Math.round(z.y0 + ((z.y1 - z.y0) * j) / 40)];
+      const s = app.scene.toScreen(pos, 0);
+      if (s && s.x >= tools.left && s.x <= tools.right && s.y >= tools.top && s.y <= tools.bottom) toolHit++;
+    }
+    const tl = tools ? [tools.left, tools.top, tools.right, tools.bottom].map(Math.round) : null;
+    const column = [...document.querySelectorAll('.shell .corner button.icon, .stash-tab')].map((n) => n.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.left < innerWidth / 4 && r.top > 0);
+    const onColumn = tools ? column.some((r) => r.left < tools.right && r.right > tools.left && r.top < tools.bottom && r.bottom > tools.top) : false;
+    const onNoticeT = tools ? notes.some((r) => r.left < tools.right && r.right > tools.left && r.top < tools.bottom && r.bottom > tools.top) : false;
+    const badge = document.querySelector('.deploy-badge')?.getBoundingClientRect();
+    const onBadge = !!(tools && badge && tools.bottom > badge.top);
+    const offScreen = !!(tools && (tools.left < 0 || tools.bottom > innerHeight));
+    return { what, tools: tl, toolHit, onColumn, onNoticeT, onBadge, offScreen, columnN: column.length, rects: rects.map((r) => [r.left, r.top, r.right, r.bottom].map(Math.round)), hit, n, onNotice, underHud: !!(fly && hud && fly.top < hud.bottom - 2), items: app.room.view.you.stash.length };
   }, what);
   const stashCheck = async (what) => {
     const m = await overlap(what);
@@ -59,6 +76,10 @@ try {
     check(m.hit === 0, `${what}: the stash covers none of the deploy zone (${m.hit}/${m.n} points)`);
     check(!m.onNotice, `${what}: the open stash does not hide a notice`);
     check(!m.underHud, `${what}: the open stash stays under the top HUD`);
+    check(!!m.tools, `${what}: the formation toolbar is shown`);
+    check(m.toolHit === 0, `${what}: the formation toolbar covers none of the deploy zone (${m.toolHit}/${m.n} points)`);
+    check(m.columnN > 0 && !m.onColumn, `${what}: the formation toolbar clears the left button column (${m.columnN} buttons)`);
+    check(!m.onNoticeT && !m.onBadge && !m.offScreen, `${what}: the formation toolbar clears the notices and the deploy badge, on screen`);
   };
   await stashCheck('closed, empty');
   await p.click('.stash-tab');

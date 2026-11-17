@@ -700,8 +700,10 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .planning:has(.stash.open) .notices { left: 20.4rem; }
 .stash header .stash-x { width: 1.7rem; height: 1.7rem; margin: -0.2rem -0.25rem -0.2rem 0.2rem; }
 
-/* formation bar (planning): undo, mirror, sync, routes, snap. Steel plates; a toggle that is on sits pressed */
-.ptools { position: absolute; left: 1rem; bottom: 9.6rem; width: 16rem; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.2rem; }
+/* formation bar (planning): undo, mirror, sync, routes, snap. Steel plates; a toggle that is on sits pressed.
+   A column in the left rail under the stash bag (.stash: top hud-under + 13.5rem, 2.3rem tall), no wider than the
+   rail (the notices start at 3.8rem), so it stays clear of the deploy zone's near corner at every size. */
+.ptools { position: absolute; left: 0.7rem; top: calc(var(--hud-under) + 13.5rem + 2.3rem + 0.6rem); width: 3.1rem; display: grid; grid-auto-rows: auto; gap: 0.2rem; }
 .planning.spectating .ptools, .ptools.hidden { display: none; }
 .btn.pt { display: grid; justify-items: center; gap: 0.05rem; min-width: 0; padding: 0.02rem 0; border-width: 0.4rem 0.45rem; border-image-width: 0.4rem 0.45rem; font-size: 0.7rem; }
 .btn.pt .ico { width: 1.15rem; height: 1.15rem; }
@@ -1364,7 +1366,6 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .loot-row { flex-wrap: wrap; gap: 1rem; }
   .drop { width: 18rem; }
   .drop-tip .itip { width: 18rem; }
-  .ptools { bottom: 10.4rem; }
   .ready-box { width: 9rem; }
   .over::before, .over::after { display: none; }
   .ready-btn { border-width: 0.9rem 1.2rem; border-image-width: 0.9rem 1.55rem; }
