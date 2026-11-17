@@ -82,11 +82,13 @@ try {
   check(await waitFor(p, () => window.__ob.app.room?.phase === 'lordPick'), 'tutorial reaches lord pick');
   await sleep(1200);
   await shot('lordpick');
-  const cards = await p.$$eval('.lcard', (ns) => ns.map((n) => { const r = n.getBoundingClientRect(); const a = n.querySelector('.lc-block.abil p').getBoundingClientRect(); return { r: [r.left, r.top, r.right, r.bottom], abil: [a.top, a.bottom], vis: a.height > 8 }; }));
+  // each Lord's ability text is in that Lord's sheet under the row (the four sheets share one cell; the Lord in view shows)
+  const cards = await p.$$eval('.lcard', (ns) => ns.map((n) => { const r = n.getBoundingClientRect(); const a = document.querySelector(`.ld[data-lord="${n.dataset.lord}"] .lc-block.abil p`).getBoundingClientRect(); const pr = n.querySelector('.lport').getBoundingClientRect(); return { r: [r.left, r.top, r.right, r.bottom], abil: [a.top, a.bottom], vis: a.height > 8, port: [pr.width, pr.height] }; }));
   // faction first: three banners, the tutorial opens on the Kingdom and so shows its four Lords
   const fb = await p.$$eval('.fcard', (ns) => ns.map((n) => { const r = n.getBoundingClientRect(); return { f: n.dataset.faction, on: n.classList.contains('on'), ok: r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight && r.height > 20 }; }));
   check(fb.length === 3 && fb.every((b) => b.ok) && fb.find((b) => b.on)?.f === 'kingdom', `three faction banners on screen, the Kingdom chosen ${JSON.stringify(fb)}`);
-  check(cards.length === 4 && cards.every((c) => c.vis && c.r[0] >= 0 && c.r[2] <= W && c.abil[1] <= H), `the Kingdom's 4 lord cards with their ability text on screen`);
+  check(cards.length === 4 && cards.every((c) => c.vis && c.r[0] >= 0 && c.r[2] <= W && c.r[3] <= H && c.abil[1] <= H), `the Kingdom's 4 lord cards with their ability text on screen`);
+  check(cards.every((c) => c.port[1] >= 220 && c.port[1] >= 0.4 * (c.r[3] - c.r[1])) && (await p.$$eval('.ld.on .lc-block.abil p', (ns) => ns.length === 1 && getComputedStyle(ns[0]).visibility === 'visible')), `lord portraits are the card (${cards.map((c) => c.port.map(Math.round).join('x')).join(' ')}), one sheet in view`);
   const coachR = await rect('.coach.on'), cardsR = await rect('.lp-cards');
   check(!coachR || !cardsR || coachR.y >= cardsR.b - 2 || coachR.b <= cardsR.y + 2, `coach clear of the Lord cards (${JSON.stringify(coachR)} vs ${JSON.stringify(cardsR)})`);
   check(!!(await p.$('.coach.on')), 'coach shows on lord pick');

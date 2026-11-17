@@ -251,7 +251,7 @@ try {
     const p = await page(`?dev=match&timer=0`);
     await sleep(5000);
     await shot(p, 'lordpick');
-    await audit(p, 'lordpick', ['.lc-body', '.wline', '.lc-name', '.lc-sig', '.lc-block']);
+    await audit(p, 'lordpick', ['.lcard', '.lp-detail', '.ld.on', '.wline', '.lc-name', '.lc-sig', '.lc-block', '.lc-stats', '.lp-go']);
     await p.close();
   }
 } catch (e) {

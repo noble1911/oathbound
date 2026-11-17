@@ -56,10 +56,16 @@ for (const [W, H] of SIZES) {
         await p.mouse.move(2, H - 2);
         await sleep(200);
         await shot(`pick-${f}`);
-        const o = await overflow(['.lordpick', '.lp-factions', '.fcard', '.lp-ident', '.lp-cards', '.lcard', '.lc-block p', '.lp-foot']);
-        const port = await p.$$eval('.lcard .lport', (ns) => ns.map((n) => ({ art: n.classList.contains('art'), w: n.getBoundingClientRect().width | 0, h: n.getBoundingClientRect().height | 0 })));
+        const o = await overflow(['.lordpick', '.lp-factions', '.fcard', '.lp-ident', '.lp-cards', '.lp-row', '.lcard', '.lc-name', '.wline', '.lp-detail', '.ld', '.lc-block p', '.lc-sig', '.lc-stats', '.lp-go', '.lp-foot']);
+        const port = await p.$$eval('.lcard', (ns) => ns.map((c) => { const n = c.querySelector('.lport'), r = n.getBoundingClientRect(), k = c.querySelector('.lc-name').getBoundingClientRect(); return { art: n.classList.contains('art'), w: r.width | 0, h: r.height | 0, card: c.getBoundingClientRect().height | 0, clear: (Math.min(r.bottom, k.top) - r.top) | 0 }; }));
+        const seat = await p.evaluate(() => { const b = (s) => { const n = document.querySelector(s); const r = n?.getBoundingClientRect(); return r && r.height ? [r.top | 0, r.bottom | 0] : null; }; return { timer: b('.lp-timer'), banners: b('.lp-factions'), row: b('.lp-row .lcard'), sheet: b('.lp-detail'), foot: b('.lp-foot') }; });
         check(o.length === 0, `pick ${f} fits ${JSON.stringify(o.slice(0, 6))}`);
-        check(port.length && port.every((x) => x.art && x.w > 40 && x.h > 40), `pick ${f} portraits ${JSON.stringify(port)}`);
+        check(port.length === 4 && port.every((x) => x.art && x.w > 40 && x.h > 40), `pick ${f} portraits ${JSON.stringify(port)}`);
+        // the Lords are the picture: a portrait is at least 40% of its card and 220 px tall (at 1024x768 and above), at
+        // least 180 px of it stands clear of the caption band, and it is never a sliver
+        check(port.every((x) => x.h >= 0.4 * x.card && x.h >= 220 && x.clear >= 180 && x.w <= x.h * 1.25 && x.h <= x.w * 1.45), `pick ${f}: portraits at least 40% of the card and 220 px tall, no slivers`);
+        // top to bottom with nothing over anything else: banners, the row of Lords, the Lord's sheet, the footer line
+        check(!!seat.banners && !!seat.row && !!seat.sheet && !!seat.foot && seat.banners[1] <= seat.row[0] && seat.row[1] <= seat.sheet[0] + 8 && seat.sheet[1] <= seat.foot[0] + 4 && seat.foot[1] <= H, `pick ${f}: banners, Lords, sheet and footer stacked on screen ${JSON.stringify(seat)}`);
       }
       // the reveal: pick the Lich
       await p.click('.fcard[data-faction="ashen"]');
@@ -88,10 +94,12 @@ for (const [W, H] of SIZES) {
       check(await waitFor(p, () => !!document.querySelector('.lordpick .lcard') && !!document.querySelector('.coach.on'), null, 30000), 'tutorial pick with coach');
       await sleep(1400);
       await shot('tutorial-pick');
-      const r = await p.evaluate(() => { const g = (s) => { const n = document.querySelector(s); if (!n) return null; const r = n.getBoundingClientRect(); return [r.left | 0, r.top | 0, r.right | 0, r.bottom | 0]; }; return { coach: g('.coach.on'), cards: g('.lp-cards'), foot: g('.lp-foot'), target: g('.lcard[data-lord="marshal"]') }; });
+      const r = await p.evaluate(() => { const g = (s) => { const n = document.querySelector(s); if (!n) return null; const r = n.getBoundingClientRect(); return [r.left | 0, r.top | 0, r.right | 0, r.bottom | 0]; }; return { coach: g('.coach.on'), cards: g('.lp-cards'), sheet: g('.lp-detail'), foot: g('.lp-foot'), target: g('.lcard[data-lord="marshal"]'), port: g('.lcard[data-lord="marshal"] .lport') }; });
       const ov = (a, b) => a && b && Math.min(a[2], b[2]) - Math.max(a[0], b[0]) > 4 && Math.min(a[3], b[3]) - Math.max(a[1], b[1]) > 4;
-      check(!ov(r.coach, r.cards) && r.coach[3] <= H, `coach clear of the cards ${JSON.stringify(r)}`);
-      check((await overflow(['.coach.on', '.lp-cards', '.lcard'])).length === 0, `tutorial pick fits ${JSON.stringify(await overflow(['.coach.on', '.lp-cards', '.lcard']))}`);
+      check(!ov(r.coach, r.cards) && !ov(r.coach, r.sheet) && !ov(r.coach, r.target) && r.coach[3] <= H, `coach clear of the cards and the Lord's sheet ${JSON.stringify(r)}`);
+      const tsel = ['.coach.on', '.lp-cards', '.lp-row', '.lcard', '.lc-name', '.wline', '.lp-detail', '.ld', '.lc-block p', '.lp-go', '.fcard'];
+      check((await overflow(tsel)).length === 0, `tutorial pick fits ${JSON.stringify(await overflow(tsel))}`);
+      check(r.port[3] - r.port[1] >= 220 && r.port[3] - r.port[1] >= 0.4 * (r.target[3] - r.target[1]) && r.target[3] <= r.sheet[1] + 8, `tutorial pick: the coach does not squeeze the portraits (${r.port[2] - r.port[0]}x${r.port[3] - r.port[1]})`);
       await close();
     }
     // ---- planning: HUD faction bands, codex

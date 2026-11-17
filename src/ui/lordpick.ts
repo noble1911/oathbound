@@ -1,8 +1,13 @@
 // Faction and Lord pick, one screen: three faction banners (name, blurb, colours, lineup), the
 // chosen faction's identity and mechanics, then its four Lords (one per role: infantry, magic,
 // armour, fliers; FACTIONS[f].lords is in that order) with the phase countdown. Choosing a banner sends {t:'pickFaction'}
-// and can be changed until a Lord is picked; the Lord's card sends {t:'pickLord'}. Picks stay hidden
+// and can be changed until a Lord is picked; picking a Lord sends {t:'pickLord'}. Picks stay hidden
 // until both players have chosen; the reveal (yours vs theirs) plays as the match moves into round 1.
+//
+// The Lords are the picture: each card is the portrait over a name plate (title, role, name, counter
+// line). What a Lord does (passive, ability, signature units, stats) is ONE sheet under the row, for
+// the Lord in view: the card under the mouse or with keyboard focus, or the one tapped. A mouse click
+// or Enter on a card picks it; a tap only brings it into view, and the sheet's button picks.
 import type { FactionId, LordId, UnitType } from '../sim/types.ts';
 import type { RoomView } from '../net/protocol.ts';
 import { LORDS, LORD_ROLE, LORD_ROLE_NAME } from '../sim/data/lords.ts';
@@ -65,6 +70,9 @@ export class LordPickScreen {
   private timer: HTMLElement;
   private iv: ReturnType<typeof setInterval>;
   private picked: LordId | null = null;
+  /** the Lord whose sheet is shown */
+  private shown: LordId | null = null;
+  private pick: (l: LordId) => void;
   private faction: FactionId;
   private endsAt = 0;
   private spectator = false;
@@ -76,12 +84,15 @@ export class LordPickScreen {
     const stored = store.get('faction') as FactionId | null;
     this.faction = initial ?? (stored && FACTION_IDS.includes(stored) ? stored : 'kingdom');
     this.pickFaction = pickFaction;
+    this.pick = pick;
     this.root = el(`<div class="screen lordpick" ${key ? `style="--key:url(${key})"` : ''}>
       <header class="lp-head"><small class="eyebrow">Choose your banner and your Lord</small><h2>Who leads your host?</h2>
         <div class="lp-timer hidden">${icon('timer')}<b>30</b></div></header>
       <div class="lp-factions" role="radiogroup" aria-label="Faction">${FACTION_IDS.map((f) => this.banner(f)).join('')}</div>
       <div class="lp-ident"></div>
-      <div class="lp-cards"></div>
+      <div class="lp-cards"><div class="lp-row"></div></div>
+      <section class="lp-detail parch" aria-label="The Lord in view"><div class="ld-stack"></div>
+        <button class="btn primary lp-go" type="button"></button></section>
       <p class="lp-foot muted">${spectator ? 'The commanders are choosing their factions and Lords…' : FOOT}</p>
     </div>`);
     this.spectator = spectator;
@@ -96,25 +107,68 @@ export class LordPickScreen {
         this.setFaction(b.dataset.faction as FactionId, true);
       });
     });
-    const cards = $(this.root, '.lp-cards');
+    const cards = $(this.root, '.lp-row');
+    const cardOf = (e: Event): HTMLElement | null => (e.target as HTMLElement).closest<HTMLElement>('.lcard');
+    // a finger has no hover: its tap brings the Lord into view, and the sheet's button picks
+    let touch = false;
+    cards.addEventListener('pointerdown', (e) => { touch = e.pointerType !== 'mouse'; });
+    cards.addEventListener('keydown', (e) => {
+      touch = false;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const all = [...cards.querySelectorAll<HTMLElement>('.lcard')];
+      const i = all.indexOf(document.activeElement as HTMLElement);
+      if (i < 0) return;
+      e.preventDefault();
+      all[(i + (e.key === 'ArrowRight' ? 1 : all.length - 1)) % all.length]!.focus();
+    });
     cards.addEventListener('click', (e) => {
-      const c = (e.target as HTMLElement).closest<HTMLElement>('.lcard');
-      if (!c || this.picked || this.spectator) return;
-      sound.unlock();
-      sound.deploy();
-      this.picked = c.dataset.lord as LordId;
-      this.root.classList.add('has-pick');
-      c.classList.add('chosen');
-      store.set('faction', factionOfLord(this.picked));
-      pick(this.picked);
-      playLordLine(this.picked, 'pick', { delay: 0.25 });
+      const c = cardOf(e);
+      if (!c) return;
+      const id = c.dataset.lord as LordId;
+      if (this.picked || this.spectator || touch) {
+        if (this.shown !== id && !this.picked) sound.click();
+        this.show(id);
+        return;
+      }
+      this.choose(id);
     });
     cards.addEventListener('pointerover', (e) => {
-      const c = (e.target as HTMLElement).closest('.lcard');
-      if (c && !c.contains(e.relatedTarget as Node | null)) sound.hover();
+      const c = cardOf(e);
+      if (!c || c.contains(e.relatedTarget as Node | null)) return;
+      sound.hover();
+      if (e.pointerType === 'mouse') this.show(c.dataset.lord as LordId);
     });
+    cards.addEventListener('focusin', (e) => {
+      const c = cardOf(e);
+      // focus that a pointer gave is the click's business (a tap shows, a mouse click picks)
+      if (c?.matches(':focus-visible')) this.show(c.dataset.lord as LordId);
+    });
+    $(this.root, '.lp-go').addEventListener('click', () => { if (this.shown) this.choose(this.shown); });
     this.setFaction(this.faction, false);
     this.iv = setInterval(() => this.tick(), 1000);
+  }
+
+  private choose(id: LordId): void {
+    if (this.picked || this.spectator) return;
+    sound.unlock();
+    sound.deploy();
+    this.picked = id;
+    this.root.classList.add('has-pick');
+    this.root.querySelector(`.lcard[data-lord="${id}"]`)?.classList.add('chosen');
+    this.show(id);
+    store.set('faction', factionOfLord(id));
+    this.pick(id);
+    playLordLine(id, 'pick', { delay: 0.25 });
+  }
+
+  /** Bring a Lord's sheet into view (once a Lord is picked, the sheet stays on that Lord). */
+  private show(id: LordId): void {
+    if (this.picked) id = this.picked;
+    this.shown = id;
+    this.root.querySelectorAll<HTMLElement>('.lcard, .ld').forEach((n) => n.classList.toggle('on', n.dataset.lord === id));
+    const go = $(this.root, '.lp-go') as HTMLButtonElement;
+    go.disabled = !!this.picked;
+    go.innerHTML = this.picked ? `${icon('ready')}<span>${esc(LORDS[id].name)} leads</span>` : `<small>Lead with</small><span>${esc(LORDS[id].name)}</span>`;
   }
 
   private banner(f: FactionId): string {
@@ -142,31 +196,42 @@ export class LordPickScreen {
     const mech = factionMechanics(f);
     $(this.root, '.lp-ident').innerHTML = `<p><b>${esc(F.short)}.</b> ${esc(F.identity)}</p>
       <div class="lp-mech">${mech.map((m) => `<span class="tg ${m.tone}" data-tip="${esc(m.units.length ? `${m.units.map((u) => UNITS[u].name).join(', ')}: ${m.text}` : m.text)}">${esc(m.name)}</span>`).join('')}</div>`;
-    const cards = $(this.root, '.lp-cards');
-    cards.dataset.n = String(F.lords.length);
+    const cards = $(this.root, '.lp-row');
+    cards.style.setProperty('--n', String(F.lords.length));
     cards.innerHTML = F.lords.map((id) => this.card(id)).join('');
+    $(this.root, '.ld-stack').innerHTML = F.lords.map((id) => this.sheet(id)).join('');
     if (this.picked) cards.querySelector(`.lcard[data-lord="${this.picked}"]`)?.classList.add('chosen');
+    this.show(this.picked ?? F.lords[0]!);
     if (send) {
       store.set('faction', f);
       this.pickFaction?.(f);
     }
   }
 
+  /** A Lord's card: the portrait, and a plate with who this is and where they stand on the counter wheel. */
   private card(id: LordId): string {
     const L = LORDS[id];
-    const s = soldierStats('lord', 1, id);
-    return `<button class="lcard" data-lord="${id}" style="--hue:${LORD_HUE[id]}">
+    return `<button class="lcard" type="button" data-lord="${id}" aria-describedby="ld-${id}" style="--hue:${LORD_HUE[id]}">
       ${lordPortrait(id)}
-      <div class="lc-body">
-      <div class="lc-name"><small>${esc(L.title)} <i class="lc-role">${esc(LORD_ROLE_NAME[LORD_ROLE[id]])}</i></small><b>${esc(L.name)}</b><span class="lc-wpn">${icon(L.weapon)}${WEAPON_LABEL[L.weapon]}</span></div>
-      ${classLine('lord', id)}
-      <div class="lc-sig"><small>Signature units</small><div>${L.signature.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('')}</div></div>
-      <div class="lc-block"><small>Passive</small><p>${esc(L.passive)}</p></div>
-      <div class="lc-block abil"><small>${icon('lightning')}${esc(L.abilityName)}</small><p>${esc(L.abilityText)}</p></div>
-      <div class="lc-stats"><span data-tip="Life">${icon('heart')}${s.hp}</span><span data-tip="Damage per second">${icon('sword')}${s.dps.toFixed(0)}</span><span data-tip="Armor">${icon('shield')}${s.armor}%</span><span data-tip="Range">${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + 'm' : 'melee'}</span></div>
-      </div>
+      <div class="lc-name"><small>${esc(L.title)}</small><b>${esc(L.name)}</b>
+      ${classLine('lord', id)}</div>
       <div class="lc-seal">${icon('ready')}<span>Chosen</span></div>
     </button>`;
+  }
+
+  /** A Lord's sheet: what they do. A faction's sheets share one cell, so the sheet keeps its height as the Lord in view changes. */
+  private sheet(id: LordId): string {
+    const L = LORDS[id];
+    const s = soldierStats('lord', 1, id);
+    return `<article class="ld" id="ld-${id}" data-lord="${id}" style="--hue:${LORD_HUE[id]}">
+      <div class="ld-id"><small>${esc(L.title)} <i class="lc-role">${esc(LORD_ROLE_NAME[LORD_ROLE[id]])}</i></small><b>${esc(L.name)}</b>
+        <span class="lc-wpn">${icon(L.weapon)}${WEAPON_LABEL[L.weapon]}</span>
+        <div class="lc-stats"><span data-tip="Life">${icon('heart')}${s.hp}</span><span data-tip="Damage per second">${icon('sword')}${s.dps.toFixed(0)}</span><span data-tip="Armor">${icon('shield')}${s.armor}%</span><span data-tip="Range">${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + 'm' : 'melee'}</span></div></div>
+      <div class="ld-text">
+        <div class="lc-block"><small>Passive</small><p>${esc(L.passive)}</p></div>
+        <div class="lc-block abil"><small>${icon('lightning')}${esc(L.abilityName)}</small><p>${esc(L.abilityText)}</p></div></div>
+      <div class="lc-sig"><small>Signature units</small><div>${L.signature.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('')}</div></div>
+    </article>`;
   }
 
   private tick(): void {

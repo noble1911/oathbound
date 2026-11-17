@@ -372,7 +372,7 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .lobby .copy { color: var(--steel-100); border: 1px dashed var(--slate-400); }
 
 /* ------------------------------------------------------------ lord pick: four charters on the painted backdrop */
-.lordpick { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; padding: 2vh 2vw 2vh; gap: 0.5rem; background: radial-gradient(ellipse at 50% 40%, rgba(9, 11, 15, 0.7), rgba(9, 11, 15, 0.96)), var(--key, none) center / cover no-repeat, var(--iron-900); }
+.lordpick { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; padding: 2vh 2vw 2vh; gap: 0.5rem; background: radial-gradient(ellipse at 50% 40%, rgba(9, 11, 15, 0.7), rgba(9, 11, 15, 0.96)), var(--key, none) center / cover no-repeat, var(--iron-900); }
 .lp-head { text-align: center; position: relative; }
 .lp-head h2 { margin: 0.1rem 0 0; font: 600 2.2rem/1.1 var(--display); color: var(--parch-100); letter-spacing: 0.01em; text-shadow: 0 2px 0 #000, 0 2px 10px #000; }
 /* top left: the corner tools hold the top right on this screen */
@@ -400,31 +400,54 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .tg.good { color: var(--steel-100); border: 1px solid var(--slate-400); cursor: help; }
 .tg.bad { color: var(--foe-hi); border: 1px solid var(--foe-deep); cursor: help; }
 .lp-timer.hurry { color: var(--bad); animation: pulse 0.5s infinite alternate; }
-/* a card row is as tall as its cards, or as the screen allows (then the portraits give up height first: see .lcard) */
-.lp-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 17rem)); grid-auto-rows: minmax(0, max-content); gap: 1.5rem; justify-content: center; align-content: center; min-height: 0; overflow: hidden auto; padding: 0.8rem 0.8rem; }
-/* a faction with one Lord: one wide charter, the portrait beside the text */
-.lp-cards[data-n='1'] { grid-template-columns: minmax(0, 46rem); }
-.lp-cards[data-n='1'] .lcard { grid-template-columns: 17rem minmax(0, 1fr); grid-template-rows: 1fr; column-gap: 0.4rem; padding: 0.4rem 0 0.9rem; }
-.lp-cards[data-n='1'] .lcard > .lport { grid-row: 1 / -1; height: auto; min-height: 15rem; margin: 0 0 0 0.4rem; }
-.lp-cards[data-n='1'] .lcard > :not(.lport) { grid-column: 2; }
-.lp-cards[data-n='2'] { grid-template-columns: repeat(2, minmax(0, 19rem)); }
-.lp-cards[data-n='3'] { grid-template-columns: repeat(3, minmax(0, 18rem)); }
-.lcard { --hue: var(--steel-300); min-width: 0; display: grid; grid-template-rows: minmax(4.5rem, 8.5rem) 1fr; gap: 0.55rem; padding: 0 0 0.9rem; text-align: left; transition: transform 0.2s, opacity 0.3s, filter 0.3s; animation: cardin 0.6s both; }
-/* several cards: each card is a two-row subgrid (portrait, body) of the row's shared tracks, so the portraits all give up
-   the same height when the screen is short (the card with the longest text no longer gets a shorter portrait) */
-.lp-cards:not([data-n='1']) { grid-template-rows: minmax(4.5rem, 8.5rem) auto; grid-auto-rows: auto; row-gap: 0; }
-.lp-cards:not([data-n='1']) .lcard { grid-row: 1 / span 2; grid-template-rows: subgrid; }
-.lc-body { min-width: 0; display: grid; grid-template-rows: auto auto auto auto 1fr; gap: 0.55rem; }
+/* The Lords are the picture. Each card is its portrait, edge to edge in a parchment mount, with a caption band inked
+   across its foot (title, name, counter line). The row takes all the height the screen has left and the cards take all
+   of the row. --pw is a card's width: a share of the row, but hardly wider than the card is tall (a short row would
+   otherwise cut heads off the square art); a card is at most 4:3 tall, so the art loses a quarter of its width at most. */
+.lp-cards { --gap: 1.3rem; container-type: size; min-height: 0; display: grid; place-items: center; }
+.lp-row { --n: 4; --pw: min((100cqw - (var(--n) - 1) * var(--gap) - 0.8rem) / var(--n), 104cqh, 30rem); display: grid; grid-template-columns: repeat(var(--n), var(--pw)); grid-template-rows: minmax(0, calc(var(--pw) * 1.34)); gap: 0 var(--gap); height: 100cqh; align-content: center; }
+.lcard { --hue: var(--steel-300); min-width: 0; min-height: 0; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); padding: 0; text-align: left; transition: transform 0.2s, opacity 0.3s, filter 0.3s; animation: cardin 0.6s both; }
 .lcard:nth-child(2) { animation-delay: 0.08s; }
 .lcard:nth-child(3) { animation-delay: 0.16s; }
 .lcard:nth-child(4) { animation-delay: 0.24s; }
 /* the cards settle down into place (rising from below would push them past the bottom of a full row while they animate) */
 @keyframes cardin { from { opacity: 0; transform: translateY(-1rem) scale(0.97); } }
-.lcard:hover { transform: translateY(-0.4rem); }
+/* the Lord in view (hovered, focused or tapped): full colour and a steel edge; the others stand back a little */
+.lordpick:not(.has-pick) .lcard:not(.on) { filter: drop-shadow(0 0.45rem 0.9rem rgba(0, 0, 0, 0.55)) brightness(0.82) saturate(0.85); }
+.lordpick:not(.has-pick) .lcard.on { transform: translateY(-0.3rem); }
+.lcard.on::after { content: ''; position: absolute; inset: -0.2rem; border: 2px solid var(--steel-100); pointer-events: none; }
 .lc-role { font-style: normal; margin-left: 0.3rem; padding: 0 0.3rem; border: 1px solid currentColor; border-radius: 0.2rem; font-size: 0.85em; opacity: 0.75; letter-spacing: 0.06em; }
-.lcard > :not(.lport) { margin: 0 0.9rem; }
 .lport { position: relative; height: 8.5rem; overflow: hidden; background: var(--iron-800); border: 2px solid #3d3324; border-bottom: 0.3rem solid var(--hue); box-shadow: 0 2px 5px rgba(35, 27, 18, 0.5); }
-.lcard > .lport { margin: 0.35rem 0.35rem 0; height: auto; }
+.lcard > .lport { grid-area: 1 / 1; margin: 0.3rem; height: auto; min-height: 0; }
+/* the caption: ink over the foot of the print, with its own light type (the card is parchment, the band is not) */
+.lc-name {
+  --text: var(--parch-100); --muted: #cdbf9f; --dim: #a8997a; --head: #fbf4e2; --rule: rgba(241, 231, 207, 0.3); --well: rgba(241, 231, 207, 0.1); --good-c: var(--good); --bad-c: var(--bad);
+  grid-area: 1 / 1; align-self: end; z-index: 1; min-width: 0; margin: 0 calc(0.3rem + 2px) calc(0.6rem + 2px); padding: 0.35rem 0.7rem 0.45rem; display: grid; gap: 0.1rem; color: var(--text);
+  background: rgba(20, 16, 11, 0.92); border-top: 1px solid rgba(241, 231, 207, 0.45);
+}
+/* a wide card holds the counter line in one row (class, beats, weak to); a narrower one wraps it to two */
+.lcard { container: lcard / inline-size; }
+.lc-name .wline { margin-top: 0.15rem; gap: 0.15rem 0.45rem; }
+@container lcard (min-width: 19.5rem) { .lc-name .wline { flex-wrap: nowrap; white-space: nowrap; } }
+.lc-name .wline small { margin-right: 0.2rem; letter-spacing: 0.06em; }
+/* the sheet of the Lord in view: who, what they do, what they bring, and the button that picks them. A faction's four
+   sheets lie in one cell and only one shows, so the sheet (and the row above it) keeps its size as the Lord changes. */
+.lp-detail { width: min(100%, 86rem); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; padding: 0.6rem 1.2rem 0.7rem; }
+.ld-stack { min-width: 0; display: grid; }
+.ld { grid-area: 1 / 1; min-width: 0; display: grid; grid-template-columns: 13rem minmax(0, 1fr) 15rem; grid-template-areas: 'id text sig'; gap: 0 1.2rem; align-items: start; visibility: hidden; }
+.ld.on { visibility: visible; }
+.ld-id { grid-area: id; min-width: 0; display: grid; gap: 0.1rem; justify-items: start; padding-left: 0.6rem; border-left: 0.25rem solid var(--hue); }
+.ld-id small { font: 700 0.66rem var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.ld-id b { font: 700 1.5rem/1.1 var(--serif); color: var(--head); overflow-wrap: anywhere; }
+.ld-text { grid-area: text; min-width: 0; display: grid; gap: 0.35rem; }
+.ld .lc-sig { grid-area: sig; min-width: 0; }
+.ld .lc-sig .uchip { margin-bottom: 0.2rem; }
+.lp-go { display: grid; justify-items: center; gap: 0 0.4rem; min-width: 9rem; padding: 0.25rem 0.5rem; }
+.lp-go small { font: 700 0.62rem var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--steel-200); }
+.lp-go span { font: 700 1.15rem/1.15 var(--serif); }
+.lp-go:disabled { grid-auto-flow: column; align-items: center; }
+.lp-go:disabled span { font-size: 0.95rem; }
+.lordpick.spect .lp-go { display: none; }
 .lport-rays { display: none; }
 .lport-sigil { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 6rem; height: 6rem; color: var(--steel-200); }
 .lport-sigil .ico { width: 100%; height: 100%; stroke-width: 1.1; }
@@ -435,11 +458,11 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .lport.big.art .lport-img { background-position: center 20%; }
 .lc-name small { display: block; font: 700 0.72rem var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 .lc-name b { font: 700 1.6rem/1.1 var(--serif); color: var(--head); overflow-wrap: anywhere; }
-.lc-wpn { float: right; margin-top: 0.4rem; display: inline-flex; align-items: center; gap: 0.25rem; color: var(--muted); font-size: 0.8rem; }
-.lc-sig small, .lc-block small { display: flex; align-items: center; gap: 0.3rem; font: 700 0.66rem var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.25rem; }
+.lc-wpn { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--muted); font-size: 0.8rem; }
+.lc-sig small, .lc-block small { display: flex; align-items: center; gap: 0.3rem; font: 700 0.66rem var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.15rem; }
 .lc-block p { margin: 0; font: 0.9rem/1.35 var(--sans); color: var(--text); }
 .lc-block.abil small { color: var(--me-c); }
-.lc-stats { display: flex; flex-wrap: wrap; gap: 0.3rem 0.7rem; align-self: end; color: var(--text); font-size: 0.84rem; font-weight: 600; padding-top: 0.4rem; border-top: 1px solid var(--rule); }
+.lc-stats { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; margin-top: 0.25rem; color: var(--text); font-size: 0.84rem; font-weight: 600; }
 .lc-stats span { display: inline-flex; align-items: center; gap: 0.2rem; }
 .lc-seal { position: absolute; top: -0.6rem; right: -0.5rem; margin: 0 !important; display: none; place-items: center; width: 4.4rem; height: 4.4rem; padding: 0; background: url('/ui/kit/seal.webp') center / contain no-repeat; color: transparent; font-size: 0; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.55)); animation: stamp 0.35s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
 .lc-seal .ico { display: none; }
@@ -1306,14 +1329,23 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
    note along the bottom of the Lord pick, which keeps that strip free while it is up. */
 .coach[data-slot='right'] { left: auto; right: 1rem; top: var(--hud-under); bottom: auto; }
 .coach[data-slot='foot'] { left: 0; right: 0; top: auto; bottom: 1.1rem; margin-inline: auto; width: min(54rem, calc(100vw - 2rem)); }
-/* the tutorial's Lord pick: a wide, short coach under the cards, and cards with a shorter portrait so all four fit above it */
+/* the tutorial's Lord pick: a wide, short coach under the Lord's sheet; the screen keeps that strip free (the portraits give up the height) */
 .coach[data-slot='foot'] { width: min(72rem, calc(100vw - 2rem)); padding-block: 0.6rem 0.45rem; gap: 0.2rem; }
 #ui:has(.coach.on[data-slot='foot']) .lordpick { padding-bottom: var(--coach-foot, 10rem); gap: 0.35rem; }
-#ui:has(.coach.on[data-slot='foot']) .lp-cards { padding-block: 0.5rem 0.2rem; }
-#ui:has(.coach.on[data-slot='foot']) .lcard { gap: 0.4rem; }
-#ui:has(.coach.on[data-slot='foot']) .lc-body { gap: 0.3rem; }
-#ui:has(.coach.on[data-slot='foot']) .lcard > .lport { height: 4.9rem; }
-#ui:has(.coach.on[data-slot='foot']) .lp-cards:not([data-n='1']) { grid-template-rows: 4.9rem auto; }
+#ui:has(.coach.on[data-slot='foot']) .lp-detail { padding-block: 0.4rem 0.45rem; }
+/* its Skip goes up beside the step count, so the note is three rows and not four */
+.coach[data-slot='foot'] footer { position: absolute; right: 5rem; top: 0.5rem; }
+/* The coach takes a fifth of the screen, and the height it takes must not come out of the portraits: while it is up
+   the banners drop their count line and the mechanics tags go (the coach is doing the talking). On a short screen
+   (768 high) the banners keep only their name and lineup. */
+#ui:has(.coach.on[data-slot='foot']) .fc-n, #ui:has(.coach.on[data-slot='foot']) .lp-mech { display: none; }
+@media (max-height: 800px) {
+  #ui:has(.coach.on[data-slot='foot']) .fcard > small { display: none; }
+  #ui:has(.coach.on[data-slot='foot']) .lp-head .eyebrow { display: none; }
+  #ui:has(.coach.on[data-slot='foot']) .lordpick { padding-top: 1vh; gap: 0.3rem; }
+  #ui:has(.coach.on[data-slot='foot']) .lp-head h2 { font-size: 1.8rem; }
+  .coach[data-slot='foot'] { bottom: 0.5rem; }
+}
 #ui:has(.coach.on[data-slot='foot']) .lp-foot { display: none; }
 /* it reads above a tooltip that opens over it (tooltips are z-index 90) */
 #ui:has(.tip-layer.on) .coach { z-index: 91; }
@@ -1370,16 +1402,17 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .ready-box { width: 9rem; }
   .over::before, .over::after { display: none; }
   .ready-btn { border-width: 0.9rem 1.2rem; border-image-width: 0.9rem 1.55rem; }
-  .lp-cards { grid-template-columns: repeat(4, minmax(0, 17rem)); gap: 1.1rem; }
-  .lcard, .lc-body { gap: 0.4rem; }
-  .lcard { grid-template-rows: minmax(3.6rem, 6rem) 1fr; }
-  .lp-cards:not([data-n='1']) { grid-template-rows: minmax(3.6rem, 6rem) auto; }
-  .lcard > :not(.lport) { margin: 0 0.6rem; }
-  .lport { height: 6rem; }
-  .lc-name b { font-size: 1.25rem; }
-  .lc-wpn { margin-top: 0.15rem; }
+  .lp-cards { --gap: 0.75rem; }
+  .lc-name { padding: 0.25rem 0.5rem 0.3rem; gap: 0.05rem; }
+  .lc-name b { font-size: 1.2rem; }
+  .lc-name .wline { gap: 0.1rem 0.4rem; }
+  .lc-name small { font-size: 0.66rem; }
+  .lp-detail { padding: 0.45rem 0.9rem 0.5rem; gap: 0.7rem; }
+  .ld { grid-template-columns: 11.5rem minmax(0, 1fr) 11.5rem; gap: 0 0.8rem; }
+  .ld-id b { font-size: 1.3rem; }
   .lc-block p { font-size: 0.82rem; line-height: 1.3; }
-  .lc-stats { gap: 0.3rem 0.5rem; font-size: 0.78rem; }
+  .lc-stats { gap: 0.2rem 0.5rem; font-size: 0.78rem; }
+  .lc-sig .uchip { font-size: 0.74rem; }
   .lobby-card { padding: 1rem 1.2rem 0.9rem; }
   .code-big { font-size: 2.8rem; }
   .vs-port { width: 3.2rem; height: 4rem; }
@@ -1392,8 +1425,6 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .fcard > small { font-size: 0.76rem; }
   .fcard > b { font-size: 1.1rem; }
   .lp-ident p { font-size: 0.84rem; }
-  .lp-cards[data-n='1'] .lcard { grid-template-columns: 14rem minmax(0, 1fr); }
-  .lp-cards[data-n='1'] .lcard > .lport { min-height: 12rem; }
   .draft-row { gap: 0.8rem 0.8rem; }
   .dcard { padding: 0.6rem 0.4rem 0.5rem; }
   .dcard .crest.lg { width: 3rem; height: 3.35rem; }
@@ -1411,17 +1442,16 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .notices { top: calc(var(--hud-under) + 2.2rem); }
   .coach { width: 15.5rem; }
   .coach[data-slot='foot'] { width: calc(100vw - 2rem); }
-  #ui:has(.coach.on[data-slot='foot']) .lcard > .lport { height: 3.6rem; }
-  #ui:has(.coach.on[data-slot='foot']) .lp-cards:not([data-n='1']) { grid-template-rows: 3.6rem auto; }
   #ui:has(.coach.on[data-slot='foot']) .lp-head .eyebrow { display: none; }
-  #ui:has(.coach.on[data-slot='foot']) .lcard { gap: 0.3rem; }
-  #ui:has(.coach.on[data-slot='foot']) .lp-cards { padding-block: 0.3rem 0; }
-  #ui:has(.coach.on[data-slot='foot']) .lc-sig .uchip { font-size: 0.72rem; }
   .coach[data-slot='modal'] { width: 13.5rem; padding: 0.6rem 0.7rem 0.45rem; }
   .coach[data-slot='modal'] .coach-x { font-size: 0.84rem; }
 }
 @media (max-aspect-ratio: 1/1) {
-  .lp-cards { grid-template-columns: repeat(2, minmax(0, 17rem)); }
+  /* a tall window (a phone held upright): the Lords stand two by two, and the sheet stacks */
+  .lp-row { --pw: min((100cqw - var(--gap) - 0.8rem) / 2, (100cqh - 0.6rem) / 2 * 1.04, 30rem); grid-template-columns: repeat(2, var(--pw)); grid-template-rows: repeat(2, minmax(0, calc(var(--pw) * 1.34))); gap: 0.6rem var(--gap); }
+  .lp-detail { grid-template-columns: minmax(0, 1fr); gap: 0.4rem; }
+  .ld { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'id' 'text' 'sig'; }
+  .lp-go { justify-self: stretch; grid-auto-flow: column; }
   .res-table, .rl-two, .rl-two.cards { grid-template-columns: 1fr; }
   .tri, .whl { margin: 0 auto; }
   .vs { grid-template-columns: 1fr; }

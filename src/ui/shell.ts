@@ -180,7 +180,9 @@ export class Shell {
           return;
         }
         if ((e.target as HTMLElement)?.closest?.('input, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
-        // Enter is chat on every screen (the battle's Skip has its own key)
+        // Enter is chat on every screen (the battle's Skip has its own key), except on a Lord card or its
+        // "Lead with" button that the keyboard has focused: there it picks, as on any button
+        if (e.key === 'Enter' && (e.target as HTMLElement)?.matches?.('.lcard:focus-visible, .lp-go:focus-visible')) return;
         if (e.key === 'Enter' && this.chatEnabled) {
           this.toggleChat(true);
           this.input.focus();

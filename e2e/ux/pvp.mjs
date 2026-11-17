@@ -70,8 +70,8 @@ try {
   for (const p of [a, b, s]) await noInjection(p, 'lord pick');
   await shot(b, 'B-lordpick-1024');
   await shot(s, 'S-lordpick');
-  const cards = await b.$$eval('.lcard', (ns) => ns.map((n) => { const r = n.getBoundingClientRect(); const ab = n.querySelector('.lc-block.abil p').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight && ab.height > 8 && ab.bottom <= innerHeight; }));
-  check(cards.length === 4 && cards.every(Boolean), 'B (1024x768): four lord cards with ability text on screen');
+  const cards = await b.$$eval('.lcard', (ns) => ns.map((n) => { const r = n.getBoundingClientRect(); const ab = document.querySelector(`.ld[data-lord="${n.dataset.lord}"] .lc-block.abil p`).getBoundingClientRect(); const pr = n.querySelector('.lport').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight && ab.height > 8 && ab.bottom <= innerHeight && pr.height >= 220 && pr.height >= 0.4 * r.height; }));
+  check(cards.length === 4 && cards.every(Boolean), 'B (1024x768): four lord cards (portrait at least 220 px and 40% of the card) with ability text on screen');
   await a.click('.lcard[data-lord="marshal"]');
   await b.click('.lcard[data-lord="skylady"]');
   check(await phaseIs(a, 'planning'), 'planning');
