@@ -13,9 +13,16 @@ const MAX_RINGS = 24;
 const MAX_SEGS = 1600;
 const ROUTE_W = 0.3;
 const MAX_LABELS = 96;
-/** Label heights as a fraction of the viewport height (the plates are 0.042). */
+/** Label heights as a fraction of the viewport height. */
 const TAG_H = 0.022;
 const MARK_H = 0.02;
+/**
+ * A squad plate's height as a fraction of the viewport height (src/render/plates.ts uSize 0.045, up to 16% larger
+ * for a Lord or a selected squad), and its half-width in plate heights (crest disc + bar). The plate stands on
+ * its anchor: it spans [anchor - h, anchor] on screen.
+ */
+const PLATE_H = 0.045 * 1.12;
+const PLATE_HALF_W = 1.65;
 
 type HeightAt = (x: number, z: number) => number;
 
@@ -103,6 +110,11 @@ export class PlanOverlay {
   // ---------------------------------------------------------------- routes + labels
 
   private tags: { pos: THREE.Vector3; text: string; hot: boolean }[] = [];
+  /** Tag sprites in `tags` order (labels[0..n)), and the camera state their placement was worked out for. */
+  private tagCount = 0;
+  private clutterKey = '';
+  private clutterFrame = -1;
+  private pv = new THREE.Vector3();
   private marks: { pos: THREE.Vector3; text: string; dim: boolean }[] = [];
 
   /** Routes as field-cm polylines (engine frame). */
@@ -161,6 +173,9 @@ export class PlanOverlay {
   layoutLabels(): void {
     this.used = 0;
     for (const t of this.tags) this.label(t.pos, t.text, t.hot ? 'hot' : 'tag', TAG_H, 1.18);
+    this.tagCount = this.used;
+    this.clutterKey = '';
+    this.clutterFrame = -1;
     for (const m of this.marks) this.label(m.pos, m.text, m.dim ? 'dim' : 'mark', MARK_H, 0.5);
     const a = this.auraLabel;
     if (a) {
@@ -188,7 +203,8 @@ export class PlanOverlay {
       sp.renderOrder = 12;
       sp.frustumCulled = false;
       // constant screen size: the scale follows the camera's field of view on the frames that draw anyway
-      sp.onBeforeRender = (_r, _s, cam) => {
+      sp.onBeforeRender = (r, _s, cam) => {
+        this.declutter(cam, r.info.render.frame);
         // a sprite without size attenuation spans scale x projection[1][1] / 2 of the viewport height
         const hh = (2 * (sp!.userData.h as number)) / cam.projectionMatrix.elements[5]!;
         sp!.scale.set(hh * (sp!.userData.aspect as number), hh, 1);
@@ -205,6 +221,57 @@ export class PlanOverlay {
     sp.position.copy(pos);
     sp.visible = true;
     this.used++;
+  }
+
+  /**
+   * Keep the seconds tags off the other squads' plates. A tag hangs under its own plate; where that spot would
+   * cover another plate (squads stacked close on screen, which happens a lot at 1024x768) or an earlier tag, it
+   * moves beside its plate (right, then left) or above it. Worked out in screen space for the camera being drawn,
+   * and only again when that camera or the tags change, so it costs nothing on frames that are drawn anyway and
+   * never asks for a frame of its own.
+   */
+  private declutter(cam: THREE.Camera, frame: number): void {
+    const n = this.tagCount;
+    if (!n || frame === this.clutterFrame) return;
+    this.clutterFrame = frame;
+    const pc = cam as THREE.PerspectiveCamera;
+    const aspect = pc.aspect || 1;
+    const e = cam.matrixWorld.elements, pe = cam.projectionMatrix.elements;
+    const key = `${aspect.toFixed(4)}|${e.map((x) => x.toFixed(3)).join(',')}|${pe[0]!.toFixed(4)},${pe[5]!.toFixed(4)}`;
+    if (key === this.clutterKey) return;
+    this.clutterKey = key;
+    // anchors in viewport-height units, y down
+    const at: [number, number][] = [];
+    for (let i = 0; i < n; i++) {
+      this.pv.copy(this.labels[i]!.position).project(cam);
+      at.push([(this.pv.x * aspect) / 2, -this.pv.y / 2]);
+    }
+    const P = PLATE_H, pw = PLATE_HALF_W * P, th = TAG_H;
+    const plates = at.map(([x, y]) => [x - pw, y - P, x + pw, y] as const);
+    const placed: (readonly [number, number, number, number])[] = [];
+    const hit = (b: readonly [number, number, number, number], own: number): boolean => {
+      const over = (o: readonly [number, number, number, number]) => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1];
+      return plates.some((o, j) => j !== own && over(o)) || placed.some(over);
+    };
+    for (let i = 0; i < n; i++) {
+      const sp = this.labels[i]!;
+      const tw = th * (sp.userData.aspect as number);
+      const [x, y] = at[i]!;
+      // left / top corners of the candidate boxes: under the plate, right of it, left of it, above it
+      const spots: [number, number][] = [
+        [x - tw / 2, y + 0.18 * th],
+        [x + pw + 0.004, y - P / 2 - th / 2],
+        [x - pw - 0.004 - tw, y - P / 2 - th / 2],
+        [x - tw / 2, y - P * 1.3 - th],
+      ];
+      let pick = spots[0]!;
+      for (const s of spots) {
+        if (!hit([s[0], s[1], s[0] + tw, s[1] + th], i)) { pick = s; break; }
+      }
+      placed.push([pick[0], pick[1], pick[0] + tw, pick[1] + th]);
+      // the anchor maps to (cx, cy) of the sprite (0..1 left to right, bottom to top)
+      sp.center.set((x - pick[0]) / tw, 1 - (y - pick[1]) / th);
+    }
   }
 
   /** One texture per distinct text and tone, kept (seconds labels repeat a lot). */

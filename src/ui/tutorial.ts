@@ -16,6 +16,7 @@ import { deployPointsText, deployWeight, levelUpCost, MAX_SQUAD_LEVEL } from '..
 import { sound } from '../audio.ts';
 import { $, el, store } from './dom.ts';
 import { icon } from './icons.ts';
+import { COUNTER_TEXT } from './gamedata.ts';
 
 interface Step {
   id: string;
@@ -99,7 +100,7 @@ export class Coach {
       const first = (v?.round ?? 1) <= 1;
       return first
         ? { id: 'draft1', slot: 'modal', target: '.dcard', title: 'Raise your companies', text: `Unlock <b>${me?.draftPicks ?? 2} more unit types</b> for the whole match. Hover a card to see what it beats and what beats it. A front line plus something ranged is a sound start.` }
-        : { id: 'draft2', slot: 'modal', target: '.dcard', title: 'New recruits', text: 'Every round you unlock <b>one more unit type</b>. Pick what counters the army the enemy fielded last round.' };
+        : { id: 'draft2', slot: 'modal', target: '.dcard', title: 'New recruits', text: `Every round you unlock <b>one more unit type</b>. Each card shows its class on the <b>counter wheel</b>, what it beats (${COUNTER_TEXT} damage) and what it fears: pick the class that beats what the enemy fielded last round. The whole wheel is in the codex, <kbd>F1</kbd>.` };
     }
     if (has('.modal.loot')) return { id: 'loot', slot: 'modal', title: 'Spoils of War', text: 'After every round you claim <b>one item</b>. It works on every soldier of the squad that carries it. The three are equal in power: a weapon for offence, an armor for defence, a relic for utility. <b>Suits</b> names the squad it helps most; a greyed line does nothing there.' };
     if (has('.planning') && me) {

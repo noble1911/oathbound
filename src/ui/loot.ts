@@ -50,12 +50,16 @@ export class LootModal {
     this.offerKey = offer.map((i) => i.id).join(',');
     const best = Math.max(...offer.map((i) => rarityRank(i.rarity)));
     const lordSq = me.squads.find((s) => s.type === 'lord');
-    this.root = el(`<div class="modal loot ${best === 3 ? 'has-leg' : ''}">
+    // every 3rd round all three are Legendary: say so, and that each power only wakes on its own classes
+    const allLeg = offer.length > 0 && offer.every((i) => i.rarity === 'legendary');
+    this.root = el(`<div class="modal loot ${best === 3 ? 'has-leg' : ''}${allLeg ? ' leg-round' : ''}">
       <div class="loot-bg"></div>
       <header class="loot-head">
-        <small class="eyebrow">After the battle</small>
+        <small class="eyebrow">After the battle${allLeg ? ' · <em>a Legendary round</em>' : ''}</small>
         <h2>Spoils of War</h2>
-        <p>Choose one: a weapon (offence), an armor (defence) or a relic (utility), all of the same rarity and power. It goes to your stash; equip it on a squad or your Lord. <span class="loot-same">Your opponent is offered the same items.</span></p>
+        <p>${allLeg
+          ? 'All three are Legendary. Each legendary power wakes only on the classes it is <b>best on</b>; on any other squad it is just its affixes.'
+          : 'Choose one: a weapon (offence), an armor (defence) or a relic (utility), all of the same rarity and power.'} It goes to your stash. <span class="loot-same">Your opponent is offered the same items.</span></p>
       </header>
       <div class="loot-row n${offer.length}">
         ${offer
@@ -65,7 +69,10 @@ export class LootModal {
             const on = fit?.squad ?? (lordSq && canEquip(it, 'lord', me.lord) ? lordSq : null);
             const cur = on?.items[it.slot] ?? null;
             const onName = on ? unitName(on.type, me.lord) : '';
-            const cmp = on ? { compare: cur, compareLabel: cur ? `vs ${onName}'s ${SLOT_LABEL[it.slot].toLowerCase()}` : `On ${onName} (empty ${SLOT_LABEL[it.slot].toLowerCase()} slot)`, on: { type: on.type, lord: me.lord } } : {};
+            // against an empty slot every line is a gain: one line says so instead of repeating the item
+            const cmp = !on ? {} : cur
+              ? { compare: cur, compareLabel: `vs ${onName}'s ${SLOT_LABEL[it.slot].toLowerCase()}`, on: { type: on.type, lord: me.lord } }
+              : { hint: `Fills ${onName}'s empty ${SLOT_LABEL[it.slot].toLowerCase()} slot`, on: { type: on.type, lord: me.lord } };
             return `<div class="drop r-${it.rarity}" data-i="${i}" style="--d:${i * 0.45 + 0.3}s">
               <div class="beam"></div><div class="glow"></div>
               <div class="drop-icon">${itemIcon(it, { size: 'lg' })}<span class="drop-rar">${RARITY_LABEL[it.rarity]} ${SLOT_LABEL[it.slot]} · ${ITEM_KIND[it.slot]}</span></div>
@@ -161,14 +168,18 @@ export class DraftModal {
     const fallback = me.draftOptions[0];
     const card = (u: UnitType): string => {
       const d = UNITS[u];
-      const row = (l: DraftLine): string => `<span class="dc-ctr ${l.tone}"><small>${l.label}</small><span class="dc-m"><span data-tip="${esc(l.tip)}">${l.cls ? classTag(l.cls) : esc(l.text)}</span></span></span>`;
+      // Beats / Fears side by side under the cost: two cells of one row keep the card short enough for two rows of
+      // eight at 1024x768
+      const row = (l: DraftLine): string => `<span class="dc-ctr ${l.tone}" data-tip="${esc(l.tip)}"><small>${l.label}</small><span class="dc-m">${l.cls ? classTag(l.cls) : esc(l.text)}</span></span>`;
+      // "Ranged · Ranged" says nothing twice: the role only when it adds to the class name
+      const role = d.role.toLowerCase() === WHEEL_NAME[d.class].toLowerCase() ? '' : `<small>${esc(d.role)}</small>`;
       return `<button class="dcard" data-u="${u}">
         ${u === fallback ? '<em class="dc-def" data-tip="Recruited for you if planning ends before you choose">Default</em>' : ''}
         ${crest(u, null, 'lg')}
         <b>${esc(d.name)}</b>
-        <span class="dc-cls" data-tip="${esc(wheelTip(u))}">${classTag(d.class, 'me')}<small>${esc(d.role)}</small></span>
+        <span class="dc-cls" data-tip="${esc(wheelTip(u))}">${classTag(d.class, 'me')}${role}</span>
         <span class="dc-cost">${icon('gold')}${d.cost} <em>×${d.squadSize}</em>${deployChip(u)}<span class="dc-tags">${tagsOf(u).map((g) => `<i data-tip="${esc(TAG_LABEL[g])}">${icon(g)}</i>`).join('')}</span></span>
-        ${draftLines(u).map(row).join('')}
+        <span class="dc-wh">${draftLines(u).map(row).join('')}</span>
       </button>`;
     };
     const opts = draftOrder(me.draftOptions);

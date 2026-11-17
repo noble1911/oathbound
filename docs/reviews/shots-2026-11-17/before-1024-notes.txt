@@ -1,0 +1,34 @@
+loot: off-screen .drop "Legendary Weapon · Offence
+   " [68,171,353,836]
+loot: off-screen .drop "Legendary Armor · Defence
+    " [369,171,655,804]
+loot: off-screen .drop "Legendary Relic · Utility
+    " [671,171,956,841]
+loot: off-screen .drop-fit "Suits: Marshal Aldric 1 line w" [105,762,316,791]
+loot: off-screen .drop-fit "Suits: Marshal Aldric 2 lines " [705,768,922,797]
+loot offer: ["legendary weapon hydra_volley","legendary armor sunfire","legendary relic gravebloom"]
+planning: clipped .uc-role "Heavy air" (30>25)
+tag-ish classes: uc-tags tagi
+militia squad: {"id":11,"level":2}
+swarm squad levelled to 2
+deploy points left (half-points): 6
+shop: clipped .uc-role "Heavy air" (30>25)
+toasts: ["Needs 1½ deploy points, ½ left"]
+toasts after key: ["Needs 1½ deploy points, ½ left","Needs 1½ deploy points, ½ left"]
+codex: off-screen .rl-row "Line›Cavalrybraced pikes and s" [41,731,983,867]
+codex: off-screen .rl-row "Cavalry›Rangedrides down the a" [41,872,983,948]
+codex: off-screen .rl-row "Ranged›Airshoots fliers out of" [41,952,983,1028]
+codex: off-screen .rl-row "Air›Siegedives on crews who ca" [41,1033,983,1169]
+codex: off-screen .rl-row "Siege›Magicoutranges and splas" [41,1174,983,1280]
+codex: off-screen .rl-row "Magic›Swarmsplash on packed, w" [41,1285,983,1391]
+codex: off-screen .wcl "Cavalry" [50,880,193,904]
+codex: off-screen .wcl "Ranged" [257,880,345,904]
+codex: off-screen .wcl "Ranged" [50,960,193,984]
+codex: off-screen .wcl "Air" [257,960,345,984]
+codex: off-screen .wcl "Air" [50,1041,193,1064]
+codex: off-screen .wcl "Siege" [257,1041,345,1064]
+codex: off-screen .wcl "Siege" [50,1182,193,1206]
+codex: off-screen .wcl "Magic" [257,1182,345,1206]
+codex: off-screen .wcl "Magic" [50,1293,193,1317]
+codex: off-screen .wcl "Swarm" [257,1293,345,1317]
+replay squads: ["0:lord:0","1:cavaliers:0","2:militia:0","3:golem:0","4:lord:1","5:knights:1","6:golem:1","7:militia:1","8:mages:1"]

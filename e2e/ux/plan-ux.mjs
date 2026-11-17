@@ -9,6 +9,9 @@ import path from 'node:path';
 const BASE = process.env.BASE || 'http://127.0.0.1:5193/';
 const W = +(process.env.W || 1920), H = +(process.env.H || 1080);
 const LORD = process.env.LORD || 'marshal';
+// Deploys are weighted by cost now (100 gold = half a point), so the bots' round-3 armies are thinner than the
+// four squads this needs; by round 5 the Marshal's bot has fielded enough.
+const ROUND = +(process.env.ROUND || 5);
 const browser = await launch();
 const errors = [];
 let fails = 0;
@@ -46,18 +49,19 @@ async function drag(a, b, { button = 'left', steps = 12, mid = null } = {}) {
 }
 
 try {
-  await p.goto(`${BASE}?dev=planning&lord=${LORD}&timer=0`, { waitUntil: 'domcontentloaded' });
+  await p.goto(`${BASE}?dev=planning&lord=${LORD}&round=${ROUND}&timer=0`, { waitUntil: 'domcontentloaded' });
   await waitFor(p, () => !!document.querySelector('.planning') && !!window.__ob?.app.scene && !!window.__ob.app.room?.view?.you, null, 60000);
   await sleep(4000);
-  // the draft / loot modals open on their own: close them
-  for (let i = 0; i < 3; i++) {
-    if (await p.$('.modal')) await p.keyboard.press('Escape');
-    await sleep(500);
+  // the draft / loot modals open on their own, one after the other (the recruit draft can follow the loot a
+  // second or two later): close them until none has shown for a while
+  for (let i = 0, quiet = 0; i < 12 && quiet < 3; i++) {
+    if (await p.$('.modal')) { await p.keyboard.press('Escape'); quiet = 0; } else quiet++;
+    await sleep(700);
   }
   await p.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
   await sleep(1500);
   const a0 = await army();
-  check(a0.length >= 4, `round 3 army on the field (${a0.length} squads)`);
+  check(a0.length >= 4, `round ${ROUND} army on the field (${a0.length} squads)`);
   check(!!(await p.$('.ptools .pt-undo')) && !!(await p.$('.ptools .pt-sync')), 'formation bar is on screen');
 
   // ---- timing tags are there, idle planning still draws nothing
@@ -180,7 +184,10 @@ try {
   await p.keyboard.press('Escape');
   await p.keyboard.press('g');
   await sleep(200);
-  const one = (await army()).find((q) => q.type !== 'lord');
+  // the most isolated squad away from the zone's edges, so the drop 3-4 m off is free ground
+  const all = await army();
+  const room = (q) => Math.min(...all.filter((o) => o.id !== q.id).map((o) => Math.hypot(o.pos[0] - q.pos[0], o.pos[1] - q.pos[1])), q.pos[1] - 400, q.pos[0] - 400, 7600 - q.pos[0]);
+  const one = all.filter((q) => q.type !== 'lord').sort((a, b) => room(b) - room(a))[0];
   const to = await scr([one.pos[0] - 333, one.pos[1] - 271]);
   await drag({ x: one.scr.x, y: one.scr.y - 4 }, to, { steps: 10, mid: async () => { await sleep(200); await shot('drag-route'); } });
   await sleep(500);
@@ -194,7 +201,14 @@ try {
   const canDeploy = await p.evaluate(() => { const me = window.__ob.app.room.view.you; return me.deploysUsed < me.deployLimit; });
   if (canDeploy) {
     await p.keyboard.press('1');
-    const spot = await scr([1500, 1200]);
+    // open ground the cursor can reach (at 4:3 the stash panel covers the zone's near left corner)
+    let spot = null;
+    for (const at of [[1500, 1200], [4000, 1200], [6000, 1400], [2600, 3000], [5600, 3000], [4000, 3400]]) {
+      const c = await scr(at);
+      const free = await p.evaluate((x, y) => document.elementFromPoint(x, y) === window.__ob.app.scene.canvas && !window.__ob.app.scene.squadAt(x, y), c.x, c.y);
+      if (free) { spot = c; break; }
+    }
+    spot ??= await scr([1500, 1200]);
     await p.mouse.move(spot.x, spot.y);
     await sleep(200);
     await p.mouse.click(spot.x, spot.y);

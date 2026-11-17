@@ -456,7 +456,8 @@ export class PlanningScreen {
           ${crest(u, null, 'md')}
           <b>${esc(d.name)}</b>
           <div class="uc-meta"><span class="uc-cost">${icon('gold')}${d.cost}</span><span class="uc-size">×${d.squadSize}</span>${deployChip(u)}</div>
-          <div class="uc-tags">${classIcon(u)}${tagIcons(u)}<span class="uc-role">${esc(d.role)}</span></div>
+          <div class="uc-tags">${classIcon(u)}<span class="uc-role">${esc(d.role)}</span></div>
+          <div class="uc-tagc">${tagIcons(u)}</div>
         </button>`;
       })
       .join('');

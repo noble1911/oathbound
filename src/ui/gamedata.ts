@@ -1,7 +1,7 @@
 // UI-side readings of the sim's data tables: the counter wheel, deploy weights, level stats, formations for the deploy
 // ghost, item stat totals and comparison deltas. Pure (no DOM), unit-tested in tests/client.test.ts.
 import type { Affix, Item, LordId, Rarity, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2, WeaponKind, FactionId, WheelClass } from '../sim/types.ts';
-import { UNITS, UNIT_TYPES, squadSizeAt, growsBySize } from '../sim/data/units.ts';
+import { UNITS, UNIT_TYPES, formationCols, squadSizeAt, growsBySize } from '../sim/data/units.ts';
 import { WHEEL_NAME, beatsClass, beatenBy } from '../sim/data/wheel.ts';
 import { COUNTER_PCT } from '../sim/constants.ts';
 import { LORDS } from '../sim/data/lords.ts';
@@ -168,8 +168,9 @@ const FACE = (f: number) => (f / 256) * Math.PI * 2;
 export function formation(t: SquadType, facing: number, lord?: LordId | null, size?: number): Vec2[] {
   const n = t === 'lord' ? 1 : size ?? UNITS[t].squadSize;
   const r = t === 'lord' ? 60 : UNITS[t].radius;
-  const gap = Math.max(110, r * 2.6);
-  const cols = n <= 1 ? 1 : n <= 4 ? n : Math.ceil(Math.sqrt(n * 2));
+  // the sim's starting formation (battle.ts): what the footprint keeps clear, and where the battle starts it
+  const gap = r * 2 + 50;
+  const cols = formationCols(n);
   const rows = Math.ceil(n / cols);
   const a = FACE(facing);
   // forward = (cos a, sin a); right = (sin a, -cos a)
@@ -182,7 +183,7 @@ export function formation(t: SquadType, facing: number, lord?: LordId | null, si
     const inRow = row === rows - 1 ? n - row * cols : cols;
     const col = i % cols;
     const side = (col - (inRow - 1) / 2) * gap;
-    const fwd = ((rows - 1) / 2 - row) * gap * 0.9;
+    const fwd = ((rows - 1) / 2 - row) * gap;
     out.push([Math.round(side * rx + fwd * fx), Math.round(side * ry + fwd * fy)]);
   }
   return out;

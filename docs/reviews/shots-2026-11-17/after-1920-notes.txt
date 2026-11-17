@@ -1,0 +1,20 @@
+loot offer: ["legendary weapon hydra_volley","legendary armor sunfire","legendary relic gravebloom"]
+tag-ish classes: uc-tags uc-tagc tagi
+militia squad: {"id":11,"level":2}
+swarm squad levelled to 5
+deploy points left (half-points): 6
+toasts: ["Needs 1½ deploy points, ½ left"]
+toasts after key: ["Needs 1½ deploy points, ½ left","Needs 1½ deploy points, ½ left"]
+codex: off-screen .rl-row "Ranged›Airshoots fliers out of" [321,1066,1599,1120]
+codex: off-screen .rl-row "Air›Siegedives on crews who ca" [321,1126,1599,1180]
+codex: off-screen .rl-row "Siege›Magicoutranges and splas" [321,1186,1599,1240]
+codex: off-screen .rl-row "Magic›Swarmsplash on packed, w" [321,1246,1599,1300]
+codex: off-screen .wcl "Ranged" [333,1078,434,1108]
+codex: off-screen .wcl "Air" [514,1078,575,1108]
+codex: off-screen .wcl "Air" [333,1138,396,1168]
+codex: off-screen .wcl "Siege" [514,1138,596,1168]
+codex: off-screen .wcl "Siege" [333,1198,417,1228]
+codex: off-screen .wcl "Magic" [514,1198,599,1228]
+codex: off-screen .wcl "Magic" [333,1258,420,1288]
+codex: off-screen .wcl "Swarm" [514,1258,608,1288]
+replay squads: ["0:lord:0","1:cavaliers:0","2:militia:0","3:golem:0","4:lord:1","5:knights:1","6:golem:1","7:militia:1","8:mages:1"]

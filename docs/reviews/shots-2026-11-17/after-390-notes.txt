@@ -1,0 +1,61 @@
+draft: off-screen .dc-ctr "SupportsHeals nearby squads" [58,839,119,873]
+draft: off-screen .dc-ctr "FearsSiege" [123,839,184,873]
+draft: off-screen .dc-ctr "BeatsSwarm" [206,839,267,867]
+draft: off-screen .dc-ctr "FearsSiege" [271,839,332,867]
+draft: off-screen .wcl "Siege" [123,851,166,865]
+draft: off-screen .wcl "Swarm" [206,851,254,865]
+draft: off-screen .wcl "Siege" [271,851,313,865]
+loot: off-screen .drop "Legendary Armor · Defence
+    " [87,516,303,883]
+loot: off-screen .drop "Legendary Relic · Utility
+    " [87,895,303,1289]
+loot: off-screen .drop-rar "Legendary Relic · Utility" [121,938,269,951]
+loot: off-screen .drop-fit "Suits: Marshal Aldric" [143,837,247,852]
+loot: off-screen .drop-fit "Suits: Marshal Aldric 2 lines " [113,1243,277,1258]
+loot: off-screen .it-meta "Item Level 3" [99,1012,291,1024]
+loot: off-screen .it-best "Best onSwarmCavalryMarshal Ald" [99,1175,291,1208]
+loot offer: ["legendary weapon hydra_volley","legendary armor sunfire","legendary relic gravebloom"]
+planning: clipped .ucard b "Militia" (24>2)
+planning: clipped .ucard b "Pikemen" (31>2)
+planning: clipped .ucard b "Cavaliers" (32>2)
+planning: clipped .ucard b "Knights" (28>2)
+planning: clipped .ucard b "Wyvern Riders" (52>2)
+planning: clipped .ucard b "Stone Golem" (44>2)
+planning: clipped .shop "1
+          
+          Militia
+         " (223>162)
+tag-ish classes: uc-tags uc-tagc tagi
+militia squad: {"id":11,"level":2}
+swarm squad levelled to 5
+deploy points left (half-points): 6
+shop: clipped .ucard b "Militia" (24>2)
+shop: clipped .ucard b "Pikemen" (31>2)
+shop: clipped .ucard b "Cavaliers" (32>2)
+shop: clipped .ucard b "Knights" (28>2)
+shop: clipped .ucard b "Wyvern Riders" (52>2)
+shop: clipped .ucard b "Stone Golem" (44>2)
+toasts: ["Needs 1½ deploy points, ½ left"]
+toasts after key: ["Needs 1½ deploy points, ½ left","Needs 1½ deploy points, ½ left"]
+codex: off-screen .rl-row "Swarm›Giantmany bodies drag a " [31,800,359,878]
+codex: off-screen .rl-row "Giant›Linetramples a packed fo" [31,881,359,944]
+codex: off-screen .rl-row "Line›Cavalrybraced pikes and s" [31,948,359,1010]
+codex: off-screen .rl-row "Cavalry›Rangedrides down the a" [31,1014,359,1069]
+codex: off-screen .rl-row "Ranged›Airshoots fliers out of" [31,1073,359,1128]
+codex: off-screen .rl-row "Air›Siegedives on crews who ca" [31,1132,359,1194]
+codex: off-screen .rl-row "Siege›Magicoutranges and splas" [31,1198,359,1261]
+codex: off-screen .rl-row "Magic›Swarmsplash on packed, w" [31,1264,359,1327]
+codex: off-screen .wcl "Giant" [38,892,87,910]
+codex: off-screen .wcl "Line" [141,892,183,910]
+codex: off-screen .wcl "Line" [38,958,81,976]
+codex: off-screen .wcl "Cavalry" [141,958,198,976]
+codex: off-screen .wcl "Cavalry" [38,1020,97,1038]
+codex: off-screen .wcl "Ranged" [141,1020,198,1038]
+codex: off-screen .wcl "Ranged" [38,1079,96,1098]
+codex: off-screen .wcl "Air" [141,1079,177,1098]
+codex: off-screen .wcl "Air" [38,1142,75,1160]
+codex: off-screen .wcl "Siege" [141,1142,188,1160]
+codex: off-screen .wcl "Siege" [38,1208,87,1226]
+codex: off-screen .wcl "Magic" [141,1208,190,1226]
+codex: off-screen .wcl "Magic" [38,1274,89,1292]
+codex: off-screen .wcl "Swarm" [141,1274,195,1292]

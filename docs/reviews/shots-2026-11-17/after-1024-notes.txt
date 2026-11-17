@@ -1,0 +1,28 @@
+loot offer: ["legendary weapon hydra_volley","legendary armor sunfire","legendary relic gravebloom"]
+tag-ish classes: uc-tags uc-tagc tagi
+militia squad: {"id":11,"level":2}
+swarm squad levelled to 5
+deploy points left (half-points): 6
+toasts: ["Needs 1½ deploy points, ½ left"]
+toasts after key: ["Needs 1½ deploy points, ½ left","Needs 1½ deploy points, ½ left"]
+codex: off-screen .rl-row "Line›Cavalrybraced pikes and s" [41,756,983,828]
+codex: off-screen .rl-row "Cavalry›Rangedrides down the a" [41,833,983,906]
+codex: off-screen .rl-row "Ranged›Airshoots fliers out of" [41,910,983,983]
+codex: off-screen .rl-row "Air›Siegedives on crews who ca" [41,988,983,1060]
+codex: off-screen .rl-row "Siege›Magicoutranges and splas" [41,1065,983,1137]
+codex: off-screen .rl-row "Magic›Swarmsplash on packed, w" [41,1142,983,1214]
+codex: off-screen .wcl "Line" [50,765,107,788]
+codex: off-screen .wcl "Cavalry" [187,765,260,788]
+codex: off-screen .wcl "Cavalry" [50,842,127,866]
+codex: off-screen .wcl "Ranged" [187,842,261,866]
+codex: off-screen .wcl "Ranged" [50,919,127,943]
+codex: off-screen .wcl "Air" [187,919,233,943]
+codex: off-screen .wcl "Air" [50,996,98,1020]
+codex: off-screen .wcl "Siege" [187,996,248,1020]
+codex: off-screen .wcl "Siege" [50,1073,113,1097]
+codex: off-screen .wcl "Magic" [187,1073,251,1097]
+codex: off-screen .wcl "Magic" [50,1151,116,1174]
+codex: off-screen .wcl "Swarm" [187,1151,258,1174]
+replay squads: ["0:lord:0","1:cavaliers:0","2:militia:0","3:golem:0","4:lord:1","5:knights:1","6:golem:1","7:militia:1","8:mages:1"]
+inspector: off-screen .insp b "3.2 m/s" [805,776,845,794]
+inspector: off-screen .insp b "5%" [974,776,991,794]

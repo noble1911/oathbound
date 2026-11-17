@@ -1,0 +1,73 @@
+draft: off-screen .dcard b "Pegasus Knights" [304,381,400,397]
+draft: off-screen .dc-cls "MagicAoE caster" [299,607,392,644]
+draft: off-screen .dc-ctr "BeatsSiege" [299,442,405,472]
+draft: off-screen .dc-ctr "FearsRanged" [299,475,405,504]
+draft: off-screen .dc-ctr "BeatsSwarm" [299,666,392,696]
+draft: off-screen .dc-ctr "FearsSiege" [299,698,392,728]
+draft: off-screen .dc-cost "200 ×31" [299,423,405,440]
+draft: off-screen .dc-cost "200 ×41" [299,647,392,664]
+draft: off-screen .wcl "Siege" [345,446,405,472]
+draft: off-screen .wcl "Ranged" [345,479,405,504]
+draft: off-screen .wcl "Swarm" [345,670,392,696]
+draft: off-screen .wcl "Siege" [345,702,392,728]
+loot: off-screen .drop "Legendary Armor · Defence
+    " [87,667,303,1146]
+loot: off-screen .drop "Legendary Relic · Utility
+    " [87,1158,303,1663]
+loot: off-screen .drop-rar "Legendary Relic · Utility" [121,1217,269,1230]
+loot: off-screen .drop-fit "Suits: Marshal Aldric" [143,1092,247,1113]
+loot: off-screen .drop-fit "Suits: Marshal Aldric 2 lines " [113,1609,277,1631]
+loot: off-screen .it-meta "Best on: Line, Giant. The powe" [99,934,291,958]
+loot: off-screen .it-meta "Item Level 3" [99,1293,291,1305]
+loot: off-screen .it-meta "Best on: Swarm, Cavalry. The p" [99,1464,291,1488]
+loot offer: ["legendary weapon hydra_volley","legendary armor sunfire","legendary relic gravebloom"]
+planning: clipped .ucard b "Militia" (24>2)
+planning: clipped .ucard b "Pikemen" (31>2)
+planning: clipped .ucard b "Cavaliers" (32>2)
+planning: clipped .ucard b "Knights" (28>2)
+planning: clipped .ucard b "Wyvern Riders" (52>2)
+planning: clipped .ucard b "Stone Golem" (44>2)
+planning: clipped .shop "1
+          
+          Militia
+         " (223>162)
+tag-ish classes: uc-tags tagi
+militia squad: {"id":11,"level":2}
+swarm squad levelled to 2
+deploy points left (half-points): 6
+shop: clipped .ucard b "Militia" (24>2)
+shop: clipped .ucard b "Pikemen" (31>2)
+shop: clipped .ucard b "Cavaliers" (32>2)
+shop: clipped .ucard b "Knights" (28>2)
+shop: clipped .ucard b "Wyvern Riders" (52>2)
+shop: clipped .ucard b "Stone Golem" (44>2)
+toasts: ["Needs 1½ deploy points, ½ left"]
+toasts after key: ["Needs 1½ deploy points, ½ left","Needs 1½ deploy points, ½ left"]
+codex: off-screen .rl-row "Swarm›Giantmany bodies drag a " [31,776,359,871]
+codex: off-screen .rl-row "Giant›Linetramples a packed fo" [31,875,359,940]
+codex: off-screen .rl-row "Line›Cavalrybraced pikes and s" [31,943,359,1070]
+codex: off-screen .rl-row "Cavalry›Rangedrides down the a" [31,1074,359,1139]
+codex: off-screen .rl-row "Ranged›Airshoots fliers out of" [31,1143,359,1207]
+codex: off-screen .rl-row "Air›Siegedives on crews who ca" [31,1211,359,1338]
+codex: off-screen .rl-row "Siege›Magicoutranges and splas" [31,1342,359,1445]
+codex: off-screen .rl-row "Magic›Swarmsplash on packed, w" [31,1449,359,1537]
+codex: off-screen .wcl "Giant" [38,884,146,903]
+codex: off-screen .wcl "Line" [194,884,261,903]
+codex: off-screen .wcl "Line" [38,960,146,979]
+codex: off-screen .wcl "Cavalry" [194,960,261,979]
+codex: off-screen .wcl "Cavalry" [38,1084,146,1102]
+codex: off-screen .wcl "Ranged" [194,1084,261,1102]
+codex: off-screen .wcl "Ranged" [38,1152,146,1170]
+codex: off-screen .wcl "Air" [194,1152,261,1170]
+codex: off-screen .wcl "Air" [38,1228,146,1246]
+codex: off-screen .wcl "Siege" [194,1228,261,1246]
+codex: off-screen .wcl "Siege" [38,1359,146,1377]
+codex: off-screen .wcl "Magic" [194,1359,261,1377]
+codex: off-screen .wcl "Magic" [38,1458,146,1477]
+codex: off-screen .wcl "Swarm" [194,1458,261,1477]
+replay squads: ["0:lord:0","1:cavaliers:0","2:militia:0","3:golem:0","4:lord:1","5:knights:1","6:golem:1","7:militia:1","8:mages:1"]
+lordpick: off-screen .wline "AirBeatsSiegeWeak toRanged" [301,403,397,456]
+lordpick: off-screen .lc-name "Skylady FliersIoneLance" [301,353,397,398]
+lordpick: off-screen .lc-sig "Signature unitsPegasus Knights" [301,461,397,522]
+lordpick: off-screen .lc-block "PassiveLoot picks show 4 items" [301,527,397,566]
+lordpick: off-screen .lc-block "SkyfallDives onto the furthest" [301,571,397,666]

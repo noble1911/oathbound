@@ -15,7 +15,7 @@ import { BattlePlayback, type NumberMode, type PlaybackHooks } from './battle-pl
 import { RangeRing, type RangeRingHandle } from './range-ring.ts';
 import { GhostMarks, type GhostMark } from './ghost-marks.ts';
 import { TEAM_COLORS } from './crowd/archetypes.ts';
-import { UNITS } from '../sim/data/units.ts';
+import { UNITS, formationCols } from '../sim/data/units.ts';
 import { makeTransforms, type BattleSource, type KeepInfo, type ReplaySoldier, type SoldierTransforms, type Terrain } from './battle-source.ts';
 
 export interface BattleViewOptions extends EngineOptions {
@@ -60,6 +60,17 @@ const SPACING: Record<string, number> = { cavaliers: 3, pegasus: 4, wyvern: 5, k
 /** Soldiers per squad and formation spacing for any faction's unit: the sim's squadSize, spaced like its Kingdom twin. */
 function squadSize(type: string): number {
   return (UNITS as Record<string, { squadSize: number } | undefined>)[type]?.squadSize ?? SQUAD_SIZE[type] ?? 1;
+}
+/**
+ * The sim's starting formation (battle.ts): formationCols(n) columns, rows as far apart as columns, 2 x radius + 50
+ * cm between soldiers. Planning draws a squad exactly where its battle will start it, which is also what its
+ * footprint (match.ts squadFootprint) keeps clear of its neighbours: the older display spacing (up to 5 m between
+ * riders, 7 columns for a grown 24-man Swarm squad) drew squads up to half again wider than that ground, so two
+ * legally placed squads could stand inside each other. Null for a type the sim does not know (render-test fakes).
+ */
+function simSpacing(type: string): number | null {
+  const u = (UNITS as Record<string, { radius: number } | undefined>)[type];
+  return u ? u.radius * 2 + 50 : null;
 }
 function spacing(type: string): number {
   const like = (UNITS as Record<string, { like: string } | undefined>)[type]?.like;
@@ -244,9 +255,13 @@ export class BattleView {
       const rad = (facing / 256) * Math.PI * 2;
       const modelId = sq.modelId ?? (type === 'lord' && sq.lord ? `lord_${sq.lord}` : type);
       const arch = archetypeFor({ modelId, type, lord: sq.lord ?? undefined });
-      const sp = spacing(type) * 100;
-      const cols = n <= 1 ? 1 : Math.ceil(Math.sqrt(n * 2));
+      const ssp = simSpacing(type);
+      const sp = ssp ?? spacing(type) * 100;
+      const cols = n <= 1 ? 1 : ssp !== null ? formationCols(n) : Math.ceil(Math.sqrt(n * 2));
       const rows = Math.ceil(n / cols);
+      // the display-only layout (no sim twin) staggers its rows and packs them a little closer
+      const rowSp = ssp !== null ? sp : sp * 0.9;
+      const stagger = ssp !== null ? 0 : sp / 4;
       // formation axes: "right" and "forward" in field space
       const fx = Math.cos(rad);
       const fy = Math.sin(rad);
@@ -256,13 +271,13 @@ export class BattleView {
         // intel footprint under a ghost squad: its formation box, facing its facing
         const w = fieldToWorld(sq.pos[0], sq.pos[1]);
         const big = Math.max(0, arch.chest - 1.3) * 1.6;
-        marks.push({ x: w.x, y: this.field.heightAt(w.x, w.z), z: w.z, w: ((cols - 1) * sp) / 100 + big, d: ((rows - 1) * sp * 0.9) / 100 + big, yaw: Math.atan2(fx, -fy), color: new THREE.Color(TEAM_COLORS[sq.owner]).multiplyScalar(1.5) });
+        marks.push({ x: w.x, y: this.field.heightAt(w.x, w.z), z: w.z, w: ((cols - 1) * sp) / 100 + big, d: ((rows - 1) * rowSp) / 100 + big, yaw: Math.atan2(fx, -fy), color: new THREE.Color(TEAM_COLORS[sq.owner]).multiplyScalar(1.5) });
       }
       for (let k = 0; k < n; k++) {
         const c = k % cols;
         const r = Math.floor(k / cols);
-        const a = (c - (cols - 1) / 2) * sp + ((r % 2) * sp) / 4;
-        const b = -(r - (rows - 1) / 2) * sp * 0.9;
+        const a = (c - (cols - 1) / 2) * sp + (r % 2) * stagger;
+        const b = -(r - (rows - 1) / 2) * rowSp;
         const id = headers.length;
         headers.push({
           id, squad: sq.id, side: sq.owner, type: type as ReplaySoldier['type'], modelId, lord: (sq.lord ?? undefined) as ReplaySoldier['lord'],

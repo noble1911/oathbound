@@ -11,7 +11,7 @@ import { TICK_HZ } from '../sim/constants.ts';
 import type { StatLine } from '../sim/sheet.ts';
 import { $, el, esc, num, store, tip } from './dom.ts';
 import { icon } from './icons.ts';
-import { crest, sheetStats, skillChips, skillTooltip } from './units.ts';
+import { classLine, crest, sheetStats, skillChips, skillTooltip } from './units.ts';
 import { cooldownText, itemIcon, itemTooltip, skillGlyph } from './items.ts';
 import { SLOT_LABEL } from './gamedata.ts';
 import { FACTIONS } from '../sim/data/factions.ts';
@@ -178,6 +178,7 @@ export class Inspector {
         <header class="in-h">${this.head(m)}${tools}</header>
         ${this.bar('a')}
         <div class="in-body">
+          ${classLine(m.type, m.lord, true)}
           <section class="in-perf">
             ${cell('dealt', 'Damage dealt', 'Life removed from the enemy: attacks, burns and abilities, with no overkill')}
             ${cell('taken', 'Damage taken', 'Life this squad has lost')}

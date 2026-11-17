@@ -74,7 +74,8 @@ function timingSection(): string {
 }
 const scope = (): string => {
   const e = factionContext().enemy;
-  return `<p class="rl-scope">${icon('flag')}Showing <b>${esc(FACTIONS[codexFaction()].name)}</b>${e && e !== codexFaction() ? ` against <b>${esc(FACTIONS[e].name)}</b>` : ''}. The other factions are under <i>Factions</i>.</p>`;
+  // the text in one span: as loose flex items, each text run and <b> got the flex gap around it ("Kingdom . The")
+  return `<p class="rl-scope">${icon('flag')}<span>Showing <b>${esc(FACTIONS[codexFaction()].name)}</b>${e && e !== codexFaction() ? ` against <b>${esc(FACTIONS[e].name)}</b>` : ''}. The other factions are under <i>Factions</i>.</span></p>`;
 };
 const fliers = () => roster().filter((u) => UNITS[u].tags.includes('flier'));
 const antiAir = () => roster().filter((u) => !UNITS[u].traits?.includes('healer') && !UNITS[u].tags.includes('flier') && (UNITS[u].weapon === 'bow' || UNITS[u].damageType === 'magic' || UNITS[u].weapon === 'bolt' || UNITS[u].traits?.includes('howdah' as never)));
@@ -110,26 +111,35 @@ function factionsPage(): string {
     </div>`;
 }
 
-/** The counter wheel as a ring of eight class stamps, each arrow pointing at the class it beats. */
+/**
+ * The counter wheel as a ring of eight class stamps, each arrow pointing at the class it beats. The names sit
+ * outside the ring (pushed outward along their spoke), so no arrow ever runs through a label. Laid out in rem on a
+ * 22 x 19 box: the SVG's viewBox is the same box at 10 units a rem.
+ */
 function wheel(): string {
-  const R = 41, n = WHEEL.length;
-  const at = (i: number): [number, number] => {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-    return [50 + R * Math.cos(a), 50 + R * Math.sin(a)];
-  };
+  const W = 22, H = 19, R = 6.6, n = WHEEL.length;
+  const cx = W / 2, cy = H / 2;
+  const ang = (i: number): number => -Math.PI / 2 + (i * 2 * Math.PI) / n;
   const arrows = WHEEL.map((_, i) => {
-    // a short arc segment between two neighbouring stamps, in the 200x200 viewBox
-    const a0 = -Math.PI / 2 + ((i + 0.28) * 2 * Math.PI) / n, a1 = -Math.PI / 2 + ((i + 0.72) * 2 * Math.PI) / n;
-    const p = (a: number) => `${(100 + 82 * Math.cos(a)).toFixed(1)} ${(100 + 82 * Math.sin(a)).toFixed(1)}`;
-    return `<path d="M${p(a0)} A82 82 0 0 1 ${p(a1)}" marker-end="url(#whl-a)"/>`;
+    // a short arc between two neighbouring stamps (a stamp is 2.3rem across: about 10 degrees of the ring each side)
+    const a0 = ang(i + 0.3), a1 = ang(i + 0.7);
+    const p = (a: number) => `${(10 * (cx + R * Math.cos(a))).toFixed(1)} ${(10 * (cy + R * Math.sin(a))).toFixed(1)}`;
+    return `<path d="M${p(a0)} A${10 * R} ${10 * R} 0 0 1 ${p(a1)}" marker-end="url(#whl-a)"/>`;
   }).join('');
   const units = (c: WheelClass) => roster().filter((u) => UNITS[u].class === c).map((u) => UNITS[u].name).join(', ') || '–';
-  return `<div class="whl">
-    <svg viewBox="0 0 200 200" aria-hidden="true">
-      <defs><marker id="whl-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
-      <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">${arrows}</g>
+  return `<div class="whl" style="width:${W}rem;height:${H}rem">
+    <svg viewBox="0 0 ${10 * W} ${10 * H}" aria-hidden="true">
+      <defs><marker id="whl-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">${arrows}</g>
     </svg>
-    ${WHEEL.map((c, i) => { const [x, y] = at(i); return `<div class="whl-node" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%" data-tip="${esc(`${WHEEL_NAME[c]}: ${units(c)}`)}"><i>${icon(`cls_${c}`)}</i><b>${WHEEL_NAME[c]}</b></div>`; }).join('')}
+    ${WHEEL.map((c, i) => {
+      const a = ang(i), cs = Math.cos(a), sn = Math.sin(a);
+      // the stamp on the ring; its name just outside it, its near edge on the spoke
+      const lx = cx + (R + 1.45) * cs, ly = cy + (R + 1.45) * sn;
+      const tx = (-50 + 50 * Math.round(cs * 100) / 100).toFixed(0), ty = (-50 + 50 * Math.round(sn * 100) / 100).toFixed(0);
+      return `<div class="whl-node" style="left:${(cx + R * cs).toFixed(2)}rem;top:${(cy + R * sn).toFixed(2)}rem" data-tip="${esc(`${WHEEL_NAME[c]}: ${units(c)}`)}"><i>${icon(`cls_${c}`)}</i></div>
+        <b class="whl-name" style="left:${lx.toFixed(2)}rem;top:${ly.toFixed(2)}rem;transform:translate(${tx}%, ${ty}%)">${WHEEL_NAME[c]}</b>`;
+    }).join('')}
     <span class="whl-mid">${COUNTER_TEXT}<small>to the next</small></span>
   </div>`;
 }

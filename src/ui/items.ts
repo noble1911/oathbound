@@ -3,7 +3,9 @@
 // italic flavour), the ability block of a skill item (icon, name, cooldown, effect, who can use it),
 // with an optional comparison block against the equipped item.
 import type { BaseId, Item, ItemLine, LordId, SkillId, Slot, SquadType } from '../sim/types.ts';
-import { itemLines } from '../sim/loot.ts';
+import { itemLines, legendaryFits, wheelClassOf } from '../sim/loot.ts';
+import { LEGENDARIES } from '../sim/data/items.ts';
+import { WHEEL_NAME } from '../sim/data/wheel.ts';
 import { SKILLS, canEquip, skillCooldownSec, usableByText } from '../sim/data/skills.ts';
 import { esc } from './dom.ts';
 import { art } from './art.ts';
@@ -84,6 +86,23 @@ function wording(t: string): string {
   return t.replace(/\bFlying units\b/g, 'Fliers').replace(/\bFlying\b/g, 'Flier').replace(/critical strike chance/gi, 'critical rate').replace(/critical chance/gi, 'critical rate');
 }
 
+/**
+ * A legendary's class lock as stamps: "BEST ON [Ranged] [Siege]", and when the tooltip is judged against a squad,
+ * whether that squad wakes the power ("Marshal Aldric is Line: the power sleeps"). Replaces the sim's plain
+ * "Best on: ..." meta line, which read as fine print.
+ */
+function bestOnRow(item: Item, on: ItemTarget | null | undefined): string {
+  const id = item.legendary!;
+  const best = LEGENDARIES[id].best;
+  const cls = on ? wheelClassOf(on.type, on.lord) : null;
+  const fits = on ? legendaryFits(id, on.type, on.lord) : null;
+  const tags = best.map((c) => `<span class="wcl${cls === c ? ' me' : ''}">${icon(`cls_${c}`)}<span>${WHEEL_NAME[c]}</span></span>`).join('');
+  const verdict = on && cls && fits !== null
+    ? `<em class="${fits ? 'ok' : 'no'}">${fits ? `${icon('ready')}Wakes on ${esc(unitName(on.type, on.lord))}` : `${icon('lock')}${esc(unitName(on.type, on.lord))} is ${WHEEL_NAME[cls]}: the power sleeps`}</em>`
+    : '';
+  return `<div class="it-best${fits === false ? ' no' : ''}" data-tip="The legendary power works only on squads of these classes (a Lord counts as the class of its body or mount). On any other squad the item is just its affixes."><small>Best on</small>${tags}${verdict}</div>`;
+}
+
 function line(l: ItemLine, item: Item, dead: string | null = null): string {
   const t = esc(wording(l.text));
   const off = dead ? ` dead" data-tip="No effect on this squad: ${esc(dead)}` : '';
@@ -125,7 +144,10 @@ export function itemTooltip(item: Item, opts: { compare?: Item | null; compareLa
   body += '<div class="it-body">';
   let blockDone = false;
   for (const l of rest) {
-    if (!l.kind || !item.skill) body += line(l, item, why(l));
+    if (item.legendary && l.style === 'meta' && l.text.startsWith('Best on:')) body += bestOnRow(item, opts.on);
+    // the Best-on row says why a legendary power is dead on this squad: no second note under the power
+    else if (item.legendary && l.style === 'legendary') { const w = why(l); body += line(l, item, w).replace(/<small class="it-dead">[^<]*<\/small>/, ''); }
+    else if (!l.kind || !item.skill) body += line(l, item, why(l));
     else if (!blockDone) {
       // the three skill lines (name + cooldown, effect, who can use it) read as one ability block
       body += skillBlock(item, skill, !!refusal);
