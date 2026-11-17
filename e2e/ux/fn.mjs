@@ -220,10 +220,17 @@ try {
     await p.keyboard.press('Escape');
     await sleep(600);
     c = await note();
-    check(/deploys? left/.test(c?.t ?? '') && /up to 3 new squads/.test(c.x), `deploys step quotes the Marshal's limit (${c?.t}: ${c?.x.slice(0, 60)})`);
+    // deploys are weighted now: the Marshal's limit is 3 deploy points (2 + his passive), not "3 new squads"
+    check(/deploy points? left/.test(c?.t ?? '') && /You have 3 deploy points this round/.test(c.x), `deploys step quotes the Marshal's limit (${c?.t}: ${c?.x.slice(0, 60)})`);
     await deployAll();
     await sleep(800);
     c = await note();
+    // gold left over after the deploys: the coach asks to spend it on levels first ("Spend what is left")
+    for (let i = 0; i < 6 && c?.t === 'Spend what is left'; i++) {
+      await p.evaluate(() => { const me = window.__ob.app.room.view.you; for (const q of me.squads) if (q.type !== 'lord') window.__ob.app.backend.intent({ t: 'levelUp', squad: q.id }); });
+      await sleep(700);
+      c = await note();
+    }
     check(c?.t === 'Know your enemy' && !/hides/.test(c.x), `ghosts step no longer mentions hiding them (${c?.t})`);
     await shot(p, 'tut-ghosts-1024');
     await battle();

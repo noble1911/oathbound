@@ -1310,9 +1310,10 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
 .coach[data-slot='foot'] { width: min(72rem, calc(100vw - 2rem)); padding-block: 0.6rem 0.45rem; gap: 0.2rem; }
 #ui:has(.coach.on[data-slot='foot']) .lordpick { padding-bottom: var(--coach-foot, 10rem); gap: 0.35rem; }
 #ui:has(.coach.on[data-slot='foot']) .lp-cards { padding-block: 0.5rem 0.2rem; }
-#ui:has(.coach.on[data-slot='foot']) :is(.lcard, .lc-body) { gap: 0.4rem; }
-#ui:has(.coach.on[data-slot='foot']) .lcard > .lport { height: 5.6rem; }
-#ui:has(.coach.on[data-slot='foot']) .lp-cards:not([data-n='1']) { grid-template-rows: 5.6rem auto; }
+#ui:has(.coach.on[data-slot='foot']) .lcard { gap: 0.4rem; }
+#ui:has(.coach.on[data-slot='foot']) .lc-body { gap: 0.3rem; }
+#ui:has(.coach.on[data-slot='foot']) .lcard > .lport { height: 4.9rem; }
+#ui:has(.coach.on[data-slot='foot']) .lp-cards:not([data-n='1']) { grid-template-rows: 4.9rem auto; }
 #ui:has(.coach.on[data-slot='foot']) .lp-foot { display: none; }
 /* it reads above a tooltip that opens over it (tooltips are z-index 90) */
 #ui:has(.tip-layer.on) .coach { z-index: 91; }
@@ -1376,7 +1377,7 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .lcard > :not(.lport) { margin: 0 0.6rem; }
   .lport { height: 6rem; }
   .lc-name b { font-size: 1.25rem; }
-  .lc-wpn { float: none; margin-top: 0.1rem; display: flex; }
+  .lc-wpn { margin-top: 0.15rem; }
   .lc-block p { font-size: 0.82rem; line-height: 1.3; }
   .lc-stats { gap: 0.3rem 0.5rem; font-size: 0.78rem; }
   .lobby-card { padding: 1rem 1.2rem 0.9rem; }
