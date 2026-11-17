@@ -257,7 +257,7 @@ export class UnitAssets {
     if (!e?.glb) return false;
     const t0 = performance.now();
     try {
-      const tier = this.engine.quality.tier;
+      const tier = this.engine.assetTier;
       // low tier: a heavy hero is drawn from its LOD1 file (same skeleton, nodes and clips)
       // (its atlas is its own, so it needs its own team mask: manifest `lod1TintMask`; without one the LOD0 is kept)
       const useLod1 = arch.render === 'hero' && (tier === 'low' || tier === 'medium') && !!e.lod1 && (e.tris?.lod0 ?? 0) > HERO_LOW_TRIS && (!e.tintMask || !!e.lod1TintMask);

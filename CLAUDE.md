@@ -29,6 +29,8 @@ asset contract is `docs/ART.md`, balance is `docs/BALANCE.md`, and hosting is `d
   - imports use `.ts` extensions.
 - **Power is a hard requirement.** Render on demand (0 fps when idle or when the tab is hidden).
   Keep the low and medium tiers cheap, and re-run `node e2e/render-power.mjs` after renderer changes.
+  The battle behind the title menu (`src/ui/title-battle.ts`) has its own fixed budget and rest states; the `title`
+  case of `render-power.mjs` enforces them.
 - Storage keys must be prefixed `oathbound.`, because the origin is shared with other games.
 - Asset and socket URLs must stay relative, because the game is served under `/oathbound/`.
 - `npm test` and `npm run build` must pass, because the Docker build runs both.

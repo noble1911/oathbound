@@ -25,3 +25,7 @@ caliphate.panel: terracotta red
 caliphate.disc: terracotta red
 caliphate.glyph: warm sand
 caliphate.accent: turquoise
+
+scene: Style: hand-carved woodcut print matching the game's woodcut unit portraits: bold black carved lines and hatching, slightly off-register colour blocks, visible wood grain and a rough printed edge. A night print: the paper is printed almost entirely in near-black slate ink, the carved lines and highlights show as warm cream, and the only colours are ultramarine blue (the left host) and madder red (the right host) on banners, shields and surcoats. Few large shapes, heavy line weight, strong silhouettes. No text, no letters, no border decoration. Hand-made look, not a smooth AI digital painting.
+
+paper: Style: hand-carved woodcut print matching the game's woodcut unit portraits: bold black carved lines and hatching on warm cream paper, printed with black and one madder red only, colours slightly off-register, visible wood grain. Few large shapes, heavy line weight. No text other than what is asked for, no extra letters. Hand-made look, not a smooth AI digital painting.

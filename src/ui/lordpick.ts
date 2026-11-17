@@ -92,12 +92,11 @@ export class LordPickScreen {
 
   /** `initial`: the faction shown first (the tutorial opens on the Kingdom); else the one played last. */
   constructor(ui: HTMLElement, pick: (l: LordId) => void, spectator: boolean, pickFaction: ((f: FactionId) => void) | null = null, initial: FactionId | null = null) {
-    const key = art('keyart');
     const stored = store.get('faction') as FactionId | null;
     this.faction = initial ?? (stored && FACTION_IDS.includes(stored) ? stored : 'kingdom');
     this.pickFaction = pickFaction;
     this.pick = pick;
-    this.root = el(`<div class="screen lordpick" ${key ? `style="--key:url(${key})"` : ''}>
+    this.root = el(`<div class="screen lordpick">
       <header class="lp-head"><small class="eyebrow">Choose your banner and your Lord</small><h2>Who leads your host?</h2>
         <div class="lp-timer hidden">${icon('timer')}<b>30</b></div></header>
       <div class="lp-factions" role="radiogroup" aria-label="Faction">${FACTION_IDS.map((f) => this.banner(f)).join('')}</div>

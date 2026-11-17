@@ -64,8 +64,43 @@ export interface PlaybackHandle {
   stop(): void;
 }
 
+/** The battle behind the title menu (`SceneAdapter.playBackdrop`). */
+export interface BackdropOptions {
+  /** Each seat's faction (its Keep). */
+  factions: [FactionId, FactionId];
+  /** Which flank the camera dollies along. */
+  side: 1 | -1;
+  /** Cost, whatever the player's graphics settings: tier, drawing-buffer scale (of CSS pixels) and frame cap. */
+  tier: 'low' | 'medium';
+  scale: number;
+  fps: number;
+  onEnd(): void;
+}
+
+export interface BackdropHandle {
+  /** Starts paused. Paused = nothing is drawn (the last frame stays on the canvas). */
+  playing: boolean;
+  readonly timeMs: number;
+  readonly durationMs: number;
+  /** Every unit model of this battle has arrived. */
+  loaded(): boolean;
+  /** Jump to `ms` and frame the fight there at once (a still, or the start of a battle joined midway). */
+  frameAt(ms: number): void;
+  /** The frame as drawn now (JPEG), or null. */
+  still(): Promise<Blob | null>;
+  /** Reserve screen space for the menu (CSS px): the camera frames the fight in the rest. */
+  setInsets(i: { left?: number; right?: number; top?: number; bottom?: number }): void;
+  stop(): void;
+}
+
 export interface SceneAdapter {
   readonly kind: 'standin' | 'engine';
+  /**
+   * Title only: play a battle as a backdrop, drawn cheaply (see BackdropOptions) by a slow cinematic camera, with no
+   * plates, numbers or sound. Any other `setMode` ends it and restores the player's settings. A scene without it
+   * (the stand-in) leaves the title on its static art.
+   */
+  playBackdrop?(d: DecodedReplay, o: BackdropOptions): BackdropHandle;
   setMode(m: SceneMode): void;
   /** Turn the camera so `seat`'s Keep is at the bottom of the screen (null = spectator, seat 0 view). */
   setPerspective(seat: Seat | null): void;
@@ -146,7 +181,7 @@ let current: SceneAdapter | null = null;
 export async function createScene(host: HTMLElement): Promise<SceneAdapter> {
   if (current) return current;
   // the render agent's engine by default; ?scene=standin (or an engine failure) uses the light stand-in
-  if (!/[?&]scene=standin/.test(location.search)) {
+  if (!/[?&]scene=standin\b/.test(location.search)) {
     try {
       const { EngineScene } = await import('./engine-scene.ts');
       current = new EngineScene(host);

@@ -55,7 +55,8 @@ band under a Lord's portrait and behind a Lord crest with no art; it never colou
 
 - **Blue / red**: side. Keep bars, names, kill feed edges, report columns, the deployment badge.
 - **Gold**: the single primary call to action on a screen (Play, Begin, Ready, Play again), coin,
-  crowns. Never a border, never a heading colour, never a second button.
+  crowns. Never a border, never a heading colour, never a second button. (On the title it is flat gold
+  leaf, not the gold plate: see Title menu.)
 - **Orange gold / ochre / blue / grey**: item rarity, nothing else.
 - **Green / red-orange**: success and danger (can afford / cannot, gained / lost, ready / sell).
 - Everything else is material: steel, stone, parchment, ink.
@@ -94,9 +95,9 @@ Generated as flat orthographic sheets (`tools/art/ui-kit.mjs`, prompts in
 | `seal.webp` | crimson wax seal | the chosen Lord, dialogs |
 | `shield-blue/red.webp` | heater shield caps in the two liveries | lobby seats |
 | `crown.webp` | small gold crown | Lord crests |
-| `ribbon.webp`, `ribbon-blue/red.webp` | swallowtail cloth ribbon | the title tagline, the draft banner, names on the VS reveal |
+| `ribbon.webp`, `ribbon-blue/red.webp` | swallowtail cloth ribbon | the draft banner, names on the VS reveal |
 | `pennant-blue/red.webp` | hanging war banner | match over: the victor's banners |
-| `divider.webp` | forged iron divider with a diamond boss | menu section breaks |
+| `divider.webp` | forged iron divider with a diamond boss | section breaks on stone panels |
 | `slot-common/magic/rare/legendary.webp` | item socket per rarity | `.islot` |
 
 Rules:
@@ -140,6 +141,42 @@ Don't
 - No near-black glass panels with a hairline border; a panel is stone in a steel frame.
 - No new colour without a meaning in the table above.
 - Don't restyle the in-world squad plates in CSS: the engine draws them (`src/render/plates.ts`; see Portraits and battlefield glyphs).
+
+## Title menu and menu backdrops
+
+There is no painted key art in the game (`public/ui/keyart.webp` survives only as the link-preview image). What stands
+behind a menu is the game itself, or a print of it:
+
+- **Title: a live battle.** A real sim battle between two bot armies plays on the canvas behind the menu
+  (`src/ui/title-battle.ts`): a slow side-on dolly, no plates, numbers or sound, graded by a plain CSS scrim. It is a
+  guest: low tier, 3/4 resolution, 30 fps at most whatever the settings; one still frame and 0 fps under the battery
+  saver, with reduced motion, after 3 minutes without input, in a hidden tab or an unfocused window
+  (`node e2e/render-power.mjs` checks all of it).
+- **The woodcut field** (`public/ui/scene_field.webp`, a night print in black, cream and the two liveries): on screen
+  before the battle has loaded, between battles, and for good when there is no renderer.
+- **Lobby and Lord pick**: the title battle's last frame, held as a still (`--still`), else the woodcut field
+  (`--field`), under the same dark scrim as before.
+
+The scenes are made like the portraits: `node tools/art/ui-scene.mjs` (prompts `tools/art/ui-prompts/scene_*.txt`, the
+`scene:` and `paper:` lines of `_style_woodcut.txt`), then `python tools/art/ui-scene.py`.
+
+The title menu is **print, not forged metal**: flat ink, paper and rules, no plates, bevels or gradients. It has three
+styles on one markup (`?menustyle=1|2|3`; the default, `DEFAULT_MENU_STYLE` in `src/ui/title.ts`, is 1):
+
+| # | Style | What it is |
+| --- | --- | --- |
+| 1 | Broadside | a printed sheet at the left: woodcut headpiece, a cut initial O, a rubric line, ink-block buttons |
+| 2 | Campaign table | the wordmark over the field, the orders in three columns on a campaign map along the bottom |
+| 3 | Ink band | a dark band at the left with the wordmark and a plain list of entries; the battle has the screen |
+
+Rules that hold in all three:
+- **Gold is flat leaf on the one primary action** (Play vs AI; Join when an invite link filled the code in): a flat
+  `--gold` block in ink on paper, `--gold-hi` text on the dark band. Never a gradient, never a second gold thing.
+- **Madder red (`--rubric`, `#9c2a1f`) is the printer's second ink**: the rubric line and the cut initial of the
+  broadside, nothing else. It is not the enemy livery and never marks a control.
+- Blue and red appear only as the two sides (the herald's band and the duel shields of style 2).
+- Fields are ruled lines or paper wells, the difficulty is three words with the chosen one inked, and every control
+  keeps the 2px `--me-hi` focus outline.
 
 ## Battle HUD and inspector
 

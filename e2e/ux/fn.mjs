@@ -273,6 +273,7 @@ try {
     await waitFor(a, () => window.__ob.app.room?.spectators.length === 1);
     await a.click('.start');
     await waitFor(b, () => !!document.querySelector('.lcard'));
+    await sleep(700); // the Lord pick ignores presses for its first moments (a press meant for the lobby)
     await a.click('.lcard[data-lord="marshal"]');
     await b.click('.lcard[data-lord="warden"]');
     for (const p of [a, b, s]) await waitFor(p, () => !!document.querySelector('.planning'), null, 60000);

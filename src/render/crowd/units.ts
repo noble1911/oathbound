@@ -192,6 +192,24 @@ class HeroInst {
       this.actions.set(name, a);
     }
   }
+  /**
+   * Free what this one instance owns: its skeletons' bone textures and its materials (every instance has its own
+   * of both; geometry and maps belong to the shared template and stay). Without it every roster rebuild left a
+   * bone texture and a set of materials behind per hero.
+   */
+  dispose(sun: { unregister(m: THREE.Material): void }): void {
+    this.mixer.stopAllAction();
+    this.mixer.uncacheRoot(this.root);
+    this.root.traverse((o) => {
+      const m = o as THREE.SkinnedMesh;
+      if (!m.isMesh) return;
+      if (m.isSkinnedMesh) m.skeleton?.dispose();
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        sun.unregister(mat);
+        mat.dispose();
+      }
+    });
+  }
   /** Set the pose from two clips at explicit times with a blend weight for `b`. */
   pose(a: string, ta: number, b: string, tb: number, wb: number): void {
     for (const [name, act] of this.actions) {
@@ -287,10 +305,16 @@ export class UnitRenderer {
       if (!this.archByKey.has(arch.key)) this.archByKey.set(arch.key, { arch, modelId: h.modelId });
       if (this.requested.has(arch.key)) return;
       this.requested.add(arch.key);
-      void this.assets.upgrade(arch, h.modelId).then((ok) => ok && this.swapAssets(arch.key));
+      this.artPending++;
+      void this.assets.upgrade(arch, h.modelId).then((ok) => {
+        this.artPending--;
+        if (ok) this.swapAssets(arch.key);
+      });
     });
   }
 
+  /** Art models requested and not yet in (0 = every unit type of the roster is drawn with its art, or has none). */
+  artPending = 0;
   /** Occluded-unit silhouettes (battle); planning turns them off (the canopy fade shows units there). */
   showGhosts = true;
   /** Uniform scale-up applied to every unit when the camera is far out (readability, Total War style). */
@@ -315,7 +339,7 @@ export class UnitRenderer {
       if (!s.hero || s.arch.key !== key) continue;
       const asset = this.assets.hero(s.arch);
       this.group.remove(s.hero.root);
-      s.hero.mixer.stopAllAction();
+      s.hero.dispose(this.engine.sun);
       s.hero = new HeroInst(this.engine, asset, this.assets.cloneHero(asset), s.team, (src, mesh) => this.heroMatFactory(src, asset, mesh));
       this.group.add(s.hero.root);
     }
@@ -351,7 +375,7 @@ export class UnitRenderer {
     this.batches.clear();
     for (const s of this.slots) if (s.hero) {
       this.group.remove(s.hero.root);
-      s.hero.mixer.stopAllAction();
+      s.hero.dispose(this.engine.sun);
     }
     this.slots.length = 0;
   }

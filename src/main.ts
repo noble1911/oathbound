@@ -3,9 +3,10 @@
 // back, and play back (never simulate) each battle replay. `?dev=planning|loot|battle|results|match`
 // runs the same screens on a local match against a bot (src/ui/local.ts), no server needed.
 //
-// Boot: the title is painted art and plain DOM, so it shows as soon as the bundle and the art
+// Boot: the title is a woodcut backdrop and plain DOM, so it shows as soon as the bundle and the art
 // manifest are in (the boot bar tracks exactly that). The renderer (three.js, then its models) loads
-// behind the menu afterwards; a screen that needs it waits with a "Raising the battlefield" note.
+// behind the menu afterwards and fades a live battle in over the backdrop (src/ui/title-battle.ts); a
+// screen that needs the renderer waits with a "Raising the battlefield" note.
 import './style.css';
 import type { Intent, LordId, Replay, Seat, UnitType } from './sim/types.ts';
 import { Net, type NetStatus } from './net/client.ts';
@@ -19,6 +20,7 @@ import type { Backend } from './ui/backend.ts';
 import { el, esc, toast } from './ui/dom.ts';
 import { createScene, type SceneAdapter } from './ui/scene-adapter.ts';
 import { TitleScreen, LobbyScreen } from './ui/title.ts';
+import { TitleBattle } from './ui/title-battle.ts';
 import { LordPickScreen, lordPortrait } from './ui/lordpick.ts';
 import { PlanningScreen } from './ui/planning.ts';
 import { BattleScreen } from './ui/battle.ts';
@@ -86,16 +88,21 @@ class App {
     boot(0.45, 'Unfurling the banners');
     await loadArt();
     boot(0.75);
-    // the title is the key art: have it decoded before the boot veil lifts (never wait long for it)
-    const key = art('keyart');
+    // the woodcut field stands behind the menus until (and whenever) the live battle cannot: have it decoded
+    // before the boot veil lifts (never wait long for it)
+    const key = art('scene_field');
     if (key) {
+      document.documentElement.style.setProperty('--field', `url(${key})`);
       const img = new Image();
       img.src = key;
       await Promise.race([img.decode().catch(() => undefined), new Promise((r) => setTimeout(r, 2500))]);
     }
     boot(1);
     this.shell.onSend = (t) => this.backend?.chat(t);
-    this.shell.onPower = (p) => this.scene?.setPower(p);
+    this.shell.onPower = (p) => {
+      this.scene?.setPower(p);
+      if (this.screen instanceof TitleScreen) this.screen.powerChanged();
+    };
     this.shell.onQuality = (q) => this.scene?.setQuality?.(q);
     this.shell.graphics = () => {
       const s = this.scene;
@@ -197,7 +204,7 @@ class App {
       join: (code, name, spectate) => this.connect().join(code, name, spectate),
       offline: (level) => this.offline(level),
       tutorial: (name) => this.tutorial(name),
-    });
+    }, this.sceneReady);
     this.show(t);
     if (err) t.error(err);
   }
@@ -425,6 +432,8 @@ class App {
     if (!room || !this.backend) return;
     const phase = room.phase;
     const was = this.prevPhase;
+    // a match begins: the battle behind the title ends here, before the renderer is given the match's field
+    if (this.screen instanceof TitleScreen) this.screen.leave();
     if (this.screen instanceof BattleScreen && !this.screen.isDone && phase !== 'lobby') {
       this.prevPhase = phase;
       // A spectator's playback does not hold the room up: when the players have moved on (they
@@ -457,7 +466,7 @@ class App {
       }
       case 'lordPick': {
         this.prevPhase = phase;
-        // painted backdrop: the Lord pick never waits for the renderer
+        // a still backdrop (the title's last frame, or the woodcut field): the Lord pick never waits for the renderer
         const fresh = !(this.screen instanceof LordPickScreen);
         const s = this.screen instanceof LordPickScreen ? this.screen : new LordPickScreen(ui, (lord) => ((this.pickedLord = true), this.backend!.intent({ t: 'pickLord', lord })), this.seat === null, (faction) => this.backend!.intent({ t: 'pickFaction', faction }), this.coach ? 'kingdom' : null);
         if (fresh) {
@@ -582,4 +591,4 @@ void app.init().then(() => {
 });
 
 // for browser tests
-(window as unknown as { __ob: unknown }).__ob = { app, sound, ui };
+(window as unknown as { __ob: unknown }).__ob = { app, sound, ui, titleBattle: () => TitleBattle.current };

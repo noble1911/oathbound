@@ -25,6 +25,14 @@ interface Candidate {
 
 export class Director {
   enabled = true;
+  /**
+   * 'match' (default) cuts to the big moments. 'cinematic' is a backdrop (the battle behind the title menu):
+   * one slow side-on dolly along the front, no hard cuts, and now and then a glide towards a Lord's ability
+   * or a falling giant. Set `rig.smoothing` low (about 1.2) with it.
+   */
+  style: 'match' | 'cinematic' = 'match';
+  /** Cinematic: which side of the field the dolly runs along (+1 / -1). */
+  cineSide = 1;
   /** Seconds between cuts. */
   cooldown = 3.2;
   private lastCut = -99;
@@ -117,6 +125,7 @@ export class Director {
     if (!this.enabled || this.rig.mode !== 'director') return;
     this.computeOverview();
     this.drift += dt;
+    if (this.style === 'cinematic') return this.cinematic(t, dt);
     if (!this.started) {
       this.started = true;
       if (t > 1) return; // joined mid-battle (seek): no establishing shot
@@ -145,6 +154,96 @@ export class Director {
       this.rig.dofGoal = 0;
     }
   }
+
+  /**
+   * Cinematic: put the camera on its dolly for the scene as it stands, at once (a still of a paused battle;
+   * call it after the units were posed).
+   */
+  pose(): void {
+    this.computeOverview();
+    this.massOverview();
+    const yaw = this.homeYaw + this.cineSide * 0.85;
+    this.rig.play({ target: this.cineMass.clone(), yaw, dist: this.cineDist(), pitch: 0.5, cut: true });
+    this.started = true;
+    this.inShotUntil = -1;
+  }
+
+  /** The backdrop camera: see `style`. */
+  private cinematic(t: number, dt: number): void {
+    const g = this.rig.goal;
+    const side = this.cineSide;
+    this.massOverview();
+    // a three-quarter view from one flank, swinging slowly; low enough to read as a scene, not a map
+    const yaw = this.homeYaw + side * (0.85 + 0.4 * Math.sin(this.drift * 0.05));
+    const dist = this.cineDist();
+    if (!this.started) {
+      this.started = true;
+      this.drift = 0;
+      // open wide and already moving: the glide in is the establishing shot
+      this.rig.play({ target: this.cineMass.clone(), yaw: yaw + side * 0.35, dist: dist * 1.3, pitch: 0.42, cut: true });
+      this.inShotUntil = -1;
+      this.lastCut = t;
+    }
+    const p = this.pending;
+    if (p && t - p.at > 1.5) this.pending = null;
+    if (p && p.prio >= 7 && t - this.lastCut > 11 && t >= this.inShotUntil) {
+      this.pending = null;
+      this.shotAt.copy(p.pos).setY(0);
+      this.shotDist = Math.max(26, p.dist * 1.3);
+      this.inShotUntil = t + p.hold * 1.7;
+      this.lastCut = t;
+    }
+    this.rig.dofGoal = 0;
+    if (t < this.inShotUntil) {
+      g.target.lerp(this.shotAt, Math.min(1, dt * 1.6));
+      g.dist += (this.shotDist - g.dist) * Math.min(1, dt * 1.2);
+      g.pitch = 0.4;
+      g.yaw += (yaw - g.yaw) * Math.min(1, dt * 0.4);
+      return;
+    }
+    // the dolly: the focus slides a few metres along the front
+    this.cineAt.copy(this.cineMass);
+    this.cineAt.x += 6 * Math.sin(this.drift * 0.045);
+    g.target.lerp(this.cineAt, Math.min(1, dt * 0.7));
+    g.dist += (dist - g.dist) * Math.min(1, dt * 0.5);
+    g.yaw += (yaw - g.yaw) * Math.min(1, dt * 0.5);
+    g.pitch = 0.5 + 0.05 * Math.sin(this.drift * 0.04);
+  }
+  /**
+   * The backdrop frames the mass of the battle, not one contact (a side skirmish would leave the screen empty):
+   * `cineMass` is the centre of everyone alive pulled a little towards the engagement, and the distance holds
+   * their spread.
+   */
+  private cineDist(): number {
+    return this.cineWide;
+  }
+  private cineWide = 70;
+  private cineMass = new THREE.Vector3();
+  private massOverview(): void {
+    let n = 0;
+    let x = 0;
+    let z = 0;
+    for (const s of this.units.slots) {
+      if (!s.visible || s.deadAt >= 0) continue;
+      x += s.pos.x;
+      z += s.pos.z;
+      n++;
+    }
+    if (!n) {
+      this.cineMass.copy(this.overviewTarget);
+      return;
+    }
+    x /= n;
+    z /= n;
+    let r2 = 0;
+    for (const s of this.units.slots) if (s.visible && s.deadAt < 0) r2 += (s.pos.x - x) ** 2 + (s.pos.z - z) ** 2;
+    const rms = Math.sqrt(r2 / n);
+    this.cineMass.set(x + (this.overviewTarget.x - x) * 0.35, 0, z + (this.overviewTarget.z - z) * 0.35);
+    this.cineWide = THREE.MathUtils.clamp(26 + rms * 2.1, 46, 105);
+  }
+  private shotAt = new THREE.Vector3();
+  private shotDist = 30;
+  private cineAt = new THREE.Vector3();
 
   /** The candidate yaw (around the preferred one) with the clearest line of sight. */
   private clearYaw(target: THREE.Vector3, yaw: number, pitch: number, dist: number): { yaw: number; pitch: number } {

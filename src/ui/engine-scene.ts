@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import type { DecodedReplay, FactionId, ReplayEvent, Seat, SkillEvent, Terrain, Vec2 } from '../sim/types.ts';
 import { sampleReplay, makeTransforms } from '../sim/index.ts';
 import { BattleView, replaySource, type ArmySquad } from '../render/index.ts';
-import type { CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual, TimingSpec } from './scene-adapter.ts';
+import type { BackdropHandle, BackdropOptions, CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual, TimingSpec } from './scene-adapter.ts';
 import { squadFootprint } from '../sim/match.ts';
 import { PlanOverlay } from './plan-overlay.ts';
 import { flipFacing, flipPos, flippedSource } from './flip.ts';
@@ -95,14 +95,81 @@ export class EngineScene implements SceneAdapter {
     return this.flip ? ((1 - s) as Seat) : s;
   }
 
+  // ---------------------------------------------------------------- the battle behind the title
+
+  private backdrop: BackdropHandle | null = null;
+
+  playBackdrop(d: DecodedReplay, o: BackdropOptions): BackdropHandle {
+    this.backdrop?.stop();
+    const v = this.view;
+    // cheap whatever the settings say: a fixed tier, a reduced drawing buffer and a frame cap
+    v.engine.setOverride({ tier: o.tier, renderScale: o.scale, maxFps: o.fps });
+    this.setRange(null);
+    this.overlay.setRings([]);
+    v.setTerrain(d.replay.terrain);
+    this.terrainSeed = -1; // the match's own terrain is applied again afterwards
+    v.setKeepFactions(o.factions);
+    v.setSquadPlates(false);
+    const pb = v.playBattle(replaySource(d, sampleReplay, makeTransforms), { onEnd: o.onEnd, damageNumbers: 'off', director: true, ghosts: false });
+    pb.damageNumbers = 'off';
+    pb.playing = false;
+    v.director.style = 'cinematic';
+    v.director.cineSide = o.side;
+    const rest = v.camera.smoothing;
+    let live = true;
+    const h: BackdropHandle = {
+      get playing() { return live && pb.playing && !pb.ended; },
+      set playing(on: boolean) {
+        if (!live) return;
+        // moving: a slow rig (no cuts, long glides). Stopping: it comes to rest quickly, then nothing is drawn
+        v.camera.smoothing = on ? 1.2 : rest;
+        pb.playing = on;
+        v.engine.wake();
+      },
+      get timeMs() { return pb.timeMs; },
+      get durationMs() { return pb.durationMs; },
+      loaded: () => v.units.artPending === 0,
+      frameAt: (ms) => {
+        if (!live) return;
+        pb.seek(ms);
+        pb.refresh();
+        v.director.pose();
+        v.engine.wake();
+      },
+      still: () => (live ? v.engine.snapshot() : Promise.resolve(null)),
+      setInsets: (i) => live && v.engine.setInsets(i),
+      stop: () => {
+        if (!live) return;
+        live = false;
+        this.backdrop = null;
+        v.stopBattle();
+        v.director.style = 'match';
+        v.camera.smoothing = rest;
+        v.setSquadPlates(true);
+        for (const s of [0, 1] as const) v.field.keep(s).setStage(0);
+        v.engine.setInsets({});
+        v.engine.setOverride(null);
+        this.syncFactions();
+        // straight back to the home view: no glide is drawn behind the screen that comes next
+        v.setCameraMode('rts');
+        v.camera.home(v.seat);
+        v.camera.snap();
+        this.rebuild();
+      },
+    };
+    this.backdrop = h;
+    return h;
+  }
+
   setMode(m: SceneMode): void {
     const was = this.mode;
     this.mode = m;
+    if (m !== 'title') this.backdrop?.stop();
     const eng = this.view.engine as unknown as { backdropFps?: number };
     if (m === 'title' || m === 'lobby' || m === 'lordPick') {
-      // painted backdrops cover the canvas on these screens: nothing to draw, so nothing is drawn
+      // these screens cover the canvas (or, on the title, the backdrop battle draws itself): nothing else to draw
       this.view.setPlanning({ visible: false });
-      this.view.setCameraMode('rts');
+      if (!this.backdrop) this.view.setCameraMode('rts');
     } else if (m === 'results') {
       // the aftermath turns slowly behind the results card; no motion at all in battery saver
       if (this.batterySaver) this.view.setCameraMode('rts');
@@ -568,8 +635,8 @@ export class EngineScene implements SceneAdapter {
   }
 
   quality(): { choice: QualityChoice; tier: string } {
-    const s = this.view.stats;
-    return { choice: s.auto ? 'auto' : (s.tier as QualityChoice), tier: s.tier };
+    // the player's setting, not what a backdrop override happens to draw with
+    return { choice: this.view.engine.choice, tier: this.view.engine.assetTier };
   }
 
   dispose(): void {

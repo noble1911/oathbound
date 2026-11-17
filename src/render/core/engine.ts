@@ -32,6 +32,15 @@ export interface EngineStats {
   height: number;
 }
 
+/** See `Engine.setOverride`. */
+export interface QualityOverride {
+  tier: QualityTier;
+  /** Multiplies the drawing buffer (the device pixel ratio counts as 1). */
+  renderScale: number;
+  /** Frame cap. */
+  maxFps: number;
+}
+
 export interface EngineOptions {
   /** Fixed tier, or 'auto' (stored choice → GPU guess → frame probe). */
   quality?: QualityTier | 'auto';
@@ -72,6 +81,10 @@ export class Engine {
   backdropFps = 30;
   batterySaver = false;
   pauseOnBlur = true;
+  /** The player's tier setting ('auto' = GPU guess + frame probe). An override does not change it. */
+  choice: QualityTier | 'auto' = 'auto';
+  /** A scene that sets its own cost whatever the player's setting (the title backdrop): see `setOverride`. */
+  private override: QualityOverride | null = null;
   private hidden = false;
   /** Set when something that casts shadows moved; the shadow maps redraw only then. */
   shadowsDirty = true;
@@ -145,6 +158,7 @@ export class Engine {
     const guess = guessTier(r);
     this.probeCeiling = guess;
     this.auto = stored === 'auto';
+    this.choice = stored;
     this.quality = TIERS[this.auto ? guess : (stored as QualityTier)];
     this.idleFps = Math.min(10, opts.idleFps ?? 0);
     this.pauseOnBlur = opts.pauseOnBlur ?? true;
@@ -191,20 +205,52 @@ export class Engine {
   setQuality(t: QualityTier | 'auto', persist = true): void {
     if (persist) storeTier(t);
     this.auto = t === 'auto';
+    this.choice = t;
     this.batterySaver = false;
     writeStr(SAVER_KEY, '0');
-    this.quality = TIERS[t === 'auto' ? this.probeCeiling : t];
+    this.quality = this.resolveQuality();
     this.probe.reset();
     this.applyQuality();
+  }
+
+  /**
+   * A fixed tier, render scale and frame cap that win over the player's tier and the battery saver until
+   * cleared with null (the title backdrop: cheap whatever the settings say). Nothing is stored, the player's
+   * choice stays in `choice` / `batterySaver`, and the auto probe rests meanwhile.
+   */
+  setOverride(o: QualityOverride | null): void {
+    const same = o && this.override && o.tier === this.override.tier && o.renderScale === this.override.renderScale && o.maxFps === this.override.maxFps;
+    if (same || (!o && !this.override)) return;
+    this.override = o;
+    this.quality = this.resolveQuality();
+    this.probe.reset();
+    this.applyQuality();
+  }
+  get overridden(): boolean {
+    return !!this.override;
+  }
+  /**
+   * The tier the player's own settings give (an override aside). Models pick their detail by it, so a backdrop
+   * drawn cheaply loads the same files the match will draw (nothing is fetched twice, nothing stays low-detail).
+   */
+  get assetTier(): QualityTier {
+    if (this.batterySaver) return BATTERY_SAVER.tier;
+    return TIERS[this.choice === 'auto' ? this.probeCeiling : this.choice].tier;
+  }
+
+  private resolveQuality(): QualitySettings {
+    const o = this.override;
+    if (o) return { ...TIERS[o.tier], pixelRatioCap: 1, renderScale: o.renderScale, maxFps: o.maxFps };
+    if (this.batterySaver) return BATTERY_SAVER;
+    return TIERS[this.choice === 'auto' ? this.probeCeiling : this.choice];
   }
 
   /** Battery saver: low tier (no post, AO, DOF or bloom), DPR 1, 30 fps cap. Off restores the tier setting. */
   setBatterySaver(on: boolean): void {
     this.batterySaver = on;
     writeStr(SAVER_KEY, on ? '1' : '0');
-    const stored = storedTier();
-    this.auto = !on && stored === 'auto';
-    this.quality = on ? BATTERY_SAVER : TIERS[stored === 'auto' ? this.probeCeiling : stored];
+    this.auto = !on && this.choice === 'auto';
+    this.quality = this.resolveQuality();
     this.probe.reset();
     this.applyQuality();
   }
@@ -405,6 +451,30 @@ export class Engine {
     this.camera.position.add(this.cameraShakeOffset);
     this.camera.updateMatrixWorld();
 
+    this.draw(dt);
+    this.camera.position.sub(this.cameraShakeOffset);
+    this.frames++;
+    this.updateStats(rawDt);
+
+    if (busy) this.quiet = 0;
+    else if (++this.quiet > 2 && this.idleFps <= 0) this.sleep();
+  }
+
+  /**
+   * Draw the scene as it stands, now, and hand back the frame as a JPEG blob (null if the canvas cannot be
+   * read). For a still of a backdrop: the drawing buffer is only readable in the task that drew it.
+   */
+  snapshot(quality = 0.82): Promise<Blob | null> {
+    if (this.disposed) return Promise.resolve(null);
+    try {
+      this.draw(0);
+      return new Promise((res) => this.canvas.toBlob((b) => res(b), 'image/jpeg', quality));
+    } catch {
+      return Promise.resolve(null);
+    }
+  }
+
+  private draw(dt: number): void {
     this.renderer.info.reset();
     // shadows: redraw only when the camera moved (cascades refit) or a caster moved
     const e = this.camera.matrixWorld.elements;
@@ -432,12 +502,6 @@ export class Engine {
       this.camera.layers.disable(LAYER_VFX);
     }
     this.gpuEnd();
-    this.camera.position.sub(this.cameraShakeOffset);
-    this.frames++;
-    this.updateStats(rawDt);
-
-    if (busy) this.quiet = 0;
-    else if (++this.quiet > 2 && this.idleFps <= 0) this.sleep();
   }
 
   private gpuBegin(): void {
@@ -481,7 +545,7 @@ export class Engine {
       this.fpsAcc.frames = 0;
       this.fpsAcc.t = 0;
     }
-    if (this.auto && this.probe.ready) {
+    if (this.auto && !this.override && this.probe.ready) {
       const v = this.probe.verdict();
       const i = TIER_ORDER.indexOf(this.quality.tier);
       if (v < 0 && i > 0) {

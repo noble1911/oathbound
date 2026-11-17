@@ -40,16 +40,22 @@ try {
   await shot('title');
   // ---- title layout
   const menu = await rect('.title-menu');
-  check(inView(menu) && Math.abs(menu.x + menu.w / 2 - W / 2) < 3, `title menu on screen and centred (${JSON.stringify(menu)})`);
+  check(inView(menu) && menu.w > 200 && menu.h > 200, `title menu on screen (${JSON.stringify(menu)})`);
   for (const sel of ['.title-menu .name', '.title-menu .code', '.title-menu .join', '.title-menu .spectate', '.title-menu .vsai', '.title-menu .tutorial']) {
     const r = await rect(sel);
     check(r && r.x >= menu.x && r.r <= menu.r + 0.5, `${sel} inside the menu`);
   }
   const head = await rect('.title-head');
   check(head.b <= menu.y + 2, 'title wordmark clear of the menu');
-  await waitFor(p, () => !!window.__ob.app.scene, null, 30000);
+  // ---- the battle behind the menu: it fades in once loaded, on its own small budget (low tier, 3/4 size, 30 fps)
+  check(await p.evaluate(() => !document.querySelector('.title').classList.contains('tb-live') || !!window.__ob.app.scene), 'the menu did not wait for the battle');
+  check(await waitFor(p, () => window.__ob.titleBattle()?.state === 'live' && document.querySelector('.title').classList.contains('tb-live'), null, 60000), 'a live battle plays behind the title menu');
   await sleep(1500);
-  check((await frames(3000)) === 0, 'title draws 0 fps (painted backdrop)');
+  const tf = await frames(3000);
+  const ts = await p.evaluate(() => { const s = window.__ob.app.scene.view.stats; return { tier: s.tier, w: s.width, h: s.height }; });
+  check(tf > 10 && tf <= 30.5, `the title battle draws ${tf} fps (capped at 30)`);
+  check(ts.tier === 'low' && ts.w <= W * 0.75 + 1, `the title battle draws on the low tier at 3/4 size (${ts.tier}, ${ts.w}x${ts.h})`);
+  await shot('title-live');
 
   // ---- rules codex
   await p.click('.title-menu .how-btn');

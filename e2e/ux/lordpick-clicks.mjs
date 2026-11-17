@@ -1,5 +1,6 @@
 // Lord pick clicks: the pick a player makes always registers, and a press meant for the screen before never picks.
-// vs AI, the lobby's "Begin the war" sits where the Lord cards land and the auto-start swaps the screen under
+// vs AI, the lobby's "Mustering the armies" line (it was the "Begin the war" button, since removed as a click
+// trap) sits where the Lord cards land and the auto-start swaps the screen under
 // the pointer; a press that lands on a card in the first moments used to pick that Lord at once (and with the
 // AI already chosen, the match moved on: the player never chose). Each iteration, on a fresh room:
 //   1. the pointer rests on "Begin the war" and presses 0..450 ms after the Lord pick appears: no Lord is picked;
@@ -91,9 +92,9 @@ for (let i = 0; i < N; i++) await attempt(async (keep) => {
   const { p, ctx } = await open('', size);
   keep(ctx);
   await p.click('.vsai');
-  await p.waitForFunction(() => !!document.querySelector('.lobby .start'), { timeout: 20000, polling: 'raf' });
-  // rest the pointer on "Begin the war", off its middle (the gap between two Lord cards is under the middle)
-  const s0 = await p.$eval('.lobby .start', (n) => { const r = n.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+  await p.waitForFunction(() => !!document.querySelector('.lobby .muster'), { timeout: 20000, polling: 'raf' });
+  // rest the pointer where "Begin the war" used to be, off its middle (the gap between two Lord cards is under the middle)
+  const s0 = await p.$eval('.lobby .muster', (n) => { const r = n.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
   const fx = [0.2, 0.35, 0.65, 0.8][i % 4];
   const at = [s0.x + s0.w * fx, s0.y + s0.h / 2];
   await p.mouse.move(...at);

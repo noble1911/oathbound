@@ -88,7 +88,7 @@ body::after { content: url('/ui/kit/btn-steel-hover.webp') url('/ui/kit/btn-stee
 #ui .screen > *, #ui .shell > * { pointer-events: auto; }
 #ui .screen > .topbar { pointer-events: none; }
 #ui .topbar > * { pointer-events: auto; }
-#ui .screen > .notices, #ui .screen > .b-feed, #ui .screen > .b-banner, #ui .screen > .phint, #ui .screen > .round-banner, #ui .screen > .b-tally, #ui .screen > .title-vignette, #ui .screen > .title-head, #ui .screen > .over-word, #ui .shell > .chat-peek, #ui .shell > .net-status, #ui .planning > .res { pointer-events: none; }
+#ui .screen > .notices, #ui .screen > .b-feed, #ui .screen > .b-banner, #ui .screen > .phint, #ui .screen > .round-banner, #ui .screen > .b-tally, #ui .screen > .over-word, #ui .shell > .chat-peek, #ui .shell > .net-status, #ui .planning > .res { pointer-events: none; }
 #ui .notices > *, #ui .res > * { pointer-events: auto; }
 #ui .screen > .b-wait { pointer-events: none; }
 
@@ -306,45 +306,173 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .toast.out { opacity: 0; transform: translateY(-0.5rem); }
 .wait-note { display: grid !important; place-items: center; inset: auto 0 18% 0 !important; font: 700 1.3rem var(--serif); color: var(--head); text-shadow: 0 2px 8px #000, 0 0 2px #000; }
 
-/* ------------------------------------------------------------ title: the key art, the wordmark, a stone menu */
-.title { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 1rem; padding: 5vh 1rem 5.5vh; overflow: hidden auto; background: var(--iron-900); }
-.title-art { position: absolute; inset: -4%; background: var(--key, none) center 35% / cover no-repeat; animation: kenburns 48s ease-in-out infinite alternate; will-change: transform; pointer-events: none; }
-@keyframes kenburns { from { transform: scale(1) translate3d(0, 0, 0); } to { transform: scale(1.08) translate3d(-1.2%, -1.4%, 0); } }
-.title-vignette { position: absolute; inset: 0; background: radial-gradient(ellipse 85% 75% at 50% 42%, transparent 30%, rgba(9, 11, 15, 0.7) 100%), linear-gradient(180deg, rgba(9, 11, 15, 0.7), rgba(9, 11, 15, 0.05) 32%, rgba(9, 11, 15, 0.2) 55%, rgba(9, 11, 15, 0.9)); }
-.title-head { position: relative; text-align: center; flex: none; }
-.title-sigil { display: none; }
-.title-word { margin: 0; font: 600 clamp(3.4rem, 8vw, 9rem)/0.95 var(--display); letter-spacing: 0.01em; color: var(--parch-100); text-shadow: 0 0.06em 0 #0b0d11, 0 0.3rem 1.2rem rgba(0, 0, 0, 0.85); animation: titlein 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-.title-word span { font-size: 1.12em; }
-@keyframes titlein { from { opacity: 0; transform: translateY(0.6rem); } }
-.title-tag { width: max-content; max-width: 100%; margin: 0.5rem auto 0; padding: 0.55rem 3.4rem 0.75rem; background: url('/ui/kit/ribbon.webp') center / 100% 100% no-repeat; font: italic 400 1.3rem var(--serif); color: var(--ink); letter-spacing: 0.02em; filter: drop-shadow(0 0.3rem 0.5rem rgba(0, 0, 0, 0.6)); animation: fadein 1.2s 0.4s both; }
-.title-menu { position: relative; flex: none; width: min(27rem, 100%); padding: 1.2rem 1.3rem 0.9rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.65rem; animation: fadein 0.8s 0.3s both; }
+/* ------------------------------------------------------------ title: a live battle behind a woodcut menu
+   The screen is transparent: the battle plays on the canvas under it (src/ui/title-battle.ts). `.title-art` is the
+   woodcut field that stands there first and fades once the battle is drawn (`tb-live`); it stays when there is no
+   battle to draw. The grade over the battle is plain CSS light (no blur, no filter: nothing for the GPU to redo).
+   Three menu styles (`ms1` broadside, `ms2` campaign table, `ms3` ink band; ?menustyle=) share one markup. They are
+   print, not forged metal: flat ink, paper and rules. Gold is flat leaf on the one primary action; madder red
+   (`--rubric`) is the printer's second ink and marks nothing but the rubric line of the broadside. */
+.title { --rubric: #9c2a1f; overflow: hidden auto; }
+.title-art { position: absolute; inset: 0; background: var(--iron-900) var(--field, none) center / cover no-repeat; transition: opacity 1.4s ease; pointer-events: none !important; }
+.title.tb-live .title-art { opacity: 0; }
+.title-vignette { position: absolute; inset: 0; pointer-events: none !important; }
+.title-head { position: relative; flex: none; }
+.title-word { margin: 0; font: 600 4.6rem/0.9 var(--display); letter-spacing: 0.01em; white-space: nowrap; }
+.title-word .tw-o { font-size: 1.1em; }
+.title-tag { margin: 0; font: italic 400 1.15rem var(--serif); letter-spacing: 0.02em; }
+.title-menu { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.7rem; }
+.title-menu .mg { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.55rem; min-width: 0; }
+.title-menu .mg-h { margin: 0; font: 700 0.68rem var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+.title-menu .mg-h .sh { display: none; }
 .title-menu .field { display: grid; gap: 0.3rem; }
-.title-menu input { width: 100%; min-width: 0; }
-.field span { font: 700 0.68rem var(--sans); color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; }
+.field span { font: 700 0.68rem var(--sans); color: var(--dim); letter-spacing: 0.14em; text-transform: uppercase; }
+.title-menu input { width: 100%; min-width: 0; border-radius: 0; box-shadow: none; }
+.tbtn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; min-width: 0; border-radius: 0; cursor: pointer; transition: background-color 0.08s, color 0.08s; }
+.tbtn span { white-space: nowrap; }
+.tbtn.tutorial { justify-content: flex-start; }
+.tbtn.tutorial em { margin-left: auto; min-width: 0; font: italic 0.82rem var(--sans); letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.75; }
+.tbtn.tutorial.fresh em { opacity: 1; }
 .menu-block { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: stretch; }
-.menu-block .seg button { padding: 0 0.6rem; }
-.btn.tutorial { justify-content: flex-start; gap: 0.6rem; min-width: 0; }
-.btn.tutorial em { margin-left: auto; min-width: 0; padding: 0; background: none; font: italic 0.82rem var(--sans); letter-spacing: 0.02em; color: var(--steel-200); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.btn.tutorial.fresh em { color: #fff; }
+.diff { display: inline-flex; }
+.diff button { border: none; background: none; cursor: pointer; }
 .menu-sep { display: flex; align-items: center; gap: 0.6rem; color: var(--muted); font: italic 0.86rem var(--sans); }
 .menu-sep::before, .menu-sep::after { flex: 1; }
 .join-row { display: flex; gap: 0.5rem; }
 .join-row .code { flex: 1; min-width: 0; width: auto; text-align: center; font: 700 1.25rem var(--serif); letter-spacing: 0.4em; text-transform: uppercase; }
-.join-row .btn { flex: none; }
+.join-row .tbtn { flex: none; }
 .err { min-height: 1.2em; margin: 0; color: var(--bad-c); text-align: center; font-size: 0.88rem; }
 .err.info { color: var(--muted); }
 .menu-links { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
-.menu-links .how-btn { color: var(--steel-100); }
 .linkish kbd { margin-left: 0.2rem; }
-.title-load { position: absolute; left: 50%; bottom: 0.7rem; transform: translateX(-50%); display: flex; align-items: center; gap: 0.6rem; color: var(--steel-200); font: italic 0.8rem var(--sans); text-shadow: 0 1px 2px #000; opacity: 0; transition: opacity 0.6s; pointer-events: none !important; white-space: nowrap; }
+.title-load { position: absolute; right: 1rem; bottom: 0.7rem; display: flex; align-items: center; gap: 0.6rem; color: var(--steel-200); font: italic 0.8rem var(--sans); text-shadow: 0 1px 2px #000; opacity: 0; transition: opacity 0.6s; pointer-events: none !important; white-space: nowrap; }
 .title-load.on { opacity: 1; }
 .tl-bar { width: 9rem; height: 3px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
 .tl-bar i { display: block; height: 100%; width: 0; background: var(--steel-100); transition: width 0.3s ease-out; }
 .title-load.unknown .tl-bar i { animation: sweep 1.3s ease-in-out infinite; }
 @keyframes sweep { from { transform: translateX(-110%); } to { transform: translateX(340%); } }
 
+/* ---- 1: broadside. A printed sheet hung at the left: headpiece, a cut initial, a rubric, ink blocks. */
+.ms1 .title-vignette { background: linear-gradient(90deg, rgba(9, 11, 15, 0.6), rgba(9, 11, 15, 0.12) 55%, rgba(9, 11, 15, 0.3)), linear-gradient(180deg, rgba(9, 11, 15, 0.45), transparent 22%, transparent 70%, rgba(9, 11, 15, 0.6)); }
+.ms1 .title-sheet { position: absolute; left: clamp(1rem, 4.5vw, 5rem); top: 50%; transform: translateY(-50%); width: min(27rem, calc(100% - 2rem)); max-height: calc(100% - 1.6rem); overflow: hidden auto; scrollbar-width: thin; padding: 0.7rem 1.5rem 0.6rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.8rem; }
+.ms1 .tw-headpiece { display: block; width: 100%; height: auto; mix-blend-mode: multiply; }
+.ms1 .title-word { display: flex; align-items: flex-end; justify-content: center; margin-top: 0.2rem; font-size: 4.3rem; line-height: 0.78; color: var(--ink); }
+.ms1 .title-word.cut .tw-o { display: none; }
+.ms1 .tw-initial { width: 5.6rem; height: 5.6rem; margin-right: 0.3rem; mix-blend-mode: multiply; }
+.ms1 .title-tag { margin-top: 0.7rem; padding: 0.3rem 0; border-block: 3px double var(--ink); text-align: center; color: var(--rubric); }
+.ms1 .title-menu input { background: rgba(255, 250, 235, 0.5); border: none; border-bottom: 2px solid var(--ink); color: var(--ink); font: 500 1.15rem var(--serif); padding: 0.4rem 0.6rem; }
+.ms1 .title-menu input::placeholder { color: #8a7655; }
+.ms1 .title-menu input:focus { background: rgba(255, 250, 235, 0.85); }
+.ms1 .mg-h { display: none; }
+.ms1 .tbtn { padding: 0.5rem 0.9rem; border: 2px solid var(--ink); background: transparent; color: var(--ink); font: 700 1.1rem var(--serif); }
+.ms1 .tbtn.big { padding: 0.62rem 0.9rem; font-size: 1.22rem; }
+.ms1 .tbtn:hover { background: var(--ink); color: var(--parch-100); }
+.ms1 .tbtn:active { transform: translate(1px, 1px); }
+.ms1 .tbtn.cta { background: var(--gold); box-shadow: 0.2rem 0.2rem 0 var(--ink); }
+.ms1 .tbtn.cta:hover { background: var(--gold-hi); color: var(--ink); }
+.ms1 .tbtn.cta:active { transform: translate(0.12rem, 0.12rem); box-shadow: 0.08rem 0.08rem 0 var(--ink); }
+.ms1 .diff { border: 2px solid var(--ink); }
+.ms1 .diff button { padding: 0 0.6rem; color: var(--ink); font: 600 0.84rem var(--sans); }
+.ms1 .diff button + button { border-left: 1px solid var(--ink); }
+.ms1 .diff button.on { background: var(--ink); color: var(--parch-100); }
+.ms1 .diff button:hover:not(.on) { background: rgba(35, 27, 18, 0.12); }
+.ms1 .menu-sep { color: var(--ink-2); font: italic 1rem var(--serif); }
+.ms1 .menu-sep::before, .ms1 .menu-sep::after { content: ''; height: 0; border-top: 1px solid var(--ink); background: none; }
+.ms1 .menu-links .linkish { color: var(--ink); }
+
+/* ---- 2: campaign table. The wordmark over the field; the orders on a campaign map along the bottom. */
+.ms2 .title-vignette { background: linear-gradient(180deg, rgba(9, 11, 15, 0.72), rgba(9, 11, 15, 0.05) 30%, rgba(9, 11, 15, 0.05) 55%, rgba(9, 11, 15, 0.8)); }
+.ms2 .title-sheet { display: contents; }
+.ms2 .title-head { position: absolute; left: 2.6rem; top: 1.8rem; }
+.ms2 .title-word { font-size: 5.4rem; color: var(--parch-100); text-shadow: 0.05em 0.05em 0 #0b0d11; }
+/* the two liveries, as a herald's band under the name */
+.ms2 .title-tag { margin-top: 0.7rem; padding-top: 0.55rem; color: var(--parch-100); text-shadow: 0 1px 0 #0b0d11; background: linear-gradient(90deg, var(--me) 50%, var(--foe) 50%) top left / 100% 0.28rem no-repeat; }
+.ms2 .title-menu { position: absolute; left: 50%; bottom: 1.1rem; transform: translateX(-50%); width: min(76rem, calc(100% - 2rem)); padding: 0.9rem 1.7rem 0.7rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1.3fr); grid-template-rows: auto auto 1fr; gap: 0.4rem 1.7rem; align-items: start; }
+.ms2 .title-menu::before { content: ''; position: absolute; inset: 0.5rem; background: var(--map, none) center 47% / 100% auto no-repeat; opacity: 0.17; mix-blend-mode: multiply; pointer-events: none; }
+.ms2 .title-menu > * { position: relative; }
+.ms2 .mg-you { grid-column: 1; grid-row: 1; }
+.ms2 .err { grid-column: 1; grid-row: 2; text-align: left; }
+.ms2 .menu-links { grid-column: 1; grid-row: 3; align-self: end; }
+.ms2 .mg-play { grid-column: 2; grid-row: 1 / span 3; padding-left: 1.7rem; border-left: 1px solid var(--rule); }
+.ms2 .mg-duel { grid-column: 3; grid-row: 1 / span 3; padding-left: 1.7rem; border-left: 1px solid var(--rule); }
+.ms2 .menu-sep { display: none; }
+.ms2 .mg-h { display: flex; align-items: center; gap: 0.4rem; font: 700 1.2rem var(--serif); letter-spacing: 0.01em; text-transform: none; color: var(--head); }
+.ms2 .mg-you .field span { font: 700 1.2rem var(--serif); letter-spacing: 0.01em; text-transform: none; color: var(--head); }
+/* flat heater shields: the two sides of a duel */
+.ms2 .mg-h .sh { display: block; width: 0.85rem; height: 1rem; background: var(--me); clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%); }
+.ms2 .mg-h .sh.me { margin-left: auto; }
+.ms2 .mg-h .sh.foe { background: var(--foe); }
+.ms2 .title-menu input { background: rgba(255, 250, 235, 0.55); border: 1px solid var(--ink-2); color: var(--ink); font: 500 1.1rem var(--serif); padding: 0.42rem 0.6rem; }
+.ms2 .title-menu input::placeholder { color: #8a7655; }
+.ms2 .title-menu input:focus { background: rgba(255, 250, 235, 0.9); border-color: var(--ink); }
+.ms2 .tbtn { padding: 0.48rem 0.9rem; border: 1px solid var(--ink); background: var(--ink); color: var(--parch-100); font: 700 1.08rem var(--serif); }
+.ms2 .tbtn:hover { background: #3d2f1e; }
+.ms2 .tbtn:active { transform: translateY(1px); }
+.ms2 .tbtn.tutorial, .ms2 .tbtn.spectate { background: transparent; color: var(--ink); }
+.ms2 .tbtn.tutorial:hover, .ms2 .tbtn.spectate:hover { background: rgba(35, 27, 18, 0.14); }
+/* the one order that is sealed */
+.ms2 .tbtn.cta { position: relative; background: var(--gold); color: var(--ink); }
+.ms2 .tbtn.cta:hover { background: var(--gold-hi); }
+.ms2 .tbtn.vsai.cta::after { content: ''; position: absolute; left: -0.85rem; top: 50%; width: 2.5rem; height: 2.5rem; transform: translateY(-50%) rotate(-12deg); background: url('/ui/kit/seal.webp') center / contain no-repeat; pointer-events: none; }
+.ms2 .tbtn.vsai.cta .ico { visibility: hidden; }
+.ms2 .diff { gap: 0.3rem; align-items: center; }
+/* counters on the map: literally tokens, hence round */
+.ms2 .diff button { padding: 0.28rem 0.7rem; border: 1px solid var(--ink); border-radius: 999px; color: var(--ink); font: 600 0.82rem var(--sans); }
+.ms2 .diff button.on { background: var(--ink); color: var(--parch-100); }
+.ms2 .diff button:hover:not(.on) { background: rgba(35, 27, 18, 0.14); }
+.ms2 .menu-links .linkish { color: var(--ink); padding-left: 0; }
+.ms2 .title-load { right: auto; left: 50%; top: 0.8rem; bottom: auto; transform: translateX(-50%); }
+
+/* ---- 3: ink band. A dark band, the wordmark, a plain list; the battle has the rest of the screen. */
+.ms3 .title-vignette { background: linear-gradient(90deg, rgba(9, 11, 15, 0.5), transparent 60%), linear-gradient(180deg, rgba(9, 11, 15, 0.4), transparent 20%, transparent 72%, rgba(9, 11, 15, 0.6)); }
+.ms3 .title-sheet { position: absolute; left: 0; top: 0; bottom: 0; width: min(25rem, 100%); padding: 2.6rem 2.2rem 1.4rem 2.6rem; display: flex; flex-direction: column; gap: 1.6rem; overflow: hidden auto; scrollbar-width: none; background: rgba(9, 11, 15, 0.8); border-right: 1px solid rgba(232, 235, 239, 0.3); }
+/* an engraved double rule down the band's edge */
+.ms3 .title-sheet::after { content: ''; position: absolute; right: 0.3rem; top: 0; bottom: 0; border-right: 1px solid rgba(232, 235, 239, 0.12); pointer-events: none; }
+.ms3 .title-word { font-size: 4.5rem; color: var(--parch-100); }
+.ms3 .title-tag { margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px solid rgba(232, 235, 239, 0.3); color: var(--steel-200); }
+.ms3 .title-menu { margin-top: auto; gap: 1.1rem; }
+.ms3 .title-menu .mg { gap: 0; }
+.ms3 .mg-h { padding-bottom: 0.35rem; border-bottom: 1px solid rgba(232, 235, 239, 0.3); }
+.ms3 .menu-sep { display: none; }
+.ms3 .title-menu input { background: none; border: none; border-bottom: 1px solid rgba(232, 235, 239, 0.3); color: var(--steel-100); font: 500 1.25rem var(--serif); padding: 0.35rem 0; }
+.ms3 .title-menu input::placeholder { color: var(--slate-400); }
+.ms3 .title-menu input:focus { border-bottom-color: var(--parch-100); box-shadow: none; }
+.ms3 .tbtn { justify-content: flex-start; padding: 0.5rem 0; border: none; border-bottom: 1px solid rgba(232, 235, 239, 0.12); background: none; color: var(--steel-100); font: 500 1.4rem var(--serif); text-align: left; transition: padding 0.1s, color 0.1s, box-shadow 0.1s; }
+.ms3 .tbtn .ico { width: 0.8em; height: 0.8em; color: var(--steel-300); }
+.ms3 .tbtn:hover { color: #fff; padding-left: 0.6rem; box-shadow: inset 3px 0 0 var(--parch-100); }
+.ms3 .tbtn:hover .ico { color: inherit; }
+.ms3 .tbtn.tutorial em { color: var(--steel-200); }
+/* the primary action: gold, and nothing else is */
+.ms3 .tbtn.cta { color: var(--gold-hi); font-weight: 700; }
+.ms3 .tbtn.cta .ico { color: var(--gold); }
+.ms3 .tbtn.cta:hover { color: #fff3cf; box-shadow: inset 3px 0 0 var(--gold); }
+.ms3 .menu-block { border-bottom: 1px solid rgba(232, 235, 239, 0.12); }
+.ms3 .menu-block .tbtn { border-bottom: none; }
+.ms3 .diff { align-items: center; gap: 0.1rem; }
+.ms3 .diff button { padding: 0.3rem 0.4rem; color: var(--steel-300); font: 700 0.68rem var(--sans); letter-spacing: 0.12em; text-transform: uppercase; border-bottom: 2px solid transparent; }
+.ms3 .diff button.on { color: var(--parch-100); border-bottom-color: var(--parch-100); }
+.ms3 .diff button:hover:not(.on) { color: #fff; }
+.ms3 .join-row { align-items: baseline; gap: 1rem; }
+.ms3 .join-row .code { text-align: left; letter-spacing: 0.35em; }
+.ms3 .join-row .tbtn { border-bottom: none; font-size: 1.15rem; padding: 0.4rem 0; }
+.ms3 .join-row .tbtn:hover { padding-left: 0; box-shadow: inset 0 -2px 0 var(--parch-100); }
+.ms3 .join-row .tbtn.cta:hover { box-shadow: inset 0 -2px 0 var(--gold); }
+.ms3 .err { text-align: left; }
+.ms3 .menu-links .linkish { padding-left: 0; }
+.ms3 .menu-links .how-btn { color: var(--steel-100); }
+
+/* a narrow or portrait window: the menu takes the width and the battle shows above and around it */
+@media (max-width: 720px) {
+  .ms1 .title-sheet { left: 50%; transform: translate(-50%, -50%); }
+  .ms3 .title-sheet { width: 100%; border-right: none; background: rgba(9, 11, 15, 0.72); }
+  .ms2 .title-head { position: relative; left: auto; top: auto; padding: 1.2rem 1rem 0.6rem; }
+  .ms2 .title-word { font-size: 4rem; }
+  .ms2 .title-menu { position: relative; left: auto; bottom: auto; transform: none; margin: 0 auto 1rem; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+  .ms2 .title-menu > * { grid-column: 1 !important; grid-row: auto !important; padding-left: 0 !important; border-left: none !important; }
+}
+
 /* ------------------------------------------------------------ lobby: two liveries either side of the field */
-.lobby { display: grid; place-items: center; background: radial-gradient(ellipse at center, rgba(9, 11, 15, 0.5), rgba(9, 11, 15, 0.9)), var(--key, none) center / cover no-repeat, var(--iron-900); }
+.lobby { display: grid; place-items: center; background: radial-gradient(ellipse at center, rgba(9, 11, 15, 0.5), rgba(9, 11, 15, 0.9)), var(--still, var(--field, none)) center / cover no-repeat, var(--iron-900); }
 .lobby-card { width: min(52rem, calc(100vw - 32px)); max-height: calc(100vh - 1.5rem); overflow: hidden auto; scrollbar-width: thin; padding: 1.3rem 1.8rem 1.1rem; text-align: center; display: grid; gap: 0.6rem; justify-items: center; }
 .code-big { font: 700 3.6rem/1 var(--serif); letter-spacing: 0.25em; padding-left: 0.25em; color: var(--head); text-shadow: 0 2px 0 #000; }
 .vs { width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: stretch; margin: 0.3rem 0 0.1rem; }
@@ -366,13 +494,14 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .lobby-foot { color: var(--muted); font-size: 0.88rem; }
 .specs { display: inline-flex; align-items: center; gap: 0.35rem; }
 .lobby .start { width: min(22rem, 100%); }
+.lobby .muster { width: min(22rem, 100%); min-height: 2.9rem; margin: 0; display: grid; grid-auto-flow: column; place-content: center; align-items: center; font: italic 1.05rem var(--serif); }
 .lobby .leave { width: min(22rem, 100%); }
 .lobby-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.8rem; width: 100%; }
 .lobby .lobby-acts .leave { width: auto; min-width: 12rem; }
 .lobby .copy { color: var(--steel-100); border: 1px dashed var(--slate-400); }
 
-/* ------------------------------------------------------------ lord pick: four charters on the painted backdrop */
-.lordpick { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; padding: 2vh 2vw 2vh; gap: 0.5rem; background: radial-gradient(ellipse at 50% 40%, rgba(9, 11, 15, 0.7), rgba(9, 11, 15, 0.96)), var(--key, none) center / cover no-repeat, var(--iron-900); }
+/* ------------------------------------------------------------ lord pick: four charters on a still backdrop (the title battle's last frame, else the woodcut field) */
+.lordpick { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; padding: 2vh 2vw 2vh; gap: 0.5rem; background: radial-gradient(ellipse at 50% 40%, rgba(9, 11, 15, 0.7), rgba(9, 11, 15, 0.96)), var(--still, var(--field, none)) center / cover no-repeat, var(--iron-900); }
 .lp-head { text-align: center; position: relative; }
 .lp-head h2 { margin: 0.1rem 0 0; font: 600 2.2rem/1.1 var(--display); color: var(--parch-100); letter-spacing: 0.01em; text-shadow: 0 2px 0 #000, 0 2px 10px #000; }
 /* top left: the corner tools hold the top right on this screen */
@@ -1478,5 +1607,6 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
 /* power: a hidden tab runs no CSS animation at all; reduced motion drops the decorative loops */
 body.tab-hidden *, body.tab-hidden *::before, body.tab-hidden *::after { animation-play-state: paused !important; }
 @media (prefers-reduced-motion: reduce) {
-  .title-art, .coach-target, .notice.draft-n { animation: none; }
+  .coach-target, .notice.draft-n { animation: none; }
+  .title-art { transition: none; }
 }

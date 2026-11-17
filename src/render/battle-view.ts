@@ -449,13 +449,14 @@ export class BattleView {
   // ------------------------------------------------------------------ battle
 
   /** Play a battle (sim replay via `replaySource`, or any BattleSource). Camera → director. */
-  playBattle(src: BattleSource, hooks: PlaybackHooks & { director?: boolean } = {}): BattlePlayback {
+  playBattle(src: BattleSource, hooks: PlaybackHooks & { director?: boolean; ghosts?: boolean } = {}): BattlePlayback {
     this.stopBattle();
     this.army = null;
     this.ghostMarks.set([]);
     this.field.setPlanning({ visible: false });
     this.planning = null;
-    this.units.showGhosts = true;
+    // (a backdrop draws no see-through silhouettes: `ghosts: false`)
+    this.units.showGhosts = hooks.ghosts !== false;
     this.playback = new BattlePlayback(src, this.units, this.director, this.vfx, this.field, hooks);
     for (const seat of [0, 1] as const) this.field.keep(seat).setStage(0);
     this.director.reset(this.seat === 0 ? 0 : Math.PI);
