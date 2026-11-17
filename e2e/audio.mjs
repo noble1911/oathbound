@@ -55,6 +55,7 @@ try {
   await p.click('.diff button[data-lvl="easy"]');
   await p.click('.vsai');
   check(await waitFor(p, () => window.__ob.app.room?.phase === 'lordPick'), 'lord pick');
+  await sleep(700); // the Lord pick ignores presses in its first 600 ms (they were meant for the screen before it)
   await p.click('.lcard[data-lord="warden"]');
   check(await waitFor(p, () => window.__ob.app.room?.phase === 'planning'), 'planning');
   check(await waitFor(p, () => !!document.querySelector('.modal.draft.fresh .draft-ribbon'), 8000), 'draft appears with the "New recruits!" ribbon');

@@ -12,6 +12,7 @@ await p.type('.name', 'Probe');
 await p.click('.diff button[data-lvl="easy"]');
 await p.click('.vsai');
 await waitFor(p, () => window.__ob.app.room?.phase === 'lordPick', null, 30000);
+await sleep(700); // the Lord pick ignores presses in its first 600 ms (they were meant for the screen before it)
 await p.click('.lcard[data-lord="marshal"]');
 await waitFor(p, () => window.__ob.app.room?.phase === 'planning', null, 30000);
 await sleep(4500);

@@ -32,7 +32,7 @@ try {
   // round 1: the opening muster (the match route starts at the Lord pick)
   let p = await open('?dev=match&timer=0&lord=marshal');
   await waitFor(p, () => !!document.querySelector('.lcard, .modal.draft .dcard'), null, 40000);
-  if (await p.$('.lcard[data-lord="marshal"]')) await p.click('.lcard[data-lord="marshal"]');
+  if (await p.$('.lcard[data-lord="marshal"]')) await sleep(700), await p.click('.lcard[data-lord="marshal"]');
   check(await waitFor(p, () => !!document.querySelector('.modal.draft .dcard'), null, 40000), 'the recruit picker opens in round 1');
   await sleep(1200);
   let f = await fits(p);

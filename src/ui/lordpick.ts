@@ -64,6 +64,14 @@ export function factionAccent(f: FactionId): [string, string] {
 
 const FOOT = 'Both players may pick the same faction and Lord. Picks are revealed together.';
 const FOOT_TIMED = ' If the timer runs out, a Lord is chosen for you.';
+/**
+ * A press this soon after the screen appears was meant for the screen before it: in vs-AI the lobby's
+ * "Begin the war" sits where the Lord cards land, and the auto-start swaps the screen under the
+ * pointer. Such a press only brings the Lord into view; it never picks.
+ */
+export const LORD_PICK_ARM_MS = 600;
+/** A pick the server has not confirmed after this long is sent again (a send while the socket was down is dropped). */
+const RESEND_MS = 1500;
 
 export class LordPickScreen {
   readonly root: HTMLElement;
@@ -77,6 +85,10 @@ export class LordPickScreen {
   private endsAt = 0;
   private spectator = false;
   private pickFaction: ((f: FactionId) => void) | null;
+  /** when the screen was first painted (performance.now); presses before LORD_PICK_ARM_MS after it never pick */
+  private shownAt = Infinity;
+  /** when the pick was last sent, for the resend */
+  private sentAt = 0;
 
   /** `initial`: the faction shown first (the tutorial opens on the Kingdom); else the one played last. */
   constructor(ui: HTMLElement, pick: (l: LordId) => void, spectator: boolean, pickFaction: ((f: FactionId) => void) | null = null, initial: FactionId | null = null) {
@@ -111,6 +123,13 @@ export class LordPickScreen {
     const cardOf = (e: Event): HTMLElement | null => (e.target as HTMLElement).closest<HTMLElement>('.lcard');
     // a finger has no hover: its tap brings the Lord into view, and the sheet's button picks
     let touch = false;
+    // when the press began: a click that started before the screen was armed only shows (see LORD_PICK_ARM_MS)
+    let downAt = 0;
+    // (event times are when the input happened: a press queued while the screen was still being built counts as early)
+    const early = (e: MouseEvent): boolean => (e.detail === 0 ? e.timeStamp : downAt) < this.shownAt + LORD_PICK_ARM_MS;
+    this.root.addEventListener('pointerdown', (e) => { downAt = e.timeStamp; }, true);
+    // the screen is on view after its first frame: the second animation frame runs once that frame is painted
+    requestAnimationFrame(() => requestAnimationFrame(() => { this.shownAt = performance.now(); }));
     cards.addEventListener('pointerdown', (e) => { touch = e.pointerType !== 'mouse'; });
     cards.addEventListener('keydown', (e) => {
       touch = false;
@@ -125,7 +144,7 @@ export class LordPickScreen {
       const c = cardOf(e);
       if (!c) return;
       const id = c.dataset.lord as LordId;
-      if (this.picked || this.spectator || touch) {
+      if (this.picked || this.spectator || touch || early(e)) {
         if (this.shown !== id && !this.picked) sound.click();
         this.show(id);
         return;
@@ -143,7 +162,7 @@ export class LordPickScreen {
       // focus that a pointer gave is the click's business (a tap shows, a mouse click picks)
       if (c?.matches(':focus-visible')) this.show(c.dataset.lord as LordId);
     });
-    $(this.root, '.lp-go').addEventListener('click', () => { if (this.shown) this.choose(this.shown); });
+    $(this.root, '.lp-go').addEventListener('click', (e) => { if (this.shown && !early(e)) this.choose(this.shown); });
     this.setFaction(this.faction, false);
     this.iv = setInterval(() => this.tick(), 1000);
   }
@@ -157,6 +176,7 @@ export class LordPickScreen {
     this.root.querySelector(`.lcard[data-lord="${id}"]`)?.classList.add('chosen');
     this.show(id);
     store.set('faction', factionOfLord(id));
+    this.sentAt = performance.now();
     this.pick(id);
     playLordLine(id, 'pick', { delay: 0.25 });
   }
@@ -246,11 +266,16 @@ export class LordPickScreen {
   update(room: RoomView): void {
     this.endsAt = room.phaseEndsAt ? room.phaseEndsAt - room.serverNow + Date.now() : 0;
     const me = room.view?.you;
-    if (me?.lord && !this.picked) {
-      // picked elsewhere (a rejoin, or the timer chose): show that Lord's faction with its card sealed
+    if (me?.lord && me.lord !== this.picked) {
+      // picked elsewhere (a rejoin, or the timer chose first): the server's Lord is the one, shown sealed
       this.picked = me.lord;
       this.root.classList.add('has-pick');
+      this.root.querySelectorAll('.lcard.chosen').forEach((n) => n.classList.remove('chosen'));
       this.setFaction(factionOfLord(me.lord), false);
+    } else if (me && !me.lord && this.picked && !this.spectator && room.phase === 'lordPick' && performance.now() - this.sentAt > RESEND_MS) {
+      // our pick never reached the server (sent while the socket was down): send it again
+      this.sentAt = performance.now();
+      this.pick(this.picked);
     }
     const foot = $(this.root, '.lp-foot');
     // the timer is only mentioned when there is one (the tutorial has none)

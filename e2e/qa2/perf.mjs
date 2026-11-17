@@ -149,7 +149,7 @@ await q.click('.set-btn'); await sleep(400);
 say('RETURN: slider DOM', await q.evaluate(() => Object.fromEntries([...document.querySelectorAll('.sl input')].map((r) => [r.dataset.k, r.value]))), 'quality on', await q.evaluate(() => document.querySelector('.quality button.on')?.dataset.q ?? null), 'fps on', await q.evaluate(() => document.querySelector('.fps button.on')?.dataset.fps ?? null));
 await shot(q, 'settings-return'); await q.keyboard.press('Escape');
 const b2 = sum(q.__net);
-await q.click('.vsai'); await waitFor(q, () => window.__ob.app.room?.phase === 'lordPick'); await q.click('.lcard[data-lord="warden"]'); await waitFor(q, () => window.__ob.app.room?.phase === 'planning'); await sleep(6000);
+await q.click('.vsai'); await waitFor(q, () => window.__ob.app.room?.phase === 'lordPick'); await sleep(700); await q.click('.lcard[data-lord="warden"]'); await waitFor(q, () => window.__ob.app.room?.phase === 'planning'); await sleep(6000);
 say('RETURN: to first planning, extra network bytes', +(sum(q.__net).MB - b2.MB).toFixed(2), 'MB; statuses', Object.entries(q.__net.list.reduce((a, r) => { const k = r.disk || r.mem ? 'cache' : String(r.status); a[k] = (a[k] ?? 0) + 1; return a; }, {})));
 say('RETURN: non-cache:\n  ' + q.__net.list.filter((r) => !(r.disk || r.mem)).map((r) => `${r.status} ${(r.bytes / 1e3).toFixed(1)}kB ${r.url}`).slice(0, 80).join('\n  '));
 // mute key persistence

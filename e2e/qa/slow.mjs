@@ -14,6 +14,7 @@ console.log('loading indicator elements:', await p.evaluate(() => [...document.q
 // play immediately
 await p.click('.vsai');
 await waitFor(p, () => window.__ob.app.room?.phase === 'lordPick', null, 30000);
+await sleep(700); // the Lord pick ignores presses in its first 600 ms (they were meant for the screen before it)
 await p.click('.lcard[data-lord="warden"]');
 await waitFor(p, () => window.__ob.app.room?.phase === 'planning', null, 30000);
 const t1 = Date.now();

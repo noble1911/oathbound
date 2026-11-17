@@ -32,7 +32,7 @@ let slot = 0;
 async function act(c) {
   const st = await state(p);
   const t = c?.t ?? '';
-  if (/Choose your Lord/.test(t)) { await p.click('.lcard[data-lord="marshal"]'); return 'picked marshal'; }
+  if (/Choose your Lord/.test(t)) { await sleep(700); await p.click('.lcard[data-lord="marshal"]'); return 'picked marshal'; }
   if (/Raise your companies|New recruits/.test(t)) {
     const card = await p.$('.modal.draft .dcard:not(.chosen)');
     if (card) { await card.hover(); await sleep(700); if (!acted.drafthover) { acted.drafthover = 1; await S('draft-hover'); } await p.evaluate(() => document.querySelector('.modal.draft .dcard:not(.chosen)')?.click()); await sleep(900); return 'draft pick'; }

@@ -107,6 +107,7 @@ try {
   await b.click('.fcard[data-faction="ashen"]');
   check(await waitFor(b, () => window.__ob.app.room.view.you.faction === 'ashen' && document.querySelectorAll('.lcard').length === 4 && !!document.querySelector('.lcard[data-lord="lich"]')), 'B picks the Ashen Covenant: the server has it, its four Lord cards show');
   check(await a.evaluate(() => window.__ob.app.room.view.enemy.faction === null), 'A cannot see the rival faction before the reveal');
+  await sleep(700); // the Lord pick ignores presses in its first 600 ms (they were meant for the screen before it)
   await a.click('.lcard[data-lord="marshal"]');
   await b.click('.lcard[data-lord="lich"]');
   check(await waitFor(a, () => window.__ob.app.room?.phase === 'planning'), 'both picked: planning');
@@ -168,6 +169,7 @@ try {
   check(await waitFor(c, () => window.__ob.app.room?.phase === 'lordPick'), 'vs AI: auto-started into lord pick');
   await c.click('.fcard[data-faction="caliphate"]');
   await waitFor(c, () => !!document.querySelector('.lcard[data-lord="sultana"]'));
+  await sleep(700); // the Lord pick ignores presses in its first 600 ms (they were meant for the screen before it)
   await c.click('.lcard[data-lord="sultana"]');
   check(await waitFor(c, () => window.__ob.app.room?.phase === 'planning'), 'vs AI: planning');
   check(await waitFor(c, () => { const v = window.__ob.app.room.view; return v.you.faction === 'caliphate' && !!v.enemy.faction && !!v.enemy.lord; }), 'vs AI: the Caliphate for me, and the AI has a faction and a Lord');

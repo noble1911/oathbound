@@ -12,7 +12,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "node e2e/online.mjs",
+    "e2e": "node e2e/online.mjs && node e2e/ux/lordpick-clicks.mjs",
     "preview:path": "npm run build && node tools/serve-prefixed.mjs dist oathbound 5190",
     "deploy": "bash scripts/deploy.sh",
     "art": "node tools/art/run.mjs",
