@@ -186,6 +186,9 @@ export class EngineScene implements SceneAdapter {
    * above their ground position) pick as well.
    */
   squadAt(x: number, y: number): { id: number; ghost: boolean } | null {
+    // a Lord under the pointer wins over the soldiers around or in front of him (he is one model among his escort)
+    const lord = this.lordAt(x, y);
+    if (lord !== null) return { id: lord, ghost: this.ghostIds.has(lord) };
     const direct = this.view.pickSquad(x, y);
     if (direct !== null && direct > PREVIEW_ID && direct !== this.hidden) return { id: direct, ghost: this.ghostIds.has(direct) };
     const boxes = new Map<number, { x0: number; y0: number; x1: number; y1: number }>();
@@ -480,6 +483,36 @@ export class EngineScene implements SceneAdapter {
     this.markSquads([], null);
     this.view.stopBattle();
     this.rebuild();
+  }
+
+  /**
+   * The Lord whose body holds the pointer: the box from his feet to his head as drawn, at least a body wide (own
+   * Lords before ghosts, then the nearest centre), or null.
+   */
+  private lordAt(x: number, y: number): number | null {
+    const eng = this.view.engine;
+    let best: number | null = null;
+    let bd = Infinity;
+    for (const s of this.view.units.slots) {
+      if (s.header.type !== 'lord' || !s.visible || s.deadAt >= 0) continue;
+      const id = s.header.squad;
+      if (id <= PREVIEW_ID || id === this.hidden) continue;
+      const ground = Math.min(s.pos.y, this.view.field.heightAt(s.pos.x, s.pos.z));
+      const foot = eng.toScreen(this.v3.set(s.pos.x, ground, s.pos.z));
+      if (!foot) continue;
+      const fx = foot.x, fy = foot.y;
+      // the model's own feet (a flier's hang above the ground): the body's height on screen sets its width
+      const body = eng.toScreen(this.v3.set(s.pos.x, s.pos.y, s.pos.z));
+      if (!body) continue;
+      const by = body.y;
+      const head = eng.toScreen(this.v3.set(s.pos.x, s.pos.y + Math.max(1.2, s.arch.chest * 1.7), s.pos.z));
+      if (!head) continue;
+      const halfW = Math.max(10, (by - head.y) * 0.3);
+      if (x < Math.min(fx, head.x) - halfW || x > Math.max(fx, head.x) + halfW || y < head.y - 6 || y > fy + 6) continue;
+      const d = Math.hypot(x - (fx + head.x) / 2, y - (fy + head.y) / 2) + (this.ghostIds.has(id) ? 1000 : 0);
+      if (d < bd) { bd = d; best = id; }
+    }
+    return best;
   }
 
   /** The replay soldier under the pointer: the same pick as planning (ray, then screen footprint), by soldier. */

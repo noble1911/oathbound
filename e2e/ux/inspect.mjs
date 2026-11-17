@@ -51,12 +51,7 @@ async function clickSquad(row, opts = {}) {
       await p.mouse.click(xy.x, xy.y);
       if (opts.shift) await p.keyboard.up('Shift');
       await sleep(350);
-      if ((await sel()).includes(row) || opts.shift) return (await sel()).includes(row);
-      // a soldier of a neighbouring squad stood in front (melee scrum, an escort around the Lord): try again a moment later
-      console.log(`     the click on row ${row} picked rows ${JSON.stringify(await sel())}; retrying`);
-      await p.keyboard.press('Escape');
-      await sleep(250);
-      continue;
+      return (await sel()).includes(row);
     }
     await sleep(400);
   }
