@@ -1,10 +1,11 @@
-// What Hard unlocks, deploys and picks from loot. node tools/review/picks.ts --seeds 4
+// What a bot level unlocks, deploys and picks from loot. node tools/review/picks.ts --seeds 4 [--strat hard|normal|counter|...]
+// Also prints each unit's share of its faction's deploys (the "every unit gets used" gate: about 1% or more).
 import { isMainThread } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import { UNITS } from '../../src/sim/data/units.ts';
 import type { LordId, MatchState, Seat } from '../../src/sim/types.ts';
 import { arg, botPlanX, KNOB, lordPairs, playMatch, pool, type Planner } from './lib.ts';
-interface Job { seed: number; lords: [LordId, LordId] }
+interface Job { seed: number; lords: [LordId, LordId]; strat?: string }
 interface Pick { round: number; offered: string[]; took: string; slots: string[]; legs: (string | null)[]; k: number }
 interface R { unlocks: [number, string][]; deploys: [number, string][]; loot: Pick[]; win: Seat | null; seat: Seat }
 export function work(j: Job): R[] {
@@ -17,7 +18,7 @@ export function work(j: Job): R[] {
     const slots = p.lootOffer ? p.lootOffer.map((i) => i.slot as string) : [];
     const legs = p.lootOffer ? p.lootOffer.map((i) => i.legendary as string | null) : [];
     KNOB.noLevel = false; KNOB.noLayout = false;
-    botPlanX(s, seat, 'hard', seat + 1);
+    botPlanX(s, seat, (j.strat ?? 'hard') as 'hard', seat + 1);
     for (const u of p.unlocked) if (!ul.has(u)) out[seat].unlocks.push([s.round, u]);
     for (const q of p.squads) if (!ids.has(q.id) && q.type !== 'lord') out[seat].deploys.push([s.round, q.type]);
     if (offer) {
@@ -32,7 +33,7 @@ export function work(j: Job): R[] {
 }
 async function main(): Promise<void> {
   const jobs: Job[] = []; let seed = 31000;
-  for (let k = 0; k < Number(arg('seeds', '4')); k++) for (const lords of lordPairs()) jobs.push({ seed: seed++, lords });
+  for (let k = 0; k < Number(arg('seeds', '4')); k++) for (const lords of lordPairs()) jobs.push({ seed: seed++, lords, strat: arg('strat', 'hard') });
   const rs = (await pool<Job, R[]>(new URL(import.meta.url), jobs)).flat();
   const cnt = (xs: [number, string][]) => { const m = new Map<string, number>(); for (const [, u] of xs) m.set(u, (m.get(u) ?? 0) + 1); return m; };
   const U = cnt(rs.flatMap((r) => r.unlocks)), D = cnt(rs.flatMap((r) => r.deploys));
@@ -42,7 +43,11 @@ async function main(): Promise<void> {
   const tot = [...D.values()].reduce((a, b) => a + b, 0);
   console.log(`${jobs.length} matches, ${tot} deploys`);
   console.log('cost | share of deploys | unlocks'); for (const [c, [d, u]] of [...byCost].sort((a, b) => a[0] - b[0])) console.log(c, (100 * d / tot).toFixed(1) + '%', u);
-  console.log('unit | deploys | unlocks'); for (const [u, n] of [...D].sort((a, b) => b[1] - a[1])) console.log(u, UNITS[u as keyof typeof UNITS].cost, n, U.get(u) ?? 0);
+  const facTot = new Map<string, number>();
+  for (const [u, n] of D) { const f = UNITS[u as keyof typeof UNITS].faction; facTot.set(f, (facTot.get(f) ?? 0) + n); }
+  console.log(`strategy ${arg('strat', 'hard')}`);
+  console.log('unit | cost | deploys | unlocks | share of the deploys of its faction');
+  for (const u of Object.keys(UNITS)) { const n = D.get(u) ?? 0; console.log(u, UNITS[u as keyof typeof UNITS].cost, n, U.get(u) ?? 0, (100 * n / Math.max(1, facTot.get(UNITS[u as keyof typeof UNITS].faction) ?? 0)).toFixed(1) + '%'); }
   // deploy share of cheap units by round
   for (let r = 1; r <= 10; r++) { const d = rs.flatMap((x) => x.deploys).filter((x) => x[0] === r); if (d.length) console.log('round', r, 'cheap(100) share', (100 * d.filter((x) => UNITS[x[1] as keyof typeof UNITS].cost <= 100).length / d.length).toFixed(0) + '%', 'n', d.length); }
   const L = rs.flatMap((r) => r.loot); const top = (o: string[]) => ['legendary', 'rare', 'magic'].find((t) => o.includes(t));

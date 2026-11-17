@@ -25,21 +25,24 @@ async function runAll(jobs: Job[], threads: number): Promise<MatchRecord[]> {
 }
 
 const BAL = new URL('../src/sim/data/balance.ts', import.meta.url);
-function readBalance(): { units: Record<string, number>; lords: Record<string, number>; factions: Record<string, number> } {
+type Bal = { units: Record<string, number>; lords: Record<string, number>; factions: Record<string, number>; normalReserve: Record<string, number>; classicReserve: Record<string, number> };
+function readBalance(): Bal {
   const src = readFileSync(BAL, 'utf8');
   const grab = (name: string): Record<string, number> => {
     const m = new RegExp(`export const ${name}[^=]*= \{([^}]*)\}`).exec(src)!;
     return Object.fromEntries([...m[1].matchAll(/(\w+): (\d+)/g)].map((x) => [x[1], Number(x[2])]));
   };
-  return { units: grab('UNIT_POWER'), lords: grab('LORD_POWER'), factions: grab('FACTION_POWER') };
+  return { units: grab('UNIT_POWER'), lords: grab('LORD_POWER'), factions: grab('FACTION_POWER'), normalReserve: grab('NORMAL_RESERVE'), classicReserve: grab('CLASSIC_RESERVE') };
 }
-function writeBalance(b: { units: Record<string, number>; lords: Record<string, number>; factions: Record<string, number> }): void {
+function writeBalance(b: Bal): void {
   const src = readFileSync(BAL, 'utf8');
   const fmt = (o: Record<string, number>): string => Object.entries(o).map(([k, v]) => `${k}: ${v}`).join(', ');
   writeFileSync(BAL, src
     .replace(/(export const UNIT_POWER[^=]*= \{)[^}]*(\})/, `$1 ${fmt(b.units)} $2`)
     .replace(/(export const LORD_POWER[^=]*= \{)[^}]*(\})/, `$1 ${fmt(b.lords)} $2`)
-    .replace(/(export const FACTION_POWER[^=]*= \{)[^}]*(\})/, `$1 ${fmt(b.factions)} $2`));
+    .replace(/(export const FACTION_POWER[^=]*= \{)[^}]*(\})/, `$1 ${fmt(b.factions)} $2`)
+    .replace(/(export const NORMAL_RESERVE[^=]*= \{)[^}]*(\})/, `$1 ${fmt(b.normalReserve)} $2`)
+    .replace(/(export const CLASSIC_RESERVE[^=]*= \{)[^}]*(\})/, `$1 ${fmt(b.classicReserve)} $2`));
 }
 
 /** One line per gate for a field (the --fields summary). */
@@ -135,7 +138,7 @@ async function main(): Promise<void> {
     if (what.includes('factions')) {
       // Faction multipliers (per mille; small steps: 1% of power is worth about 7 points) follow the faction's win rate against the other two; Lords are then tuned towards the
       // average of their own faction's Lords (a single-Lord faction leaves its Lord alone).
-      for (const [f, wr] of Object.entries(rep.factions ?? {})) if (b.factions[f] !== undefined) b.factions[f] = Math.max(900, Math.min(1100, Math.round(b.factions[f] * (1 + Math.max(-0.006, Math.min(0.006, 0.06 * (0.5 - wr)))))));
+      for (const [f, wr] of Object.entries(rep.factions ?? {})) if (b.factions[f] !== undefined) b.factions[f] = Math.max(900, Math.min(1100, Math.round(b.factions[f] * (1 + Math.max(-0.008, Math.min(0.008, 0.1 * (0.5 - wr)))))));
       if (what.includes('lords')) {
         const byF: Record<string, number[]> = {};
         for (const [l, wr] of Object.entries(rep.lords)) (byF[LORDS[l as LordId].faction] ??= []).push(wr);
@@ -143,10 +146,26 @@ async function main(): Promise<void> {
           const xs = byF[LORDS[l as LordId].faction];
           if (xs.length < 2 || b.lords[l] === undefined) continue;
           const mean = xs.reduce((a, x) => a + x, 0) / xs.length;
-          b.lords[l] = Math.max(40, Math.min(180, Math.round(b.lords[l] * (1 + step(wr - mean + 0.5, gain)))));
+          b.lords[l] = Math.max(40, Math.min(200, Math.round(b.lords[l] * (1 + step(wr - mean + 0.5, gain)))));
         }
       }
-    } else if (what.includes('lords')) for (const [l, wr] of Object.entries(rep.lords)) if (b.lords[l] !== undefined) b.lords[l] = Math.max(40, Math.min(180, Math.round(b.lords[l] * (1 + step(wr, gain)))));
+    } else if (what.includes('lords')) for (const [l, wr] of Object.entries(rep.lords)) if (b.lords[l] !== undefined) b.lords[l] = Math.max(40, Math.min(200, Math.round(b.lords[l] * (1 + step(wr, gain)))));
+    // --tune-what reserve: the bots' per-Lord reserve (per mille of gold; NORMAL_RESERVE for a 'normal' field, CLASSIC_RESERVE
+    // for 'classic'). A Lord that wins too much keeps more gold back: 6 per mille per point of win rate, at most 30 a step,
+    // and the table's mean stays where it was unless a Lord would need less than nothing.
+    if (what.includes('reserve')) {
+      fields.forEach((f, i) => {
+        const tab = f.name === 'normal' ? b.normalReserve : f.name === 'classic' ? b.classicReserve : null;
+        if (!tab) return;
+        const before = Object.values(tab).reduce((a, x) => a + x, 0) / Object.keys(tab).length;
+        for (const [l, wr] of Object.entries(reps[i].lords)) if (tab[l] !== undefined) tab[l] += Math.max(-30, Math.min(30, 600 * gain * 2 * (wr - 0.5)));
+        const after = Object.values(tab).reduce((a, x) => a + x, 0) / Object.keys(tab).length;
+        for (const l of Object.keys(tab)) tab[l] = Math.round(tab[l] + before - after);
+        // A Lord that is still too weak with no reserve at all: everyone else keeps more instead (the table shifts up).
+        const low = Math.min(...Object.values(tab));
+        for (const l of Object.keys(tab)) tab[l] = Math.max(0, Math.min(400, tab[l] - Math.min(0, low)));
+      });
+    }
     writeBalance(b);
     console.log('balance ->', JSON.stringify(b));
   }

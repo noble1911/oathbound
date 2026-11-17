@@ -9,14 +9,14 @@ export const LORD_LEVEL_DMG = 8;
 export const RALLY_PCT = 40;
 export const METEOR_BASE = 18;
 export const METEOR_PER_LEVEL = 3;
-export const ARCHMAGE_MAGIC_PCT = 70;
+export const ARCHMAGE_MAGIC_PCT = 55;
 /** Lich-Priest: squads deal this much more damage; Necromancy raises NECRO_BASE + level / NECRO_LEVELS_PER skeletons from corpses within NECRO_RANGE cm. */
 export const LICH_DMG_PCT = 12;
 export const NECRO_BASE = 3;
 export const NECRO_LEVELS_PER = 3;
 export const NECRO_RANGE = 2500;
 /** Sultana: squads attack this much faster; Radiance deals RADIANCE_BASE + RADIANCE_PER_LEVEL x level magic damage and heals allies as much, within RADIANCE_RANGE cm. */
-export const SULTANA_HASTE_PCT = 8;
+export const SULTANA_HASTE_PCT = 12;
 export const RADIANCE_BASE = 20;
 export const RADIANCE_PER_LEVEL = 4;
 export const RADIANCE_RANGE = 800;

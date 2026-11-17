@@ -9,7 +9,8 @@ export type RoomMode = 'pvp' | 'vsAI';
 /**
  * vsAI difficulty -> bot strategy (src/sim/bot.ts). Three distinct players, all limited to viewFor() information:
  *  - easy: under-spends (~65% of its gold), rarely levels up, random drafts/loot/equips, no counter-picking, naive row;
- *  - normal: counter-picks the enemy's last army, sensible spending (~15% reserve), basic equipping, fixed lanes;
+ *  - normal: reads the counter wheel as Hard does but misjudges more; keeps a reserve (per Lord, NORMAL_RESERVE), basic
+ *            equipping, places each new squad opposite what it beats and never re-forms;
  *  - hard (default): full spend, counter-placement of the whole army against the enemy's last formation,
  *    item-aware gearing, slot-aware level-ups and counter drafts.
  * A disconnected human's seat is played by 'hard'.

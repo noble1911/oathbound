@@ -170,11 +170,11 @@ At match start, each player picks a faction (§4b) and one of its four Lords. Ev
 | Lord | Signature units | Passive | Auto ability |
 |---|---|---|---|
 | **Marshal Aldric** (sword) | Militia, Cavaliers | +1 deploy point per round | Rally: +40% attack speed to squads within 20 m for 10 s |
-| **Archmage Sefa** (tome) | Mages, Clerics | Magic damage +70% | Meteor: a 10 m AoE at the densest enemy cluster (18 + 3 per Lord level) |
+| **Archmage Sefa** (tome) | Mages, Clerics | Magic damage +55% | Meteor: a 10 m AoE at the densest enemy cluster (18 + 3 per Lord level) |
 | **Warden Hrolf** (axe) | Berserkers, Knights | Keep +800 HP; squads +10% HP | Bulwark: allies within 12 m take −40% damage for 6 s |
 | **Skylady Ione** (lance) | Pegasus, Archers | Loot picks see 4 items instead of 3 | Skyfall: dive on the furthest enemy ranged squad |
 | **Lich-Priest Morthen** (tome; Ashen Covenant) | Skeleton Spearmen, Grave Acolytes | Squads deal +12% damage | Necromancy: raises 3 (+1 per 3 Lord levels) skeletons from the fallen within 25 m |
-| **Sultana Zahira** (sword; Sun Caliphate) | Spear Levy, Camel Archers | Squads attack 8% faster | Radiance: 20 (+4 per Lord level) magic damage to enemies within 8 m, and as much life restored to allies |
+| **Sultana Zahira** (sword; Sun Caliphate) | Spear Levy, Camel Archers | Squads attack 12% faster | Radiance: 20 (+4 per Lord level) magic damage to enemies within 8 m, and as much life restored to allies |
 
 The other six Lords of the Ashen Covenant and the Sun Caliphate. The exact numbers live in `src/sim/data/lords.ts` (the
 constants above each Lord) and are what the tournament tuned; the text the game shows is built from them.
@@ -447,9 +447,12 @@ The same infrastructure as v1 (cue-club pattern):
 - A **vs AI** option with three levels, all limited to what a player may see (`viewFor`):
   - **Easy** under-spends (about 65% of its gold), rarely levels up, drafts, loots and equips at random, doesn't
     counter-pick, and lines its army up in one naive row.
-  - **Normal** counter-picks the enemy's last army, keeps a frontline, spends sensibly (about a 12% reserve), equips
-    each item on its most valuable squad and uses fixed role lanes. It knows each faction's roster (which units pay
-    off without flanking) and keeps an answer to fliers, a single Dragon included.
+  - **Normal** reads the counter wheel exactly as Hard does (one unit score for every level) but misjudges more. It
+    buys and unlocks counters to the enemy's last army, keeps a frontline and an answer to fliers, keeps part of its
+    gold in reserve (per Lord, `NORMAL_RESERVE` in `src/sim/data/balance.ts`: the lever that keeps Normal against
+    Normal even), equips each item on the most valuable squad it works on, and sets each new squad down in its role
+    lane opposite what it beats. It never re-forms squads already placed, except archers under enemy fliers.
+  - Every level **saves up** for a dear unit it wants (a Dragon costs more than a round's income).
   - **Hard** spends everything, re-forms its whole army each round against the enemy's last formation (counters
     opposite what they counter, raiders on the flank holding the enemy backline), gears squads by affix fit, and
     makes slot-aware level-ups and counter drafts.

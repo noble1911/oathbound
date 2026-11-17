@@ -6,8 +6,8 @@
 //  - 'easy':   spends only ~65% of its gold, rarely levels up, drafts / loots / equips at random, ignores the enemy
 //              army when buying, and lines everything up in one naive row.
 //  - 'normal': the counter-picker. Reads the counter wheel exactly as Hard does (one unitScore for every level) but
-//              misjudges more: buys and unlocks counters to the enemy's last army, keeps a frontline, keeps a ~12%
-//              reserve (half that for the Marshal), levels a squad instead of a weak buy, equips each item on the most
+//              misjudges more: buys and unlocks counters to the enemy's last army, keeps a frontline, keeps part of
+//              its gold in reserve (per Lord, NORMAL_RESERVE), levels a squad instead of a weak buy, equips each item on the most
 //              valuable squad it works on, and sets each new squad down in its role lane opposite what it beats (slow
 //              melee a little further forward, fast melee further back). It never re-forms squads already placed,
 //              except its archers, which move under the enemy's fliers.
@@ -19,6 +19,7 @@
 // Every level saves up for a dear unit it wants (saveFor): income is 225-500 a round, so a Dragon is never bought
 // by a bot that spends everything each round.
 import { mirrorPos } from './constants.ts';
+import { CLASSIC_RESERVE, NORMAL_RESERVE } from './data/balance.ts';
 import { LORDS, LORD_IDS } from './data/lords.ts';
 import { AFFIXES, LEGENDARY_POWER, SLOT_UNLOCK_LEVEL } from './data/items.ts';
 import { SKILLS, UNIT_CLASS, canEquip } from './data/skills.ts';
@@ -40,12 +41,14 @@ const KT = (t: SquadType): KingdomUnit | 'lord' => (t === 'lord' ? 'lord' : UNIT
 export const BOT_STRATEGIES: readonly BotStrategy[] = ['rush', 'ranged', 'armor', 'air', 'counter', 'random', 'best', 'easy', 'normal', 'hard'];
 
 type Flavour = 'rush' | 'ranged' | 'armor' | 'air';
-/** Preference weights per strategy (unlisted units get weight 1; 'random' is flat). */
+/** A flavoured strategy's weight for a unit its taste does not list. */
+const FLAVOUR_REST = 0.7;
+/** Preference weights per strategy (unlisted units get FLAVOUR_REST; 'random' is flat). */
 const PREF: Record<Flavour, Partial<Record<UnitType, number>>> = {
-  rush: { militia: 4, berserkers: 4, cavaliers: 4, pikemen: 2, knights: 2, wyvern: 2, golem: 1, archers: 2 },
+  rush: { militia: 2.5, berserkers: 2.5, cavaliers: 2.5, pikemen: 1.5, knights: 1.5, wyvern: 1.5, golem: 1, archers: 1.5 },
   ranged: { archers: 4, mages: 4, ballista: 3, trebuchet: 3, clerics: 2, pikemen: 2, knights: 2, militia: 2 },
   armor: { knights: 4, golem: 4, pikemen: 3, clerics: 3, mages: 2, militia: 2, berserkers: 1 },
-  air: { pegasus: 4, wyvern: 4, dragon: 5, archers: 2, clerics: 1, militia: 2, knights: 1 },
+  air: { pegasus: 2.2, wyvern: 2.2, dragon: 2.6, archers: 1.5, clerics: 1, militia: 1.5, knights: 1 },
 };
 
 /**
@@ -176,9 +179,11 @@ function unitScore(s: MatchState, seat: Seat, strat: BotStrategy, u: UnitType, m
     }
     w = Math.max(0.15, 1.2 + (2.2 * num) / Math.max(1, den));
   }
-  // The tournament strategies' taste: flavoured ones still counter-pick a little ("random-but-sensible").
+  // The tournament strategies' taste. A flavoured strategy reads the wheel in full and multiplies it by its taste (it
+  // used to take the square root of the counter value, so 'air' kept buying fliers into a wall of bows and the units it
+  // loves read 30-40% in the field for the strategy's sake, not their own).
   if (strat === 'random') w = (1 + 2 * rnd01(s.seed, s.round, seat, u, salt, 'r')) * fsqrt(w);
-  else if (level === 'classic' && strat !== 'counter') w = (PREF[strat as Flavour][K(u)] ?? 0.5) * fsqrt(w);
+  else if (level === 'classic' && strat !== 'counter') w = (PREF[strat as Flavour][K(u)] ?? FLAVOUR_REST) * w;
   // Sensible play for every strategy: enemy fliers must be answered by something that can hit them at all. (The wheel
   // already says Ranged beats Air; this only keeps the army from being helpless against fliers.)
   if (threats.length) {
@@ -309,6 +314,8 @@ const fits = (p: PlayerState, u: UnitType): boolean => p.deploysUsed + deployWei
  * this round's change, and it wants it SAVE_MARGIN times more than the best unit it can afford, it keeps that change.
  */
 const SAVE_MARGIN = 1.2;
+/** The classic planner pays for a unit dearer than this out of its reserve (see planClassic). */
+const DEAR_COST = 400;
 function saveFor(s: MatchState, p: PlayerState, avail: number, score: (u: UnitType) => number): number {
   if (units(p.squads).length >= ARMY_CAP - 1) return 0;
   let dear: UnitType | null = null, dw = -1, bw = -1;
@@ -373,7 +380,7 @@ function planEasy(s: MatchState, seat: Seat, salt: number): void {
 /** Normal's version of HARD_LEVEL_BIAS (see planClassic). */
 const NORMAL_LEVEL_BIAS = 0.4;
 
-function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number, reserveFrac: number): void {
+function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number): void {
   const v = viewFor(s, seat);
   const p = s.players[seat];
   const threats = threatsOf(seat, v.enemy.lastArmy, v.enemy.lord);
@@ -395,10 +402,16 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
     });
     applyIntent(s, seat, { t: 'pickLoot', index: bi });
   }
-  // The Marshal's passive is an extra deployment a round; a full reserve left him a squad short (45% at Normal).
-  const reserve = Math.floor(p.gold * (p.lord === 'marshal' ? reserveFrac / 2 : reserveFrac));
-  // Saving up for a dear unit (saveFor) is held back like the reserve.
-  const hold = reserve + saveFor(s, p, p.gold - reserve, (u) => score(u, salt));
+  // The reserve: the share of its gold this planner keeps back, per Lord (data/balance.ts; it is the lever
+  // that evens the Lords out at these levels).
+  const reserve = p.lord ? Math.floor((p.gold * (strat === 'normal' ? NORMAL_RESERVE : CLASSIC_RESERVE)[p.lord]) / 1000) : 0;
+  // A unit that costs more than any round's income before the cap (the 500-gold Dragon) can only ever be bought out of
+  // gold kept back: the reserve is there for it (`dear`). (Without this the reserve share of a growing purse kept the
+  // Dragon out of reach for ever: Normal unlocked it 217 times and fielded it 7 times. Letting the 400-gold giants
+  // through too, or saving up more eagerly, moved Normal's Lords by up to 12 points.)
+  const dear = (u: UnitType): boolean => UNITS[u].cost > DEAR_COST;
+  const save = saveFor(s, p, p.gold - reserve, (u) => score(u, salt));
+  const hold = reserve + save;
   // 3. Spend: deploy up to the limit, then level up. Normal also weighs a level-up against each deployment, like
   //    Hard but by its own unit scores: a squad that counters the enemy well is worth levelling over a weak buy.
   const levelBias = strat === 'normal' ? NORMAL_LEVEL_BIAS : 0;
@@ -406,7 +419,7 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
     let best: UnitType | null = null, bw = -1;
     for (const u of p.unlocked) {
       // The reserve holds for deployments as for level-ups (it used to spare a Lord with more deployments, the Marshal).
-      if (UNITS[u].cost > p.gold - hold || !fits(p, u)) continue;
+      if (UNITS[u].cost > p.gold - (dear(u) ? save : hold) || !fits(p, u)) continue;
       const w = score(u, salt);
       if (w > bw) { bw = w; best = u; }
     }
@@ -840,7 +853,7 @@ export function botPlan(s: MatchState, seat: Seat, strategy: BotStrategy, salt =
   if (level === 'hard') {
     return planHard(s, seat, salt);
   }
-  return planClassic(s, seat, strategy, salt, level === 'normal' ? 0.12 : 0);
+  return planClassic(s, seat, strategy, salt);
 }
 
 export type { Slot };

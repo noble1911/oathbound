@@ -1,10 +1,312 @@
 # Oathbound v2: balance report
 
-The gated numbers come from `node tools/tournament.ts --strats hard --seeds 100` and `--strats normal` (12 Lords, 13 200 matches each; see the current report). The mixed field is `node tools/tournament.ts --seeds 3 --best` (bot strategies × Lords). Every entry plays every other entry from both seats. The report also prints the match-length histogram and the margin-of-victory distribution.
+The gated numbers come from `node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 300000`: Hard
+against Hard and Normal against Normal (12 Lords, 7920 matches each) and the classic tournament of the six bot
+strategies (10 224 matches). Every entry plays every other entry from both seats. `--full` prints the whole report per
+field: the match-length histogram, the margin of victory, and the per-unit and per-legendary tables.
 
-To re-tune, run `node tools/tournament.ts --seeds 1 --tune N`. It rewrites the multipliers in `src/sim/data/balance.ts`.
+To re-tune:
+- the game's numbers, on Hard: `node tools/tournament.ts --fields hard:24 --tune N --tune-what units,lords,factions`;
+- the weaker planners' per-Lord reserve: `--fields normal:40 --tune N --tune-what reserve` and `--fields classic:2 ...`.
 
-## Current report: twelve Lords (2026-11-15)
+Both rewrite `src/sim/data/balance.ts`. Run one tuner at a time.
+
+## Current report: counter wheel and item rework (2026-11-17)
+
+The balance pass after the counter wheel, weighted deploys, swarm levelling and the item rework (commit `c832694`,
+`docs/reviews/GAMEPLAY-2026-11-16.md`). Three fields are gated, all on seeds tuning never saw (`--seed0 300000`):
+
+```
+node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 300000
+```
+
+`--fields` runs several fields in one go: `hard` and `normal` are one level against itself (12 Lords, 7920 matches
+each), and `classic` is the mixed field of the six tournament strategies (`npm run tournament`, 72 entries, 10 224
+matches).
+
+### Gates
+
+| Gate | Hard vs Hard | Normal vs Normal | Classic tournament | Target |
+|---|---|---|---|---|
+| Matches | 7920 | 7920 | 10224 | |
+| Seat-0 win rate | **49.1%** | **49.6%** | **50.3%** | < 52% |
+| Kingdom vs the other two | **50.9%** | **50.3%** | **51.0%** | 46–54% |
+| Ashen vs the other two | **51.0%** | **49.7%** | **50.9%** | 46–54% |
+| Caliphate vs the other two | **48.1%** | **49.9%** | **48.0%** | 46–54% |
+| Lords, lowest to highest | 45.6 (vizier) to 53.5 (archmage) | 47.3 (archmage) to 54.0 (vizier) | 46.8 (vizier) to 52.5 (deathknight) | 45–55% |
+| Units (n >= 100) | 43.2 (ballista) to 57.2 (wraith_rider) | 39.5 (pikemen) to 61.7 (djinn_binder) | 40.1 (wraith_rider) to 60.1 (war_elephant) | 40–60% |
+| Legendaries (wearer win rate) | 44.2 (gravebloom) to 58.6 (lifebinder) | 43.8 (gravebloom) to 57.3 (sunfire) | 44.5 (gravebloom) to 55.6 (sunfire) | 40–60% |
+| Average match length | **8.70** rounds | **8.68** rounds | **8.75** rounds | 8-11 |
+| 95th percentile / longest | 10 / 12 | 11 / 16 | 11 / 17 | 95% done by round 12 |
+| Past round 12 | 0.0% | 0.8% | 1.5% | rare |
+| Blowouts (winner above 75% keep) | 28.8% | 46.2% | 50.1% | reported |
+| Lord share of army damage | 15.5% | 17.8% | 17.7% | <= 25% |
+
+Before this pass (commit `c832694`):
+- Hard vs Hard was already inside the gates: Lords 44.5-55.5%, Kingdom 48.1, Ashen 51.2, Caliphate 50.6, 8.75 rounds.
+- Normal vs Normal: Kingdom 34.8%, Ashen 60.5%, Caliphate 54.7%; Lords from 28.4% (Grand Vizier) to 77.3% (Death
+  Knight, Roc Rider).
+- Classic tournament: Kingdom 39.7%, Caliphate 62.8%; Sultana 77%, Roc Rider 64%, Ossuary Warden 61%, Marshal about 30%.
+
+### What was wrong with Normal
+
+The classic planner (Normal and the six tournament strategies) did not read the wheel the way Hard does. Four things,
+found by swapping Hard's parts into Normal one at a time (`--strats normal`, 792 matches each):
+
+| Normal with... | Kingdom | Ashen | Caliphate | Lord spread |
+|---|---|---|---|---|
+| nothing changed | 35.7 | 59.1 | 55.2 | 24-77 |
+| Hard's unit score | 43.5 | 53.1 | 53.4 | 35-64 |
+| Hard's re-forming | 35.4 | 64.6 | 50.0 | 23-80 |
+| Hard's gearing | 36.7 | 59.1 | 54.2 | - |
+| no reserve | 38.0 | 50.3 | 61.7 | 25-79 |
+
+1. **Its own counter formula.** `unitScore` weighed a unit against the whole enemy army. Hard's score discounts every
+   threat its own army already answers. Without that discount Normal bought the same counter class again and again
+   and walked into the class that beats it. The Kingdom has the widest roster and the most ways to do this.
+2. **Stale equalisers.** `CLASSIC_PREF`, the classic column of `LORD_PLAY`, `ARCHMAGE_CASTERS` and the Roc Rider's
+   archer weight of 2.0 were tuned before the wheel to even the Lords out at Normal. Under the wheel they made Normal
+   play Lords against their own passive (the Archmage wanted casters *less*, 0.9) while the game's numbers were
+   re-tuned on Hard alone.
+3. **Class-locked legendaries wasted.** Normal picked loot by fit but equipped by squad value, so a "Best on" legendary
+   landed on a squad of the wrong class, where its power does nothing.
+4. **Placement ignored the wheel.** A new squad went to the next lane in deploy order, whatever stood opposite.
+
+### What changed
+
+**Bots (`src/sim/bot.ts`).**
+- **One unit score for every level** (`unitScore`). Hard, Normal and the tournament strategies now share the wheel
+  reading: counter value against the part of the enemy's last army that the own army does not already answer, less
+  what that army does to the unit. The levels differ in skill, not in rules: score noise (Hard 10%, tournament
+  strategies 20%, Normal 30%), Hard's lean to the dearer unit, the reserve, re-forming and gearing.
+  `CLASSIC_PREF`, `ARCHMAGE_CASTERS` and the classic column of `LORD_PLAY` are gone.
+- **Normal places by the wheel** (`wheelLane`): a new squad goes to its role's row, opposite the enemy squads its
+  class beats. It still never re-forms squads already placed (that is Hard's skill), except archers under fliers.
+- **Normal gears by fit** (`bestSquadFor`): a class-locked legendary is worth 35% on a squad it does not work on.
+- **Saving up** (`saveFor`, every level). Income is 225-500 a round, so a bot that spends everything every round can
+  never afford a 500-gold Dragon: Hard unlocked it 158 times and fielded it 0 times. A bot now holds back this round's
+  change when the unit it wants most is out of reach now, in reach next round, and scores 1.2 times the best unit it
+  can afford. Hard with saving beats Hard without it 60:40. The classic planner also pays for the Dragon out of its
+  reserve.
+- **Healers are scored for what they do** (`HEALER_WORTH`). A healer counters nothing, so the counter score never
+  wanted one (Clerics: 13 deploys in 264 matches). A first healer is now worth 1.3 plus 1.6 times the share of the army
+  that fights hand to hand.
+- **Inside a class** (`wheelCv`): a braced unit is worth 0.7 more against a charge, a raider 0.7 more against a
+  backline unit. This is what tells Pikemen from Knights and Pegasus Knights from Wyverns: Pikemen went from 58
+  deploys to 138, Pegasus Knights from 34 to 231 (528 Hard matches).
+- **A flier the enemy cannot reach** is worth 0.5 more (`AIR_FREE_CV`).
+- **Flavoured strategies read the wheel in full.** `rush`, `ranged`, `armor` and `air` used to take the square root of
+  the counter value, so `air` bought fliers into a wall of bows and the units it loves read 30-40% in the field for
+  the strategy's sake. They now multiply the full counter value by a milder taste (4 → 2.2-2.5, the rest 0.7).
+- **The reserve per Lord** (`NORMAL_RESERVE`, `CLASSIC_RESERVE` in `src/sim/data/balance.ts`, per mille of gold).
+  The game's numbers are balanced on Hard against Hard. A weaker planner still gets more out of some Lords than
+  others, and the share of gold it keeps back is the one lever that moves a Lord's rate predictably at that level
+  (about one point per 1% of reserve; Hard with a 12% reserve wins 39% against Hard, with 25% it wins 27%). It
+  replaces the unit-preference tables that did this job before. `--tune-what reserve` tunes it.
+
+  | Lord | Normal | Tournament strategies |
+  |---|---|---|
+  | marshal | 28.3% | 6.1% |
+  | archmage | 30.7% | 27.8% |
+  | warden | 23.6% | 8.2% |
+  | skylady | 11.9% | 3.0% |
+  | lich | 26.1% | 29.6% |
+  | deathknight | 32.6% | 32.8% |
+  | ossuary | 15.4% | 22.9% |
+  | drakerider | 31.2% | 25.8% |
+  | sultana | 32.5% | 38.6% |
+  | vizier | 0.0% | 0.5% |
+  | rajah | 27.3% | 32.7% |
+  | rocrider | 30.3% | 11.9% |
+
+  The Grand Vizier is the floor of both tables: Normal plays him about 20 points worse than Hard does at equal
+  reserve, so the others keep more instead and the tables' means are high (Normal 24%). That makes Normal a
+  little weaker overall than before, but the ladder holds.
+
+**Numbers.**
+- `FACTION_POWER`: Kingdom 964 → 914, Ashen 1045 → 1008, Caliphate 1006 → 1097.
+- `LORD_POWER`: marshal 171 → 135, archmage 40 → 61, warden 125 → 126, skylady 65 → 54, lich 94 → 83, deathknight 161 → 146, ossuary 78 → 77, drakerider 85 → 105, sultana 172 → 158, vizier 42 → 60, rajah 91 → 113, rocrider 123 → 77.
+- `UNIT_POWER` was re-tuned to the mean of the three fields (`--fields hard:24,normal:24,classic:1 --tune N
+  --tune-what units`); its range is now 60-170. The multipliers are in `src/sim/data/balance.ts`.
+- **Clerics** heal 34 → 46. With 34, Hard with Clerics won exactly 50% against Hard without them: fielding a healer
+  was worth nothing. With 46 it is worth about 4 points (Hard without healers wins 46%, Kingdom Lords, 512 matches).
+  Sun Priests were already worth it (Hard without them wins 39% among Caliphate Lords) and are unchanged.
+- **Archmage**: magic damage +70% → **+55%**. Her body was at the floor of `LORD_POWER` (40) and she still read 58%
+  at Hard. **Sultana**: squads attack 8% → **12%** faster. Her body was at the ceiling (180) and she read 37%.
+- The Dragon is worth its price once bots can buy it: Hard without the Dragon wins 46% among Kingdom Lords.
+- No rule changed. The Ossuary Warden stays a **Giant** (his body is the largest Lord model, DESIGN §3): Swarm beats
+  him, he beats Line, and with `LORD_POWER` 77 he reads 50.3% at Hard, 49.3% at Normal and 49.7% in the tournament.
+
+### Lords, units and legendaries
+
+| Lord | Hard | Normal | Classic |
+|---|---|---|---|
+| Marshal Aldric | 49.0 | 53.0 | 51.1 |
+| Archmage Sefa | 53.5 | 47.3 | 51.6 |
+| Warden Hrolf | 51.1 | 49.9 | 50.3 |
+| Skylady Ione | 49.0 | 50.7 | 50.1 |
+| Lich-Priest Morthen | 51.8 | 50.6 | 50.4 |
+| Death Knight Vaelric | 52.7 | 51.4 | 52.5 |
+| Ossuary Warden Gorrath | 50.3 | 49.3 | 49.7 |
+| Drake Rider Nyssara | 48.0 | 47.9 | 50.1 |
+| Sultana Zahira | 50.5 | 48.2 | 50.1 |
+| Grand Vizier Kasim | 45.6 | 54.0 | 46.8 |
+| Rajah Bahadur | 49.3 | 50.0 | 49.3 |
+| Roc Rider Amira | 49.1 | 47.7 | 48.2 |
+
+| Unit | Hard | Normal | Classic |
+|---|---|---|---|
+| militia | 47.6 | 45.9 | 53.7 |
+| knights | 45.7 | 52.2 | 54.8 |
+| cavaliers | 47.8 | 46.8 | 52.5 |
+| mages | 49.5 | 54.0 | 53.1 |
+| golem | 51.0 | 52.9 | 54.5 |
+| trebuchet | 45.1 | 46.6 | 54.3 |
+| clerics | 46.5 | 45.7 | 49.7 |
+| ballista | 43.2 | 45.1 | 49.9 |
+| pegasus | 48.1 | 47.2 | 45.2 |
+| archers | 47.1 | 48.2 | 51.5 |
+| wyvern | 51.8 | 47.7 | 40.2 |
+| dragon | 55.3 | 56.8 | 53.2 |
+| berserkers | 45.8 | 54.2 | 55.1 |
+| skeleton | 48.3 | 41.9 | 48.8 |
+| grave_acolyte | 45.3 | 48.4 | 54.9 |
+| bone_golem | 51.4 | 51.6 | 49.7 |
+| bone_drake | 52.6 | 47.9 | 45.9 |
+| bone_archer | 47.6 | 47.8 | 52.5 |
+| wraith_rider | 57.2 | 56.9 | 40.1 |
+| spear_levy | 52.3 | 47.3 | 41.4 |
+| camel_archer | 52.8 | 46.7 | 47.4 |
+| mamluk | 48.9 | 57.7 | 53.2 |
+| djinn_binder | 51.8 | **61.7** ⚠ | 50.0 |
+| corpse_catapult | 49.7 | 47.7 | 57.6 |
+| grave_knight | 49.6 | 45.4 | 52.3 |
+| djinn | 55.6 | 54.2 | 42.0 |
+| sand_golem | 53.8 | 54.5 | 50.4 |
+| sun_priest | 48.4 | 50.9 | 50.0 |
+| war_elephant | 46.0 | 56.0 | **60.1** ⚠ |
+| scimitar | 55.4 | 55.7 | 46.2 |
+| pikemen | 50.5 | **39.5** ⚠ | 49.0 |
+
+| Legendary | Hard | Normal | Classic |
+|---|---|---|---|
+| bloodthirst | 51.5 | 49.8 | 49.5 |
+| earthshaker | 45.8 | 49.7 | 50.1 |
+| ember_crown | 50.5 | 48.4 | 51.4 |
+| frostheart | 52.6 | 51.5 | 51.3 |
+| gravebloom | 44.2 | 43.8 | 44.5 |
+| hydra_volley | 50.8 | 52.1 | 53.2 |
+| kingsbane | 48.7 | 48.0 | 48.5 |
+| lifebinder | 58.6 | 55.4 | 54.0 |
+| mirror_aegis | 48.0 | 48.9 | 46.4 |
+| stormcaller | 48.6 | 48.7 | 51.1 |
+| sunfire | 51.4 | 57.3 | 55.6 |
+| undying_oath | 53.4 | 50.3 | 50.6 |
+| warhorn | 47.8 | 50.9 | 50.1 |
+| windrunner | 46.8 | 44.5 | 44.9 |
+
+Match lengths:
+- Hard: 6r 1.6%, 7r 10.2%, 8r 30.2%, 9r 36.4%, 10r 18.2%, 11r 3.1%, 12r 0.2%.
+- Normal: 6r 4.0%, 7r 16.3%, 8r 25.9%, 9r 28.1%, 10r 16.9%, 11r 6.6%, 12r 1.5%, 13r 0.5%, 14r 0.2%, 15r 0.1%, 16r 0.0%.
+- Classic: 6r 4.0%, 7r 17.5%, 8r 25.2%, 9r 25.0%, 10r 15.9%, 11r 8.0%, 12r 3.0%, 13r 1.2%, 14r 0.2%, 15r 0.0%, 16r 0.0%, 17r 0.0%.
+
+Faction pairings (row beats column):
+- Hard: Kingdom v Ashen 49.6%, Kingdom v Caliphate 52.2%, Ashen v Caliphate 51.5%.
+- Normal: Kingdom v Ashen 54.3%, Kingdom v Caliphate 46.4%, Ashen v Caliphate 53.7%.
+- Classic: Kingdom v Ashen 51.2%, Kingdom v Caliphate 50.9%, Ashen v Caliphate 53.0%.
+
+Classic strategies: ranged 68.8%, counter 59.5%, armor 49.2%, rush 45.2%, random 44.9%, air 32.4%.
+
+### Ladder
+
+`node tools/tournament.ts --strats easy,normal,hard --seeds 4 --seed0 600000` (5040 matches):
+
+| | Twelve-Lord report | Now | Target |
+|---|---|---|---|
+| Hard beats Normal | 83% | **85%** | > 65% |
+| Normal beats Easy | 95% | **92%** | > 75% |
+| Hard beats Easy | 98% | 98% | |
+
+### Every unit gets used
+
+`node tools/review/picks.ts --seeds 4` (528 matches; `--strat normal` for Normal). Share of each unit among the
+deploys of its own faction:
+
+| Unit | Hard: deploys (share) | Normal: deploys (share) | `counter` strategy: deploys (share) | Hard before (264 matches) |
+|---|---|---|---|---|
+| militia | 1082 (27.4%) | 1115 (25.0%) | 1187 (23.1%) | 415 |
+| pikemen | 138 (3.5%) | 352 (7.9%) | 450 (8.7%) | 58 |
+| berserkers | 47 (1.2%) | 202 (4.5%) | 236 (4.6%) | 137 |
+| archers | 524 (13.3%) | 655 (14.7%) | 863 (16.8%) | 323 |
+| knights | 235 (6.0%) | 196 (4.4%) | 192 (3.7%) | 234 |
+| cavaliers | 353 (8.9%) | 301 (6.8%) | 329 (6.4%) | 149 |
+| mages | 309 (7.8%) | 287 (6.4%) | 384 (7.5%) | 181 |
+| clerics | 227 (5.8%) | 297 (6.7%) | 315 (6.1%) | 13 |
+| pegasus | 231 (5.9%) | 308 (6.9%) | 374 (7.3%) | 34 |
+| ballista | 66 (1.7%) | 199 (4.5%) | 231 (4.5%) | 92 |
+| trebuchet | 179 (4.5%) | 96 (2.2%) | 109 (2.1%) | 103 |
+| golem | 335 (8.5%) | 287 (6.4%) | 340 (6.6%) | 145 |
+| wyvern | 96 (2.4%) | 45 (1.0%) | 56 (1.1%) | 70 |
+| dragon | 123 (3.1%) | 113 (2.5%) | 80 (1.6%) | 0 |
+| skeleton | 1183 (31.1%) | 1177 (28.6%) | 1326 (26.4%) | 490 |
+| grave_knight | 374 (9.8%) | 495 (12.0%) | 600 (11.9%) | 327 |
+| bone_archer | 685 (18.0%) | 876 (21.3%) | 1208 (24.0%) | 387 |
+| wraith_rider | 296 (7.8%) | 306 (7.4%) | 363 (7.2%) | 123 |
+| grave_acolyte | 328 (8.6%) | 348 (8.4%) | 473 (9.4%) | 159 |
+| bone_drake | 371 (9.7%) | 329 (8.0%) | 365 (7.3%) | 87 |
+| corpse_catapult | 279 (7.3%) | 289 (7.0%) | 324 (6.4%) | 182 |
+| bone_golem | 290 (7.6%) | 301 (7.3%) | 365 (7.3%) | 146 |
+| spear_levy | 812 (23.4%) | 748 (21.2%) | 992 (22.3%) | 273 |
+| scimitar | 369 (10.6%) | 450 (12.7%) | 598 (13.4%) | 219 |
+| camel_archer | 289 (8.3%) | 302 (8.6%) | 430 (9.7%) | 131 |
+| mamluk | 417 (12.0%) | 445 (12.6%) | 525 (11.8%) | 179 |
+| djinn_binder | 327 (9.4%) | 375 (10.6%) | 466 (10.5%) | 200 |
+| sun_priest | 324 (9.3%) | 337 (9.5%) | 406 (9.1%) | 37 |
+| djinn | 438 (12.6%) | 414 (11.7%) | 441 (9.9%) | 182 |
+| war_elephant | 194 (5.6%) | 97 (2.7%) | 197 (4.4%) | 142 |
+| sand_golem | 297 (8.6%) | 362 (10.3%) | 392 (8.8%) | 204 |
+
+The least used unit is berserkers at Hard (1.2%), wyvern at Normal (1.0%) and wyvern for the `counter` strategy (1.1%).
+
+### Economy and placement checks
+
+- **Loot** (Hard, `picks.ts`): pick share by slot: weapon 32.9%, armor 36.1%, relic 31.0%. Take rate per legendary when offered: ember_crown (15.4%) to earthshaker (52.8%); none is taken more than 60% of the time. Normal: pick share by slot: weapon 25.0%, armor 53.9%, relic 21.1%.
+- **Tall vs wide** (`matches.ts --variants wide,tall --seeds 4`, a variant against shipped Hard): wide | 46.5 ± 3.0 | 53.4 | 8.80 | 3.4; tall | 0.8 ± 0.5 | 10.1 | 6.50 | -93.1 (columns: match win %, round win %, average rounds, keep margin).
+- **Economy** (`econ.ts`): Totals: deploys 69.7% of spend, level-ups 30.3%; mean unspent after planning 30 gold.
+- **Chaos** (`chaos.ts --seeds 2`): how often the round result flips when a whole army is shifted by 1 cm / 10 cm / 1 m / 3 m, or one squad by 1 m (columns: share of battles, then the five flip rates). All battles: `all battles               | 100.0% | 10.9% | 12.4% | 15.7% | 19.7% | 8.5%`.
+
+### Tried and rejected
+
+| Change | Result |
+|---|---|
+| Tuning one set of numbers to the mean of Hard and Normal | The levels disagree by 8 points per faction and up to 17 per Lord (Vizier 45 at Hard, 28 at Normal); no shared number fits both |
+| Normal's Lords evened out by score noise instead of reserve | Hard with Normal's noise still wins 48%: too weak a lever |
+| The classic planner saves as eagerly as it buys (margin 1.0), or pays for 400-gold giants out of its reserve | Normal's Lords move by up to 12 points and swing 10 points between seed sets |
+| Hard without its cost lean, its re-forming, its gearing or its giant unlock bonus | None of them explains why Hard plays the Caliphate worse than Normal does (Caliphate 39-44% in each) |
+| No Lord affinity for Normal's Vizier | +5 points for him; not kept, one more per-level table for one Lord |
+
+### Open
+
+- **Three unit rates sit on the edge of 40–60%.** Normal: Pikemen 39.5% and Djinn-Binders 61.7%. Tournament: War
+  Elephant 60.1%. All three are inside the band at Hard (Pikemen 51, Djinn-Binders 52, War Elephant 46), so they are
+  how those planners use the unit, not the unit: more Pikemen power (117 to 136) moved Normal's rate by one point.
+- **The reserve tables are high.** Normal keeps nothing (Grand Vizier) to about a third of its gold, 24% on average,
+  because the Vizier is so much weaker in Normal's hands than in Hard's. A reserve is a delay, not a loss (unspent gold
+  carries over), and the ladder holds, but a Normal that understood the Vizier would let the whole table come down.
+  The tournament strategies' table is as wide; those bots are a yardstick, nobody plays against them.
+- **The Caliphate has no Siege unit**, so nothing in its roster beats Magic on the wheel (noted in the gameplay
+  review; no unit was added). It is covered by numbers: its `FACTION_POWER` is the highest (1097 against the Kingdom's
+  914), and it reads 48-50% at all three levels. Against casters it leans on Mamluks and Djinn reaching the backline.
+- **Tall still loses to wide** (0.8% for one deployment a round against shipped Hard): the deploy points are the
+  binding limit, as before this pass.
+- **Seed and chaos sensitivity.** The Lord matrix is rock-paper-scissors (single pairings read 5-95%), so a Lord's
+  rate moves in steps of a matchup: the same configuration reads up to 4 points apart on two seed sets, and a small
+  change to any planner moves several Lords at once. Re-check at 60 seeds before trusting a change.
+- **Legendaries**: Gravebloom (44) and Windrunner (44-47) are the weakest and Lifebinder (58.6 at Hard) the strongest;
+  all are inside 40–60% at every level.
+- **Flavoured strategies** still spread widely in the tournament (see the strategy line above); they are not gated.
+
+## Previous report: twelve Lords (2026-11-15)
 
 Six Lords joined, so each faction now has four, one in each role (DESIGN §4). Each new Lord mirrors the Kingdom Lord
 of the same role, so the numbers stay comparable. Its passive and its ability each have one distinct mechanic.
