@@ -24,7 +24,7 @@ import { classIcon, crest, deployChip, squadTooltip, statBlock, countersBlock, s
 import { squadSheet } from '../sim/sheet.ts';
 import { squadSize } from '../sim/battle.ts';
 import { squadSkills } from '../sim/data/skills.ts';
-import { defaultFacing, deployRefusal, dps, levelGainText, rarityRank, SHOP_KEYS, SLOT_LABEL, SLOTS, slotOpen, soldierStats, unitName, allItems } from './gamedata.ts';
+import { defaultFacing, deployRefusal, effectiveStats, levelGainText, rarityRank, SHOP_KEYS, SLOT_LABEL, SLOTS, slotOpen, soldierStats, unitName, allItems } from './gamedata.ts';
 import { niceError, TopBar } from './hud.ts';
 import { DraftModal, LootModal } from './loot.ts';
 import { frontLine, groupPlace, itemsKey, marchFoes, marchOf, mirrorPlace, planMoves, snapPos, syncBySpeed, type March, type MarchFoe, type Placed } from './timing.ts';
@@ -145,7 +145,7 @@ export class PlanningScreen {
         <button class="btn pt pt-timing" aria-pressed="false" data-tip="March routes: every squad's path, with the seconds to the river and to where the enemy's front stood last round [T]. The seconds under each plate are always on.">${icon('route')}<small>Routes</small></button>
         <button class="btn pt pt-snap" aria-pressed="false">${icon('grid')}<small>Snap</small></button>
       </div>
-      <aside class="stash panel"><header>${icon('bag')}<b>Stash</b><small></small></header><div class="stash-grid"></div><p class="stash-hint">Drag items onto a squad or its slots. Drag here to unequip.</p></aside>
+      <aside class="stash"><button class="icon stash-tab" aria-expanded="false" data-tip="Stash: the items you hold [B]">${icon('bag')}<em class="badge"></em></button><div class="stash-fly panel"><header>${icon('bag')}<b>Stash</b><small></small><button class="icon close stash-x" data-tip="Close [B]">${icon('close')}</button></header><div class="stash-grid"></div><p class="stash-hint">Drag items onto a squad or its slots. Drag here to unequip.</p></div></aside>
       <div class="bottom">
         <div class="deploy-badge" data-tip="Deploy points left this round. A 100-gold squad costs ½, a 150 to 300-gold squad 1, a 400-gold one 1½. Levelling up and equipping are unlimited."><small>Deploys left</small><b>2</b><span>of 2 this round</span></div>
         <div class="shop"></div>
@@ -159,6 +159,9 @@ export class PlanningScreen {
     this.shop = $(this.root, '.shop');
     this.panel = $(this.root, '.sqpanel');
     this.stash = $(this.root, '.stash');
+    // the stash lives in the left rail, clear of the deploy zone: a bag button that opens the flyout
+    $(this.stash, '.stash-tab').addEventListener('click', () => (sound.click(), this.openStash(!this.stashOpen())));
+    $(this.stash, '.stash-x').addEventListener('click', () => (sound.click(), this.openStash(false)));
     this.tools = $(this.root, '.ptools');
     $(this.tools, '.pt-undo').addEventListener('click', () => this.undo());
     $(this.tools, '.pt-mirror').addEventListener('click', () => this.mirror());
@@ -455,7 +458,7 @@ export class PlanningScreen {
           ${k ? `<kbd>${k}</kbd>` : ''}
           ${crest(u, null, 'md')}
           <b>${esc(d.name)}</b>
-          <div class="uc-meta"><span class="uc-cost">${icon('gold')}${d.cost}</span><span class="uc-size">×${d.squadSize}</span>${deployChip(u)}</div>
+          <div class="uc-meta"><span class="uc-cost">${icon('gold')}${d.cost}</span><span class="uc-size">×${soldierStats(u, 1).size}</span>${deployChip(u)}</div>
           <div class="uc-tags">${classIcon(u)}<span class="uc-role">${esc(d.role)}</span></div>
           <div class="uc-tagc">${tagIcons(u)}</div>
         </button>`;
@@ -468,7 +471,7 @@ export class PlanningScreen {
       tip(c, () => {
         const why = this.blocked(u);
         const k = SHOP_KEYS[units.indexOf(u)];
-        return unitTooltip(u, why ? `<div class="it-hint bad">${esc(why)}</div>` : `<div class="it-hint">Drag onto your half, or ${k ? `press ${k}` : 'click'} then click the field. Q/E or right-drag turns it.</div>`);
+        return unitTooltip(u, why ? `<div class="it-hint bad">${esc(why)}</div>` : `<div class="it-hint">Drag onto your half, or ${k ? `press ${k}` : 'click'} then click the field. Q/E or right-drag turns it.</div>`, this.me?.lord ?? null);
       });
       c.addEventListener('pointerenter', () => sound.hover());
       c.addEventListener('pointerdown', (e) => {
@@ -682,15 +685,13 @@ export class PlanningScreen {
       return `<div class="sp-slot ${open ? '' : 'locked'} ${wasted ? 'wasted' : ''}" data-squad="${sq.id}" data-sslot="${slot}">${itemIcon(it, { slot, locked: lockLv, drag: !ghost && !!it, size: 'md' })}<small>${SLOT_LABEL[slot]}</small></div>`;
     }).join('');
     const def = isLord ? null : UNITS[sq.type as UnitType];
-    const s = soldierStats(sq.type, sq.level, lord);
     // the sim's sheet: stats after level, items and the Lord's passive, next to the level-1 base
     const ownerLord = watched ? watched.lord : ghost ? this.view!.enemy.lord : me!.lord;
     const sheet = this.view ? squadSheet(this.view, sq.id) : null;
-    const stat = (k: string): number => sheet?.stats.find((l) => l.key === k)?.value ?? 0;
-    const brief = sheet
-      ? `${icon('heart')}${stat('hp')} ${icon('sword')}${(stat('damage') / Math.max(0.1, stat('attackInterval'))).toFixed(1)} ${icon('bow')}${stat('range') >= 4 ? stat('range').toFixed(0) + ' m' : 'melee'}`
-      : `${icon('heart')}${s.hp} ${icon('sword')}${dps(s.dmg, s.attackTicks).toFixed(1)} ${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + ' m' : 'melee'}`;
-    const squadDps = sheet ? stat('dps') : Number((dps(s.dmg, s.attackTicks) * s.size).toFixed(0));
+    // the same numbers as every tooltip and card (effectiveStats reads the sim: items, Lord passive, power, damage scale)
+    const s = effectiveStats(sq, ownerLord);
+    const brief = `${icon('heart')}${s.hp} ${icon('sword')}${s.dps.toFixed(1)} ${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + ' m' : 'melee'}`;
+    const squadDps = s.squadDps;
     // everything the squad can do: innate traits (or the Lord's passive and ability) and what its items grant
     const skills = sheet?.skills ?? squadSkills(sq, ownerLord);
     const worn = SLOTS.map((slot) => sq.items[slot]);
@@ -702,7 +703,7 @@ export class PlanningScreen {
       <header class="sp-h">${crest(sq.type, lord, 'lg')}<div class="sp-t"><small>${watched ? `${esc(this.names[sq.owner === this.seat ? 0 : 1])} · last round` : ghost ? 'Enemy · last round' : sub}</small><b>${esc(name)}</b>${lvl}</div><button class="icon close" data-tip="Deselect [Esc]">${icon('close')}</button></header>
       ${actions}
       <div class="sp-row"><div class="sp-sec"><small>Equipment</small><div class="sp-slots">${slots}</div></div>${skills.length ? `<div class="sp-sec sk-d"><small>Abilities</small><div class="sp-skills">${skillChips(skills, worn)}</div></div>` : ''}${def?.traits?.includes('healer') ? '<p class="sp-note">Healers never attack: damage, critical and leech lines do nothing here. Life, haste and range still help.</p>' : ''}</div>
-      <details class="sp-sec st-d" ${statsOpen ? 'open' : ''}><summary><span data-tip="Stats of one soldier, after level and items">Stats${!isLord ? ` · squad DPS ${squadDps}` : ''}</span><span class="sp-brief">${brief}</span></summary>${sheet ? sheetStats(sheet) : statBlock(sq.type, sq.level, lord)}</details>
+      <details class="sp-sec st-d" ${statsOpen ? 'open' : ''}><summary><span data-tip="Stats of one soldier, after level and items">Stats${!isLord ? ` · squad DPS ${squadDps}` : ''}</span><span class="sp-brief">${brief}</span></summary>${sheet ? sheetStats(sheet) : statBlock(sq.type, sq.level, ownerLord)}</details>
       ${isLord ? `<div class="sp-sec lt"><div class="lt-pass"><small>Passive</small>${esc(LORDS[lord!].passive)}</div><div class="lt-abil"><small>${esc(LORDS[lord!].abilityName)}</small>${esc(LORDS[lord!].abilityText)}</div></div>` : ''}
       ${def ? `<div class="sp-sec ctr-d"><small>Counters</small>${countersBlock(def.id)}</div>` : ''}
       ${!ghost && me ? `${this.marchLine(sq)}<p class="sp-hint">Drag on the field to move · <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>Shift</kbd>-click another to group</p>` : ''}`;
@@ -774,6 +775,21 @@ export class PlanningScreen {
     this.select(null);
   }
 
+  private stashOpen(): boolean {
+    return this.stash.classList.contains('open');
+  }
+
+  /** Open or close the stash flyout. `auto`: opened for an item drag only, closed again when it ends. */
+  private openStash(open: boolean, auto = false): void {
+    this.stash.classList.toggle('open', open);
+    this.stash.classList.toggle('auto', open && auto);
+    $(this.stash, '.stash-tab').setAttribute('aria-expanded', String(open));
+    if (!auto) store.set('plan.stash', open ? '1' : '0');
+  }
+
+  /** Item ids the stash held at the last render (null before the first): a new one opens the flyout. */
+  private stashSeen: Set<number> | null = null;
+
   private renderStash(): void {
     const me = this.me;
     if (!me) {
@@ -781,7 +797,18 @@ export class PlanningScreen {
       return;
     }
     const items = [...me.stash].sort((a, b) => rarityRank(b.rarity) - rarityRank(a.rarity));
+    // fresh loot opens the stash so it can be equipped (and the tutorial can point at it); the player's
+    // own choice, open or closed, is kept otherwise
+    const seen = this.stashSeen;
+    const gained = !!seen && items.some((i) => !seen.has(i.id));
+    if (!seen) this.openStash(store.get('plan.stash') === '1' && items.length > 0);
+    else if (gained) this.openStash(true);
+    this.stashSeen = new Set(items.map((i) => i.id));
     this.stash.classList.toggle('empty', !items.length);
+    const badge = $(this.stash, '.stash-tab .badge');
+    badge.textContent = items.length ? String(items.length) : '';
+    badge.classList.toggle('on', items.length > 0);
+    $(this.stash, '.stash-tab').dataset.tip = items.length ? `Stash: ${items.length} item${items.length === 1 ? '' : 's'} to equip [B]` : 'Stash: empty. Loot you claim lands here [B]';
     $(this.stash, 'header small').textContent = items.length ? String(items.length) : 'empty';
     const grid = $(this.stash, '.stash-grid');
     grid.innerHTML = items.length ? items.map((it) => itemIcon(it, { drag: true, size: 'md' })).join('') : '<p class="muted">Loot you claim lands here.</p>';
@@ -1269,7 +1296,7 @@ export class PlanningScreen {
       const sq = watched ? watched.sq : hit ? (hit.ghost ? this.ghost(hit.id) : this.squad(hit.id)) : null;
       const ro = !!watched || !!hit?.ghost;
       const hint = this.me?.ready ? 'You are Ready: un-ready to move it' : this.sel.size > 1 && hit && this.sel.has(hit.id) ? 'Drag to move the selection · right-drag to turn it' : 'Click to select · Shift-click to add · drag to move';
-      showTipAt(e.clientX, e.clientY, sq ? squadTooltip(sq, sq.type === 'lord' ? (watched ? watched.lord : hit!.ghost ? this.view!.enemy.lord : this.me?.lord ?? null) : null, { ghost: !!hit?.ghost, hint: ro ? undefined : hint }) : null);
+      showTipAt(e.clientX, e.clientY, sq ? squadTooltip(sq, watched ? watched.lord : hit!.ghost ? this.view!.enemy.lord : this.me?.lord ?? null, { ghost: !!hit?.ghost, hint: ro ? undefined : hint }) : null);
       this.scene.canvas.style.cursor = sq ? (ro ? 'help' : 'grab') : '';
       return;
     }
@@ -1586,6 +1613,9 @@ export class PlanningScreen {
     } else if (k === 'g' && !e.shiftKey) {
       e.stopPropagation();
       this.toggleSnap();
+    } else if (k === 'b' && !e.shiftKey) {
+      e.stopPropagation();
+      this.openStash(!this.stashOpen());
     } else if (SHOP_KEYS.includes(e.key) && this.me) {
       const u = this.shopUnits()[SHOP_KEYS.indexOf(e.key)];
       if (u) {
@@ -1623,6 +1653,8 @@ export class PlanningScreen {
         s.classList.add(sq && this.refusal(d.item, sq) ? 'drop-no' : 'drop-ok');
       });
       this.stash.classList.toggle('drop-ok', d.from !== null);
+      // dragging an item off a squad: the stash opens to take it back
+      if (d.from !== null && !this.stashOpen()) this.openStash(true, true);
       sound.pick();
     }
     d.el!.style.transform = `translate(${e.clientX - 28}px, ${e.clientY - 28}px)`;
@@ -1715,6 +1747,7 @@ export class PlanningScreen {
     this.root.classList.remove('item-dragging');
     this.root.querySelectorAll('.drop-ok, .drop-no').forEach((n) => n.classList.remove('drop-ok', 'drop-no'));
     this.stash.classList.remove('drop-ok');
+    if (this.stash.classList.contains('auto')) this.openStash(false, true);
     this.scene.setHovered(null);
     showTipAt(0, 0, null);
   }

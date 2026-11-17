@@ -10,7 +10,7 @@ import { esc } from './dom.ts';
 import { art, glyphVars } from './art.ts';
 import { icon } from './icons.ts';
 import { cooldownText, skillGlyph } from './items.ts';
-import { costTier, counters, COUNTER_TEXT, dps, soldierStats, tagsOf, TAG_LABEL, unitName, WEAPON_LABEL, RARITY_CSS, SLOTS, wheelOf } from './gamedata.ts';
+import { costTier, counters, COUNTER_TEXT, effectiveStats, soldierStats, tagsOf, TAG_LABEL, unitName, WEAPON_LABEL, RARITY_CSS, SLOTS, wheelOf } from './gamedata.ts';
 import { WHEEL_NAME, WHEEL_WHY } from '../sim/data/wheel.ts';
 import { DEPLOY_BUDGET, deployPointsText, deployWeight } from '../sim/match.ts';
 import type { WheelClass } from '../sim/types.ts';
@@ -72,7 +72,7 @@ export function statBlock(t: SquadType, level: number, lord?: LordId | null): st
     ${statRow('Soldiers', String(s.size), 'squads')}
     ${statRow('Life', `${s.hp}`, 'heart')}
     ${statRow('Damage', `${s.dmg}`, 'sword')}
-    ${statRow('DPS', dps(s.dmg, s.attackTicks).toFixed(1), 'flame')}
+    ${statRow('Squad DPS', String(s.squadDps), 'flame')}
     ${statRow('Range', range, 'bow')}
     ${statRow('Speed', `${((s.speed * 20) / 100).toFixed(1)} m/s`, 'move')}
     ${statRow('Armor', `${s.armor}%`, 'shield')}
@@ -211,8 +211,11 @@ export function countersBlock(t: UnitType): string {
   </div>`;
 }
 
-/** Shop / draft tooltip for a unit type. */
-export function unitTooltip(t: UnitType, extra = ''): string {
+/**
+ * Shop / draft tooltip for a unit type at level 1. `lord` = the viewer's Lord, whose passive the unit fights with
+ * (the stats are the sim's, see effectiveStats).
+ */
+export function unitTooltip(t: UnitType, extra = '', lord: LordId | null = null): string {
   const d = UNITS[t];
   // what the unit does, in the sim's words (raise dead, ethereal, plague, sun blessing, regeneration...), then the plain traits
   const known = new Set<string>();
@@ -222,7 +225,7 @@ export function unitTooltip(t: UnitType, extra = ''): string {
     <div class="utip-h">${crest(t, null, 'md')}<div><b>${esc(d.name)}</b><small>${esc(FACTIONS[d.faction].short)} · ${esc(d.role)} · ${WEAPON_LABEL[d.weapon]} · ${d.damageType === 'magic' ? 'Magic' : 'Physical'}</small></div>
       <div class="utip-cost">${icon('gold')}${d.cost}</div></div>
     <div class="utip-tags">${tagsOf(t).map((g) => `<span class="tg">${icon(g)}${TAG_LABEL[g]}</span>`).join('')}</div>
-    ${statBlock(t, 1)}
+    ${statBlock(t, 1, lord)}
     ${traits.length ? `<ul class="traits">${traits.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${countersBlock(t)}
     ${extra}
@@ -240,15 +243,15 @@ export function lordTooltip(lord: LordId, level = 1): string {
   </div>`;
 }
 
-/** Compact tooltip for a squad on the field (own or ghost). */
+/** Compact tooltip for a squad on the field (own or ghost). `lord` = its owner's Lord (the stats include its passive and the squad's items). */
 export function squadTooltip(sq: Squad, lord: LordId | null, opts: { ghost?: boolean; hint?: string } = {}): string {
   const name = unitName(sq.type, lord);
   const items = SLOTS.map((s) => sq.items[s]).filter(Boolean);
-  const s = soldierStats(sq.type, sq.level, lord);
+  const s = effectiveStats(sq, lord);
   return `<div class="sqtip ${opts.ghost ? 'ghost' : ''}">
     <div class="utip-h">${crest(sq.type, lord, 'sm')}<div><b>${esc(name)}</b><small>${opts.ghost ? 'Enemy · last round · ' : ''}Level ${sq.level}${sq.type !== 'lord' ? ` · ${s.size} soldiers` : ''}</small></div></div>
     ${classLine(sq.type, lord, true)}
-    <div class="sqtip-st"><span>${icon('heart')}${s.hp}</span><span>${icon('sword')}${dps(s.dmg, s.attackTicks).toFixed(1)} dps</span><span>${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + ' m' : 'melee'}</span></div>
+    <div class="sqtip-st"><span>${icon('heart')}${s.hp}</span><span>${icon('sword')}${s.dps.toFixed(1)} dps</span><span>${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + ' m' : 'melee'}</span></div>
     ${items.length ? `<div class="sqtip-items">${items.map((it) => `<span style="color:${RARITY_CSS[it!.rarity]}">${esc(itemShort(it!))}</span>`).join('')}</div>` : ''}
     ${opts.hint ? `<div class="it-hint">${esc(opts.hint)}</div>` : ''}
   </div>`;

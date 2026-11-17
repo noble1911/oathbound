@@ -15,7 +15,7 @@ import { $, el, esc, secsLeft, store } from './dom.ts';
 import { icon } from './icons.ts';
 import { classLine, crest, LORD_HUE } from './units.ts';
 import { art } from './art.ts';
-import { dps, soldierStats, WEAPON_LABEL } from './gamedata.ts';
+import { soldierStats, WEAPON_LABEL } from './gamedata.ts';
 
 export function lordPortrait(id: LordId, cls = ''): string {
   const L = LORDS[id];
@@ -163,7 +163,7 @@ export class LordPickScreen {
       <div class="lc-sig"><small>Signature units</small><div>${L.signature.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('')}</div></div>
       <div class="lc-block"><small>Passive</small><p>${esc(L.passive)}</p></div>
       <div class="lc-block abil"><small>${icon('lightning')}${esc(L.abilityName)}</small><p>${esc(L.abilityText)}</p></div>
-      <div class="lc-stats"><span data-tip="Life">${icon('heart')}${s.hp}</span><span data-tip="Damage per second">${icon('sword')}${dps(s.dmg, s.attackTicks).toFixed(0)}</span><span data-tip="Armor">${icon('shield')}${s.armor}%</span><span data-tip="Range">${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + 'm' : 'melee'}</span></div>
+      <div class="lc-stats"><span data-tip="Life">${icon('heart')}${s.hp}</span><span data-tip="Damage per second">${icon('sword')}${s.dps.toFixed(0)}</span><span data-tip="Armor">${icon('shield')}${s.armor}%</span><span data-tip="Range">${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + 'm' : 'melee'}</span></div>
       </div>
       <div class="lc-seal">${icon('ready')}<span>Chosen</span></div>
     </button>`;

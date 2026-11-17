@@ -1,10 +1,15 @@
 // Client-side pure helpers (src/ui/gamedata.ts, hud.ts) and the local dev-harness match
 // (src/ui/local.ts) driving the real sim through RoomView snapshots like the server does.
 import { describe, expect, it, vi } from 'vitest';
-import { compareItems, counters, formation, itemStats, soldierStats, squadRadius, slotOpen, wheelText, deployRefusal, levelGainText, rarityRank } from '../src/ui/gamedata.ts';
+import { compareItems, counters, effectiveStats, formation, itemStats, soldierStats, squadRadius, slotOpen, wheelText, deployRefusal, levelGainText, rarityRank } from '../src/ui/gamedata.ts';
 import { niceError } from '../src/ui/hud.ts';
 import { LocalMatch } from '../src/ui/local.ts';
-import type { Item, Replay, Seat } from '../src/sim/types.ts';
+import type { Item, LordId, Replay, Seat, Squad } from '../src/sim/types.ts';
+import { buildStats } from '../src/sim/battle.ts';
+import { sheetOf } from '../src/sim/sheet.ts';
+import { TICK_HZ } from '../src/sim/constants.ts';
+import { LORDS } from '../src/sim/data/lords.ts';
+import { squadTooltip, unitTooltip } from '../src/ui/units.ts';
 import type { RoomView } from '../src/net/protocol.ts';
 import { UNITS, UNIT_TYPES } from '../src/sim/data/units.ts';
 import { SLOT_UNLOCK_LEVEL } from '../src/sim/data/items.ts';
@@ -46,11 +51,40 @@ describe('unit readings', () => {
     expect(Math.max(...a.map((p) => Math.abs(p[0])))).toBeCloseTo(Math.max(...b.map((p) => Math.abs(p[1]))), -1);
     expect(squadRadius('militia')).toBeGreaterThan(squadRadius('lord'));
   });
-  it('level stats: +25% life and +20% damage per level', () => {
+  it('shown stats are the battle stats of the sim (power multipliers, damage scale, levels, Lord passive)', () => {
+    const none = { weapon: null, armor: null, relic: null };
+    const lords = [null, ...(Object.keys(LORDS) as LordId[])];
+    for (const u of UNIT_TYPES) for (const level of [1, 2, 3]) for (const lord of lords) {
+      const s = soldierStats(u, level, lord);
+      const st = buildStats({ type: u, level, items: none }, lord);
+      const sheet = sheetOf({ id: 0, type: u, level, items: none }, lord);
+      const line = (k: string): number => sheet.stats.find((l) => l.key === k)!.value;
+      expect(s.hp).toBe(Math.ceil(st.hp / 100));
+      expect(s.hp).toBe(line('hp'));
+      expect(s.dmg).toBe(line('damage'));
+      expect(s.squadDps).toBe(line('dps'));
+      expect(s.size).toBe(line('soldiers'));
+      expect(s.dps).toBeCloseTo(((st.dmg / 100) * TICK_HZ) / st.atk, 6);
+    }
+    for (const lord of Object.keys(LORDS) as LordId[]) {
+      expect(soldierStats('lord', 2, lord).hp).toBe(Math.ceil(buildStats({ type: 'lord', level: 2, items: none }, lord).hp / 100));
+    }
+    // the tooltips print those numbers, not the raw table
+    const m = soldierStats('militia', 1);
+    expect(unitTooltip('militia')).toContain(`<b>${m.hp}</b>`);
+    expect(unitTooltip('militia')).toContain(`<b>${m.squadDps}</b>`);
+    // a squad on the field: its items count too
+    const sq = { id: 1, type: 'knights' as const, level: 3, items: { weapon: item(), armor: null, relic: null }, pos: [0, 0], facing: 0, owner: 0 } as unknown as Squad;
+    const eff = effectiveStats(sq, 'warden');
+    expect(eff.hp).toBe(sheetOf(sq, 'warden').stats.find((l) => l.key === 'hp')!.value);
+    expect(squadTooltip(sq, 'warden')).toContain(`${eff.hp}</span>`);
+    expect(squadTooltip(sq, 'warden')).toContain(`${eff.dps.toFixed(1)} dps`);
+  });
+  it('level stats grow with level', () => {
     const l1 = soldierStats('knights', 1);
     const l3 = soldierStats('knights', 3);
-    expect(l3.hp).toBe(Math.round(UNITS.knights.hp * 1.5));
-    expect(l3.dmg).toBe(Math.round(UNITS.knights.dmg * 1.4));
+    expect(l3.hp).toBeGreaterThan(l1.hp);
+    expect(l3.dmg).toBeGreaterThan(l1.dmg);
     expect(l1.size).toBe(UNITS.knights.squadSize);
   });
   it('slots open at the unlock levels of the sim; the Lord has all three', () => {

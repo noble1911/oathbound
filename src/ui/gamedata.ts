@@ -1,6 +1,6 @@
 // UI-side readings of the sim's data tables: the counter wheel, deploy weights, level stats, formations for the deploy
 // ghost, item stat totals and comparison deltas. Pure (no DOM), unit-tested in tests/client.test.ts.
-import type { Affix, Item, LordId, Rarity, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2, WeaponKind, FactionId, WheelClass } from '../sim/types.ts';
+import type { Affix, Item, ItemSlots, LordId, Rarity, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2, WeaponKind, FactionId, WheelClass } from '../sim/types.ts';
 import { UNITS, UNIT_TYPES, formationCols, squadSizeAt, growsBySize } from '../sim/data/units.ts';
 import { WHEEL_NAME, beatsClass, beatenBy } from '../sim/data/wheel.ts';
 import { COUNTER_PCT } from '../sim/constants.ts';
@@ -9,6 +9,9 @@ import { AFFIXES, LEGENDARIES } from '../sim/data/items.ts';
 import { bestOnText, legendaryFits } from '../sim/loot.ts';
 import { slotOpen as simSlotOpen, deployWeight, deployPointsText } from '../sim/match.ts';
 import { SKILLS, canEquip as classFits } from '../sim/data/skills.ts';
+import { buildStats } from '../sim/battle.ts';
+import { sheetOf, type StatKey } from '../sim/sheet.ts';
+import { TICK_HZ } from '../sim/constants.ts';
 
 export const RARITY_CSS: Record<Rarity, string> = { common: '#bfc3c9', magic: '#6f9dff', rare: '#e6bd3c', legendary: '#f58b25' };
 export const RARITY_LABEL: Record<Rarity, string> = { common: 'Common', magic: 'Magic', rare: 'Rare', legendary: 'Legendary' };
@@ -85,24 +88,54 @@ export function levelGainText(t: UnitType, level: number): string {
   return '+25% life, +20% damage';
 }
 
-/**
- * Stats of one soldier of a squad. Level bonuses: +25% HP and +20% damage per level, except Swarm squads, which
- * grow by soldiers instead (squadSizeAt); Lords use their own growth. `size` is before items (Warhorn).
- */
-export function soldierStats(t: SquadType, level: number, lord?: LordId | null) {
-  if (t === 'lord') {
-    const L = LORDS[lord ?? 'marshal'];
-    const f = level - 1;
-    return { hp: Math.round(L.hp * (1 + 0.1 * f)), dmg: Math.round(L.dmg * (1 + 0.08 * f)), attackTicks: L.attackTicks, range: L.range, minRange: 0, speed: L.speed, armor: L.armor, magicResist: L.magicResist, size: 1, splash: L.splash };
-  }
-  const d = UNITS[t];
-  const f = growsBySize(t) ? 0 : level - 1;
-  return { hp: Math.round(d.hp * (1 + 0.25 * f)), dmg: Math.round(d.dmg * (1 + 0.2 * f)), attackTicks: d.attackTicks, range: d.range, minRange: d.minRange, speed: d.speed, armor: d.armor, magicResist: d.magicResist, size: squadSizeAt(t, level), splash: d.splash };
+/** What every stat display reads (see effectiveStats): one soldier's battle numbers plus the squad's. */
+export interface SoldierStats {
+  /** Life of one soldier (as the squad panel shows it: whole HP, rounded up). */
+  hp: number;
+  /** Damage of one strike, whole HP. */
+  dmg: number;
+  /** Ticks between strikes, after haste. */
+  attackTicks: number;
+  /** cm. */
+  range: number;
+  minRange: number;
+  /** cm per tick. */
+  speed: number;
+  armor: number;
+  magicResist: number;
+  /** Soldiers in the squad (after Warhorn). */
+  size: number;
+  splash: number;
+  /** Damage per second of one soldier, unrounded. */
+  dps: number;
+  /** The whole squad's damage per second: the sheet's 'dps' line, the number the squad panel prints. */
+  squadDps: number;
 }
 
-/** Damage per second of one soldier. */
-export function dps(dmg: number, attackTicks: number): number {
-  return attackTicks > 0 ? (dmg * 20) / attackTicks : 0;
+const NO_ITEMS: ItemSlots = { weapon: null, armor: null, relic: null };
+
+/**
+ * The numbers a squad fights with, read from the sim itself (sheetOf / buildStats: level, items, the Lord's passive,
+ * the unit and faction power multipliers and the damage scale), so the shop, tooltips, cards, Lord pick and the
+ * squad panel all show the same values and follow every balance change. `lord` is the owner's Lord (its passive
+ * applies to the whole army); for a Lord squad it is that Lord.
+ */
+export function effectiveStats(sq: { type: SquadType; level: number; items?: ItemSlots }, lord?: LordId | null): SoldierStats {
+  const lordId = sq.type === 'lord' ? (lord ?? 'marshal') : (lord ?? null);
+  const items = sq.items ?? NO_ITEMS;
+  const sheet = sheetOf({ id: -1, type: sq.type, level: sq.level, items }, lordId);
+  const line = (k: StatKey): number => sheet.stats.find((l) => l.key === k)?.value ?? 0;
+  const st = buildStats({ type: sq.type, level: sq.level, items }, lordId);
+  return {
+    hp: line('hp'), dmg: line('damage'), attackTicks: st.atk, range: st.range, minRange: st.minRange, speed: st.speed,
+    armor: line('armor'), magicResist: line('magicResist'), size: line('soldiers'), splash: st.splash,
+    dps: st.atk > 0 ? ((st.dmg / 100) * TICK_HZ) / st.atk : 0, squadDps: line('dps'),
+  };
+}
+
+/** Stats of one soldier of a squad of `t` at `level` with no items (effectiveStats). */
+export function soldierStats(t: SquadType, level: number, lord?: LordId | null): SoldierStats {
+  return effectiveStats({ type: t, level }, lord);
 }
 
 /** The sim's own rule (never a copy of the unlock levels). */

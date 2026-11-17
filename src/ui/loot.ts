@@ -10,7 +10,7 @@ import { $, el, esc } from './dom.ts';
 import { icon } from './icons.ts';
 import { itemIcon, itemTooltip } from './items.ts';
 import { SKILLS, canEquip, usableByText } from '../sim/data/skills.ts';
-import { bestFit, counters, RARITY_LABEL, rarityRank, SLOT_LABEL, slotOpen, tagsOf, TAG_LABEL, unitName, type Fit } from './gamedata.ts';
+import { bestFit, counters, soldierStats, RARITY_LABEL, rarityRank, SLOT_LABEL, slotOpen, tagsOf, TAG_LABEL, unitName, type Fit } from './gamedata.ts';
 import { ITEM_KIND, SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
 import { bestOnText, legendaryFits } from '../sim/loot.ts';
 import { classTag, crest, deployChip, unitTooltip, wheelTip } from './units.ts';
@@ -178,7 +178,7 @@ export class DraftModal {
         ${crest(u, null, 'lg')}
         <b>${esc(d.name)}</b>
         <span class="dc-cls" data-tip="${esc(wheelTip(u))}">${classTag(d.class, 'me')}${role}</span>
-        <span class="dc-cost">${icon('gold')}${d.cost} <em>×${d.squadSize}</em>${deployChip(u)}<span class="dc-tags">${tagsOf(u).map((g) => `<i data-tip="${esc(TAG_LABEL[g])}">${icon(g)}</i>`).join('')}</span></span>
+        <span class="dc-cost">${icon('gold')}${d.cost} <em>×${soldierStats(u, 1).size}</em>${deployChip(u)}<span class="dc-tags">${tagsOf(u).map((g) => `<i data-tip="${esc(TAG_LABEL[g])}">${icon(g)}</i>`).join('')}</span></span>
         <span class="dc-wh">${draftLines(u).map(row).join('')}</span>
       </button>`;
     };
@@ -200,7 +200,7 @@ export class DraftModal {
     else sound.open();
     this.root.querySelectorAll<HTMLElement>('.dcard').forEach((c) => {
       const u = c.dataset.u as UnitType;
-      tip(c, () => unitTooltip(u));
+      tip(c, () => unitTooltip(u, '', me.lord ?? null));
       c.addEventListener('pointerenter', () => sound.hover());
       c.addEventListener('click', () => {
         sound.pick();

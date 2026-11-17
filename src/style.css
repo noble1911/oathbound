@@ -688,7 +688,17 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .btn.sell.armed { color: #fff; box-shadow: inset 0 0 0 2px var(--foe); animation: pulse 0.5s ease-in-out infinite alternate; }
 
 /* stash */
-.stash { position: absolute; left: 1rem; bottom: 13rem; width: 16rem; padding: 0.7rem 0.75rem; display: grid; gap: 0.5rem; }
+/* The bag sits in the left rail under the shell's round buttons (5 x 2.3rem + 4 x 0.4rem gaps), the one strip of
+   screen the deploy zone never reaches at any aspect; the flyout opens beside it and grows upward, over the river
+   and the far bank, and the notices step aside while it is open. */
+.stash { --stash-top: calc(var(--hud-under) + 13.5rem); position: absolute; left: 0.7rem; top: var(--stash-top); width: 2.3rem; height: 2.3rem; z-index: 4; }
+.stash-tab.icon { width: 2.3rem; height: 2.3rem; }
+.stash-tab .badge { background: var(--iron-800); box-shadow: inset 0 0 0 1px var(--steel-300); color: var(--head); padding: 0 0.2rem; }
+.stash.open .stash-tab { background-image: url('/ui/kit/boss-hover.webp'); color: #fff; }
+.stash-fly { position: absolute; left: 3.1rem; bottom: 0; width: 16rem; max-height: calc(var(--stash-top) + 2.3rem - var(--hud-under)); padding: 0.7rem 0.75rem; display: none; grid-template-rows: auto minmax(0, 1fr) auto; gap: 0.5rem; }
+.stash.open .stash-fly { display: grid; }
+.planning:has(.stash.open) .notices { left: 20.4rem; }
+.stash header .stash-x { width: 1.7rem; height: 1.7rem; margin: -0.2rem -0.25rem -0.2rem 0.2rem; }
 
 /* formation bar (planning): undo, mirror, sync, routes, snap. Steel plates; a toggle that is on sits pressed */
 .ptools { position: absolute; left: 1rem; bottom: 9.6rem; width: 16rem; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.2rem; }
@@ -719,12 +729,12 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .stash header { display: flex; align-items: center; gap: 0.4rem; color: var(--steel-100); }
 .stash header b { font: 700 1.1rem var(--serif); color: var(--head); }
 .stash header small { margin-left: auto; color: var(--muted); }
-.stash-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; max-height: 10.5rem; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: var(--slate-400) transparent; }
+.stash-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-content: start; gap: 0.35rem; max-height: 10.5rem; min-height: 0; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: var(--slate-400) transparent; }
 .stash-grid > * { justify-self: center; max-width: 100%; }
 .stash-grid p { grid-column: 1 / -1; justify-self: stretch; margin: 0; font-size: 0.8rem; overflow-wrap: anywhere; }
 .stash-hint { margin: 0; font-size: 0.72rem; color: var(--dim); }
 .stash.empty .stash-hint { display: none; }
-.stash.drop-ok { outline: 2px solid var(--good); outline-offset: 0.4rem; }
+.stash.drop-ok .stash-fly, .stash.drop-ok .stash-tab { outline: 2px solid var(--good); outline-offset: 0.4rem; }
 .planning.item-dragging, .planning.item-dragging * { cursor: grabbing !important; }
 
 /* ------------------------------------------------------------ modals (loot, draft) */
@@ -1354,7 +1364,6 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .loot-row { flex-wrap: wrap; gap: 1rem; }
   .drop { width: 18rem; }
   .drop-tip .itip { width: 18rem; }
-  .stash { bottom: 13.8rem; }
   .ptools { bottom: 10.4rem; }
   .ready-box { width: 9rem; }
   .over::before, .over::after { display: none; }
