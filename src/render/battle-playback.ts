@@ -247,13 +247,19 @@ export class BattlePlayback {
   // ------------------------------------------------------------------ debuff / buff windows
   // Driven by the sim's 'frost' / 'burn' / 'war_cry' ability events, which carry the real duration.
 
-  /** Soldier `i` is slowed for `sec`: he takes a cold blue (or sand) cast and sheds frost. */
-  private chill(i: number, sec: number, sand = false): void {
+  /**
+   * Soldier `i` is slowed for `sec`: he takes a cold blue (or sand) cast and sheds frost. Returns true when he was
+   * already chilled (the sim's follow-up event for a refreshed slow lands as the last window ends): no new burst then.
+   */
+  private chill(i: number, sec: number, sand = false): boolean {
     const s = this.units.slots[i];
-    if (!s || s.deadAt >= 0) return;
+    if (!s || s.deadAt >= 0) return false;
+    const now = this.timeMs / 1000;
+    const already = s.chillUntil > now - 0.1;
     s.chillSand = sand;
-    s.chillUntil = Math.max(s.chillUntil, this.timeMs / 1000 + sec);
+    s.chillUntil = Math.max(s.chillUntil, now + sec);
     if (!this.chilled.includes(s)) this.chilled.push(s);
+    return already;
   }
   private chilled: Slot[] = [];
   private chillAcc = 0;
@@ -476,8 +482,8 @@ export class BattlePlayback {
     if (!fx) return;
     switch (fx.kind) {
       case 'chill': {
-        this.chill(e.tgt, fx.sec, fx.sand);
-        const q = fx.burst ? this.soldierPoint(e.tgt, this.tmpB) : null;
+        const cont = this.chill(e.tgt, fx.sec, fx.sand);
+        const q = fx.burst && !cont ? this.soldierPoint(e.tgt, this.tmpB) : null;
         if (q) this.vfx.frost(q.setY(q.y - 0.8), Math.min(1.2, fx.sec));
         break;
       }

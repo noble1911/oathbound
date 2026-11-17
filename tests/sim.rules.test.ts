@@ -9,7 +9,7 @@ import { rollItem } from '../src/sim/loot.ts';
 import { Rng } from '../src/sim/rng.ts';
 import type { BotStrategy, Item, LordId, MatchState, RoundSummary, Seat, Squad } from '../src/sim/types.ts';
 import { playMatch } from '../src/sim/tournament.ts';
-import { KEEP_DMG_BASE_PER_ROUND, KEEP_DMG_PER_TIER, MAX_LORD_LEVEL, ROUND_BONUS_FULL_MARGIN, SUDDEN_DEATH_ROUND, concede, keepDamageOf, roundBonus, squadKeepDamage, suddenDeathPct, unlockOptions } from '../src/sim/match.ts';
+import { KEEP_DMG_BASE_PER_ROUND, KEEP_DMG_PER_TIER, MAX_LORD_LEVEL, ROUND_BONUS_FULL_MARGIN, SUDDEN_DEATH_ROUND, concede, keepDamageOf, stalemateCause, roundBonus, squadKeepDamage, suddenDeathPct, unlockOptions } from '../src/sim/match.ts';
 import { itemName, lootSchedule } from '../src/sim/loot.ts';
 import { income } from '../src/sim/match.ts';
 import { readFileSync } from 'node:fs';
@@ -125,6 +125,10 @@ describe('stalemates, points and result wording', () => {
     expect(result.end).toBe('stalemate');
     expect(result.timeout).toBe(true);
     expect(result.ticks).toBeLessThan(MAX_BATTLE_TICKS);
+    // the golems were the stuck side: the wording says so, from both seats
+    expect(result.helpless).toEqual([true, false]);
+    expect(stalemateCause(result, 0)).toBe('Your army could no longer harm the enemy army');
+    expect(stalemateCause(result, 1)).toBe('The enemy army could no longer harm yours');
     // golems still stand nearly whole; the wyverns only chipped them
     expect(result.score[0]).toBeGreaterThan(result.score[1] - 100);
     const lead = result.score[0] - result.score[1];
@@ -144,6 +148,7 @@ describe('stalemates, points and result wording', () => {
     const h = s.history[0];
     expect(h.end).toBe('stalemate');
     expect(h.score).toEqual(result.score);
+    expect(h.helpless).toEqual([true, false]);
     for (const seat of [0, 1] as Seat[]) {
       const txt = roundOutcomeText(h, seat);
       const p = s.players[seat];
@@ -153,7 +158,20 @@ describe('stalemates, points and result wording', () => {
       if (txt.outcome === 'draw') expect(txt.title).toBe('Stalemate');
       else expect(txt.title).toBe(txt.outcome === 'won' ? 'Victory on points' : 'Defeat on points');
       expect(txt.detail).toMatch(/%/);
+      expect(txt.detail).toMatch(seat === 0 ? /^Your army could no longer harm the enemy army/ : /^The enemy army could no longer harm yours/);
     }
+  });
+
+  it('stalemateCause names the stuck side, or both, or a stand-off', () => {
+    const armies: [string, string] = ['your army', 'the Covenant army'];
+    expect(stalemateCause({ helpless: [false, true] }, 0, armies)).toBe('The Covenant army could no longer harm yours');
+    expect(stalemateCause({ helpless: [true, false] }, 0, armies)).toBe('Your army could no longer harm the Covenant army');
+    expect(stalemateCause({ helpless: [true, true] }, 0, armies)).toBe('Neither army could harm the other');
+    expect(stalemateCause({ helpless: [false, false] }, 1)).toBe('Neither army had landed a blow for a while');
+    expect(stalemateCause({}, 1)).toBe('Neither army could harm the other'); // results from before the field existed
+    expect(stalemateCause({ helpless: [false, true] }, null)).toBe("Red's army could no longer harm Blue's army");
+    // only stalemates carry it
+    expect(simulateBattle(newMatch(5, ['marshal', 'lich'])).result.helpless).toBeUndefined();
   });
 
   it('roundOutcomeText covers every ending, and a draw is nobody\'s loss', () => {

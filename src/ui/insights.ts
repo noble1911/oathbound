@@ -3,7 +3,8 @@
 // src/sim/stats.ts), and a few plain-language lines
 // that say why the round went the way it did and what to change ("Your melee couldn't reach 3
 // fliers: deploy Archers", "Their Archers out-ranged you", "Your Pikemen countered their Cavaliers").
-import type { BattleEnd, DecodedReplay, LordId, Seat, SquadType, UnitType } from '../sim/types.ts';
+import type { BattleEnd, DecodedReplay, FactionId, LordId, Seat, SquadType, UnitType } from '../sim/types.ts';
+import { stalemateCause } from '../sim/match.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { LORDS } from '../sim/data/lords.ts';
 import { replaySquads, squadDamagePairs, squadStatsAt } from '../sim/stats.ts';
@@ -42,6 +43,37 @@ export interface BattleStats {
   /** How the battle ended ('timeout' = the full 1:30; 'stalemate' = called early). */
   end: BattleEnd;
   winner: Seat | null;
+  /** Stalemates: which army could no longer harm the other (BattleResult.helpless). */
+  helpless?: [boolean, boolean];
+  /** Each seat's faction, read off its army. */
+  factions: [FactionId | null, FactionId | null];
+}
+
+/** Each side's faction, read off its army (the Lord, else any soldier's unit type). */
+export function replayFactions(soldiers: { side: 0 | 1; type: string; lord?: string }[]): [FactionId | null, FactionId | null] {
+  const out: [FactionId | null, FactionId | null] = [null, null];
+  for (const s of soldiers) {
+    if (out[s.side]) continue;
+    const lord = s.lord ? (LORDS as Record<string, { faction: FactionId } | undefined>)[s.lord] : undefined;
+    const unit = (UNITS as Record<string, { faction: FactionId } | undefined>)[s.type];
+    out[s.side] = lord?.faction ?? unit?.faction ?? null;
+    if (out[0] && out[1]) break;
+  }
+  return out;
+}
+
+/**
+ * What to call each seat's army in a sentence, from `seat`'s point of view: "your army", and the other by its faction
+ * ("the Covenant army") unless both fight for the same faction ("the enemy army"). Spectators: the faction names, or
+ * "Blue's army" / "Red's army" in a mirror.
+ */
+export function armyNames(f: [FactionId | null, FactionId | null], seat: Seat | null): [string, string] {
+  const by = (i: Seat, fallback: string): string => { const x = f[i]; return x && f[0] !== f[1] ? `the ${FACTIONS[x].short} army` : fallback; };
+  if (seat === null) return [by(0, "Blue's army"), by(1, "Red's army")];
+  const out: [string, string] = ['', ''];
+  out[seat] = 'your army';
+  out[1 - seat] = by((1 - seat) as Seat, 'the enemy army');
+  return out;
 }
 
 export function battleStats(d: DecodedReplay): BattleStats {
@@ -93,7 +125,7 @@ export function battleStats(d: DecodedReplay): BattleStats {
   const r = d.replay.result;
   // older replays carry no `end`: both armies standing means the clock, unless it stopped short of 1:30
   const end: BattleEnd = r.end ?? (r.timeout ? (r.ticks >= TIME_LIMIT_TICKS ? 'timeout' : 'stalemate') : r.winner === null ? 'mutualWipe' : 'wipe');
-  return { squads: [...by.values()], pair, ticks: r.ticks, timeout: r.timeout, end, winner: r.winner };
+  return { squads: [...by.values()], pair, ticks: r.ticks, timeout: r.timeout, end, winner: r.winner, helpless: r.helpless, factions: replayFactions(d.replay.soldiers) };
 }
 
 // ---------------------------------------------------------------- hints
@@ -222,8 +254,17 @@ export function battleHints(st: BattleStats, me: Seat, ctx: { gold?: number; max
 
   // both armies still standing: say which of the two endings it was, with the real time
   if (st.end === 'timeout') add(6.5, 'info', 'Time ran out at 1:30 with both armies standing, so each side dealt only half Keep damage. Bring more damage to finish the fight.');
-  else if (st.end === 'stalemate')
-    add(6.5, 'info', `The battle was called at ${clock(st.ticks)}: neither army could still harm the other, so each side dealt only half Keep damage. Bring something that can reach what they had left (bows, magic and fliers hit the air).`);
+  else if (st.end === 'stalemate') {
+    // the sim says which side was stuck: the advice follows from it
+    const h = st.helpless;
+    const cause = stalemateCause(st, me, armyNames(st.factions ?? [null, null], me));
+    const tip = h && !h[me] && h[1 - me]
+      ? 'Your army could still fight but did not finish them in time: more damage, or units that reach what they had left, win it outright.'
+      : h && !h[0] && !h[1]
+        ? 'Both armies stood off without a blow landing: send something that closes in.'
+        : 'Bring something that can reach what they had left (bows, magic and fliers hit the air).';
+    add(6.5, 'info', `The battle was called at ${clock(st.ticks)}: ${cause.charAt(0).toLowerCase() + cause.slice(1)}, so each side dealt only half Keep damage. ${tip}`);
+  }
   if (won === false && (ctx.gold ?? 0) >= 200) add(5.5, 'info', `You went into battle with ${ctx.gold} gold unspent. Level up squads (more life and damage, or more soldiers for a Swarm) when you have no deploys left.`);
   if (!out.length) {
     if (won === true) add(1, 'good', 'A clean win: your army out-fought theirs across the line.');

@@ -2,8 +2,10 @@
 // No three.js here, so it can be unit-tested (tests/render.abilityfx.test.ts).
 //
 // The sim emits one event when a window STARTS on soldier `tgt` (refreshes are not repeated) and
-// carries its real length in `dur` ticks:
+// carries its real length in `dur` ticks; while refreshes keep a slow or burn alive, a follow-up event lands
+// the tick the last window ends (dur = what is left), so the effect lasts as long as the debuff:
 //   'frost'   - a slow, dur = the slow's remaining ticks          -> chill tint + frost motes
+//               (a follow-up on a soldier still chilled draws no new burst: battle-playback.ts)
 //   'burn'    - a burn / the Corpse Catapult's plague, dur 60      -> flames (or plague) on the soldier
 //               (a refreshed burn gets a follow-up event as each window ends, dur = what is left)
 //   'war_cry' - radius 0: a Sun Priest's blessing on one soldier   -> a small per-soldier gold glow

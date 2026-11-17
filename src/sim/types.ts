@@ -355,6 +355,8 @@ export interface RoundSummary {
   end: BattleEnd;
   /** Points per seat: percent (0..100) of the army's value still standing at the end (see BattleResult.score). */
   score: [number, number];
+  /** Stalemates only: BattleResult.helpless (which army could no longer harm the other). */
+  helpless?: [boolean, boolean];
 }
 
 export interface MatchState {
@@ -457,6 +459,12 @@ export interface BattleResult {
   soldiersLost: [number, number];
   /** Damage dealt by each seat's Lord (attacks, ability, item skills), in HP like damageDealt. */
   lordDamage?: [number, number];
+  /**
+   * Stalemates only: per seat, whether that army could no longer damage the other when the battle was called (nothing
+   * left that could reach what the enemy had standing). Both false = both could, but no blow had landed for a while.
+   * For the wording only (stalemateCause); nothing in the rules reads it.
+   */
+  helpless?: [boolean, boolean];
 }
 
 export type AnimState = 'idle' | 'move' | 'attack' | 'cast' | 'dead';
@@ -586,8 +594,8 @@ export type AbilityEventKind =
    * Debuff windows, one event when the debuff STARTS on soldier `tgt` (refreshes are not repeated), `src` = the soldier
    * that applied it, `dur` = ticks it lasts: 'burn' = a burn or the Corpse Catapult's plague (3 s; its damage ticks
    * are not events, they are in the ledger under cause 'burn' or the skill that lit it), 'frost' = a slow.
-   * A burn kept alive by refreshes gets a follow-up 'burn' event the tick the previous window ends, `dur` = what is
-   * left of it then (1..60), so the windows chain without overlapping for as long as the burn lasts.
+   * A burn or slow kept alive by refreshes gets a follow-up event the tick the previous window ends, `dur` = what is
+   * left of it then, so the windows chain without overlapping for as long as the debuff lasts.
    * A Sun Priest's blessing is a 'war_cry' event with `tgt` = the blessed soldier and radius 0.
    */
   | 'burn' | 'frost'

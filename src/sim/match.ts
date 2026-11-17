@@ -532,6 +532,7 @@ export function applyBattle(s: MatchState, r: BattleResult): void {
     round: s.round, winner: r.winner, keepDamage: [Math.min(r.keepDamage[0], before[0]), Math.min(r.keepDamage[1], before[1])],
     survivors: [r.survivors[0].length, r.survivors[1].length], ticks: r.ticks,
     end: r.end ?? (r.timeout ? 'timeout' : r.winner === null ? 'mutualWipe' : 'wipe'), score: r.score ? [r.score[0], r.score[1]] : [0, 0],
+    ...(r.helpless ? { helpless: [r.helpless[0], r.helpless[1]] as [boolean, boolean] } : {}),
   });
   const dead0 = s.players[0].keepHp <= 0, dead1 = s.players[1].keepHp <= 0;
   if (dead0 || dead1 || s.round >= MAX_ROUNDS) {
@@ -581,7 +582,25 @@ export function roundOutcome(r: Pick<RoundSummary, 'winner'>, seat: Seat | null)
  * `detail` explains it from `seat`'s point of view. Spectators (seat null) get seat 0's wording with
  * neutral pronouns; the UI should put player names in itself.
  */
-export function roundOutcomeText(r: Pick<RoundSummary, 'winner' | 'end' | 'score'>, seat: Seat | null): { outcome: RoundOutcome; title: string; detail: string } {
+/**
+ * Why a stalemate was called, from `seat`'s point of view, as a sentence without the full stop: "The enemy army could
+ * no longer harm yours", "Your army could no longer harm the enemy army", "Neither army could harm the other", or
+ * "Neither army had landed a blow for a while". `armies` names each seat's army ("the Covenant army"); without it the
+ * enemy is "the enemy army" (spectators: "Blue's army" / "Red's army"). Old results without `helpless`: "Neither...".
+ */
+export function stalemateCause(r: { helpless?: [boolean, boolean] }, seat: Seat | null, armies?: [string, string]): string {
+  const me = (seat ?? 0) as Seat, foe = (1 - me) as Seat;
+  const h = r.helpless;
+  const name = armies ?? (seat === null ? ["Blue's army", "Red's army"] : seat === 0 ? ['your army', 'the enemy army'] : ['the enemy army', 'your army']);
+  const cap = (x: string): string => x.charAt(0).toUpperCase() + x.slice(1);
+  if (!h || (h[0] && h[1])) return 'Neither army could harm the other';
+  if (!h[0] && !h[1]) return 'Neither army had landed a blow for a while';
+  const stuck = h[me] ? me : foe, other = (1 - stuck) as Seat;
+  // "The Covenant army could no longer harm yours" reads better than "... harm your army"
+  return `${cap(name[stuck])} could no longer harm ${seat !== null && other === me ? 'yours' : name[other]}`;
+}
+
+export function roundOutcomeText(r: Pick<RoundSummary, 'winner' | 'end' | 'score' | 'helpless'>, seat: Seat | null): { outcome: RoundOutcome; title: string; detail: string } {
   const outcome = roundOutcome(r, seat);
   const me = (seat ?? 0) as Seat, foe = (1 - me) as Seat;
   const sc = r.score ?? [0, 0];
@@ -594,8 +613,8 @@ export function roundOutcomeText(r: Pick<RoundSummary, 'winner' | 'end' | 'score
       if (outcome === 'draw') return { outcome, title: 'Draw', detail: `Time ran out with the armies even: ${pts}.` };
       return { outcome, title: outcome === 'won' ? 'Victory on points' : 'Defeat on points', detail: `Time ran out: ${pts}.` };
     case 'stalemate':
-      if (outcome === 'draw') return { outcome, title: 'Stalemate', detail: `Neither army could harm the other, and they stood even: ${pts}.` };
-      return { outcome, title: outcome === 'won' ? 'Victory on points' : 'Defeat on points', detail: `Neither army could harm the other, so the battle ended early: ${pts}.` };
+      if (outcome === 'draw') return { outcome, title: 'Stalemate', detail: `${stalemateCause(r, seat)}, and they stood even: ${pts}.` };
+      return { outcome, title: outcome === 'won' ? 'Victory on points' : 'Defeat on points', detail: `${stalemateCause(r, seat)}, so the battle ended early: ${pts}.` };
     default:
       if (outcome === 'draw') return { outcome, title: 'Draw', detail: 'The field falls silent.' };
       return {

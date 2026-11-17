@@ -198,6 +198,8 @@ interface Sol {
   /** Presentation only (never read by the rules): the tick the last 'burn' event's flames run out. */
   burnFxUntil: number;
   slowPct: number; slowUntil: number;
+  /** Presentation only (never read by the rules): who applied the current slow, and the tick the last 'frost' event's window runs out. */
+  slowSrc: Sol | null; slowFxUntil: number;
   rallyUntil: number; bulwarkUntil: number;
   /** Soul Reaping (Death Knight): extra life drain until this tick. Grave Taunt (Ossuary Warden): must attack `tauntBy`
    *  until `tauntUntil`. Talon Strike (Roc Rider): stunned (no move, no attack) until `stunUntil`; `pendingStun` is applied at
@@ -447,6 +449,8 @@ class Battle {
   score: [number, number] = [0, 0];
   lastDamageTick = -1;
   helplessSince = -1;
+  /** Presentation only: when a stalemate is called, which sides could no longer damage the other (BattleResult.helpless). */
+  helpless: [boolean, boolean] | null = null;
   marching = false;
   marchDue = 0;
   marchLeft = 0;
@@ -528,7 +532,7 @@ class Battle {
       // First attacks are staggered over half an attack interval by the soldier's place in its army (no randomness).
       cd: ((b.sideIdx * 7 + k * 13) % 50) * st.atk, target: null, facing: b.facing, anim: 0, animUntil: 0,
       chargeReady: st.charge, firstStrike: st.L.has('windrunner'), lastAttack: -1000, reflects: st.L.has('mirror_aegis') ? 3 : 0,
-      undying: st.L.has('undying_oath'), burnDps: 0, burnUntil: 0, burnSrc: null, burnFxUntil: 0, slowPct: 0, slowUntil: 0, rallyUntil: 0, bulwarkUntil: 0,
+      undying: st.L.has('undying_oath'), burnDps: 0, burnUntil: 0, burnSrc: null, burnFxUntil: 0, slowPct: 0, slowUntil: 0, slowSrc: null, slowFxUntil: 0, rallyUntil: 0, bulwarkUntil: 0,
       reapUntil: 0, tauntBy: null, tauntUntil: 0, stunUntil: 0, pendingStun: 0,
       dmgAcc: 0, healAcc: 0, killer: null, killerDmg: 0, killerTower: -1, attacks: 0, blood: 0, summoned, moved: false, relocate: null,
       pendingSlow: 0, pendingSlowUntil: 0, pendingSlowSrc: null, pendingBurn: 0, pendingBurnSrc: null,
@@ -1785,9 +1789,15 @@ class Battle {
       if (!s.alive) continue;
       if (s.pendingStun) { s.stunUntil = Math.max(s.stunUntil, s.pendingStun); s.pendingStun = 0; }
       if (s.pendingSlow) {
-        // A debuff event when a slow STARTS (not on every refresh): src = who applied it, dur = how long it lasts.
-        if (s.slowUntil <= t) this.emitAbility(s.pendingSlowSrc ? s.pendingSlowSrc.i : -1, s.i, 'frost', s.x, s.y, 0, s.pendingSlowUntil - t);
-        s.slowPct = s.pendingSlow; s.slowUntil = s.pendingSlowUntil; s.pendingSlow = 0; s.pendingSlowSrc = null;
+        // a refresh may shorten the slow: a slow that starts afresh always gets its own event
+        if (s.slowUntil <= t) s.slowFxUntil = 0;
+        s.slowPct = s.pendingSlow; s.slowUntil = s.pendingSlowUntil; s.slowSrc = s.pendingSlowSrc; s.pendingSlow = 0; s.pendingSlowSrc = null;
+      }
+      if (s.slowUntil > t && s.slowFxUntil <= t) {
+        // A 'frost' event when a slow starts (src = who applied it, dur = how long it lasts), and again whenever the
+        // last event's window runs out while refreshes keep the slow on. Presentation only, like the burn's below.
+        this.emitAbility(s.slowSrc ? s.slowSrc.i : -1, s.i, 'frost', s.x, s.y, 0, s.slowUntil - t);
+        s.slowFxUntil = s.slowUntil;
       }
       if (s.pendingBurn) {
         if (s.burnUntil <= t || s.pendingBurn >= s.burnDps) { s.burnDps = s.pendingBurn; s.burnSrc = s.pendingBurnSrc; s.burnCause = s.pendingBurnCause; }
@@ -2122,6 +2132,7 @@ class Battle {
           this.fightTicks = t;
           if (!a0 && !a1) { this.winner = null; this.end = 'mutualWipe'; this.finish(); return; }
           if (a0 && a1) {
+            if (stall) this.helpless = [!this.canDamage(0), !this.canDamage(1)];
             this.endOnPoints(stall ? 'stalemate' : 'timeout');
             this.finish();
             return;
@@ -2179,6 +2190,7 @@ class Battle {
       soldiersLost: [this.lost[0], this.lost[1]],
       lordDamage: [Math.round(lordDamage[0] / 100), Math.round(lordDamage[1] / 100)],
     };
+    if (this.helpless) result.helpless = [this.helpless[0], this.helpless[1]];
     const soldiers: ReplaySoldier[] = this.sols.map((s) => {
       const src = s.sq.sourceSquad;
       const items = src ? (['weapon', 'armor', 'relic'] as const).filter((k) => src.items[k]).map((k) => {

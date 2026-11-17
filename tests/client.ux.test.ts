@@ -246,6 +246,9 @@ describe('round wording', () => {
     const time = outcomeText({ winner: 0, end: 'timeout', score: [40, 20], survivors: [3, 2], ticks: 1800 }, 0);
     expect(time.detail).toBe('Time ran out at 1:30: 40% of your army still stands, 20% of the enemy.');
     expect(outcomeText({ winner: null, end: 'stalemate', score: [5, 5], survivors: [1, 1], ticks: 900 }, null).detail).toMatch(/called at 0:45 with the armies even: 5% of Blue's army/);
+    // the stuck side, by faction
+    expect(outcomeText({ winner: 0, end: 'stalemate', score: [40, 20], survivors: [3, 2], ticks: 900, helpless: [false, true] }, 0, false, ['your army', 'the Covenant army']).detail)
+      .toMatch(/^The Covenant army could no longer harm yours, so the battle was called at 0:45/);
   });
   it('a conceded match: the room says why it ended and who gave up', async () => {
     const { matchConceded, matchEnd } = await import('../src/ui/results.ts');

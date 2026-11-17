@@ -6,7 +6,7 @@
 // per-round damage chart, and Play again (vs AI) or Rematch votes (PvP).
 import type { BattleResult, LordId, PlayerView, RoundSummary, Seat, Squad } from '../sim/types.ts';
 import type { RoomView } from '../net/protocol.ts';
-import { battleClock, TIME_LIMIT_TICKS } from './insights.ts';
+import { armyNames, battleClock, TIME_LIMIT_TICKS } from './insights.ts';
 import { income } from '../sim/match.ts';
 import * as match from '../sim/match.ts';
 import { sound } from '../audio.ts';
@@ -50,7 +50,7 @@ function countUp(node: HTMLElement, to: number, ms = 1200): void {
 type OutcomeText = { outcome: 'won' | 'lost' | 'draw'; title: string; detail: string };
 
 /** The sim's wording for a round when it provides it (roundOutcomeText), else a plain fallback. */
-export function outcomeText(r: Pick<RoundSummary, 'winner'> & Partial<Omit<RoundSummary, 'survivors'>> & { survivors?: unknown }, seat: Seat | null, timeout = false): OutcomeText {
+export function outcomeText(r: Pick<RoundSummary, 'winner'> & Partial<Omit<RoundSummary, 'survivors'>> & { survivors?: unknown }, seat: Seat | null, timeout = false, armies?: [string, string]): OutcomeText {
   const f = (match as unknown as { roundOutcomeText?: (r: unknown, seat: Seat | null) => OutcomeText }).roundOutcomeText;
   if (typeof f === 'function' && r.end) {
     const t = f(r, seat);
@@ -69,7 +69,7 @@ export function outcomeText(r: Pick<RoundSummary, 'winner'> & Partial<Omit<Round
       const even = t.outcome === 'draw';
       t.detail = r.end === 'timeout'
         ? `Time ran out${at}${even ? ' with the armies even' : ''}: ${pts}.`
-        : `Neither army could still harm the other, so the battle was called${at}${even ? ' with the armies even' : ''}: ${pts}.`;
+        : `${match.stalemateCause(r, seat, armies)}, so the battle was called${at}${even ? ' with the armies even' : ''}: ${pts}.`;
     }
     return t;
   }
@@ -170,7 +170,8 @@ export class ResultsScreen {
     const last = v.history.at(-1);
     const res = result ?? (last ? ({ winner: last.winner, keepDamage: last.keepDamage, timeout: false, survivors: [[], []] } as unknown as BattleResult) : null);
     const spect = v.seat === null;
-    const txt = outcomeText(last ?? { winner: res?.winner ?? null }, v.seat, !!res?.timeout);
+    const armies = armyNames(report?.stats.factions ?? (v.seat === null ? [null, null] : (v.seat === 0 ? [v.you?.faction ?? null, v.enemy?.faction ?? null] : [v.enemy?.faction ?? null, v.you?.faction ?? null])), v.seat);
+    const txt = outcomeText(last ?? { winner: res?.winner ?? null }, v.seat, !!res?.timeout, armies);
     const title = spect ? (txt.outcome === 'draw' ? txt.title : `${room.seats[txt.outcome === 'won' ? me : foe]?.name ?? 'Seat ' + (txt.outcome === 'won' ? me : foe)} takes the round`) : txt.title;
     const dealt = res ? res.keepDamage[foe] : 0;
     const taken = res ? res.keepDamage[me] : 0;

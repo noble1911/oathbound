@@ -11,8 +11,6 @@
 // sees a prompt to accept a faster speed, and the requester's button waits. An AI opponent agrees at
 // once, so that press applies locally straight away. Spectators only follow. Offline nothing changes.
 import type { DecodedReplay, LordId, Replay, ReplayEvent, Seat } from '../sim/types.ts';
-import { UNITS } from '../sim/data/units.ts';
-import type { FactionId } from '../sim/types.ts';
 import { decodeReplay } from '../sim/index.ts';
 import { LORDS, LORD_ABILITY_IDS } from '../sim/data/lords.ts';
 import { LEGENDARIES } from '../sim/data/items.ts';
@@ -24,7 +22,8 @@ import { icon } from './icons.ts';
 import { crest } from './units.ts';
 import { unitName } from './gamedata.ts';
 import { TopBar } from './hud.ts';
-import { battleStats, type BattleStats } from './insights.ts';
+import { armyNames, battleStats, replayFactions, type BattleStats } from './insights.ts';
+import { stalemateCause } from '../sim/match.ts';
 import { outcomeText } from './results.ts';
 import { Inspector } from './inspector.ts';
 import { castEvents, inspectRow, rowOfSoldier, rowOfSquad, type CastEvent } from './inspect-data.ts';
@@ -66,18 +65,6 @@ export const ABIL_VERB: Record<string, string> = {
   whirlwind: 'calls a Djinn Whirlwind', stampede: 'leads the Stampede', talon: 'strikes with her talons',
 };
 
-/** Each side's faction, read off its army (the Lord, else any soldier's unit type): picks the Keep the scene shows. */
-function replayFactions(soldiers: { side: 0 | 1; type: string; lord?: string }[]): [FactionId | null, FactionId | null] {
-  const out: [FactionId | null, FactionId | null] = [null, null];
-  for (const s of soldiers) {
-    if (out[s.side]) continue;
-    const lord = s.lord ? (LORDS as Record<string, { faction: FactionId } | undefined>)[s.lord] : undefined;
-    const unit = (UNITS as Record<string, { faction: FactionId } | undefined>)[s.type];
-    out[s.side] = lord?.faction ?? unit?.faction ?? null;
-    if (out[0] && out[1]) break;
-  }
-  return out;
-}
 
 
 export class BattleScreen {
@@ -759,12 +746,13 @@ export class BattleScreen {
     }
     const won = r.winner === null ? null : r.winner === me;
     // the sim's own words for the result, so the banner, the results card and the history agree
-    const txt = outcomeText(r as unknown as Parameters<typeof outcomeText>[0], this.info.seat, r.timeout);
+    const armies = armyNames(replayFactions(this.decoded.replay.soldiers), this.info.seat);
+    const txt = outcomeText(r as unknown as Parameters<typeof outcomeText>[0], this.info.seat, r.timeout, armies);
     const end = (r as unknown as { end?: string }).end;
     const title = this.info.seat === null ? (r.winner === null ? txt.title : `${this.info.names[r.winner]} wins the round`) : txt.title === 'Victory' ? 'Round won' : txt.title === 'Defeat' ? 'Round lost' : txt.title;
     sound.battleEnd(won);
     if (won !== null && this.info.seat !== null) playLordLine(this.info.lords[this.info.seat], won ? 'roundWon' : 'roundLost', { delay: 0.8 });
-    this.banner(title, end === 'stalemate' ? 'Neither army could harm the other' : r.timeout ? 'Time is up: 1:30' : 'The field falls silent', won === null ? 'neutral' : won ? 'good' : 'bad');
+    this.banner(title, end === 'stalemate' ? stalemateCause(r, this.info.seat, armies) : r.timeout ? 'Time is up: 1:30' : 'The field falls silent', won === null ? 'neutral' : won ? 'good' : 'bad');
     this.root.classList.add('over');
     $(this.root, '.skip').setAttribute('disabled', '');
     this.renderAsk();

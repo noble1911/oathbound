@@ -280,12 +280,26 @@ describe('faction mechanics', () => {
     expect(simulateBattle(s, { record: false }).result).toEqual(replay.result);
   });
 
-  it('debuff windows: slows are announced once as frost events with their source and duration', () => {
-    const d = run(arena([['djinn_binder', 2, [4000, 3000]], ['scimitar', 2, [4000, 3900]]], [['militia', 1, [4000, 3900]], ['militia', 1, [4600, 3900]]], ['sultana', 'warden']));
+  it('debuff windows: a slow is announced as a frost event with its source and duration, refreshes chain without gaps', () => {
+    const s = arena([['djinn_binder', 2, [4000, 3000]], ['scimitar', 2, [4000, 3900]]], [['militia', 1, [4000, 3900]], ['militia', 1, [4600, 3900]]], ['sultana', 'warden']);
+    const { replay } = simulateBattle(s);
+    const d = decodeReplay(replay);
     const binders = d.replay.squads.find((x) => x.type === 'djinn_binder')!.soldiers;
-    const slows = d.events.filter((e) => e.k === 'ability' && e.ability === 'frost') as { src: number; tgt: number; dur: number }[];
+    const slows = d.events.filter((e) => e.k === 'ability' && e.ability === 'frost') as { src: number; tgt: number; dur: number; tick: number }[];
     expect(slows.length).toBeGreaterThan(0);
-    expect(slows.every((e) => binders.includes(e.src) && e.dur === 40 && d.replay.soldiers[e.tgt].side === 1)).toBe(true);
+    expect(slows.every((e) => binders.includes(e.src) && e.dur > 0 && e.dur <= 40 && d.replay.soldiers[e.tgt].side === 1)).toBe(true);
+    // a new slow is a 40-tick window; while refreshes keep it on, a follow-up lands the tick the last window ends
+    const end = new Map<number, number>();
+    let followUps = 0;
+    for (const e of slows) {
+      const prev = end.get(e.tgt);
+      if (prev !== undefined && e.tick === prev) followUps++;
+      else { expect(e.dur).toBe(40); if (prev !== undefined) expect(e.tick).toBeGreaterThan(prev); }
+      end.set(e.tgt, e.tick + e.dur);
+    }
+    expect(followUps).toBeGreaterThan(0);
+    // presentation only: an unrecorded run ends exactly the same way
+    expect(simulateBattle(s, { record: false }).result).toEqual(replay.result);
   });
 
   it('Caliphate: the Sun Mirror burns one target at a time from long range, casters first, fliers too', () => {
