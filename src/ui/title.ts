@@ -6,11 +6,9 @@
 // a woodcut backdrop (`.title-art`) that fades away once the battle is on the canvas and stays when it
 // cannot be. The menu never waits for any of it.
 //
-// The menu comes in three styles, all built from the game's own woodcut art rather than from painted
-// fantasy UI (docs/UI-STYLE.md, "Title menu"); `?menustyle=1|2|3` picks one:
-//   1  Broadside       a printed sheet: woodcut headpiece, a rubricated initial, ink rules, block buttons
-//   2  Campaign table  the wordmark over the field and the orders laid out on a campaign map along the bottom
-//   3  Ink band        a dark band with the wordmark and a plain list of entries; the battle has the screen
+// The menu is a broadside, built from the game's own woodcut art rather than from painted fantasy UI
+// (docs/UI-STYLE.md, "Title menu"): a printed sheet with a woodcut headpiece, a rubricated initial, ink rules
+// and block buttons.
 import type { AiLevel, RoomView, SeatInfo } from '../net/protocol.ts';
 import { sound } from '../audio.ts';
 import { $, el, esc, store } from './dom.ts';
@@ -19,13 +17,6 @@ import { art } from './art.ts';
 import { toggleRules } from './rules.ts';
 import type { SceneAdapter } from './scene-adapter.ts';
 import { TitleBattle, type MenuInsets } from './title-battle.ts';
-
-/** The style shown without `?menustyle=`. */
-export const DEFAULT_MENU_STYLE = 1;
-export function menuStyle(): 1 | 2 | 3 {
-  const q = Number(new URLSearchParams(location.search).get('menustyle'));
-  return (q === 1 || q === 2 || q === 3 ? q : DEFAULT_MENU_STYLE) as 1 | 2 | 3;
-}
 
 export interface TitleActions {
   vsAI(name: string, level: AiLevel): void;
@@ -41,7 +32,6 @@ export class TitleScreen {
   private err: HTMLElement;
   private busy = false;
   private battle: TitleBattle;
-  readonly style = menuStyle();
 
   /** `scene`: the renderer whenever it is up (the battle behind the menu); the menu does not wait for it. */
   constructor(ui: HTMLElement, a: TitleActions, scene: Promise<SceneAdapter>) {
@@ -49,29 +39,26 @@ export class TitleScreen {
     const name = store.get('name') ?? '';
     const level = (store.get('ai') as AiLevel) || 'normal';
     const fresh = store.get('tutorial.done') !== '1' && !code;
-    const st = this.style;
     const img = (id: string, cls: string): string => {
       const u = art(id);
       return u ? `<img class="${cls}" src="${u}" alt="" draggable="false">` : '';
     };
-    const initial = st === 1 ? img('scene_initial', 'tw-initial') : '';
-    const map = st === 2 ? art('scene_map') : null;
+    const initial = img('scene_initial', 'tw-initial');
     this.root = el(`
-      <div class="screen title ms${st}" ${map ? `style="--map:url(${map})"` : ''}>
+      <div class="screen title">
         <div class="title-art"></div>
         <div class="title-vignette"></div>
-        <div class="title-sheet ${st === 1 ? 'parch' : ''}">
+        <div class="title-sheet parch">
           <header class="title-head">
-            ${st === 1 ? img('scene_headpiece', 'tw-headpiece') : ''}
+            ${img('scene_headpiece', 'tw-headpiece')}
             <h1 class="title-word ${initial ? 'cut' : ''}" aria-label="Oathbound">${initial}<span class="tw-o">O</span>athbound</h1>
             <p class="title-tag">Raise your banners. Break their Keep.</p>
           </header>
-          <div class="title-menu ${st === 2 ? 'parch' : ''}">
+          <div class="title-menu">
             <section class="mg mg-you">
               <label class="field"><span>Commander name</span><input class="name" maxlength="16" placeholder="Wanderer" value="${esc(name)}" autocomplete="nickname" spellcheck="false"></label>
             </section>
             <section class="mg mg-play">
-              <h3 class="mg-h">Skirmish</h3>
               <div class="menu-block">
                 <button class="tbtn ${code ? '' : 'cta'} big vsai">${icon('ai')}<span>Play vs AI</span></button>
                 <div class="diff" role="radiogroup" aria-label="AI difficulty">
@@ -82,7 +69,6 @@ export class TitleScreen {
             </section>
             <div class="menu-sep"><span>or duel a rival</span></div>
             <section class="mg mg-duel">
-              <h3 class="mg-h">Duel a rival<i class="sh me"></i><i class="sh foe"></i></h3>
               <button class="tbtn big create">${icon('sword2')}<span>${code ? 'Create a new PvP room' : 'Create PvP room'}</span></button>
               <div class="join-row">
                 <input class="code" maxlength="4" placeholder="CODE" value="${esc(code)}" autocapitalize="characters" spellcheck="false" aria-label="Room code">
@@ -151,7 +137,7 @@ export class TitleScreen {
     const W = innerWidth;
     const H = innerHeight;
     if (W < 720) return {};
-    const r = $(this.root, this.style === 2 ? '.title-menu' : '.title-sheet').getBoundingClientRect();
+    const r = $(this.root, '.title-sheet').getBoundingClientRect();
     if (!r.width) return {};
     if (r.width > W * 0.6) return r.top > H * 0.4 ? { bottom: Math.round(H - r.top) } : {};
     if (r.left < W * 0.2) return { left: Math.round(r.right) };

@@ -160,23 +160,19 @@ behind a menu is the game itself, or a print of it:
 The scenes are made like the portraits: `node tools/art/ui-scene.mjs` (prompts `tools/art/ui-prompts/scene_*.txt`, the
 `scene:` and `paper:` lines of `_style_woodcut.txt`), then `python tools/art/ui-scene.py`.
 
-The title menu is **print, not forged metal**: flat ink, paper and rules, no plates, bevels or gradients. It has three
-styles on one markup (`?menustyle=1|2|3`; the default, `DEFAULT_MENU_STYLE` in `src/ui/title.ts`, is 1):
-
-| # | Style | What it is |
-| --- | --- | --- |
-| 1 | Broadside | a printed sheet at the left: woodcut headpiece, a cut initial O, a rubric line, ink-block buttons |
-| 2 | Campaign table | the wordmark over the field, the orders in three columns on a campaign map along the bottom |
-| 3 | Ink band | a dark band at the left with the wordmark and a plain list of entries; the battle has the screen |
-
-Rules that hold in all three:
+The title menu is **print, not forged metal**: flat ink, paper and rules, no plates, bevels or gradients. It is a
+**broadside** (`src/ui/title.ts`): a printed sheet at the left with a woodcut headpiece (`scene_headpiece`), a cut
+initial O (`scene_initial`), a rubric line and ink-block buttons; the battle has the rest of the screen. On a narrow
+window the sheet is centred and the battle shows around it.
 - **Gold is flat leaf on the one primary action** (Play vs AI; Join when an invite link filled the code in): a flat
-  `--gold` block in ink on paper, `--gold-hi` text on the dark band. Never a gradient, never a second gold thing.
-- **Madder red (`--rubric`, `#9c2a1f`) is the printer's second ink**: the rubric line and the cut initial of the
-  broadside, nothing else. It is not the enemy livery and never marks a control.
-- Blue and red appear only as the two sides (the herald's band and the duel shields of style 2).
-- Fields are ruled lines or paper wells, the difficulty is three words with the chosen one inked, and every control
+  `--gold` block in ink on paper. Never a gradient, never a second gold thing.
+- **Madder red (`--rubric`, `#9c2a1f`) is the printer's second ink**: the rubric line and the cut initial, nothing
+  else. It is not the enemy livery and never marks a control.
+- Fields are ruled lines on paper wells, the difficulty is three words with the chosen one inked, and every control
   keeps the 2px `--me-hi` focus outline.
+
+Two other styles (a campaign table and an ink band) were tried and dropped; their screenshots are in
+`docs/reviews/shots-2026-11-17/menu-options/`.
 
 ## Battle HUD and inspector
 

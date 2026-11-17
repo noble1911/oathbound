@@ -1,7 +1,7 @@
 // Woodcut backdrops and print ornaments for the menus, via the Codex CLI's image generation:
 //   tools/art/ui-prompts/scene_<id>.txt + a style line of _style_woodcut.txt -> art-work/ui-scenes/<id>.png
 // `scene_field` (the battlefield behind the menus when the live battle cannot draw) takes the `scene:` line (a
-// night print); the paper pieces (map, initial, headpiece) take `paper:`.
+// night print); the paper pieces (initial, headpiece) take `paper:`.
 //   node tools/art/ui-scene.mjs [ids,comma,separated] [--force]    then    python tools/art/ui-scene.py
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';

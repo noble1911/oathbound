@@ -6,7 +6,7 @@ import path from 'node:path';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:5181/';
 const OUT = process.argv[2] || 'e2e/shots/title-strip';
-const QUERY = process.argv[3] || 'menustyle=3&titleseed=11';
+const QUERY = process.argv[3] || 'titleseed=11';
 const TIMES = (process.env.TIMES || '6,14,22,30,40,55').split(',').map(Number);
 const W = +(process.env.W || 1920), H = +(process.env.H || 1080);
 fs.mkdirSync(OUT, { recursive: true });

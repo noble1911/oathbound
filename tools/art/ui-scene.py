@@ -1,8 +1,7 @@
 # Convert art-work/ui-scenes/*.png (tools/art/ui-scene.mjs) to the WebPs the menus load from public/ui/:
 #   scene_field      1536 wide  the woodcut battlefield behind the menus when the live battle cannot draw
-#   scene_map        768 wide   the campaign map (menu style 2)
-#   scene_initial    384 square the printer's initial O (menu style 1)
-#   scene_headpiece  1200 wide  the marching headpiece, cropped to its strip (menu style 1)
+#   scene_initial    384 square the printer's initial O (the title menu)
+#   scene_headpiece  1200 wide  the marching headpiece, cropped to its strip (the title menu)
 # and add their ids to public/ui/manifest.json (the other entries are left as they are).
 import json, os
 from PIL import Image
@@ -10,7 +9,7 @@ from PIL import Image
 root = os.path.join(os.path.dirname(__file__), '..', '..')
 src = os.path.join(root, 'art-work', 'ui-scenes')
 dst = os.path.join(root, 'public', 'ui')
-SPEC = {'field': (1536, None, 80), 'map': (768, None, 80), 'initial': (384, None, 86), 'headpiece': (1200, (0.0, 0.31, 1.0, 0.76), 82)}
+SPEC = {'field': (1536, None, 80), 'initial': (384, None, 86), 'headpiece': (1200, (0.0, 0.31, 1.0, 0.76), 82)}
 done = []
 for id, (width, crop, q) in SPEC.items():
     p = os.path.join(src, id + '.png')
