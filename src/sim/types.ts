@@ -586,6 +586,8 @@ export type AbilityEventKind =
    * Debuff windows, one event when the debuff STARTS on soldier `tgt` (refreshes are not repeated), `src` = the soldier
    * that applied it, `dur` = ticks it lasts: 'burn' = a burn or the Corpse Catapult's plague (3 s; its damage ticks
    * are not events, they are in the ledger under cause 'burn' or the skill that lit it), 'frost' = a slow.
+   * A burn kept alive by refreshes gets a follow-up 'burn' event the tick the previous window ends, `dur` = what is
+   * left of it then (1..60), so the windows chain without overlapping for as long as the burn lasts.
    * A Sun Priest's blessing is a 'war_cry' event with `tgt` = the blessed soldier and radius 0.
    */
   | 'burn' | 'frost'

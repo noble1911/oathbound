@@ -5,6 +5,7 @@
 // carries its real length in `dur` ticks:
 //   'frost'   - a slow, dur = the slow's remaining ticks          -> chill tint + frost motes
 //   'burn'    - a burn / the Corpse Catapult's plague, dur 60      -> flames (or plague) on the soldier
+//               (a refreshed burn gets a follow-up event as each window ends, dur = what is left)
 //   'war_cry' - radius 0: a Sun Priest's blessing on one soldier   -> a small per-soldier gold glow
 //               radius > 0: an area war cry                        -> the big shockwave
 import type { AbilityEventKind, SkillId } from '../sim/types.ts';

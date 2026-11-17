@@ -243,14 +243,41 @@ describe('faction mechanics', () => {
     const d = run(arena([['corpse_catapult', 2, [4000, 1500]], ['grave_knight', 2, [4000, 3900]]], [['militia', 1, [4000, 3900]], ['militia', 1, [4600, 3900]]], ['lich', 'warden']));
     const q = squadStatsAt(d, d.replay.ticks).squads.find((x) => x.type === 'corpse_catapult')!;
     expect(q.byCause.burn ?? 0).toBeGreaterThan(0);
-    // the debuff window is an event: one 'burn' when the plague takes hold of a soldier, from the catapult, for 3 s
+    // the debuff window is an event: a 'burn' when the plague takes hold of a soldier, from the catapult, for 3 s,
+    // and a follow-up exactly when that window runs out while refreshes keep the plague going (up to 3 s more)
     const cat = d.replay.squads.find((x) => x.type === 'corpse_catapult')!.soldiers[0];
-    const starts = d.events.filter((e) => e.k === 'ability' && e.ability === 'burn') as { src: number; tgt: number; dur: number; tick: number }[];
-    expect(starts.length).toBeGreaterThan(0);
-    expect(starts.every((e) => e.src === cat && e.dur === 60 && d.replay.soldiers[e.tgt].side === 1)).toBe(true);
-    // one event per debuff window, not per refresh: the same soldier is not re-announced within the window
-    const seen = new Map<number, number>();
-    for (const e of starts) { if (seen.has(e.tgt)) expect(e.tick - seen.get(e.tgt)!).toBeGreaterThanOrEqual(60); seen.set(e.tgt, e.tick); }
+    const burns = d.events.filter((e) => e.k === 'ability' && e.ability === 'burn') as { src: number; tgt: number; dur: number; tick: number }[];
+    expect(burns.length).toBeGreaterThan(0);
+    expect(burns.every((e) => e.src === cat && e.dur > 0 && e.dur <= 60 && d.replay.soldiers[e.tgt].side === 1)).toBe(true);
+    // not per refresh: a soldier's windows never overlap; a new 3 s window or a follow-up starting where the last ended
+    const end = new Map<number, number>();
+    let followUps = 0;
+    for (const e of burns) {
+      const prev = end.get(e.tgt);
+      if (prev !== undefined) { expect(e.tick).toBeGreaterThanOrEqual(prev); if (e.tick === prev) followUps++; else expect(e.dur).toBe(60); }
+      else expect(e.dur).toBe(60);
+      end.set(e.tgt, e.tick + e.dur);
+    }
+  });
+
+  it('a burn kept alive by repeated hits is shown for as long as it lasts (follow-up burn events, no gaps)', () => {
+    const s = arena([['archers', 3, [4000, 3000]]], [['knights', 3, [4000, 4400]]], ['marshal', 'warden']);
+    s.players[0].squads[1].items.weapon = { id: 900, base: 'ironbark_bow', slot: 'weapon', rarity: 'magic', ilvl: 6, implicit: { id: 'slaying', value: 15 }, affixes: [{ id: 'embers', value: 6 }], legendary: null };
+    const { replay } = simulateBattle(s);
+    const d = decodeReplay(replay);
+    const burns = d.events.filter((e) => e.k === 'ability' && e.ability === 'burn') as { tgt: number; dur: number; tick: number }[];
+    const end = new Map<number, number>();
+    let followUps = 0;
+    for (const e of burns) {
+      const prev = end.get(e.tgt);
+      if (prev !== undefined && e.tick === prev) followUps++;
+      else { expect(e.dur).toBe(60); if (prev !== undefined) expect(e.tick).toBeGreaterThan(prev); }
+      expect(e.dur).toBeGreaterThan(0);
+      end.set(e.tgt, e.tick + e.dur);
+    }
+    expect(followUps).toBeGreaterThan(0);
+    // presentation only: an unrecorded run (no events at all) ends exactly the same way
+    expect(simulateBattle(s, { record: false }).result).toEqual(replay.result);
   });
 
   it('debuff windows: slows are announced once as frost events with their source and duration', () => {

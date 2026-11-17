@@ -195,6 +195,8 @@ interface Sol {
   reflects: number;
   undying: boolean;
   burnDps: number; burnUntil: number; burnSrc: Sol | null;
+  /** Presentation only (never read by the rules): the tick the last 'burn' event's flames run out. */
+  burnFxUntil: number;
   slowPct: number; slowUntil: number;
   rallyUntil: number; bulwarkUntil: number;
   /** Soul Reaping (Death Knight): extra life drain until this tick. Grave Taunt (Ossuary Warden): must attack `tauntBy`
@@ -526,7 +528,7 @@ class Battle {
       // First attacks are staggered over half an attack interval by the soldier's place in its army (no randomness).
       cd: ((b.sideIdx * 7 + k * 13) % 50) * st.atk, target: null, facing: b.facing, anim: 0, animUntil: 0,
       chargeReady: st.charge, firstStrike: st.L.has('windrunner'), lastAttack: -1000, reflects: st.L.has('mirror_aegis') ? 3 : 0,
-      undying: st.L.has('undying_oath'), burnDps: 0, burnUntil: 0, burnSrc: null, slowPct: 0, slowUntil: 0, rallyUntil: 0, bulwarkUntil: 0,
+      undying: st.L.has('undying_oath'), burnDps: 0, burnUntil: 0, burnSrc: null, burnFxUntil: 0, slowPct: 0, slowUntil: 0, rallyUntil: 0, bulwarkUntil: 0,
       reapUntil: 0, tauntBy: null, tauntUntil: 0, stunUntil: 0, pendingStun: 0,
       dmgAcc: 0, healAcc: 0, killer: null, killerDmg: 0, killerTower: -1, attacks: 0, blood: 0, summoned, moved: false, relocate: null,
       pendingSlow: 0, pendingSlowUntil: 0, pendingSlowSrc: null, pendingBurn: 0, pendingBurnSrc: null,
@@ -1788,10 +1790,15 @@ class Battle {
         s.slowPct = s.pendingSlow; s.slowUntil = s.pendingSlowUntil; s.pendingSlow = 0; s.pendingSlowSrc = null;
       }
       if (s.pendingBurn) {
-        // Likewise when a burn / plague starts: src = the soldier whose hit lit it (e.g. the Corpse Catapult).
-        if (s.burnUntil <= t) this.emitAbility(s.pendingBurnSrc ? s.pendingBurnSrc.i : -1, s.i, 'burn', s.x, s.y, 0, 60);
         if (s.burnUntil <= t || s.pendingBurn >= s.burnDps) { s.burnDps = s.pendingBurn; s.burnSrc = s.pendingBurnSrc; s.burnCause = s.pendingBurnCause; }
         s.burnUntil = t + 60; s.pendingBurn = 0; s.pendingBurnSrc = null; s.pendingBurnCause = C_BURN;
+      }
+      if (s.burnUntil > t && s.burnFxUntil <= t) {
+        // A 'burn' event when a burn / plague starts (src = the soldier whose hit lit it, e.g. the Corpse Catapult),
+        // and again whenever the last event's flames run out while refreshes keep the burn alive, so the
+        // flames last as long as the burn. Presentation only: burnFxUntil feeds nothing but this event.
+        this.emitAbility(s.burnSrc ? s.burnSrc.i : -1, s.i, 'burn', s.x, s.y, 0, s.burnUntil - t);
+        s.burnFxUntil = s.burnUntil;
       }
       if (s.dmgAcc || s.healAcc) {
         this.dealt[(1 - s.side) as Seat] += s.dmgAcc;
