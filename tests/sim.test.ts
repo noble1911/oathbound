@@ -246,7 +246,7 @@ describe('hidden information', () => {
     const after = viewFor(s, 0);
     expect(after).toEqual(before);
     // The enemy block contains only public fields.
-    expect(Object.keys(after.enemy).sort()).toEqual(['faction', 'keepHp', 'keepMax', 'lastArmy', 'lord', 'ready', 'seat']);
+    expect(Object.keys(after.enemy).sort()).toEqual(['faction', 'keepHp', 'keepMax', 'lastArmy', 'lastMoved', 'lord', 'ready', 'seat']);
     expect(JSON.stringify(after.enemy.lastArmy)).toBe(JSON.stringify(s.players[1].lastArmy));
     // Mutating the view cannot touch the state.
     after.you!.gold = -1;

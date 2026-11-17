@@ -405,22 +405,33 @@ describe('bots play every faction', () => {
     }
   }, 180_000);
 
-  it("Normal moves its archers (camel archers too) under the enemy's last-round fliers, and leaves the rest in lane", () => {
-    const plan = (theirs: Spec[], enemyLord: LordId): MatchState => {
-      const s = arena([['camel_archer', 1, [3999, 2100]], ['scimitar', 1, [3999, 3500]]], theirs, ['sultana', enemyLord]);
-      s.players[1].lastArmy = structuredClone(s.players[1].squads);
-      s.players[0].gold = 0;
+  it("Normal musters its archers (camel archers too) under the enemy's last-round fliers, and leaves the rest in lane", () => {
+    const plan = (theirs: Spec[], enemyLord: LordId, offer = true): MatchState => {
+      const s = arena([['camel_archer', 1, [3999, 2100]], ['camel_archer', 1, [2600, 2100]], ['camel_archer', 1, [1300, 2100]], ['scimitar', 1, [3999, 3500]]], theirs, ['sultana', enemyLord]);
+      for (const p of s.players) p.lastArmy = structuredClone(p.squads);
+      const p = s.players[0];
+      p.gold = 0;
+      // the whole roster is unlocked, so the Muster costs nothing
+      p.unlocked = [...FACTIONS.caliphate.units];
+      p.draftOptions = [];
+      p.draftPicks = 0;
+      p.musterOffer = offer;
       botPlan(s, 0, 'normal', 1);
       return s;
     };
-    const at = (s: MatchState, u: UnitType): Vec2 => s.players[0].squads.find((q) => q.type === u)!.pos;
-    // A Wyvern on the far side (x 1300 in seat 1's frame is x 6699 in seat 0's).
+    const xs = (s: MatchState, u: UnitType): number[] => s.players[0].squads.filter((q) => q.type === u).map((q) => q.pos[0]);
+    // A Wyvern on the far side (x 1300 in seat 1's frame is x 6699 in seat 0's): Muster, and the bows cross the field.
     const s = plan([['wyvern', 1, [1300, 3000]], ['knights', 1, [3999, 3500]]], 'warden');
-    expect(at(s, 'camel_archer')[0]).toBeGreaterThan(5500);
-    expect(at(s, 'scimitar')).toEqual([3999, 3500]);
-    // No flier squads (a flying Lord alone does not count): nothing moves.
-    const t = plan([['knights', 1, [1300, 3500]]], 'skylady');
-    expect(at(t, 'camel_archer')).toEqual([3999, 2100]);
+    expect(s.players[0].muster).toBe(true);
+    for (const x of xs(s, 'camel_archer')) expect(x).toBeGreaterThan(5000);
+    expect(s.players[0].squads.find((q) => q.type === 'scimitar')!.pos).toEqual([3999, 3500]);
+    // Without a Muster to call (the round's unlock is spent) the squads are locked: nothing moves.
+    const w = plan([['wyvern', 1, [1300, 3000]], ['knights', 1, [3999, 3500]]], 'warden', false);
+    expect(w.players[0].muster).toBe(false);
+    expect(xs(w, 'camel_archer')).toEqual([3999, 2600, 1300]);
+    // No flier squads (a flying Lord alone does not count) and nothing the bows beat: nothing moves.
+    const t = plan([['knights', 1, [3999, 3500]]], 'skylady');
+    expect(xs(t, 'camel_archer')).toEqual([3999, 2600, 1300]);
   });
 
   it("Normal's Warden gives a weapon to a squad, where any other Normal Lord keeps it for the hero", () => {

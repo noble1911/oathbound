@@ -6,6 +6,7 @@ import { availableParallelism } from 'node:os';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { aggregate, formatReport, playMatch, TOURNAMENT_STRATEGIES, type MatchRecord, type Report } from '../src/sim/tournament.ts';
 import { LORDS, LORD_IDS } from '../src/sim/data/lords.ts';
+import { setBotKnobs } from '../src/sim/bot.ts';
 import type { BotStrategy, LordId } from '../src/sim/types.ts';
 
 type Job = { seed: number; lords: [LordId, LordId]; strats: [BotStrategy, BotStrategy] };
@@ -171,6 +172,9 @@ async function main(): Promise<void> {
   }
 }
 
+// OB_KNOBS='{"musterMin":4000}' sets the experimental bot knobs of the 'hardx' strategy (src/sim/bot.ts BotKnobs):
+//   OB_KNOBS='{"noMuster":true}' node tools/tournament.ts --strats hard,hardx --seeds 2
+if (process.env.OB_KNOBS) setBotKnobs(JSON.parse(process.env.OB_KNOBS));
 if (!isMainThread) {
   const jobs = workerData as Job[];
   const out: MatchRecord[] = [];

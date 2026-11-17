@@ -281,7 +281,7 @@ export interface Squad {
   /** 0..255, see header. */
   facing: number;
   items: ItemSlots;
-  /** Round in which it was deployed (sell refunds 50% only during that round's planning). */
+  /** Round in which it was deployed (0 = the Lord). Until that round's battle it may be moved and sold back freely; afterwards it is locked in place and refunds nothing. */
   deployedRound: number;
   /** Gold spent on this squad (deploy + level-ups); used for selling and stats. */
   spent: number;
@@ -322,6 +322,20 @@ export interface PlayerState {
   lostLast: boolean;
   /** The army as it fought last battle — the only thing the opponent sees during planning. */
   lastArmy: Squad[] | null;
+  /**
+   * Relocation (DESIGN §2). Squads deployed in an earlier round are locked in place; `moveLimit` is how many of them
+   * may be relocated this round: 0, or MUSTER_MOVES once Muster is taken. Optional on states saved before the rule.
+   */
+  moveLimit?: number;
+  /** May this player still take Muster this round ({t:'muster'}) instead of the round's unit unlock? */
+  musterOffer?: boolean;
+  /** Was Muster taken this round? */
+  muster?: boolean;
+  /**
+   * Ids of the squads in `lastArmy` that stood somewhere else in the battle before it (the Lord included; squads new
+   * in that battle are not "moved"). Public: the opponent watched both battles. Shown as intel on the enemy ghosts.
+   */
+  lastMoved?: number[];
   /** Always zeros: there is no comeback bonus (both players face identical conditions). Kept so older UIs keep working. */
   comeback: Comeback;
 }
@@ -400,6 +414,12 @@ export interface EnemyView {
   ready: boolean;
   /** The army exactly as it fought last round (positions, levels, items). Null in round 1. */
   lastArmy: Squad[] | null;
+  /**
+   * Intel: ids of the squads in `lastArmy` that had moved since the battle before it (PlayerState.lastMoved). Both
+   * battles were public, so this tells nothing the viewer could not have seen. Empty in rounds 1 and 2. Optional
+   * for views recorded before the rule.
+   */
+  lastMoved?: number[];
   // Gold, stash, unlocks, current squads/levels/items and loot are hidden.
 }
 
@@ -413,7 +433,17 @@ export type Intent =
   | { t: 'pickFaction'; faction: FactionId }
   | { t: 'pickLord'; lord: LordId }
   | { t: 'draft'; unit: UnitType }
+  /**
+   * Muster: taken INSTEAD of this round's unit unlock. Lets the player relocate up to MUSTER_MOVES squads deployed in
+   * earlier rounds, this round only. Refused once the round's unlock is spent (or in round 1: nothing is locked yet).
+   */
+  | { t: 'muster' }
   | { t: 'deploy'; unit: UnitType; pos: Vec2; facing?: number }
+  /**
+   * Move and/or turn a squad. The Lord and squads deployed this round move freely. A squad from an earlier round is
+   * locked: it may only turn on the spot (same `pos`, new `facing`) unless a relocation is left this round
+   * (PlayerState.moveLimit; see relocationsLeft in match.ts). Moving it back to where it stood gives the move back.
+   */
   | { t: 'move'; squad: number; pos: Vec2; facing?: number }
   | { t: 'sell'; squad: number }
   | { t: 'levelUp'; squad: number }

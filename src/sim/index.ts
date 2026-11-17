@@ -35,6 +35,9 @@ export {
 // squadFootprint(type) / overlappingSquad(squads, type, pos, ignoreId?) / freeSpotNear(squads, seat, type, pos, ignoreId?)
 //                                                     — deploy/move footprints: squads of one player may not overlap
 export { concede, armyClasses, suddenDeathPct, unlockOptions, SUDDEN_DEATH_ROUND, SUDDEN_DEATH_PCT, FIRST_UNLOCKS } from './match.ts';
+// Relocation (DESIGN §2): squads from earlier rounds are locked; Muster ({t:'muster'}, instead of the round's unlock) relocates up to MUSTER_MOVES.
+// squadLocked(squad, round) / squadHome(player, id) / relocatedSquads(player, round) / relocationsLeft(player, round) / canMuster(player, round)
+export { MUSTER_MOVES, LOCKED_ERROR, squadLocked, squadHome, relocatedSquads, relocationsLeft, canMuster } from './match.ts';
 // concede(state, seat): IntentResult                  — `seat` gives up: phase 'over', the other seat wins, overReason 'concede'
 // suddenDeathPct(round)                               — keep-damage multiplier (percent): sudden death from round 10
 // unlockOptions(player, round): UnitType[]            — what may be unlocked this round (= PlayerState.draftOptions; not random)

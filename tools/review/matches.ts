@@ -57,8 +57,11 @@ export const VARIANTS: Record<string, Planner> = {
   },
   // economy: wide (never levels; leftover gold is banked for later deployments)
   wide: (s, seat) => H(s, seat, { noLevel: true }),
-  // economy: tall (one deployment a round, the rest goes into levels)
-  tall: (s, seat) => { const p = s.players[seat]; const lim = p.deployLimit; p.deployLimit = Math.min(lim, p.deploysUsed + 1); H(s, seat); p.deployLimit = lim; },
+  // economy: tall (half the deploy points a round: one mid squad or two cheap ones; the rest goes into levels).
+  // Deploy points are weighted (100 gold = 1, 150-300 = 2, 400+ = 3 of 4), so "one deployment" is 2 points.
+  tall: (s, seat) => { const p = s.players[seat]; const lim = p.deployLimit; p.deployLimit = Math.min(lim, p.deploysUsed + 2); H(s, seat); p.deployLimit = lim; },
+  // the old definition: ONE deploy point a round, i.e. only 100-gold squads can ever be bought (not a real strategy)
+  tall1: (s, seat) => { const p = s.players[seat]; const lim = p.deployLimit; p.deployLimit = Math.min(lim, p.deploysUsed + 1); H(s, seat); p.deployLimit = lim; },
   // economy: level nothing until round 6, then normal
   lateLevel: (s, seat) => H(s, seat, { noLevel: s.round < 6 }),
   // economy: level nothing in rounds 1-3 (the first squads are worth more than their levels), then normal

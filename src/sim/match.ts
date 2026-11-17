@@ -84,6 +84,43 @@ export function levelUpCost(type: UnitType, _level: number): number {
 export function sellRefund(sq: Squad, round: number): number {
   return sq.deployedRound === round ? sq.spent : 0;
 }
+
+// ---------------------------------------------------------------- relocation and Muster (DESIGN §2)
+
+/** How many squads from earlier rounds Muster lets a player relocate, in the round it is taken. */
+export const MUSTER_MOVES = 3;
+/**
+ * Is `sq` locked in place this round? Squads deployed in an earlier round are; the Lord and this round's squads are
+ * not. A locked squad may still turn on the spot, and may be relocated only with a relocation (Muster).
+ */
+export function squadLocked(sq: Pick<Squad, 'type' | 'deployedRound'>, round: number): boolean {
+  return sq.type !== 'lord' && sq.deployedRound < round;
+}
+/** Where a locked squad stood when the round began: its spot in the last battle. Null for squads that were not in it. */
+export function squadHome(p: Pick<PlayerState, 'lastArmy'>, id: number): Vec2 | null {
+  const h = p.lastArmy?.find((q) => q.id === id);
+  return h ? [h.pos[0], h.pos[1]] : null;
+}
+/** Ids of the locked squads `p` has relocated this round (they stand somewhere other than their home). */
+export function relocatedSquads(p: Pick<PlayerState, 'squads' | 'lastArmy'>, round: number): number[] {
+  const out: number[] = [];
+  for (const q of p.squads) {
+    if (!squadLocked(q, round)) continue;
+    const h = squadHome(p, q.id);
+    if (h && (h[0] !== q.pos[0] || h[1] !== q.pos[1])) out.push(q.id);
+  }
+  return out;
+}
+/** Relocations `p` may still make this round (0 without Muster). */
+export function relocationsLeft(p: Pick<PlayerState, 'squads' | 'lastArmy' | 'moveLimit'>, round: number): number {
+  return Math.max(0, (p.moveLimit ?? 0) - relocatedSquads(p, round).length);
+}
+/** May `p` take Muster now? (The round's unlock is unspent and there is a locked squad to move.) */
+export function canMuster(p: PlayerState, round: number): boolean {
+  return !!p.musterOffer && !p.muster && !p.ready && p.squads.some((q) => squadLocked(q, round));
+}
+export const LOCKED_ERROR = 'that squad is locked in place: only squads deployed this round and the Lord move freely (take Muster instead of a unit unlock to relocate up to 3)';
+
 export function lordLevelForXp(xp: number): number {
   let l = 1;
   while (l < MAX_LORD_LEVEL && xp >= LORD_XP_LEVELS[l]) l++;
@@ -153,7 +190,7 @@ function newPlayer(seat: Seat): PlayerState {
   return {
     seat, faction: null, lord: null, gold: 0, keepHp: KEEP_HP, keepMax: KEEP_HP, unlocked: [], draftOptions: [], draftPicks: 0, lootOffer: null,
     squads: [], stash: [], deploysUsed: 0, deployLimit: BASE_DEPLOY_LIMIT, lordXp: 0, ready: false, lostLast: false, lastArmy: null,
-    comeback: { gold: 0, deploys: 0, deficit: 0 },
+    comeback: { gold: 0, deploys: 0, deficit: 0 }, moveLimit: 0, musterOffer: false, muster: false, lastMoved: [],
   };
 }
 
@@ -377,6 +414,19 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       p.draftOptions.splice(i, 1);
       p.draftPicks--;
       if (p.draftPicks === 0) p.draftOptions = [];
+      // The round's unlock is spent: Muster was the other choice.
+      p.musterOffer = false;
+      return OK;
+    }
+    case 'muster': {
+      if (p.muster) return err('Muster is already called this round');
+      if (!p.musterOffer) return err(s.round <= 1 ? 'nothing to muster yet: no squad is locked in round 1' : "Muster is taken instead of the round's unit unlock, and that is already spent");
+      if (!p.squads.some((q) => squadLocked(q, s.round))) return err('nothing to muster: no squad of yours is locked');
+      p.muster = true;
+      p.musterOffer = false;
+      p.moveLimit = (p.moveLimit ?? 0) + MUSTER_MOVES;
+      p.draftOptions = [];
+      p.draftPicks = 0;
       return OK;
     }
     case 'deploy': {
@@ -403,6 +453,15 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       if (!sq) return err('no such squad');
       if (!Array.isArray(intent.pos) || !inDeployZone(seat, intent.pos)) return err('outside deploy zone');
       if (!validFacing(intent.facing)) return err('bad facing');
+      const stays = intent.pos[0] === sq.pos[0] && intent.pos[1] === sq.pos[1];
+      // Relocation: a squad from an earlier round only turns on the spot, unless a relocation is left (Muster). Going
+      // back to where it stood, or moving a squad that is already relocated again, uses no further relocation.
+      if (!stays && squadLocked(sq, s.round)) {
+        const home = squadHome(p, sq.id);
+        const back = !!home && home[0] === intent.pos[0] && home[1] === intent.pos[1];
+        const away = !!home && (home[0] !== sq.pos[0] || home[1] !== sq.pos[1]);
+        if (!back && !away && relocationsLeft(p, s.round) <= 0) return err(p.muster ? `all ${p.moveLimit} relocations of this Muster are used: move a squad back to free one` : LOCKED_ERROR);
+      }
       if (overlappingSquad(p.squads, sq.type, intent.pos, sq.id)) return err('overlaps another squad: each squad needs its own ground');
       sq.pos = [intent.pos[0], intent.pos[1]];
       if (intent.facing !== undefined) sq.facing = intent.facing;
@@ -493,6 +552,7 @@ function enemyView(s: MatchState, seat: Seat): EnemyView {
     keepMax: e.keepMax,
     ready: e.ready,
     lastArmy: e.lastArmy ? clone(e.lastArmy) : null,
+    lastMoved: [...(e.lastMoved ?? [])],
   };
 }
 
@@ -520,6 +580,9 @@ export function applyBattle(s: MatchState, r: BattleResult): void {
     p.lordXp += r.lordXp[seat];
     const lord = p.squads.find((q) => q.type === 'lord');
     if (lord) lord.level = lordLevelForXp(p.lordXp);
+    // Intel for the next planning phase: which squads stand somewhere else than in the battle before.
+    const prev = p.lastArmy;
+    p.lastMoved = prev ? p.squads.filter((q) => { const o = prev.find((x) => x.id === q.id); return !!o && (o.pos[0] !== q.pos[0] || o.pos[1] !== q.pos[1]); }).map((q) => q.id) : [];
     p.lastArmy = clone(p.squads);
     p.ready = false;
     // A loot offer that was never picked goes to the stash (first option).
@@ -566,6 +629,10 @@ export function nextRound(s: MatchState): void {
     p.deploysUsed = 0;
     p.ready = false;
     rollDraft(s, p);
+    // Muster is offered instead of the round's unlock (also once nothing is left to unlock: then it costs nothing).
+    p.muster = false;
+    p.moveLimit = 0;
+    p.musterOffer = true;
   }
 }
 

@@ -18,6 +18,10 @@
 //              (pikes in front of enemy cavalry, raiders on the flank with the enemy backline, archers under enemy
 //              fliers...) with its melee staggered in depth by speed so it reaches the river together, and puts each
 //              item on the squad its affixes suit.
+// Relocation (DESIGN §2): a squad is locked where it was deployed, so every level places for the long term (a new squad
+// goes opposite what it beats in the enemy's army, which is locked too, and melee is set back by speed against a fixed
+// reference so later squads still arrive together). Hard and Normal call Muster instead of the round's unlock when the
+// squads they could relocate stand far from where they are needed (musterWorth); Easy never does.
 // Every level saves up for a dear unit it wants (saveFor): income is 225-500 a round, so a Dragon is never bought
 // by a bot that spends everything each round.
 import { mirrorPos } from '../../src/sim/constants.ts';
@@ -29,7 +33,7 @@ import { beatenBy, classBeats } from '../../src/sim/data/wheel.ts';
 import { UNITS } from '../../src/sim/data/units.ts';
 import { itemPower, legendaryFits, wheelClassOf } from '../../src/sim/loot.ts';
 import { beatsClass } from '../../src/sim/data/wheel.ts';
-import { ARMY_CAP, MAX_SQUAD_LEVEL, applyIntent, income, deployWeight, deployZone, freeSpotNear, levelUpCost, slotOpen, squadFootprint, viewFor } from '../../src/sim/match.ts';
+import { ARMY_CAP, MAX_SQUAD_LEVEL, MUSTER_MOVES, applyIntent, canMuster, income, deployWeight, deployZone, freeSpotNear, levelUpCost, relocationsLeft, slotOpen, squadFootprint, squadHome, squadLocked, viewFor } from '../../src/sim/match.ts';
 import { hash } from '../../src/sim/rng.ts';
 import type { BotStrategy, Item, KingdomUnit, LordId, MatchState, PlayerState, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2, WheelClass } from '../../src/sim/types.ts';
 
@@ -345,6 +349,82 @@ function wheelLane(u: UnitType, squads: readonly Squad[], lord: LordId | null, t
   return d > 0 ? [Math.max(700, Math.min(7300, Math.round(n / d))), at[1]] : at;
 }
 
+// ---------------------------------------------------------------- relocation and Muster
+
+/**
+ * The bots' relocation judgement. `x` is the experimental set used by the 'hardx' strategy (tools/tournament.ts
+ * --strats hard,hardx with OB_KNOBS='{"musterMin":...}' plays a variant against the shipped Hard); everything else
+ * plays `base`.
+ */
+export interface BotKnobs {
+  /** Muster is worth calling when the squads it would relocate stand at least this far (cm, summed) from where they are wanted. */
+  musterMin: number;
+  /** ...and the best unit on offer is at most this much better than the best unit already unlocked (score ratio). */
+  musterEdge: number;
+  /** ...and (unless nothing is left to unlock) the last round was not won. */
+  musterAfterLoss: boolean;
+  /** A relocation is not spent on a squad standing closer than this (cm) to its wanted spot. */
+  relocateMin: number;
+  /** The march speed Hard's stagger is measured against (0: the slowest melee squad in the army, as before the lock). */
+  staggerRef: number;
+  /** Hard's preference for a level over a new squad (HARD_LEVEL_BIAS). */
+  levelBias: number;
+  /** Never call Muster. */
+  noMuster: boolean;
+}
+const KNOBS: { base: BotKnobs; x: BotKnobs } = {
+  base: { musterMin: 6000, musterEdge: 1.15, musterAfterLoss: true, relocateMin: 800, staggerRef: 9, levelBias: 0.5, noMuster: false },
+  x: { musterMin: 6000, musterEdge: 1.15, musterAfterLoss: true, relocateMin: 800, staggerRef: 9, levelBias: 0.5, noMuster: false },
+};
+/** Set the experimental knobs of 'hardx' (review tooling only; the game never calls this). */
+export function setBotKnobs(k: Partial<BotKnobs>): void { Object.assign(KNOBS.x, KNOBS.base, k); }
+const knobsOf = (strat: BotStrategy): BotKnobs => (strat === 'hardx' ? KNOBS.x : KNOBS.base);
+
+/** How far (cm) a squad stands from the spot wanted for it (seat 0 frame): sideways counts in full, depth half. */
+function offBy(seat: Seat, q: Squad, want: Vec2): number {
+  const [x, y] = own(seat, q.pos);
+  return Math.abs(x - want[0]) + Math.abs(y - want[1]) / 2;
+}
+/**
+ * What a Muster would be worth now: the distance (cm, summed) by which the MUSTER_MOVES worst-placed locked squads
+ * stand from where `layout` wants them. A squad nearer than `min` is not worth a relocation.
+ */
+function musterWorth(s: MatchState, seat: Seat, layout: Map<number, Vec2>, min: number): number {
+  const p = s.players[seat];
+  const off: number[] = [];
+  for (const q of p.squads) {
+    const w = layout.get(q.id);
+    if (!w || !squadLocked(q, s.round)) continue;
+    const d = offBy(seat, q, w);
+    if (d >= min) off.push(d);
+  }
+  off.sort((a, b) => b - a);
+  let sum = 0;
+  for (let i = 0; i < Math.min(MUSTER_MOVES, off.length); i++) sum += off[i];
+  return sum;
+}
+/**
+ * Call Muster instead of this round's unlock? Yes when the layout is countered: the last round was not won, the squads
+ * a Muster would relocate stand far from where they are wanted against the enemy's army (musterWorth), and no unit on
+ * offer is much better than what is already unlocked (`edge`: best offer / best unlocked, by the bot's own unit
+ * score). With nothing left to unlock a Muster costs nothing, so any worthwhile relocation calls it.
+ */
+function considerMuster(s: MatchState, seat: Seat, K: BotKnobs, layout: Map<number, Vec2>, edge: number): boolean {
+  const p = s.players[seat];
+  if (K.noMuster || !canMuster(p, s.round)) return false;
+  const worth = musterWorth(s, seat, layout, K.relocateMin);
+  const free = !p.draftOptions.length || p.draftPicks <= 0;
+  if (free ? worth < K.relocateMin : worth < K.musterMin || edge > K.musterEdge || (K.musterAfterLoss && !p.lostLast)) return false;
+  return applyIntent(s, seat, { t: 'muster' }).ok;
+}
+/** Best offer against the best unit already unlocked, by `score` (1 when there is nothing to compare). */
+function unlockEdge(p: PlayerState, score: (u: UnitType) => number): number {
+  let o = 0, h = 0;
+  for (const u of p.draftOptions) o = Math.max(o, score(u));
+  for (const u of p.unlocked) h = Math.max(h, score(u));
+  return h > 0 ? o / h : 1;
+}
+
 // ---------------------------------------------------------------- easy
 
 function planEasy(s: MatchState, seat: Seat, salt: number): void {
@@ -379,6 +459,24 @@ function planEasy(s: MatchState, seat: Seat, salt: number): void {
 
 // ---------------------------------------------------------------- normal + the classic tournament planner
 
+/**
+ * Where the classic planner would want its locked squads now (seat 0 frame): each opposite the enemy squads its class
+ * beats, at its own depth. Squads that beat nothing the enemy fields, healers and artillery are left out (they stay).
+ */
+function wheelSpots(s: MatchState, seat: Seat, threats: Threat[]): Map<number, Vec2> {
+  const out = new Map<number, Vec2>();
+  for (const q of s.players[seat].squads) {
+    if (q.type === 'lord' || !squadLocked(q, s.round)) continue;
+    const def = UNITS[q.type];
+    if (def.traits.includes('healer') || K(q.type) === 'trebuchet') continue;
+    let n = 0, d = 0;
+    // Not the enemy Lord: he moves freely every round, so a relocation spent chasing him is wasted.
+    for (const e of threats) { if (e.type === 'lord') continue; const w = wheelCv(def, e.body) * e.value; n += w * e.x; d += w; }
+    if (d > 0) out.set(q.id, [Math.max(700, Math.min(7300, Math.round(n / d))), own(seat, q.pos)[1]]);
+  }
+  return out;
+}
+
 /** Normal's version of HARD_LEVEL_BIAS (see planClassic). */
 const NORMAL_LEVEL_BIAS = 0.4;
 
@@ -387,6 +485,9 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
   const p = s.players[seat];
   const threats = threatsOf(seat, v.enemy.lastArmy, v.enemy.lord);
   const score = (u: UnitType, sl: number): number => unitScore(s, seat, strat, u, p.squads, threats, sl);
+  // 0. Muster instead of the unlock when its squads stand far from what they beat (it never re-forms otherwise).
+  const KN = knobsOf(strat);
+  considerMuster(s, seat, KN, wheelSpots(s, seat, threats), unlockEdge(p, (u) => score(u, salt + 7)));
   // 1. Unlock: the unit that best answers what the enemy fielded (the same wheel reading as its buying).
   pickDrafts(s, seat, (opts) => {
     let best = opts[0], bw = -1;
@@ -461,6 +562,8 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
   // 4b. Anti-air where the air is: when the enemy flew last round, archer-type squads (Archers, Bone Archers, Camel
   //     Archers) move under where its fliers were, as Hard's formation does. The rest of the army keeps its ground.
   antiAirPlacement(s, seat, threats);
+  // 4c. A Muster's relocations: the squads that stand furthest from what they beat cross the field to it.
+  if (relocationsLeft(p, s.round) > 0) applyLayout(s, seat, wheelSpots(s, seat, threats), KN.relocateMin);
   // 5. Lord placement.
   const lord = p.squads.find((q) => q.type === 'lord');
   if (lord && s.round === 1) {
@@ -509,7 +612,7 @@ function meanX(threats: Threat[], pred: (e: Threat) => number, def: number): num
  * every squad lines up opposite the enemy squads it counters, raiders go to the flank holding the enemy backline
  * (and fewer enemy pikes), archers sit under enemy fliers, artillery behind the enemy's mass.
  */
-export function hardLayout(p: PlayerState, threats: Threat[]): Map<number, Vec2> {
+export function hardLayout(p: PlayerState, threats: Threat[], staggerRef = STAGGER_REF): Map<number, Vec2> {
   const z = deployZone(0);
   const centre = meanX(threats, () => 1, 3999);
   // Flank choice: enemy backline value minus pike danger, per side of the field.
@@ -565,7 +668,7 @@ export function hardLayout(p: PlayerState, threats: Threat[]): Map<number, Vec2>
   pack(rows.support, 2500, false);
   pack(rows.ranged, 1850, false);
   pack(rows.artillery, 800, false);
-  if (KNOB.sync) speedStagger(p, out, 3650);
+  if (KNOB.sync) speedStagger(p, out, 3650, staggerRef);
   return out;
 }
 
@@ -575,12 +678,14 @@ export function hardLayout(p: PlayerState, threats: Threat[]): Map<number, Vec2>
  * Without it the tanks (Golems, Knights) reach the fight 5-9 s after the cheap infantry in front of them has
  * already taken the first blows (docs/reviews/POSITIONING-AND-ECONOMY.md section 1).
  */
-function speedStagger(p: PlayerState, out: Map<number, Vec2>, frontY: number): void {
+function speedStagger(p: PlayerState, out: Map<number, Vec2>, frontY: number, ref: number): void {
   const z = deployZone(0);
   const melee = units(p.squads).filter((q) => UNITS[q.type as UnitType].range <= 400 && out.has(q.id));
-  if (melee.length < 2) return;
+  if (!melee.length || (ref <= 0 && melee.length < 2)) return;
   const LINE = 6000; // the middle of the river
-  let vmin = Infinity;
+  // Squads are locked where they are deployed, so the stagger is measured against a fixed pace (the slowest melee unit
+  // of any roster, a Golem's): a squad bought in round 2 and one bought in round 8 still reach the river together.
+  let vmin = ref > 0 ? ref : Infinity;
   for (const q of melee) vmin = Math.min(vmin, UNITS[q.type as UnitType].speed);
   for (const q of melee) {
     const v = UNITS[q.type as UnitType].speed;
@@ -592,11 +697,23 @@ function speedStagger(p: PlayerState, out: Map<number, Vec2>, frontY: number): v
 
 /** Hard staggers its melee by speed (switchable for the review scripts). */
 const HARD_SPEED_SYNC = true;
+/** The pace the stagger is measured against: the slowest melee unit of any roster (a Golem, 9). */
+const STAGGER_REF = 9;
 
-/** Move every squad to its layout spot (seat 0 frame), resolving the order so squads never overlap on the way. */
-export function applyLayout(s: MatchState, seat: Seat, layout: Map<number, Vec2>): void {
+/**
+ * Move squads to their layout spots (seat 0 frame), resolving the order so they never overlap on the way. Only what
+ * the relocation rule lets move does: the Lord, this round's squads, and (with relocations left, i.e. after a Muster)
+ * the locked squads that stand furthest from their spot, at least `relocateMin` cm off.
+ */
+export function applyLayout(s: MatchState, seat: Seat, layout: Map<number, Vec2>, relocateMin = 800): void {
   const p = s.players[seat];
-  let todo = p.squads.filter((q) => layout.has(q.id));
+  const locked = p.squads.filter((q) => layout.has(q.id) && squadLocked(q, s.round));
+  const off = new Map(locked.map((q) => [q.id, offBy(seat, q, layout.get(q.id)!)] as [number, number]));
+  // A squad already relocated this round moves on for free; the rest take the relocations left, worst-placed first.
+  const moved = new Set(locked.filter((q) => { const h = squadHome(p, q.id); return !!h && (h[0] !== q.pos[0] || h[1] !== q.pos[1]); }).map((q) => q.id));
+  const pick = locked.filter((q) => !moved.has(q.id) && off.get(q.id)! >= relocateMin).sort((a, b) => off.get(b.id)! - off.get(a.id)! || a.id - b.id).slice(0, relocationsLeft(p, s.round));
+  const go = new Set([...moved, ...pick.map((q) => q.id)]);
+  let todo = p.squads.filter((q) => layout.has(q.id) && (!squadLocked(q, s.round) || go.has(q.id)));
   for (let pass = 0; pass < 4 && todo.length; pass++) {
     const next: Squad[] = [];
     for (const q of todo) {
@@ -762,7 +879,7 @@ function hardEquip(s: MatchState, seat: Seat, threats: Threat[]): void {
  * unit (LEVEL_COST_PCT), so they are cheaper than a new squad but add less: the bias is tuned so that Hard spends
  * roughly a quarter of its gold on levels (docs/BALANCE.md).
  */
-const HARD_LEVEL_BIAS_SHIPPED = 0.5;
+// (The value is KNOBS.base.levelBias.)
 /**
  * Hard levels nothing before this round. (Waiting until round 4 tested about 6 points stronger head-to-head, but it
  * moved the faction and Lord balance by up to 18 points at Hard, so it is left for a full re-tune: see BALANCE.md.)
@@ -788,11 +905,15 @@ function hardLevelPick(s: MatchState, seat: Seat, threats: Threat[], salt: numbe
   return best ? { q: best, w: bw } : null;
 }
 
-export const KNOB = { noLevel: false, noLayout: false, bias: HARD_LEVEL_BIAS_SHIPPED, sync: HARD_SPEED_SYNC, from: HARD_LEVEL_FROM };
-function planHard(s: MatchState, seat: Seat, salt: number): void {
+export const KNOB = { noLevel: false, noLayout: false, bias: KNOBS.base.levelBias, sync: HARD_SPEED_SYNC, from: HARD_LEVEL_FROM };
+function planHard(s: MatchState, seat: Seat, salt: number, strat: BotStrategy = 'hard'): void {
   const v = viewFor(s, seat);
   const p = s.players[seat];
   const threats = threatsOf(seat, v.enemy.lastArmy, v.enemy.lord);
+  const KN = knobsOf(strat);
+  // 0. Muster instead of the unlock, when the army stands far from where it is needed against the enemy's (locked)
+  //    formation and no unit on offer is worth more than re-forming three squads.
+  considerMuster(s, seat, KN, hardLayout(p, threats, KN.staggerRef), unlockEdge(p, (u) => unitScore(s, seat, 'hard', u, p.squads, threats, salt + 7) * (K(u) === 'dragon' || K(u) === 'golem' ? 1.25 : 1)));
   // 1. Drafts: the unlock that best answers what the enemy fields (and what we do not already answer).
   pickDrafts(s, seat, (opts) => {
     let best = opts[0], bw = -1;
@@ -838,9 +959,10 @@ function planHard(s: MatchState, seat: Seat, salt: number): void {
     }
     if (!lv || !applyIntent(s, seat, { t: 'levelUp', squad: lv.q.id }).ok) break;
   }
-  // 5. Gear, then 6. re-form the whole army against the enemy's last formation.
+  // 5. Gear, then 6. the formation against the enemy's last one: this round's squads and the Lord take their places in
+  //    it, and after a Muster so do the three locked squads that stand furthest from theirs.
   hardEquip(s, seat, threats);
-  if (!KNOB.noLayout) applyLayout(s, seat, hardLayout(p, threats));
+  if (!KNOB.noLayout) applyLayout(s, seat, hardLayout(p, threats, KN.staggerRef), KN.relocateMin);
   applyIntent(s, seat, { t: 'ready' });
 }
 
@@ -854,7 +976,7 @@ export function botPlan(s: MatchState, seat: Seat, strategy: BotStrategy, salt =
   const level = levelOf(strategy);
   if (level === 'easy') return planEasy(s, seat, salt);
   if (level === 'hard') {
-    return planHard(s, seat, salt);
+    return planHard(s, seat, salt, strategy);
   }
   return planClassic(s, seat, strategy, salt);
 }
