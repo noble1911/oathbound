@@ -245,5 +245,7 @@ sonniss/<year>/<library>/<file>.flac                                    (+ manif
   domain) and a CC0 hunting horn, with reverb added.
 - **Cavalry hooves and footsteps:** these are not used. The bundled horse gallop is a single long
   take, and the march would add more mud than character.
+- **Sun Mirror beam:** it has no file of its own. `sound.sunbeam` layers the ability `cast` shimmer with the
+  `fireball` whoosh at 60% gain, 60 ms later: the light gathers, then the target catches fire.
 - **Format:** Opus in WebM plays everywhere but older Safari versions (before 15). An AAC fallback
   would double the files, so the game ships none.

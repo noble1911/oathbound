@@ -32,7 +32,7 @@ export type KingdomUnit =
 /** The Ashen Covenant (undead). 'skeleton' is also the model of skeletons raised in battle. */
 export type AshenUnit = 'skeleton' | 'grave_knight' | 'bone_archer' | 'wraith_rider' | 'grave_acolyte' | 'bone_drake' | 'corpse_catapult' | 'bone_golem';
 /** The Sun Caliphate (desert empire). */
-export type CaliphateUnit = 'spear_levy' | 'scimitar' | 'camel_archer' | 'mamluk' | 'djinn_binder' | 'sun_priest' | 'djinn' | 'war_elephant' | 'sand_golem';
+export type CaliphateUnit = 'spear_levy' | 'scimitar' | 'camel_archer' | 'mamluk' | 'djinn_binder' | 'sun_priest' | 'djinn' | 'war_elephant' | 'sand_golem' | 'sun_mirror';
 /** Every deployable unit type of every faction. The id is also the renderer model id. */
 export type UnitType = KingdomUnit | AshenUnit | CaliphateUnit;
 
@@ -45,7 +45,7 @@ export type SquadType = UnitType | 'lord';
 export type SoldierType = SquadType;
 
 export type Tag = 'mounted' | 'armored' | 'flier' | 'large' | 'infantry';
-export type WeaponKind = 'sword' | 'axe' | 'lance' | 'bow' | 'tome' | 'staff' | 'bolt' | 'stone' | 'fists' | 'breath';
+export type WeaponKind = 'sword' | 'axe' | 'lance' | 'bow' | 'tome' | 'staff' | 'bolt' | 'stone' | 'fists' | 'breath' | 'beam';
 export type DamageType = 'physical' | 'magic';
 /**
  * The counter wheel (DESIGN §3): every unit and every Lord belongs to exactly one class, and each class beats the next
@@ -54,7 +54,7 @@ export type DamageType = 'physical' | 'magic';
  */
 export type WheelClass = 'swarm' | 'giant' | 'line' | 'cavalry' | 'ranged' | 'air' | 'siege' | 'magic';
 /** What flies through the air. 'none' = melee swing (no projectile). */
-export type ProjectileKind = 'none' | 'arrow' | 'bolt' | 'stone' | 'fireball' | 'firebreath' | 'lightning' | 'tower_arrow';
+export type ProjectileKind = 'none' | 'arrow' | 'bolt' | 'stone' | 'fireball' | 'firebreath' | 'lightning' | 'tower_arrow' | 'sunbeam';
 /** Flight path for the renderer: 'arc' = ballistic parabola (arrows, stones), 'line' = straight (bolts, fireballs, breath). */
 export type ArcType = 'line' | 'arc' | 'high_arc';
 

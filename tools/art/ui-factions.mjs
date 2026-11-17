@@ -20,7 +20,7 @@ const par = Number(args.includes('--par') ? args[args.indexOf('--par') + 1] : 2)
 const sel = (args.find((a) => !a.startsWith('--') && !/^\d+$/.test(a)) ?? '').split(',').filter(Boolean);
 const style = readFileSync(join(P, '_style_manuscript.txt'), 'utf8').split('Generated with')[0].replace(/^Portrait style[^:]*:/, '').trim();
 const ASHEN = ['unit_skeleton', 'unit_grave_knight', 'unit_bone_archer', 'unit_wraith_rider', 'unit_grave_acolyte', 'unit_bone_drake', 'unit_corpse_catapult', 'unit_bone_golem', 'lord_lich'];
-const SUN = ['unit_spear_levy', 'unit_scimitar', 'unit_camel_archer', 'unit_mamluk', 'unit_djinn_binder', 'unit_sun_priest', 'unit_djinn', 'unit_war_elephant', 'unit_sand_golem', 'lord_sultana'];
+const SUN = ['unit_spear_levy', 'unit_scimitar', 'unit_camel_archer', 'unit_mamluk', 'unit_djinn_binder', 'unit_sun_priest', 'unit_djinn', 'unit_war_elephant', 'unit_sand_golem', 'unit_sun_mirror', 'lord_sultana'];
 const all = [...ASHEN, ...SUN];
 const ids = all.filter((id) => !sel.length || sel.includes(id)).filter((id) => force || !existsSync(join(OUT, `${id}.png`)));
 

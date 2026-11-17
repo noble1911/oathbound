@@ -6,6 +6,8 @@
 //   sim's ~250-soldier fixture)  &seed=N  &rounds=N  &art=0 (procedural stand-ins only)
 //   &skills=1 (with real=all: every squad carries the item skills its class can use; casts are listed in
 //   window.__rt.skills and logged as they fire in window.__rt.skillLog)
+//   &real=custom&mine=sun_mirror:2@4000:1500,spear_levy:2@4000:3200&theirs=mages:2@4000:5200 (type:level@x:y, seat 0's
+//   half in cm; seat 1's squads are mirrored) with &lords=a,b: a hand-set fight, e.g. for e2e shots of one unit
 import * as THREE from 'three';
 import { BattleView, defaultTerrain, sampleKeyframes, replaySource, TIER_ORDER, type BattleSource, type QualityTier } from '../render/index.ts';
 import { makeFakeBattle } from './fake-battle.ts';
@@ -61,11 +63,31 @@ function allUnitsBattle(seed: number, lords: [LordId, LordId]): MatchState {
   return s;
 }
 
+/** `real=custom`: the squads of `mine` / `theirs` ("type:level@x:y,...", seat 0's coordinates) fight once. */
+function customBattle(seed: number, lords: [LordId, LordId]): MatchState {
+  const s = newMatch(seed, lords);
+  ([0, 1] as Seat[]).forEach((seat) => {
+    const p = s.players[seat];
+    p.unlocked = [...UNIT_TYPES];
+    for (const spec of (q.get(seat === 0 ? 'mine' : 'theirs') ?? '').split(',').filter(Boolean)) {
+      const [ul, at] = spec.split('@');
+      const [type, lvl] = ul.split(':');
+      const [x, y] = (at ?? '4000:3000').split(':').map(Number);
+      const pos: Vec2 = seat === 0 ? [x, y] : mirrorPos([x, y]);
+      p.squads.push({ id: s.nextId++, owner: seat, type: type as never, level: Number(lvl) || 1, pos, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
+    }
+  });
+  s.round = 6;
+  return s;
+}
+
 /** A real sim battle: two bots play `rounds` rounds; the last round's replay is shown. */
-function realBattle(seed: number, rounds: number, big: boolean | 'all'): ShowBattle {
+function realBattle(seed: number, rounds: number, big: boolean | 'all' | 'custom'): ShowBattle {
   const t0 = performance.now();
   let replay;
-  if (big === 'all') {
+  if (big === 'custom') {
+    replay = simulateBattle(customBattle(seed, (q.get('lords') ?? 'sultana,archmage').split(',') as [LordId, LordId])).replay;
+  } else if (big === 'all') {
     const lords = (q.get('lords') ?? 'marshal,archmage').split(',') as [LordId, LordId];
     replay = simulateBattle(allUnitsBattle(seed, lords)).replay;
   } else if (big) {
@@ -106,7 +128,7 @@ function fakeBattle(): ShowBattle {
   return { decoded: fake.decoded, soldiers: fake.soldiers, keeps: fake.keeps, terrain, source, info: 'fake battle' };
 }
 
-const battle = realMode ? realBattle(Number(q.get('seed') ?? 5), Number(q.get('rounds') ?? 5), realMode === 'all' ? 'all' : realMode === 'big') : fakeBattle();
+const battle = realMode ? realBattle(Number(q.get('seed') ?? 5), Number(q.get('rounds') ?? 5), realMode === 'all' ? 'all' : realMode === 'custom' ? 'custom' : realMode === 'big') : fakeBattle();
 console.info(battle.info);
 const terrain = battle.terrain;
 const source = battle.source;

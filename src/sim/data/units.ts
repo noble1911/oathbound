@@ -193,6 +193,14 @@ const rows: Record<UnitType, Row> = {
     name: 'Sand Golem', role: 'Regenerating giant', cost: 300, squadSize: 1, tags: ['large'], weapon: 'fists', damageType: 'physical', projectile: 'none',
     hp: 2000, dmg: 60, attackTicks: 34, range: 250, speed: 9, radius: 150, armor: 20, magicResist: 20, splash: 200, regen: 15, traits: ['stomp'],
   },
+  sun_mirror: {
+    class: 'siege',
+    // The Caliphate's Siege unit (what beats Magic): a crewed bronze mirror that focuses the sun on ONE target. Plays
+    // like the Ballista (a long-range single-target engine), not the splash artillery of the Trebuchet / Corpse Catapult.
+    faction: 'caliphate', like: 'ballista',
+    name: 'Sun Mirror', role: 'Sunbeam engine', cost: 250, squadSize: 1, tags: ['large'], weapon: 'beam', damageType: 'physical', projectile: 'sunbeam',
+    hp: 300, dmg: 100, attackTicks: 70, range: 4500, speed: 8, radius: 120, armor: 15, magicResist: 20, burn: 12, traits: ['backline'],
+  },
 };
 
 export const UNIT_TYPES = Object.keys(rows) as UnitType[];

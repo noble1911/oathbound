@@ -970,6 +970,62 @@ export function buildBallista(prefix: string, team: string): ModelBuild {
   return { rig: rb, clips, prefix };
 }
 
+/**
+ * The Sun Mirror's stand-in (until its art model streams in): a dark-wood wagon on four wheels carrying a yoke and a
+ * dished bronze-gold mirror (bone `mirror`, pivoting at its trunnions 2.1 m up). `attack` tilts the dish onto the
+ * target and back; the beam itself is VFX.
+ */
+export function buildSunMirror(prefix: string, team: string): ModelBuild {
+  const rb = new RigBuilder(prefix);
+  rb.bone('root', null, [0, 0, 0]).bone('mirror', 'root', [0, 2.1, 0.1]);
+  const wood = { rough: 0.8 };
+  const gold = { rough: 0.22, metal: 0.9 };
+  const w = '#5a3d27';
+  const g = '#d9b25a';
+  for (const [x, z] of [[0.75, 0.75], [-0.75, 0.75], [0.75, -0.8], [-0.75, -0.8]] as const) {
+    rb.part('root', disc(0.36, 0.09, [x, 0.36, z], [1, 0, 0], 16), w, wood);
+    rb.part('root', disc(0.09, 0.11, [x, 0.36, z], [1, 0, 0], 8), g, gold);
+  }
+  rb.part('root', box(1.3, 0.18, 2.0, [0, 0.66, -0.02]), w, wood);
+  rb.part('root', box(1.34, 0.06, 0.12, [0, 0.77, 0.7]), g, gold);
+  rb.part('root', box(1.34, 0.06, 0.12, [0, 0.77, -0.74]), g, gold);
+  // the yoke: two posts and a cross-tie
+  rb.part('root', limb([0.68, 0.75, 0.1], [0.68, 2.15, 0.1], 0.07, 0.06, 'cyl', 8), w, wood);
+  rb.part('root', limb([-0.68, 0.75, 0.1], [-0.68, 2.15, 0.1], 0.07, 0.06, 'cyl', 8), w, wood);
+  rb.part('root', box(1.4, 0.1, 0.1, [0, 1.2, 0.1]), w, wood);
+  // a team-cloth awning over the back of the wagon
+  rb.part('root', box(1.2, 0.04, 0.8, [0, 1.65, -0.75], [0.18, 0, 0]), team, { rough: 0.7, tint: 1 });
+  rb.part('root', limb([0.55, 0.75, -1.05], [0.55, 1.75, -1.05], 0.03, 0.03, 'cyl', 6), w, wood);
+  rb.part('root', limb([-0.55, 0.75, -1.05], [-0.55, 1.75, -1.05], 0.03, 0.03, 'cyl', 6), w, wood);
+  // the dish: a polished face in a bronze rim, a sun boss at its centre, the trunnions
+  rb.part('mirror', disc(0.62, 0.06, [0, 2.1, 0.12], [0, 0.25, 1], 24), '#f3d98a', { rough: 0.12, metal: 0.95, emissive: 0.25 });
+  rb.part('mirror', disc(0.68, 0.05, [0, 2.1, 0.08], [0, 0.25, 1], 24), '#9a6a2c', gold);
+  rb.part('mirror', ball(0.08, [0, 2.12, 0.18]), g, gold);
+  rb.part('mirror', limb([0.7, 2.1, 0.1], [-0.7, 2.1, 0.1], 0.04, 0.04, 'cyl', 6), g, gold);
+  const clips: ClipSpec[] = [
+    { name: 'idle', duration: 2, loop: true, pose: () => {} },
+    { name: 'move', duration: 1, loop: true, pose: () => {} },
+    { name: 'run', duration: 1, loop: true, pose: () => {} },
+    {
+      name: 'attack', duration: 1.4, loop: false,
+      // tilt onto the target (the beam leaves at about 0.25 s), hold, ease back to rest
+      pose: (t, p) => p.r('mirror', -0.22 * (smooth(0, 0.22, t) - smooth(0.8, 1.35, t)), 0.06 * bump(0.1, 0.25, 0.5, 0.9, t), 0),
+    },
+    { name: 'cast', duration: 1, loop: false, pose: () => {} },
+    { name: 'hit', duration: 0.3, loop: false, pose: (t, p) => p.r('mirror', 0.05 * bump(0, 0.05, 0.1, 0.3, t), 0, 0) },
+    {
+      name: 'death', duration: 1.2, loop: false,
+      pose: (t, p) => {
+        const k = smooth(0, 1, t);
+        p.r('mirror', 0.9 * k, 0.2 * k, 0.4 * k);
+        p.p('mirror', 0.2 * k, -1.2 * k, 0.3 * k);
+        p.r('root', 0, 0, 0.1 * k);
+      },
+    },
+  ];
+  return { rig: rb, clips, prefix };
+}
+
 export function buildTrebuchet(prefix: string, team: string): ModelBuild {
   const rb = new RigBuilder(prefix);
   rb.bone('root', null, [0, 0, 0]).bone('arm', 'root', [0, 3.4, 0]).bone('weight', 'arm', [0, 3.4, 1.1]).bone('sling', 'arm', [0, 3.4, -3.2]);

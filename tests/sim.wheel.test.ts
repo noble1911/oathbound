@@ -42,7 +42,7 @@ describe('the counter wheel', () => {
     for (const l of LORD_IDS) expect(WHEEL).toContain(LORDS[l].class);
     const of = (c: WheelClass): UnitType[] => UNIT_TYPES.filter((u) => UNITS[u].class === c);
     expect(of('swarm')).toEqual(['militia', 'skeleton', 'spear_levy']);
-    expect(of('siege')).toEqual(['ballista', 'trebuchet', 'corpse_catapult']);
+    expect(of('siege')).toEqual(['ballista', 'trebuchet', 'corpse_catapult', 'sun_mirror']);
     expect(UNITS.clerics.class).toBe('magic'); // healers count as Magic
     expect(UNITS.sun_priest.class).toBe('magic');
     expect(LORDS.rajah.class).toBe('giant');

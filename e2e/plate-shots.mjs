@@ -15,7 +15,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const F = {
   kingdom: [['militia', 12], ['pikemen', 8], ['berserkers', 6], ['archers', 9], ['knights', 4], ['cavaliers', 4], ['mages', 4], ['clerics', 3], ['lord', 1, 'marshal'], ['pegasus', 3], ['ballista', 1], ['trebuchet', 1], ['golem', 1], ['wyvern', 2], ['dragon', 1]],
   ashen: [['skeleton', 10], ['grave_knight', 4], ['bone_archer', 9], ['wraith_rider', 4], ['grave_acolyte', 3], ['lord', 1, 'lich'], ['bone_golem', 1], ['bone_drake', 1], ['corpse_catapult', 1]],
-  caliphate: [['spear_levy', 10], ['scimitar', 6], ['camel_archer', 4], ['mamluk', 4], ['djinn_binder', 4], ['sun_priest', 3], ['lord', 1, 'sultana'], ['djinn', 2], ['war_elephant', 1], ['sand_golem', 1]],
+  caliphate: [['spear_levy', 10], ['scimitar', 6], ['camel_archer', 4], ['mamluk', 4], ['djinn_binder', 4], ['sun_priest', 3], ['lord', 1, 'sultana'], ['djinn', 2], ['war_elephant', 1], ['sand_golem', 1], ['sun_mirror', 1]],
 };
 const PAIRS = (process.env.PAIRS || 'kingdom-ashen,ashen-caliphate,caliphate-kingdom').split(',').map((p) => p.split('-'));
 let server = null;

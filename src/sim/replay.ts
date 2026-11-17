@@ -17,8 +17,8 @@ export function keepSource(seat: Seat, n: number): number {
   return KEEP_SRC_BASE + seat * 4 + n;
 }
 
-export const WEAPON_CODES: readonly (WeaponKind | 'tower')[] = ['sword', 'axe', 'lance', 'bow', 'tome', 'staff', 'bolt', 'stone', 'fists', 'breath', 'tower'];
-export const PROJ_CODES: readonly ProjectileKind[] = ['none', 'arrow', 'bolt', 'stone', 'fireball', 'firebreath', 'lightning', 'tower_arrow'];
+export const WEAPON_CODES: readonly (WeaponKind | 'tower')[] = ['sword', 'axe', 'lance', 'bow', 'tome', 'staff', 'bolt', 'stone', 'fists', 'breath', 'tower', 'beam'];
+export const PROJ_CODES: readonly ProjectileKind[] = ['none', 'arrow', 'bolt', 'stone', 'fireball', 'firebreath', 'lightning', 'tower_arrow', 'sunbeam'];
 export const ARC_CODES: readonly ArcType[] = ['line', 'arc', 'high_arc'];
 export const ABILITY_CODES: readonly AbilityEventKind[] = [
   'rally', 'meteor', 'bulwark', 'skyfall', 'chain', 'burn', 'frost', 'ember_burst', 'reflect', 'stomp', 'charge', 'brace',

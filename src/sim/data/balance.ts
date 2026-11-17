@@ -10,7 +10,7 @@ import type { FactionId, LordId, UnitType } from '../types.ts';
  */
 export const FACTION_POWER: Record<FactionId, number> = { kingdom: 914, ashen: 1008, caliphate: 1097 };
 
-export const UNIT_POWER: Record<UnitType, number> = { militia: 152, pikemen: 136, berserkers: 148, archers: 77, knights: 119, cavaliers: 163, mages: 80, clerics: 170, pegasus: 147, ballista: 100, trebuchet: 86, golem: 85, wyvern: 108, dragon: 76, skeleton: 166, grave_knight: 124, bone_archer: 85, wraith_rider: 94, grave_acolyte: 170, bone_drake: 71, corpse_catapult: 128, bone_golem: 83, spear_levy: 119, scimitar: 121, camel_archer: 107, mamluk: 138, djinn_binder: 68, sun_priest: 135, djinn: 73, war_elephant: 95, sand_golem: 106 };
+export const UNIT_POWER: Record<UnitType, number> = { militia: 152, pikemen: 136, berserkers: 148, archers: 77, knights: 119, cavaliers: 163, mages: 80, clerics: 170, pegasus: 147, ballista: 100, trebuchet: 86, golem: 85, wyvern: 108, dragon: 76, skeleton: 166, grave_knight: 124, bone_archer: 85, wraith_rider: 94, grave_acolyte: 170, bone_drake: 71, corpse_catapult: 128, bone_golem: 83, spear_levy: 119, scimitar: 121, camel_archer: 107, mamluk: 138, djinn_binder: 68, sun_priest: 135, djinn: 73, war_elephant: 95, sand_golem: 106, sun_mirror: 70 };
 export const LORD_POWER: Record<LordId, number> = { marshal: 135, archmage: 61, warden: 126, skylady: 54, lich: 83, sultana: 158, deathknight: 146, ossuary: 77, drakerider: 105, vizier: 60, rajah: 113, rocrider: 77 };
 
 /**

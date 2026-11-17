@@ -2,7 +2,7 @@
 // replay's `modelId` (unit id, lord_<id>, skeleton), falling back to `type`. Crowd archetypes are
 // VAT-instanced; heroes (Lords, Large units, siege) are individual skinned meshes with a mixer.
 import type { ModelBuild, HumanLook } from './models.ts';
-import { buildHumanoid, buildHorse, buildGolem, buildDragon, buildBallista, buildTrebuchet } from './models.ts';
+import { buildHumanoid, buildHorse, buildGolem, buildDragon, buildBallista, buildTrebuchet, buildSunMirror } from './models.ts';
 
 export const TEAM_COLORS: [string, string] = ['#3b6fd8', '#d8453b'];
 
@@ -181,6 +181,11 @@ export const ARCHETYPES: Record<string, Archetype> = {
   sand_golem: {
     key: 'sand_golem', render: 'hero', build: () => buildGolem('sand_golem'),
     walkSpeed: 1.59, runSpeed: 3, runAbove: 99, flyHeight: 0, muzzle: 3.0, chest: 2.6, scale: 1, attackImpact: 0.5, dust: 1.8,
+  },
+  sun_mirror: {
+    // muzzle = the dish's focal point, where the sunbeam leaves (fireTime in the manifest times it to the fire clip)
+    key: 'sun_mirror', render: 'hero', build: () => buildSunMirror('sun_mirror', '#e4e1da'),
+    walkSpeed: 0.8, runSpeed: 1.6, runAbove: 99, flyHeight: 0, muzzle: 2.68, chest: 1.5, scale: 1, attackImpact: 0.25, dust: 0.5,
   },
   lord_sultana: human('lord_sultana', 'hero', { dust: 0.3, walkSpeed: 1.13, runSpeed: 3.8, runAbove: 2.2 }, 1.22),
   // ---------------------------------------------------------------- Lords whose art ships ahead of the sim

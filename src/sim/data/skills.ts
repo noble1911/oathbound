@@ -25,7 +25,7 @@ export const UNIT_CLASS: Record<UnitType, UnitClass> = {
   corpse_catapult: 'siege', bone_golem: 'giant',
   // The Sun Caliphate (Camel Archers are bowmen first: they take the archers' skills)
   spear_levy: 'infantry', scimitar: 'infantry', camel_archer: 'ranged', mamluk: 'mounted', djinn_binder: 'caster', sun_priest: 'caster', djinn: 'flier',
-  war_elephant: 'giant', sand_golem: 'giant',
+  war_elephant: 'giant', sand_golem: 'giant', sun_mirror: 'siege',
 };
 /** A Lord is of class 'lord' and also of the class of its fighting style. */
 export const LORD_CLASS: Record<LordId, UnitClass> = {
@@ -216,7 +216,9 @@ export function unitSkills(type: UnitType): SkillInfo[] {
   if (u.traits.includes('charge')) add('charge', 'Charge', 'The first hit of a charge deals double damage; re-arms after 5 s out of combat');
   if (u.traits.includes('raider')) add('raider', 'Raider', 'Hunts the enemy backline: archers, casters, healers and siege engines');
   if (u.lifesteal) add('lifesteal', u.faction === 'ashen' ? 'Life drain' : 'Bloodlust', `Heals for ${u.lifesteal}% of the damage it deals`);
-  if (u.burn) add('plague', u.faction === 'ashen' ? 'Plague' : 'Burning', `Hits fester for ${u.burn} damage per second over 3 s`);
+  if (u.burn && u.faction === 'ashen') add('plague', 'Plague', `Hits fester for ${u.burn} damage per second over 3 s`);
+  else if (u.burn) add('burning', 'Burning', `Sets its target alight: ${u.burn} damage per second for 3 s`);
+  if (u.projectile === 'sunbeam') add('sunbeam', 'Focused sunlight', 'A single beam of sunlight strikes one target at long range; it cannot miss a flier but splashes nothing');
   if (u.slow) add('slowing', 'Whirlwind', `Hits slow the target by ${u.slow}% for 2 s`);
   if (u.regen) add('regen', 'Shifting sands', `Regenerates ${u.regen / 10}% of maximum life per second`);
   if (u.traits.includes('howdah')) add('howdah', 'Howdah archers', 'Can also strike fliers that come within reach');

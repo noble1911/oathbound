@@ -213,5 +213,10 @@
   "faction": "caliphate",
   "role": "lord",
   "prompt": "ROLE Lord: one commander shown half-length (waist up) with a small crown on the head; the silhouette is defined by the SIGNATURE object or companion described, drawn very large, so that this Lord cannot be confused with any other. Here: Amira Falconheart, a veiled warrior woman in a feathered diadem crown, the hooked beak and wings of a giant bird behind her."
+ },
+ "unit_sun_mirror": {
+  "faction": "caliphate",
+  "role": "siege",
+  "prompt": "ROLE siege engine: one wheeled wooden war machine in side profile, no people; the machine frame and throwing arm are the dominant shape. Here: a sun mirror: a huge round concave mirror dish tilted up on a two-wheeled wooden cart, a thick straight beam of light shooting from the centre of the dish to the upper right (no throwing arm: the big round dish on its cart is the dominant shape)."
  }
 }

@@ -116,7 +116,7 @@ describe('mirror symmetry (seat fairness)', () => {
     ];
     // The whole Ashen roster against the whole Caliphate roster (and the reverse): every faction mechanic in play.
     const ashen: UnitType[] = ['skeleton', 'grave_knight', 'bone_archer', 'wraith_rider', 'grave_acolyte', 'bone_drake', 'corpse_catapult', 'bone_golem', 'grave_acolyte', 'skeleton'];
-    const caliphate: UnitType[] = ['spear_levy', 'scimitar', 'camel_archer', 'mamluk', 'djinn_binder', 'sun_priest', 'djinn', 'war_elephant', 'sand_golem', 'sun_priest'];
+    const caliphate: UnitType[] = ['spear_levy', 'scimitar', 'camel_archer', 'mamluk', 'djinn_binder', 'sun_priest', 'djinn', 'war_elephant', 'sand_golem', 'sun_mirror'];
     expect(new Set([...kingdom[0], ...kingdom[1], ...ashen, ...caliphate]).size).toBe(UNIT_TYPES.length);
     const cases: [number, [LordId, LordId], [UnitType[], UnitType[]], number][] = [
       [11, ['archmage', 'marshal'], kingdom, 11], [12, ['skylady', 'warden'], kingdom, 11],

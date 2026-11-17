@@ -46,8 +46,8 @@ const C_ATTACK = cz('attack'), C_BURN = cz('burn'), C_THORNS = cz('thorns'), C_T
 
 const T_MOUNTED = 1, T_ARMORED = 2, T_FLIER = 4, T_LARGE = 8, T_INFANTRY = 16, T_LORD = 32;
 const TAG_BIT: Record<Tag, number> = { mounted: T_MOUNTED, armored: T_ARMORED, flier: T_FLIER, large: T_LARGE, infantry: T_INFANTRY };
-const PROJ_SPEED: Partial<Record<ProjectileKind, number>> = { arrow: 160, bolt: 260, stone: 90, fireball: 110, firebreath: 140, tower_arrow: 160, lightning: 1000 };
-const PROJ_ARC: Partial<Record<ProjectileKind, ArcType>> = { arrow: 'arc', bolt: 'line', stone: 'high_arc', fireball: 'line', firebreath: 'line', tower_arrow: 'arc', lightning: 'line' };
+const PROJ_SPEED: Partial<Record<ProjectileKind, number>> = { arrow: 160, bolt: 260, stone: 90, fireball: 110, firebreath: 140, tower_arrow: 160, lightning: 1000, sunbeam: 1000 };
+const PROJ_ARC: Partial<Record<ProjectileKind, ArcType>> = { arrow: 'arc', bolt: 'line', stone: 'high_arc', fireball: 'line', firebreath: 'line', tower_arrow: 'arc', lightning: 'line', sunbeam: 'line' };
 const BASE_CRIT = 5;
 const CRIT_MULT = 150;
 const LEVEL_HP = LEVEL_HP_PCT;

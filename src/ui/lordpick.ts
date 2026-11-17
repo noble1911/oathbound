@@ -34,7 +34,7 @@ export function lordPortrait(id: LordId, cls = ''): string {
  * plague, life drain, sun blessing, whirlwind, regeneration, howdah archers, healing. A faction
  * with no healer says so.
  */
-const MECHANIC_IDS = ['raise', 'ethereal', 'plague', 'lifesteal', 'bless', 'slowing', 'regen', 'howdah', 'heal'];
+const MECHANIC_IDS = ['raise', 'ethereal', 'plague', 'lifesteal', 'bless', 'slowing', 'regen', 'howdah', 'sunbeam', 'heal'];
 export interface FactionMechanic { id: string; name: string; text: string; units: UnitType[]; tone: 'good' | 'bad' }
 export function factionMechanics(f: FactionId): FactionMechanic[] {
   const out = new Map<string, FactionMechanic>();

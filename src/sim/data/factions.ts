@@ -23,7 +23,7 @@ export const FACTIONS: Record<FactionId, FactionDef> = {
     ['#d9d4c2', '#6b6f6a', '#5fe08a']),
   caliphate: mk('caliphate', 'The Sun Caliphate', 'Caliphate',
     'A desert empire under the banner of the sun.',
-    'Fast and blessed: Sun Priests heal and quicken, camel archers shoot from the saddle, sand and djinn slow the foe, and the giants trample or mend themselves.',
+    'Fast and blessed: Sun Priests heal and quicken, camel archers shoot from the saddle, sand and djinn slow the foe, Sun Mirrors burn casters from afar, and the giants trample or mend themselves.',
     ['#f2efe6', '#c98a2b', '#2fb7b0']),
 };
 export const FACTION_IDS = Object.keys(FACTIONS) as FactionId[];

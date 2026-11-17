@@ -710,15 +710,17 @@ class Kit:
         self.name = name
         self.items = []
 
-    def add(self, ob, src, w=1.0, copies=None, mirror=False, double=False, jitter=0.06, smooth_=None, node=None):
+    def add(self, ob, src, w=1.0, copies=None, mirror=False, double=False, jitter=0.06, smooth_=None, node=None, clean=0.0):
         """src: Src | tile name. w: texel density weight. copies: [4x4] extra instances (share texels), mirror: also
-        instance mirrored in X (shares texels), double: add flipped back faces (thin cloth seen from both sides)."""
+        instance mirrored in X (shares texels), double: add flipped back faces (thin cloth seen from both sides).
+        clean: 0..1, how much of the siege weathering (siege_weather.py) this piece is spared (polished mirrors, crew
+        figures with their own baked shading); finish() writes it to `self.clean` (S x S)."""
         if isinstance(src, str):
             src = tile(src)
         if smooth_ is not None:
             for p in ob.data.polygons:
                 p.use_smooth = smooth_
-        self.items.append(dict(ob=ob, src=src, w=w, copies=copies or [], mirror=mirror, double=double, jitter=jitter if src.tile else 0.0, node=node))
+        self.items.append(dict(ob=ob, src=src, w=w, copies=copies or [], mirror=mirror, double=double, jitter=jitter if src.tile else 0.0, node=node, clean=clean))
         return ob
 
     # -- islands of one piece: [(loop indices, metres-per-uv (su, sv))]
@@ -801,7 +803,7 @@ class Kit:
                 break
             D *= 0.92
         base = np.zeros((S, S, 3), F32); team = np.zeros((S, S), F32); nrm = np.zeros((S, S, 3), F32); nrm[..., :] = (0.5, 0.5, 1.0)
-        rough = np.full((S, S), 0.7, F32); metal = np.zeros((S, S), F32); cov = np.zeros((S, S), bool)
+        rough = np.full((S, S), 0.7, F32); metal = np.zeros((S, S), F32); cov = np.zeros((S, S), bool); clean = np.zeros((S, S), F32)
         rng = np.random.default_rng(7)
         for r, (x0, y0) in zip(recs, pos):
             src = r['it']['src']
@@ -838,6 +840,8 @@ class Kit:
                 n = np.stack([-sx, -sy, np.ones_like(sx)], -1); n /= np.linalg.norm(n, axis=2, keepdims=True)
                 nrm[sl] = n * 0.5 + 0.5
             cov[sl] = True
+            if r['it'].get('clean'):
+                clean[sl] = r['it']['clean']
             r['rect'] = (x0 + pad, y0 + pad)
         # write the atlas UVs
         for it in self.items:
@@ -882,7 +886,7 @@ class Kit:
         nt.links.new(sep.outputs['Green'], p.inputs['Roughness']); nt.links.new(sep.outputs['Blue'], p.inputs['Metallic'])
         has_team = bool(team.max() > 0.05)
         m['authored'] = 1; m['team_image'] = imgs['team'].name if has_team else ''
-        self.team = team; self.images = imgs
+        self.team = team; self.images = imgs; self.clean = clean
         out = {}
         for node, objs in groups.items():
             ob = join(objs, self.name if node is None else node)

@@ -8,6 +8,8 @@ import { LAYER_VFX } from '../core/post.ts';
 
 export type ProjectileKind =
   | 'arrow' | 'bolt' | 'stone' | 'fireball' | 'firebreath' | 'lightning' | 'tower_arrow'
+  /** The Sun Mirror's focused sunlight: drawn as a beam (ribbons), never as a flying body. */
+  | 'sunbeam'
   /** Skill variants: burning arrows, heavy pinning arrows, a burning pitch pot, an empowered fireball. */
   | 'fire_arrow' | 'pin_shot' | 'fire_pot' | 'skill_fireball'
   /** Faction shots: the Corpse Catapult's plague bundle, a Djinn-Binder's whirlwind. */

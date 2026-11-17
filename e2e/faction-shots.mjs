@@ -21,7 +21,7 @@ const FACTIONS = {
   },
   caliphate: {
     front: [['spear_levy', 10], ['scimitar', 6], ['camel_archer', 4], ['mamluk', 4], ['djinn_binder', 4], ['sun_priest', 3]],
-    back: [['lord', 1, 'sultana'], ['djinn', 2], ['war_elephant', 1], ['sand_golem', 1]],
+    back: [['lord', 1, 'sultana'], ['djinn', 2], ['war_elephant', 1], ['sand_golem', 1], ['sun_mirror', 1]],
   },
 };
 let server = null;

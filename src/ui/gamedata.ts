@@ -19,7 +19,7 @@ export const SLOTS: readonly Slot[] = ['weapon', 'armor', 'relic'];
 export const SLOT_LABEL: Record<Slot, string> = { weapon: 'Weapon', armor: 'Armor', relic: 'Relic' };
 export const TAG_LABEL: Record<Tag, string> = { mounted: 'Mounted', armored: 'Armored', flier: 'Flier', large: 'Large', infantry: 'Infantry' };
 export const WEAPON_LABEL: Record<WeaponKind, string> = {
-  sword: 'Sword', axe: 'Axe', lance: 'Lance', bow: 'Bow', tome: 'Tome', staff: 'Staff', bolt: 'Bolt', stone: 'Stone', fists: 'Fists', breath: 'Breath',
+  sword: 'Sword', axe: 'Axe', lance: 'Lance', bow: 'Bow', tome: 'Tome', staff: 'Staff', bolt: 'Bolt', stone: 'Stone', fists: 'Fists', breath: 'Breath', beam: 'Sunbeam',
 };
 
 export function unitName(t: SquadType, lord?: LordId | null): string {

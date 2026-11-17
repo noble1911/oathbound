@@ -690,6 +690,7 @@ export class BattleScreen {
         else if (e.kind === 'fireball') sound.spell(p);
         else if (e.kind === 'firebreath') sound.breath(p, sol[e.src]?.type !== 'wyvern');
         else if (e.kind === 'lightning') sound.lightning(p);
+        else if (e.kind === 'sunbeam') sound.sunbeam(p);
         break;
       }
       case 'impact': {

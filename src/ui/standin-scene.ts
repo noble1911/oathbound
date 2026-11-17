@@ -33,6 +33,7 @@ function look(t: SquadType | 'skeleton'): Look {
     case 'wyvern': return { sx: 4, sy: 1.6, sz: 2.4, lift: 7 };
     case 'dragon': return { sx: 7, sy: 2.6, sz: 3.6, lift: 9 };
     case 'ballista': return { sx: 4, sy: 1.1, sz: 2.6, lift: 0 };
+    case 'sun_mirror': return { sx: 2.6, sy: 2.4, sz: 3, lift: 0 };
     case 'trebuchet': return { sx: 4.6, sy: 3, sz: 3.4, lift: 0 };
     case 'golem': return { sx: 3.4, sy: 3.2, sz: 3.4, lift: 0 };
     case 'skeleton': return { sx: 0.9, sy: 0.95, sz: 0.9, lift: 0 };
@@ -859,7 +860,7 @@ export class StandInScene implements SceneAdapter {
         m.compose(p, q.identity(), new THREE.Vector3(sc, sc, sc));
         if (no < 200) {
           this.orbMesh.setMatrixAt(no, m);
-          this.orbMesh.setColorAt(no, new THREE.Color(s.kind === 'stone' ? '#8a8070' : s.kind === 'lightning' ? '#b8d0ff' : '#ff9a3a'));
+          this.orbMesh.setColorAt(no, new THREE.Color(s.kind === 'stone' ? '#8a8070' : s.kind === 'lightning' ? '#b8d0ff' : s.kind === 'sunbeam' ? '#ffe08a' : '#ff9a3a'));
           no++;
         }
       }

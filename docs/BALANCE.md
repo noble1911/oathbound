@@ -11,6 +11,28 @@ To re-tune:
 
 Both rewrite `src/sim/data/balance.ts`. Run one tuner at a time.
 
+## Addendum: the Sun Mirror (2026-11-17, not yet re-tuned)
+
+The Caliphate's Siege unit (`sun_mirror`, DESIGN §4b) went in after the report below, with only its own `UNIT_POWER`
+set (70). No other lever moved; the follow-up pass re-tunes `FACTION_POWER`, the Lords and the reserves. Sanity run:
+`OB_THREADS=12 node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 300000`.
+
+| | Hard | Normal | Classic | Gate |
+|---|---|---|---|---|
+| Sun Mirror (unit) | 55.4 (n=3004) | 55.9 (n=3341) | 50.1 (n=3502) | 40–60% |
+| Kingdom | 47.6 | 44.6 ⚠ | 47.6 | 46–54% |
+| Ashen | 46.9 | 46.5 | 48.2 | 46–54% |
+| Caliphate | 55.5 ⚠ | 59.0 ⚠ | 54.2 ⚠ | 46–54% |
+| Lords, lowest to highest | 44.0 (lich) to 56.4 (rajah) | 39.2 (archmage) to 62.3 (sultana) | 44.6 (archmage) to 56.4 (sultana) | 45–55% |
+| Seat 0 / rounds | 48.8 / 8.76 | 49.6 / 8.70 | 50.2 / 8.81 | |
+
+Deploy share among Caliphate deploys (`tools/review/picks.ts --seeds 4`): 6.8% on Hard, 7.5% on Normal (the Sand
+Golem: 7.1% / 8.8%). Its `UNIT_POWER` was walked down from 100 (unit 62.4 / 61.5 / 56.2) through 82 (57.9 / 58.3 /
+53.1) and 65 (52.1 / 53.0 / 49.8) on a small field (`hard:12,normal:12,classic:1`). On that field the Caliphate without
+the Sun Mirror scored 50.5 / 49.1 / 48.6, and with it at 65 it scored 52.7 / 56.8 / 54.1. Most of the faction's gain
+is therefore structural: the Caliphate now has an answer to Magic, which the planners use (Normal most of all). That is
+`FACTION_POWER` work, not more cuts to this one unit.
+
 ## Current report: counter wheel and item rework (2026-11-17)
 
 The balance pass after the counter wheel, weighted deploys, swarm levelling and the item rework (commit `c832694`,

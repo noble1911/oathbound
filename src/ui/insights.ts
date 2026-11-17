@@ -113,7 +113,7 @@ function traits(t: SquadType, lord: LordId | null): Traits {
   const flier = u.tags.includes('flier');
   return {
     flier, ranged: u.range >= 400 && !healer, healer,
-    antiAir: !healer && (u.weapon === 'bow' || u.damageType === 'magic' || flier || u.weapon === 'bolt'),
+    antiAir: !healer && (u.weapon === 'bow' || u.damageType === 'magic' || flier || u.weapon === 'bolt' || u.weapon === 'beam'),
     armored: u.armor >= 40, magic: u.damageType === 'magic' || !!u.traits?.includes('ignoresArmor') || !!u.traits?.includes('crushing'),
     range: u.range,
   };

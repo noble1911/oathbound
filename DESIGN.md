@@ -141,7 +141,8 @@ A squad is N identical soldiers with shared orders. Each soldier has its own HP 
   not the base rule.
 - **Kept as stats:** armour, magic resistance, splash and "melee cannot hit fliers". They must never contradict the
   wheel (Line armour must not make Magic useless against it, and so on).
-- **Known gap:** the Sun Caliphate has no Siege unit, so nothing in its roster beats Magic (to be added later).
+- Every faction has a Siege unit, so every roster has an answer to Magic: the Ballista and Trebuchet, the Corpse
+  Catapult, and the Sun Mirror (added 2026-11-17; before it the Caliphate had nothing that beat Magic).
 - **Fliers** ignore terrain and can only be hit by bows, magic, bolts and other fliers. Shots from the ground lose 30% against them (`FLIER_EVADE_PCT`).
 - **Tags:** `mounted`, `armored`, `flier`, `large`, `infantry`. They drive mechanics (who can hit fliers, Slaying affixes, Lord passives), not counters.
 - **Stats:** the sim agent tunes HP, damage, attack interval, range, speed, armor and magic resist per soldier, and they live in `src/sim/data/units.ts`.
@@ -248,6 +249,7 @@ Each side can raise a given corpse once; Lords and Large units leave no usable c
 | Bound Djinn (`djinn`) | 2 | 300 | flier (Air) | Pegasus | flier with wind-blades: melee that deals magic damage; not Large |
 | War Elephant (`war_elephant`) | 1 | 400 | giant (Giant) | Golem | Large, tramples (3 m); **howdah archers** let it strike fliers in reach; from round 3 |
 | Sand Golem (`sand_golem`) | 1 | 300 | giant (Giant) | Golem | Large; **regenerates 1.5% of its life a second** |
+| Sun Mirror (`sun_mirror`) | 1 | 250 | siege (Siege) | Ballista | Large; a crewed bronze mirror that focuses the sun into a **single-target beam** at 45 m (no splash, unlike the Trebuchet and the Corpse Catapult); **burning**: the target takes 12 damage a second for 3 s; hits fliers; slow |
 
 Lords: the **Sultana** (`sultana`, a sun-banner commander), the **Grand Vizier** (`vizier`), the **Rajah** (`rajah`) and the
 **Roc Rider** (`rocrider`); models `lord_<id>`. Sunlight burns the dead: the Sultana's blade and her Radiance deal 50% more

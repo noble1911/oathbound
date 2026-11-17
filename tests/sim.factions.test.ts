@@ -39,7 +39,7 @@ describe('faction data', () => {
     expect(FACTIONS.kingdom.lords).toEqual(['marshal', 'archmage', 'warden', 'skylady']);
     expect(FACTIONS.ashen.units).toEqual(['skeleton', 'grave_knight', 'bone_archer', 'wraith_rider', 'grave_acolyte', 'bone_drake', 'corpse_catapult', 'bone_golem']);
     expect(FACTIONS.ashen.lords).toEqual(['deathknight', 'lich', 'ossuary', 'drakerider']);
-    expect(FACTIONS.caliphate.units).toEqual(['spear_levy', 'scimitar', 'camel_archer', 'mamluk', 'djinn_binder', 'sun_priest', 'djinn', 'war_elephant', 'sand_golem']);
+    expect(FACTIONS.caliphate.units).toEqual(['spear_levy', 'scimitar', 'camel_archer', 'mamluk', 'djinn_binder', 'sun_priest', 'djinn', 'war_elephant', 'sand_golem', 'sun_mirror']);
     expect(FACTIONS.caliphate.lords).toEqual(['sultana', 'vizier', 'rajah', 'rocrider']);
     expect(LORDS.lich.modelId).toBe('lord_lich');
     expect(LORDS.sultana.modelId).toBe('lord_sultana');
@@ -286,6 +286,29 @@ describe('faction mechanics', () => {
     const slows = d.events.filter((e) => e.k === 'ability' && e.ability === 'frost') as { src: number; tgt: number; dur: number }[];
     expect(slows.length).toBeGreaterThan(0);
     expect(slows.every((e) => binders.includes(e.src) && e.dur === 40 && d.replay.soldiers[e.tgt].side === 1)).toBe(true);
+  });
+
+  it('Caliphate: the Sun Mirror burns one target at a time from long range, casters first, fliers too', () => {
+    expect(UNITS.sun_mirror).toMatchObject({ class: 'siege', faction: 'caliphate', like: 'ballista', cost: 250, squadSize: 1, splash: 0, projectile: 'sunbeam' });
+    expect(UNITS.sun_mirror.burn).toBeGreaterThan(0);
+    expect(UNITS.sun_mirror.traits).toContain('backline');
+    // casters stand behind a screen: the mirror reaches past the screen to them (Siege beats Magic)
+    const d = run(arena([['sun_mirror', 1, [4000, 1500]], ['spear_levy', 1, [4000, 3200]]], [['mages', 1, [4000, 5200]], ['militia', 1, [4000, 4400]]], ['sultana', 'warden']));
+    const mirror = d.replay.squads.find((q) => q.type === 'sun_mirror')!.soldiers[0];
+    const shots = d.events.filter((e) => e.k === 'projectile' && e.src === mirror) as { kind: string; tgt: number }[];
+    expect(shots.length).toBeGreaterThan(0);
+    expect(shots.every((e) => e.kind === 'sunbeam')).toBe(true);
+    expect(d.replay.soldiers[shots[0].tgt].type).toBe('mages');
+    const ids = new Set(d.events.filter((e) => e.k === 'projectile' && e.src === mirror).map((e) => (e as { id: number }).id));
+    expect(d.events.filter((e) => e.k === 'impact' && ids.has(e.id)).every((e) => (e as { splash: number }).splash === 0)).toBe(true);
+    expect(d.events.some((e) => e.k === 'ability' && e.ability === 'burn' && e.src === mirror)).toBe(true);
+    const q = squadStatsAt(d, d.replay.ticks).squads.find((x) => x.type === 'sun_mirror')!;
+    expect(q.byCause.burn ?? 0).toBeGreaterThan(0);
+    // it can shoot fliers (it is not a lobbing engine)
+    const da = run(arena([['sun_mirror', 1, [4000, 1500]]], [['pegasus', 1, [4000, 4500]]], ['sultana', 'warden']));
+    const m2 = da.replay.squads.find((q) => q.type === 'sun_mirror')!.soldiers[0];
+    expect(da.events.some((e) => e.k === 'projectile' && e.src === m2)).toBe(true);
+    expect(unitSkills('sun_mirror').map((s) => s.id)).toEqual(expect.arrayContaining(['burning', 'sunbeam', 'ranged']));
   });
 
   it('Caliphate: Sun Priests heal and bless, Sand Golems regenerate, Djinn-Binders slow, the Sultana shines', () => {

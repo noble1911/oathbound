@@ -111,7 +111,9 @@ override the defaults in `mesh.mjs` (the q8 set only ships the 512 flows); `BLEN
   of the span in every flier loop; `vat.py` repeats the hoof / wing-tip test on the baked VAT texels. A mount
   can no longer ship as a rigid block.
 * **Siege** (rigid nodes, NLA clips `idle, fire, reload, hit, death`; manifest `fireTime` = projectile release):
-  ballista `body`, `bolt`; trebuchet `frame`, `arm` (pivot at axle), `rope`, `stone`.
+  ballista `body`, `bolt`; trebuchet `frame`, `arm` (pivot at axle), `rope`, `stone`; sun mirror `frame`, `yoke`
+  (turntable and fork, yaws), `mirror` (dish, pivot at the trunnion, pitches), `flare` (scale ~0 at rest, flashes on
+  `fire`; `release` = the focal point).
 * **Keep** `keep_<faction>.glb` (+ `_lod1.glb`), one per faction (`kingdom`, `ashen`, `caliphate`): root with
   children `stage0` (intact) .. `stage3` (ruin); show exactly one. Built from geometry, not TRELLIS: section 9.
 * **Props** (manifest `props`): static, one mesh, LOD0 + LOD1 (`<id>_lod1.glb`), 512² atlas (LOD1 256²),
@@ -660,6 +662,18 @@ death`); new child nodes animate with them (the renderer plays clips by node nam
 | ballista | 5292 / 2112 | base + normal 2048, MR 1024 (512, 256) | 1.47 / 0.19 MB | 1024 (LOD1 256) |
 | trebuchet | 6922 / 2342 | same | 1.42 / 0.19 MB | same |
 | corpse catapult | 11946 / 2986 | same | 1.55 / 0.18 MB | same |
+| sun mirror (Caliphate) | 11644 / 2978 (two TRELLIS 1024 crew, 1576 / ~300 each) | same | 1.47 / 0.19 MB | same |
+
+The sun mirror is the first engine with a **crew**. Its `parts` (`sun_mirror_priest`, `sun_mirror_engineer`) are
+ordinary TRELLIS 1024 part assets (concept style `prompts/_style_pose.txt`), turned into rigid figures by
+`blender/siege_crew.py`. The script bakes the albedo once (under the GPU lock), keys the magenta sash into the team mask,
+and caches the result in `art-work/clean/<id>_crew.npz`. LOD1 is a remeshed figure with flat colours. The crew stand on
+`frame` and do not animate. `Kit.add(..., clean=True)` (`trappings_lib.py`) keeps a piece out of the weathering (the
+dish, crystal, flare, crew and jars), and `siege_weather.py` has a Caliphate branch: desert dust and warm tarnish
+instead of rust. `SIEGE_NOCREW=1` / `SIEGE_COUNT=1` speed up iteration and print triangles per piece.
+`blender/siege_review.py` renders the review sheets (`REVIEW_TEAM` = the tint) into
+`docs/reviews/shots-2026-11-17/sun-mirror/`. The beam itself is VFX: the renderer draws it from the archetype's muzzle
+(2.68 m = `release`) at `fireTime`.
 
 Licences: flat art = Codex CLI / OpenAI image generation (outputs owned by the user per OpenAI terms); wood and iron
 tiles = CC0 Poly Haven `weathered_planks`, `dark_wooden_planks`, `metal_plate_02`, `rusty_metal_04`; all geometry and
@@ -768,6 +782,7 @@ squads, detail GLB + mask for heroes; low / medium load the hero `lod1` file + i
 | `lord_ossuary` | new | 29556 / 7885 | - | 4.57 | - | 3.27 |
 | `lord_drakerider` | new | 28572 / 7880 | - | 3.96 | - | 2.71 |
 | `lord_rocrider` | new | 28574 / 7859 | - | 4.51 | - | 3.18 |
+| `sun_mirror` | new | 11644 / 2978 | - | 1.80 | - | 1.61 |
 
 **Known limits after v3.** No emissive channel (soul-fire is bright albedo). (Wing-root twist: fixed 2026-11-17, see
 section 2 **Wing roots**.) Siege `hit` is a small jolt. Capes, cloaks and manes have no secondary motion. The in-engine slide

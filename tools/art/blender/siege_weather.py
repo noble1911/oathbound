@@ -7,7 +7,9 @@ is baked with Cycles on the CPU into the kit's own atlas layout:
 Those maps drive the grading of the basecolour / roughness / normal images in numpy: contact darkening and crevice
 dirt, mud splashed up from the ground, sun-bleached tops and dark undersides, worn pale edges on timber and bright
 edges on iron, rust (verdigris on Ashen bronze) on the fittings and streaks of it on the timber below them, and the
-soul-fire's green light on what surrounds it (albedo only: the renderer has no emissive).
+soul-fire's green light on what surrounds it (albedo only: the renderer has no emissive). Sun Caliphate: desert dust
+instead of mud, a warm tarnish on the brass instead of rust. Kit pieces added with `clean` (the polished mirror, TRELLIS
+crew with their own baked shading) keep their albedo / roughness / metal, darkened only by a light occlusion.
 Instances that share texels (mirrored / repeated pieces, flipped cloth backs) are baked once, from the original.
 `SIEGE_NOWEATHER=1` skips the pass (fast geometry iterations).
 """
@@ -169,6 +171,11 @@ def weather(e, obs):
     rough = mr[..., 1]; metal = mr[..., 2]
     team = kit.team
     ashen = e.faction == 'ashen'
+    cal = e.faction == 'caliphate'
+    clean = getattr(kit, 'clean', None)
+    if clean is None:
+        clean = np.zeros((S, S), F32)
+    mr0 = mr.copy()
     z = pos[..., 2]; nz = nrm[..., 2]
     ismetal = metal > 0.2
     cloth = team > 0.3
@@ -187,19 +194,19 @@ def weather(e, obs):
     base *= (1 - k_ao + k_ao * aoc)[..., None]
     cav = 1 - np.clip(ao, 0, 1)
     # 2. crevice dirt
-    dirt = (0.20, 0.16, 0.11) if not ashen else (0.11, 0.105, 0.10)
+    dirt = (0.11, 0.105, 0.10) if ashen else (0.24, 0.19, 0.13) if cal else (0.20, 0.16, 0.11)
     k = _sm(cav, 0.22, 0.7) * (0.45 + 0.55 * n1) * np.where(cloth, 0.3, 0.75)
     base = lerp(base, dirt, k); rough = np.clip(rough + 0.15 * k, 0, 1)
     # 3. mud / ash thrown up from the ground
-    mud = (0.27, 0.215, 0.15) if not ashen else (0.17, 0.165, 0.16)
+    mud = (0.17, 0.165, 0.16) if ashen else (0.48, 0.40, 0.29) if cal else (0.27, 0.215, 0.15)
     hgt = 0.95 * e.k
     k = np.clip(1 - z / hgt, 0, 1) ** 1.6 * (0.35 + 0.9 * w3) * np.where(cloth, 0.3, 1.0)
     k = np.clip(k, 0, 0.8)
-    base = lerp(base, mud, k * 0.8); rough = np.clip(rough + 0.2 * k, 0, 1); metal = metal * (1 - 0.8 * k)
+    base = lerp(base, mud, k * (0.42 if cal else 0.8)); rough = np.clip(rough + 0.2 * k, 0, 1); metal = metal * (1 - 0.8 * k)
     # 4. tops bleached by the sun and dusted, undersides darker
     up = _sm(nz, 0.5, 0.95) * (~ismetal) * (~cloth) * (0.5 + 0.5 * n2)
     lum = base.mean(2, keepdims=True)
-    base = lerp(base, np.clip((base * 0.55 + lum * 0.45) * 1.16 + 0.02, 0, 1), up * (0.55 if not ashen else 0.3))
+    base = lerp(base, np.clip((base * 0.55 + lum * 0.45) * 1.16 + 0.02, 0, 1), up * (0.3 if ashen else 0.25 if cal else 0.55))
     base *= (1 - 0.12 * _sm(-nz, 0.3, 0.9))[..., None]
     # 5. large-scale tone variation so no two beams read the same
     base *= (0.96 + 0.2 * w3)[..., None]
@@ -209,9 +216,9 @@ def weather(e, obs):
         base = lerp(base, base * np.array((0.72, 0.64, 0.52), F32), k * 0.7)
         base *= (1 - 0.25 * bone * _sm(n1, 0.55, 0.85))[..., None]
     # 6. iron: rust (verdigris on bronze) in the cavities and in blotches; timber below it gets streaks
-    rust = np.array((0.36, 0.17, 0.08) if not ashen else (0.22, 0.45, 0.37), F32)
+    rust = np.array((0.22, 0.45, 0.37) if ashen else (0.30, 0.21, 0.11) if cal else (0.36, 0.17, 0.08), F32)
     k = np.clip(_sm(n2, 0.52, 0.8) * 0.7 + _sm(cav, 0.15, 0.6) * 0.6, 0, 0.85) * ismetal
-    base = lerp(base, rust * (0.8 + 0.4 * n1[..., None]), k * (0.75 if not ashen else 0.38))
+    base = lerp(base, rust * (0.8 + 0.4 * n1[..., None]), k * (0.38 if ashen else 0.4 if cal else 0.75))
     rough = np.clip(rough + 0.3 * k, 0, 1); metal = metal * (1 - 0.7 * k)
     stain = np.zeros((S, S), F32)
     ys, xs = np.nonzero(ismetal & cov)
@@ -238,7 +245,7 @@ def weather(e, obs):
                 out[i] = (1 - d / R) ** 1.5 * below
         s2 = np.zeros(sub.shape, F32); s2[yy, xx] = out
         stain = np.repeat(np.repeat(s2, h, 0), h, 1)[:S, :S] * (0.35 + 0.65 * n1)
-    base = lerp(base, base * (rust * 1.1 + 0.42), np.clip(stain, 0, 1) * 0.55)
+    base = lerp(base, base * (rust * 1.1 + 0.42), np.clip(stain, 0, 1) * (0.3 if cal else 0.55))
     # 7. worn edges: pale timber, bright metal
     ed = _sm(edge, 0.015, 0.16) * _sm(n1 * 0.6 + w3 * 0.4, 0.25, 0.6) * (~cloth) * (z > 0.02)
     wood_e = np.clip((base * 0.6 + lum * 0.4) * 1.45 + 0.05, 0, 1)
@@ -253,16 +260,20 @@ def weather(e, obs):
         base = base * (1 - 0.25 * k[..., None]) + np.array((0.30, 1.0, 0.42), F32) * (0.5 * k[..., None])
     # exposure: the engine lights art albedo darkly (the TRELLIS models it replaces were lifted to a median
     # luminance of 0.25-0.29), so the timber is brought to the same level after all the darkening above
-    body = cov & ~cloth & ~green
+    body = cov & ~cloth & ~green & (clean < 0.5)
     med = float(np.median(base[body].mean(1))) if body.any() else 0.3
-    gain = min(2.0, max(1.0, (0.25 if ashen else 0.29) / max(med, 1e-3)))
+    gain = min(2.0, max(1.0, (0.25 if ashen else 0.23 if cal else 0.29) / max(med, 1e-3)))
     base = np.where(cloth[..., None], base, 1 - (1 - np.clip(base * gain, 0, 1.4) / 1.4) ** 1.4 if False else np.clip(base * gain, 0, 1))
     rough = np.where(ismetal | cloth, rough, np.clip(rough * 0.82, 0.3, 1))
     base = np.where(green[..., None], np.clip(base0 * 1.12 + 0.06, 0, 1), base)     # the flames themselves stay bright
+    # spared pieces: their own albedo under a light occlusion
+    kc = clean[..., None]
+    base = base * (1 - kc) + base0 * (0.72 + 0.28 * aoc[..., None]) * kc
+    rough = rough * (1 - clean) + mr0[..., 1] * clean; metal = metal * (1 - clean) + mr0[..., 2] * clean
     base = np.clip(base, 0, 1)
     # normal map: rounded edges (bevel bake) combined with the kit's detail normals
     bcov = bev.sum(2) > 1e-4
-    a = np.where(bcov[..., None], bev * 2 - 1, (0, 0, 1)); b = det * 2 - 1
+    a = np.where((bcov & (clean < 0.5))[..., None], bev * 2 - 1, (0, 0, 1)); b = det * 2 - 1
     n = np.stack([a[..., 0] + b[..., 0], a[..., 1] + b[..., 1], a[..., 2] * b[..., 2]], -1)
     n /= np.linalg.norm(n, axis=2, keepdims=True) + 1e-9
     _set(imgs['base'], base)

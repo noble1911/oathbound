@@ -3797,6 +3797,67 @@
     "lord_rocrider_lod1_team.png": 95651
    },
    "totalBytes": 4570524
+  },
+  "sun_mirror": {
+   "kind": "siege",
+   "scale": 1,
+   "height": 3.81,
+   "glb": "sun_mirror.glb",
+   "lod1": "sun_mirror_lod1.glb",
+   "tintMask": "sun_mirror_team.png",
+   "lod1TintMask": "sun_mirror_lod1_team.png",
+   "clips": {
+    "idle": "idle",
+    "attack": "fire",
+    "reload": "reload",
+    "hit": "hit",
+    "death": "death"
+   },
+   "clipInfo": {
+    "idle": {
+     "duration": 1.958,
+     "loop": true
+    },
+    "fire": {
+     "duration": 1.208,
+     "loop": false
+    },
+    "reload": {
+     "duration": 1.458,
+     "loop": false
+    },
+    "hit": {
+     "duration": 0.375,
+     "loop": false
+    },
+    "death": {
+     "duration": 1.458,
+     "loop": false
+    }
+   },
+   "nodes": [
+    "frame",
+    "yoke",
+    "mirror",
+    "flare"
+   ],
+   "fireTime": 0.375,
+   "release": [
+    0.049,
+    2.679,
+    0.989
+   ],
+   "tris": {
+    "lod0": 11644,
+    "lod1": 2978
+   },
+   "bytes": {
+    "sun_mirror.glb": 1470588,
+    "sun_mirror_lod1.glb": 179860,
+    "sun_mirror_team.png": 137154,
+    "sun_mirror_lod1_team.png": 8428
+   },
+   "totalBytes": 1796030
   }
  },
  "props": {

@@ -78,7 +78,7 @@ const scope = (): string => {
   return `<p class="rl-scope">${icon('flag')}<span>Showing <b>${esc(FACTIONS[codexFaction()].name)}</b>${e && e !== codexFaction() ? ` against <b>${esc(FACTIONS[e].name)}</b>` : ''}. The other factions are under <i>Factions</i>.</span></p>`;
 };
 const fliers = () => roster().filter((u) => UNITS[u].tags.includes('flier'));
-const antiAir = () => roster().filter((u) => !UNITS[u].traits?.includes('healer') && !UNITS[u].tags.includes('flier') && (UNITS[u].weapon === 'bow' || UNITS[u].damageType === 'magic' || UNITS[u].weapon === 'bolt' || UNITS[u].traits?.includes('howdah' as never)));
+const antiAir = () => roster().filter((u) => !UNITS[u].traits?.includes('healer') && !UNITS[u].tags.includes('flier') && (UNITS[u].weapon === 'bow' || UNITS[u].damageType === 'magic' || UNITS[u].weapon === 'bolt' || UNITS[u].weapon === 'beam' || UNITS[u].traits?.includes('howdah' as never)));
 
 /** The three factions side by side: what each is, its Lords, its roster and what sets it apart. */
 function factionsPage(): string {

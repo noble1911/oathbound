@@ -151,15 +151,16 @@ class Eng:
         pts = [c - d, c - d * 0.5, c, c + d * 0.5, c + d]
         self.add(T.tube('lash', pts, [r * 0.95, r * 1.07, r * 1.02, r * 1.07, r * 0.95], nseg=8, cap=False), src, node, w=0.8, jitter=0)
 
-    def wheel(self, c, r, w, node, spokes=8):
+    def wheel(self, c, r, w, node, spokes=8, lite=False):
+        """lite: LOD1 with a 6-sided rim and a 4-sided hub (the sun mirror's triangle budget)."""
         c = Vector(c)
         wood, iron = self.look['wood'], self.look['iron']
         rim = [(r - 0.12, -w / 2), (r - 0.012, -w / 2), (r - 0.012, w / 2), (r - 0.12, w / 2), (r - 0.12, -w / 2)]
-        seg = 8 if self.lod else 18
+        seg = (6 if lite else 8) if self.lod else 18
         self.add(T.lathe('rim', rim, nseg=seg, centre=c, axis='X'), wood, node, w=0.9)
         if not self.lod:
             self.add(T.lathe('tyre', [(r - 0.012, -w / 2 - 0.008), (r, -w / 2 - 0.008), (r, w / 2 + 0.008), (r - 0.012, w / 2 + 0.008)], nseg=seg, centre=c, axis='X'), iron, node, w=0.8)
-        self.add(T.lathe('hub', [(0.0, -w / 2 - 0.05), (0.07, -w / 2 - 0.05), (0.1, -w / 2), (0.1, w / 2), (0.07, w / 2 + 0.05), (0.0, w / 2 + 0.05)], nseg=5 if self.lod else 10, centre=c, axis='X'), iron, node, w=0.8)
+        self.add(T.lathe('hub', [(0.0, -w / 2 - 0.05), (0.07, -w / 2 - 0.05), (0.1, -w / 2), (0.1, w / 2), (0.07, w / 2 + 0.05), (0.0, w / 2 + 0.05)], nseg=(4 if lite else 5) if self.lod else 10, centre=c, axis='X'), iron, node, w=0.8)
         n = 4 if self.lod else spokes
         sx = 1 if c.x >= 0 else -1
         for i in range(n):
@@ -180,6 +181,13 @@ class Eng:
 
     def finish(self, pivots, parent, tex, texel):
         import os
+        if os.environ.get('SIEGE_COUNT'):                     # triangles per piece name (budget work)
+            cnt = {}
+            for it in self.kit.items:
+                k = it['ob'].name.split('.')[0]
+                n = T.tris(it['ob']) * (1 + len(it['copies'])) * (2 if it['mirror'] else 1) * (2 if it['double'] else 1)
+                cnt[k] = cnt.get(k, 0) + n
+            print('[siege] tris by piece', 'LOD1' if self.lod else 'LOD0', sorted(cnt.items(), key=lambda x: -x[1]))
         obs = self.kit.finish(tex=tex, texel=texel)
         if not isinstance(obs, dict):
             obs = {None: obs}
@@ -669,9 +677,356 @@ def trebuchet(lod, faction='kingdom', scale=1.0, name='trebuchet'):
                 order=['frame', 'arm', 'weight', 'rope', 'stone'], release=tuple(round(float(x) * e.k, 3) for x in rel), throw_top=round(top_z, 3))
 
 
+# =============================================================================================== sun mirror
+def _mirror_face_src(n=1024):
+    """The polished front of the dish: rings of gold facets (centre disc, 12, 18, 24) with dark seams, every facet
+    tilted a little differently (a gradient across it), a sky-to-ground reflection gradient and a painted hot spot --
+    the renderer has no environment map, so the albedo itself has to read as a mirror. Image source, UV 0..1 over
+    the disc."""
+    key = 'mirror_face'
+    if key in T.SRC:
+        return T.SRC[key]
+    rng = np.random.default_rng(17)
+    v, u = np.mgrid[0:n, 0:n].astype(np.float32)
+    u = (u + 0.5) / n - 0.5; v = (v + 0.5) / n - 0.5                      # row 0 = bottom: v up
+    r = np.sqrt(u * u + v * v) / 0.5
+    ang = np.arctan2(v, u)
+    rings = [(0.0, 0.21, 1), (0.21, 0.48, 12), (0.48, 0.75, 18), (0.75, 1.2, 24)]
+    shade = np.ones((n, n), np.float32); seamd = np.full((n, n), 9.0, np.float32)
+    for i, (r0, r1, ns) in enumerate(rings):
+        m = (r >= r0) & (r < r1)
+        if ns == 1:
+            t = rng.normal(size=2) * 0.5
+            shade = np.where(m, 1.04 + 0.25 * (u * t[0] + v * t[1]), shade)
+            seamd = np.where(m, np.abs(r1 - r) * 0.5, seamd)
+            continue
+        a = (ang / (2 * math.pi) + 0.5) * ns + (0.5 if i % 2 else 0.0)
+        s = np.floor(a); fa = a - s; s = (s % ns).astype(np.int32)
+        fr = (r - r0) / (r1 - r0)
+        base_b = rng.uniform(0.8, 1.16, ns).astype(np.float32)
+        tilt_a = rng.uniform(-0.24, 0.24, ns).astype(np.float32); tilt_r = rng.uniform(-0.2, 0.2, ns).astype(np.float32)
+        sh = base_b[s] + tilt_a[s] * (fa - 0.5) * 2 + tilt_r[s] * (fr - 0.5) * 2
+        shade = np.where(m, sh, shade)
+        d_ang = np.minimum(fa, 1 - fa) * (2 * math.pi * r * 0.5 / ns)
+        d_ring = np.minimum(np.abs(r - r0), np.abs(r1 - r)) * 0.5 if r1 < 1.1 else np.abs(r - r0) * 0.5
+        seamd = np.where(m, np.minimum(d_ang, d_ring), seamd)
+    seam = 1 - T.smooth(seamd, 0.0011, 0.003)
+    refl = (0.6 + 0.58 * T.smooth(v + 0.12 * u, -0.5, 0.42)) * (1 - 0.22 * T.smooth(r, 0.62, 1.0))   # sky above, ground below, deeper towards the rim
+    polish = 1 + 0.035 * np.sin(r * 260 + 6 * T.fbm(n, 1.4, 23))         # concentric burnishing
+    k = np.clip(shade * refl * polish, 0, 1.6)
+    dark = np.array((0.56, 0.34, 0.1), np.float32); gold = np.array((1.0, 0.82, 0.42), np.float32)
+    hot = np.array((1.0, 0.97, 0.87), np.float32)
+    t = np.clip((k - 0.6) / 0.6, 0, 1)[..., None]
+    col = dark * (1 - t) + gold * t
+    hs = np.exp(-((u + 0.11) ** 2 + (v - 0.14) ** 2) / 0.018) + 0.55 * np.exp(-((u - 0.2) ** 2 + (v - 0.3) ** 2) / 0.006)
+    hs = np.clip(hs * (0.7 + 0.3 * shade), 0, 1)[..., None]
+    col = col * (1 - 0.92 * hs) + hot * 0.92 * hs
+    col = col * (1 - seam[..., None]) + np.array((0.30, 0.19, 0.07), np.float32) * seam[..., None]
+    col = np.clip(col, 0, 1)
+    h = 1 - seam
+    rough = (0.16 + 0.4 * seam).astype(np.float32)
+    T.SRC[key] = T.Src(col, None, h, rough, 1.0, None, 0.003, None, key)
+    return T.SRC[key]
+
+
+def _glow_src(key, inner, outer, n=256):
+    """A radial gradient (image source, UV 0..1): the focus crystal and the fire flare."""
+    if key not in T.SRC:
+        v, u = np.mgrid[0:n, 0:n].astype(np.float32) / n - 0.5
+        r = np.clip(np.sqrt(u * u + v * v) / 0.5, 0, 1)[..., None]
+        col = np.array(inner, np.float32) * (1 - r) + np.array(outer, np.float32) * r
+        T.SRC[key] = T.Src(np.clip(col, 0, 1), None, None, 0.25, 0.0, None, 0.0, None, key)
+    return T.SRC[key]
+
+
+def _terracotta():
+    if 'terracotta' not in T.SRC:
+        n = 256; a = T.fbm(n, 1.3, 61); b = T.fbm(n, 0.6, 62)
+        col = np.array((0.66, 0.36, 0.22), np.float32)[None, None] * (0.82 + 0.3 * a[..., None]) * (1 - 0.18 * T.smooth(b, 0.6, 0.9)[..., None])
+        T.SRC['terracotta'] = T.Src(np.clip(col, 0, 1), None, a, 0.85, 0.0, 0.5, 0.003, name='terracotta')
+    return T.SRC['terracotta']
+
+
+def _planar_uv(ob, f):
+    """Per-loop UVs from the vertex positions: f(co (N, 3)) -> (N, 2)."""
+    co = T.verts(ob)
+    vi = np.empty(len(ob.data.loops), np.int32); ob.data.loops.foreach_get('vertex_index', vi)
+    T.set_uv(ob, f(co)[vi])
+    return ob
+
+
+def _star(name, c, r_out, r_in, npts, th, axis='Y', rot=0.0):
+    """A flat star plate of thickness th centred at c, in the XZ plane (facing -Y / +Y; axis 'Z': facing up,
+    'X': facing sideways); metric planar UV."""
+    pts = []
+    for i in range(2 * npts):
+        a = math.pi * i / npts + rot
+        rr = r_out if i % 2 == 0 else r_in
+        pts.append((rr * math.cos(a), rr * math.sin(a)))
+    m = len(pts)
+    verts = [(0, -th / 2, 0), (0, th / 2, 0)] + [(x, -th / 2, z) for x, z in pts] + [(x, th / 2, z) for x, z in pts]
+    faces = []
+    for i in range(m):
+        j = (i + 1) % m
+        faces.append((0, 2 + j, 2 + i)); faces.append((1, 2 + m + i, 2 + m + j))
+        faces.append((2 + i, 2 + j, 2 + m + j, 2 + m + i))
+    ob = T.new_obj(name, verts, faces, None, smooth_=False)
+    _planar_uv(ob, lambda co: np.stack([co[:, 0] + (co[:, 1] > 0) * 2.0 * r_out + 1, co[:, 2]], 1))
+    T.recalc_out(ob)
+    if axis == 'Z':
+        ob.data.transform(Matrix.Rotation(math.pi / 2, 4, 'X'))
+    elif axis == 'X':
+        ob.data.transform(Matrix.Rotation(math.pi / 2, 4, 'Z'))
+    ob.data.transform(Matrix.Translation(c))
+    return ob
+
+
+def sun_mirror(lod):
+    """Sun Caliphate: a polished, segmented gold mirror on a fork (yoke) that turns on a turntable on a desert wagon,
+    a focus crystal held at the focal point by three struts, a sun crown on the rim, team pennants on the fork, team
+    banners and a team band skirt on the wagon, two TRELLIS crew on the rear deck (a sun priest invoking, an engineer
+    on the aiming tiller). Nodes: frame -> yoke (turntable + fork, yaws) -> mirror (dish, pivot at the trunnion,
+    pitches) -> flare (the fire flash at the focal point, scale ~0 at rest). The dish faces -Y, tilted 22 deg up (its face
+    reads from the high RTS camera)."""
+    import siege_crew as SC
+    e = Eng('sun_mirror', 'caliphate', lod)
+    e.look['iron'] = 'brass'
+    wood, brass, gold = e.look['wood'], 'brass', 'gold'
+    Fr, Y, Mi, Fl = 'frame', 'yoke', 'mirror', 'flare'
+    Bd = (lambda b: () if lod else b)                         # LOD1: no iron straps on the beams
+    ZD = 0.78                                                 # deck top
+    ZT = 0.98                                                 # turntable top (yoke pivot)
+    PIV = Vector((0, 0, 2.2))                                 # trunnion
+    R, FOC, TILT = 1.05, 1.25, math.radians(-22)              # dish radius, focal length, rest tilt (face up)
+    RT = Matrix.Translation(PIV) @ Matrix.Rotation(TILT, 4, 'X')      # dish-local -> unit space
+    # ---- frame: bed, deck, wheels, tongue, skirt, rails, jars, banners
+    for sx in (1, -1):
+        e.beam((sx * 0.7, -1.22, 0.62), (sx * 0.7, 1.36, 0.62), 0.16, 0.2, Fr, bands=Bd((0.06, 0.94)), band_len=0.1)
+    for y in (-1.12, -0.35, 0.45, 1.27):
+        e.beam((-0.7, y, 0.6), (0.7, y, 0.6), 0.14, 0.16, Fr)
+    e.add(T.box('deck', (-0.79, -1.26, 0.72), (0.79, 1.41, ZD)), wood, Fr, w=0.55)
+    for y in (-0.8, 0.92):
+        e.add(T.tube('axle', [(-1.1, y, 0.42), (1.1, y, 0.42)], 0.04, nseg=e.seg // 2 + 1), brass, Fr, w=0.5)
+        for sx in (1, -1):
+            e.beam((sx * 0.7, y - 0.12, 0.48), (sx * 0.7, y + 0.12, 0.48), 0.14, 0.12, Fr, caps=False)
+            e.wheel((sx * 0.99, y, 0.42), 0.42, 0.12, Fr, spokes=8, lite=True)
+    # turntable drum (static part)
+    e.add(T.lathe('drum', [(0.0, ZD), (0.58, ZD), (0.58, ZD + 0.03), (0.54, ZD + 0.05), (0.54, ZT - 0.07), (0.0, ZT - 0.07)], nseg=e.seg if lod else e.seg * 2), wood, Fr, w=0.7)
+    e.add(T.lathe('drumband', [(0.555, ZD + 0.06), (0.565, ZD + 0.08), (0.565, ZD + 0.12), (0.555, ZD + 0.14)], nseg=e.seg if lod else e.seg * 2), gold, Fr, w=0.6)
+    # tongue with a cross yoke (no team of draught animals: it rests on the ground)
+    e.beam((0, -1.15, 0.6), (0, -1.9, 0.26), 0.12, 0.12, Fr, up=(0, 0, 1), bands=Bd((0.5,)))
+    e.beam((-0.42, -1.86, 0.3), (0.42, -1.86, 0.3), 0.09, 0.09, Fr)
+    for sx in () if lod else (1, -1):
+        e.add(T.lathe('yokecap', [(0.0, 0.0), (0.06, 0.0), (0.07, 0.04), (0.03, 0.08), (0.0, 0.12)], nseg=6, centre=(sx * 0.42, -1.86, 0.3), axis='X'), gold, Fr, w=0.5, jitter=0)
+    # team band skirt round the bed (magenta flat art -> team mask)
+    bs = TR.band_src(e.look['band'], 0.26)
+    zt_, zb_ = ZD - 0.005, ZD - 0.265
+    for sx in (1, -1):
+        q = T.quad('skirt', (sx * 0.805, -1.27, zb_), (sx * 0.805, 1.42, zb_), (sx * 0.805, 1.42, zt_), (sx * 0.805, -1.27, zt_), uv=((0, 0), (2.69, 0), (2.69, 0.26), (0, 0.26)))
+        T.orient_out(q, (0, 0, ZD)); e.add(q, bs, Fr, w=1.0, double=True, jitter=0)
+    for yy in (-1.275, 1.425):
+        q = T.quad('skirt', (-0.81, yy, zb_), (0.81, yy, zb_), (0.81, yy, zt_), (-0.81, yy, zt_), uv=((0, 0), (1.62, 0), (1.62, 0.26), (0, 0.26)))
+        T.orient_out(q, (0, 0, ZD)); e.add(q, bs, Fr, w=1.0, double=True, jitter=0)
+    # gold rail round the rear deck (the crew platform)
+    rail_z = ZD + 0.42
+    for px, py in [] if lod else [(sx * 0.76, y) for sx in (1, -1) for y in (0.62, 1.38)] + [(0.0, 1.38)]:
+        e.add(T.tube('railpost', [(px, py, ZD), (px, py, rail_z + 0.04)], 0.025, nseg=6), wood, Fr, w=0.5)
+        e.add(T.sphere('railknob', (px, py, rail_z + 0.06), 0.04, seg=6, rings=4), gold, Fr, w=0.5, jitter=0)
+    for sx in () if lod else (1, -1):
+        e.add(T.tube('rail', [(sx * 0.76, 0.62, rail_z), (sx * 0.76, 1.38, rail_z)], 0.02, nseg=5), gold, Fr, w=0.5)
+    if not lod:
+        e.add(T.tube('rail', [(-0.76, 1.38, rail_z), (0.76, 1.38, rail_z)], 0.02, nseg=5), gold, Fr, w=0.5)
+    # terracotta water jars at the front corners of the deck
+    jar = [(0.0, 0.0), (0.07, 0.01), (0.15, 0.1), (0.17, 0.22), (0.12, 0.36), (0.06, 0.42), (0.065, 0.47), (0.08, 0.49), (0.0, 0.49)]
+    for c in () if lod else ((0.55, -1.02, ZD), (-0.58, -0.98, ZD)):
+        e.add(T.lathe('jar', jar, nseg=e.seg, centre=c), _terracotta(), Fr, w=0.7, clean=0.6)
+    # rear banners: team cloth (magenta flat art) on poles at the rear corners, both sides
+    for sx in (1, -1):
+        bx = sx * 0.9
+        e.add(T.tube('bannerpole', [(bx, 1.36, ZD - 0.2), (bx, 1.36, 3.28)], 0.028, nseg=6), wood, Fr, w=0.5)
+        e.beam((sx * 0.7, 1.36, ZD - 0.12), (bx, 1.36, ZD - 0.12), 0.08, 0.08, Fr, caps=False)
+        if not lod:
+            e.add(T.lathe('bannerfinial', [(0.03, 0.0), (0.05, 0.03), (0.025, 0.07), (0.05, 0.13), (0.0, 0.26)], nseg=6, centre=(bx, 1.36, 3.28)), gold, Fr, w=0.6, jitter=0)
+        _hanging(e, (bx, 1.38, 3.12), 0.52, 0.82, Fr, 'banner_mirror_sun', seed=7 + sx)
+    # ---- yoke: turntable plate, crossbar, fork, bearings, braces, tiller, pennants
+    e.add(T.lathe('plate', [(0.0, ZT - 0.07), (0.52, ZT - 0.07), (0.53, ZT - 0.03), (0.5, ZT), (0.0, ZT)], nseg=e.seg if lod else e.seg * 2), brass, Y, w=0.6)
+    XF = R + 0.16
+    e.beam((-XF - 0.08, 0, ZT + 0.06), (XF + 0.08, 0, ZT + 0.06), 0.22, 0.14, Y, bands=Bd((0.03, 0.3, 0.7, 0.97)), band_len=0.1)
+    for sx in (1, -1):
+        e.beam((sx * XF, 0, ZT), (sx * XF, 0, PIV.z + 0.2), 0.16, 0.17, Y, up=(0, 1, 0), bands=Bd((0.3, 0.62)))
+        e.add(T.box('bearing', (sx * XF - 0.1, -0.12, PIV.z - 0.11), (sx * XF + 0.1, 0.12, PIV.z + 0.11)), brass, Y, w=0.8)
+        e.rivet((sx * (XF + 0.1), 0.0, PIV.z), (sx, 0, 0), Y, r=0.03)
+        e.add(T.lathe('forkcap', [(0.1, 0.0), (0.12, 0.03), (0.07, 0.07), (0.09, 0.13), (0.03, 0.2), (0.0, 0.24)] if not lod else [(0.11, 0.0), (0.08, 0.1), (0.0, 0.24)], nseg=8 if not lod else 5, centre=(sx * XF, 0, PIV.z + 0.2)), gold, Y, w=0.7, jitter=0)
+        e.beam((sx * 0.5, 0, ZT + 0.12), (sx * XF, 0, ZT + 0.7), 0.1, 0.1, Y, up=(0, 1, 0))
+        _pennant(e, (sx * XF, 0.0, PIV.z + 0.42), Y, pole=0.86, size=(0.78, 0.34))
+    # ---- crew (TRELLIS 1024 figures, rigid on the frame)
+    eng_at = Vector((0.42, 1.0, ZD)); pri_at = Vector((-0.34, 0.92, ZD))
+    M_eng = Matrix.Translation(eng_at) @ Matrix.Rotation(math.radians(-6), 4, 'Z')
+    import os
+    if os.environ.get('SIEGE_NOCREW'):                        # fast geometry iterations without the crew bake
+        hands = M_eng @ Vector((0.0, -0.3, 1.05))
+    else:
+        SC.add(e, 'sun_mirror_priest', Matrix.Translation(pri_at) @ Matrix.Rotation(math.radians(8), 4, 'Z'), Fr, lod, w=1.3)
+        SC.add(e, 'sun_mirror_engineer', M_eng, Fr, lod, w=1.3)
+        hands = M_eng @ Vector(SC.landmarks('sun_mirror_engineer')['hands'])
+    # aiming tiller: from the turntable plate back to the engineer's grip
+    t0 = Vector((0.2, 0.4, ZT + 0.02))
+    e.beam(t0, hands + Vector((0, -0.06, -0.02)), 0.07, 0.07, Y, up=(0, 0, 1), bands=Bd((0.1,)))
+    # ---- mirror: front facets, back shell with the engraved sun, rim, studs, pins, struts, focus crystal, sun crown
+    nr = 5 if lod else 10; ns = 20 if lod else 40
+    rs = np.linspace(0, R, nr)
+    yf = lambda r: 0.15 - r * r / (4 * FOC)
+    yb = lambda r: yf(r) + 0.07 + 0.06 * (1 - (r / R) ** 2)
+    front = T.lathe('dish_front', [(float(r), -yf(r)) for r in rs], nseg=ns, axis='Y')
+    T.orient_out(front, (0, 5, 0))
+    _planar_uv(front, lambda co: np.stack([0.5 + co[:, 0] / (2 * R), 0.5 + co[:, 2] / (2 * R)], 1))
+    front.data.transform(RT)
+    e.add(front, _mirror_face_src(), Mi, w=1.25, clean=1.0)
+    art = T.flat('mirror_back_sun', rough=0.45, metal_gold=0.3, bump=0.01)
+    sol = art.solid; rows = np.where(sol.any(1))[0]; cols = np.where(sol.any(0))[0]
+    H_, W_ = sol.shape
+    u0, u1 = cols.min() / W_, (cols.max() + 1) / W_; v0, v1 = rows.min() / H_, (rows.max() + 1) / H_
+    rsb = np.linspace(0, R, 4 if lod else 7)
+    back = T.lathe('dish_back', [(float(r), -yb(r)) for r in rsb[::-1]], nseg=ns, axis='Y')
+    T.orient_out(back, (0, -5, 0))
+    ins = 0.985                                              # the rim tube covers the art's outer edge
+    _planar_uv(back, lambda co: np.stack([u0 + (0.5 - co[:, 0] / (2 * R) * ins) * (u1 - u0), v0 + (0.5 + co[:, 2] / (2 * R) * ins) * (v1 - v0)], 1))
+    back.data.transform(RT)
+    e.add(back, art, Mi, w=1.15)
+    ry = 0.5 * (yf(R) + yb(R))
+    circ = [(R * math.cos(a), ry, R * math.sin(a)) for a in np.linspace(0, 2 * math.pi, ns + 1)]
+    rim = T.tube('rim', circ, 0.055, nseg=4 if lod else 6, cap=False, squash=(1.0, 1.25), up=(0, 1, 0))
+    rim.data.transform(RT); e.add(rim, gold, Mi, w=0.8)
+    if not lod:
+        nb = RT.to_3x3() @ Vector((0, 1, 0))
+        for a in np.linspace(0, 2 * math.pi, 16, endpoint=False):
+            c = RT @ Vector((R * 0.965 * math.cos(a), yb(R * 0.965) - 0.004, R * 0.965 * math.sin(a)))
+            e.rivet(tuple(c), tuple(nb), Mi, r=0.022)
+    for sx in (1, -1):
+        pin = T.tube('pin', [(sx * (R - 0.02), ry, 0), (sx * (XF + 0.13), ry, 0)], 0.05, nseg=6 if lod else 8)
+        pin.data.transform(RT); e.add(pin, brass, Mi, w=0.6)
+        br = T.box('bracket', (sx * R - 0.09, ry - 0.07, -0.13), (sx * R + 0.09, ry + 0.07, 0.13))
+        br.data.transform(RT); e.add(br, gold, Mi, w=0.6)
+    yfoc = yf(0) - FOC
+    for k in range(3):
+        a = math.radians(90 + 120 * k)
+        p0 = Vector((math.cos(a) * (R - 0.03), yf(R - 0.03) - 0.01, math.sin(a) * (R - 0.03)))
+        p1 = Vector((math.cos(a) * 0.12, yfoc, math.sin(a) * 0.12))
+        st = T.tube('strut', [p0, p0.lerp(p1, 0.5), p1], [0.024, 0.02, 0.018], nseg=5 if lod else 6)
+        st.data.transform(RT); e.add(st, brass, Mi, w=0.5)
+    ring = T.tube('focusring', [(0.12 * math.cos(a), yfoc, 0.12 * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 7 if lod else 13)], 0.026, nseg=4 if lod else 6, cap=False, up=(0, 1, 0))
+    ring.data.transform(RT); e.add(ring, gold, Mi, w=0.7)
+    cry = T.lathe('crystal', [(0.0, -0.2), (0.085, -0.04), (0.085, 0.04), (0.0, 0.2)], nseg=6, axis='Y')
+    _planar_uv(cry, lambda co: np.stack([0.5 + co[:, 0] / 0.5, 0.5 + (co[:, 2] + co[:, 1] * 0.5) / 0.5], 1))
+    cry.data.transform(RT @ Matrix.Translation((0, yfoc, 0)))
+    e.add(cry, _glow_src('crystal', (0.75, 1.0, 0.95), (0.05, 0.62, 0.58)), Mi, w=0.8, jitter=0, clean=1.0)
+    crown_c = Vector((0, ry - 0.01, R + 0.36))
+    post = T.tube('crownpost', [(0, ry, R + 0.03), (0, ry, R + 0.2)], 0.035, nseg=6)
+    post.data.transform(RT); e.add(post, gold, Mi, w=0.6)
+    for k, (ro, ri, th, npt) in enumerate(((0.3, 0.15, 0.03, 8 if lod else 12),) + (() if lod else ((0.13, 0.12, 0.06, 16),))):
+        stp = _star('crown', crown_c, ro, ri, npt, th, rot=math.pi / 24 if k == 0 else 0.0)
+        stp.data.transform(RT); e.add(stp, gold, Mi, w=0.9 if k == 0 else 0.7)
+    # ---- flare: three crossed star plates at the focal point (scale ~0 at rest; flashes on `fire`)
+    foc_w = RT @ Vector((0, yfoc, 0))
+    fsrc = _glow_src('flare', (1.0, 0.98, 0.9), (1.0, 0.72, 0.22))
+    for k, (ax, rot) in enumerate((('Z', math.pi / 8),) if lod else (('Y', 0.0), ('Z', math.pi / 8), ('X', math.pi / 8))):
+        ro = 0.62 if k == 0 else 0.5
+        fl = _star('flare_star', (0, 0, 0), ro, 0.17, 8, 0.01, rot=rot)
+        _planar_uv(fl, lambda co, ro=ro: np.stack([0.5 + co[:, 0] / (2 * ro), 0.5 + co[:, 2] / (2 * ro)], 1))
+        if ax == 'Z':
+            fl.data.transform(Matrix.Rotation(math.pi / 2, 4, 'X'))
+        elif ax == 'X':
+            fl.data.transform(Matrix.Rotation(math.pi / 2, 4, 'Z'))
+        fl.data.transform(Matrix.Translation(foc_w) @ Matrix.Rotation(TILT, 4, 'X'))
+        e.add(fl, fsrc, Fl, w=0.3, jitter=0, clean=1.0)
+    pivots = dict(frame=(0, 0, 0), yoke=(0, 0, ZT), mirror=tuple(PIV), flare=tuple(foc_w))
+    parent = dict(frame=None, yoke='frame', mirror='yoke', flare='mirror')
+    nodes = e.finish(pivots, parent, tex=512 if lod else 2048, texel=170 if lod else 700)
+    nodes['flare'].scale = (1e-3,) * 3
+    # clips (rotations relative to the rest pose; mirror pitch about X: negative = face further up)
+    FIRE_F = 9
+    AIM_P, AIM_Y = -0.065, 0.05
+
+    def anim(name, clip, n, key, ob):
+        Z = (0, 0, 0); N = (1e-3,) * 3
+        if name == 'flare':
+            rest = ob.location.copy()
+            if clip == 'fire':
+                for f, s_, rz in ((0, 1e-3, 0), (7, 1e-3, 0), (8, 0.55, 0.1), (FIRE_F, 1.25, 0.2), (11, 0.95, 0.3), (15, 1.1, 0.45), (19, 0.6, 0.55), (23, 1e-3, 0.65), (n - 1, 1e-3, 0.65)):
+                    key(ob, f, scale=(s_,) * 3, rot=(0, rz, 0))
+            else:
+                key(ob, 0, scale=N, rot=Z); key(ob, n - 1, scale=N, rot=Z)
+            ob.scale = N; ob.rotation_euler = Z; ob.location = rest
+            return
+        if name == 'mirror':
+            rest = ob.location.copy()
+            R0 = tuple(rest)
+            def at(d):
+                return tuple(rest + Vector(d))
+            if clip == 'fire':                                # tilts up to aim, a shudder at the flash, holds the aim
+                for f, p in ((0, 0.0), (4, AIM_P * 0.6), (7, AIM_P * 1.08), (FIRE_F, AIM_P * 1.02), (10, AIM_P * 0.9), (13, AIM_P * 1.05), (17, AIM_P * 0.98), (n - 1, AIM_P)):
+                    key(ob, f, rot=(p, 0, 0))
+            elif clip == 'reload':                            # eases back to its rest aim
+                for f, p in ((0, AIM_P), (6, AIM_P), (n * 0.75, AIM_P * 0.06), (n - 1, 0.0)):
+                    key(ob, f, rot=(p, 0, 0))
+            elif clip == 'idle':
+                for f, p in ((0, 0.0), (n * 0.25, -0.009), (n * 0.75, 0.009), (n - 1, 0.0)):
+                    key(ob, f, rot=(p, 0, 0))
+            elif clip == 'hit':
+                key(ob, 0, rot=Z); key(ob, 2, rot=(0.05, 0, 0.025)); key(ob, 5, rot=(-0.025, 0, -0.012)); key(ob, 7, rot=(0.01, 0, 0.004)); key(ob, n - 1, rot=Z)
+            elif clip == 'death':                             # the pins give: the dish pitches forward and drops on its face
+                key(ob, 0, loc=R0, rot=Z); key(ob, 5, loc=at((0, 0, 0.02)), rot=(0.12, 0, 0.03))
+                key(ob, 13, loc=at((0, -0.35, -0.45)), rot=(0.75, 0.05, 0.1)); key(ob, 19, loc=at((0.05, -0.9, -1.0)), rot=(1.24, 0.1, 0.16))
+                key(ob, 23, loc=at((0.05, -0.87, -0.93)), rot=(1.14, 0.1, 0.15)); key(ob, 27, loc=at((0.05, -0.9, -0.98)), rot=(1.2, 0.1, 0.16))
+                key(ob, n - 1, loc=at((0.05, -0.9, -0.98)), rot=(1.2, 0.1, 0.16))
+            else:
+                key(ob, 0, rot=Z); key(ob, n - 1, rot=Z)
+            if clip != 'death':                               # every clip keys the location (else the export samples the death pose)
+                key(ob, 0, loc=R0); key(ob, n - 1, loc=R0)
+            ob.location = rest; ob.rotation_euler = Z
+            return
+        if name == 'yoke':
+            rest = ob.location.copy()
+            if clip == 'fire':                                # swivels onto the target
+                for f, yv in ((0, 0.0), (5, AIM_Y * 0.8), (8, AIM_Y * 1.06), (FIRE_F, AIM_Y), (12, AIM_Y * 0.97), (n - 1, AIM_Y)):
+                    key(ob, f, rot=(0, 0, yv))
+            elif clip == 'reload':
+                for f, yv in ((0, AIM_Y), (8, AIM_Y), (n * 0.8, AIM_Y * 0.05), (n - 1, 0.0)):
+                    key(ob, f, rot=(0, 0, yv))
+            elif clip == 'idle':
+                for f, yv in ((0, 0.0), (n * 0.5, 0.008), (n - 1, 0.0)):
+                    key(ob, f, rot=(0, 0, yv))
+            elif clip == 'death':
+                key(ob, 0, rot=Z); key(ob, 8, rot=(0.02, 0.04, 0.08)); key(ob, 18, rot=(0.05, 0.12, 0.22)); key(ob, n - 1, rot=(0.05, 0.12, 0.2))
+            else:
+                key(ob, 0, rot=Z); key(ob, n - 1, rot=Z)
+            ob.location = rest; ob.rotation_euler = Z
+            return
+        # frame
+        if clip == 'hit':                                     # jolted back and twisted, rocks once
+            key(ob, 0, loc=Z, rot=Z); key(ob, 2, loc=(0.02, 0.09, 0.01), rot=(0.05, 0.06, 0.04)); key(ob, 5, loc=(0, 0.02, 0), rot=(-0.02, -0.025, -0.015))
+            key(ob, 7, loc=Z, rot=(0.006, 0.008, 0.005)); key(ob, n - 1, loc=Z, rot=Z)
+        elif clip == 'fire':                                  # a small kick at the flash
+            key(ob, 0, loc=Z, rot=Z); key(ob, FIRE_F, loc=Z, rot=Z); key(ob, FIRE_F + 2, loc=(0, 0.03, 0), rot=(-0.012, 0, 0)); key(ob, FIRE_F + 7, loc=Z, rot=Z); key(ob, n - 1, loc=Z, rot=Z)
+        elif clip == 'death':                                 # a wheel gives way: the wagon sags and leans
+            key(ob, 0, loc=Z, rot=Z); key(ob, 10, loc=(0, 0, -0.03), rot=(0.02, 0.04, 0)); key(ob, 20, loc=(0.06, 0, -0.16), rot=(-0.04, 0.16, 0.03))
+            key(ob, 24, loc=(0.06, 0, -0.14), rot=(-0.035, 0.14, 0.03)); key(ob, n - 1, loc=(0.06, 0, -0.16), rot=(-0.04, 0.16, 0.03))
+        else:
+            key(ob, 0, loc=Z, rot=Z); key(ob, n - 1, loc=Z, rot=Z)
+        ob.location = Z; ob.rotation_euler = Z
+
+    # the beam leaves the focal point; at fireTime the dish is pitched by ~AIM_P and the yoke yawed by ~AIM_Y
+    aim = Matrix.Rotation(AIM_Y, 4, 'Z') @ Matrix.Translation(PIV) @ Matrix.Rotation(AIM_P * 1.02, 4, 'X') @ Matrix.Translation(-PIV)
+    rel = aim @ foc_w
+    return dict(nodes=nodes, anim=anim, lens=dict(idle=48, fire=30, reload=36, hit=10, death=36), fire_frame=FIRE_F, kit=e.kit,
+                order=['frame', 'yoke', 'mirror', 'flare'], release=tuple(round(float(x), 3) for x in rel))
+
+
 def build(aid, lod):
     if aid == 'ballista':
         return ballista(lod)
+    if aid == 'sun_mirror':
+        return sun_mirror(lod)
     if aid == 'corpse_catapult':
         return trebuchet(lod, 'ashen', scale=1.1 * 5.0 / 6.0, name='corpse_catapult')
     return trebuchet(lod, 'kingdom', scale=1.1, name=aid)       # the bulk of the model it replaces (3.2 m wide, the arm tip at 5.9 m)

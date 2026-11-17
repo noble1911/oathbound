@@ -2671,6 +2671,70 @@
     1.055
    ],
    "team_sat": 0.42
+  },
+  {
+   "id": "sun_mirror_priest",
+   "kind": "part",
+   "part": true,
+   "style": "pose",
+   "height": 2,
+   "lod0": 1600,
+   "lod1": 300,
+   "team_hue": [
+    0.93,
+    1.055
+   ],
+   "team_sat": 0.42,
+   "hue_map": [
+    [
+     0.54,
+     0.72,
+     0.485
+    ]
+   ],
+   "align": false
+  },
+  {
+   "id": "sun_mirror_engineer",
+   "kind": "part",
+   "part": true,
+   "style": "pose",
+   "height": 1.72,
+   "lod0": 1600,
+   "lod1": 300,
+   "team_hue": [
+    0.93,
+    1.055
+   ],
+   "team_sat": 0.42,
+   "hue_map": [
+    [
+     0.54,
+     0.72,
+     0.485
+    ]
+   ],
+   "align": false
+  },
+  {
+   "id": "sun_mirror",
+   "kind": "siege",
+   "authored": true,
+   "height": 3.6,
+   "lod0": 12000,
+   "lod1": 3000,
+   "squad": false,
+   "style": "object",
+   "parts": [
+    {
+     "name": "priest",
+     "id": "sun_mirror_priest"
+    },
+    {
+     "name": "engineer",
+     "id": "sun_mirror_engineer"
+    }
+   ]
   }
  ]
 }

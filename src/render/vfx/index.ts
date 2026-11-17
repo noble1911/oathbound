@@ -419,6 +419,12 @@ export class Vfx {
    * the shot was aimed at, so the arrow can stay stuck in it.
    */
   projectile(kind: ProjectileKind, from: THREE.Vector3, to: THREE.Vector3, flightSec: number, arc: ArcType, onImpact?: () => void, follow?: Follow): void {
+    if (kind === 'sunbeam') {
+      this.sunbeam(from, to, flightSec, follow);
+      const dst = to.clone();
+      this.later(Math.min(flightSec, 0.25), () => (onImpact ? onImpact() : this.impact('sunbeam', dst, 0)));
+      return;
+    }
     if (kind === 'lightning') {
       this.lightning(from, to);
       const dst = to.clone();
@@ -618,6 +624,15 @@ export class Vfx {
       case 'firebreath':
         this.fireBlast(x, Math.max(pos.y, gy + 0.3), z, Math.max(1.5, splashMetres || 3));
         break;
+      case 'sunbeam':
+        // the focused sun lands: a white-gold flare, a spit of sparks, and a scorch that glows and cools
+        this.flash(x, pos.y + 0.9, z, 2.2, WHITE_HOT, 0.16);
+        this.flash(x, pos.y + 0.9, z, 1.4, GOLD, 0.3);
+        this.sparks(x, pos.y + 0.9, z, this.n(12), 5, SPARK0, SPARK1, 0.7, 0.07);
+        this.embers(x, pos.y + 0.8, z, this.n(6), 2.2, -3);
+        this.decal({ kind: DK.glow, x, z, radius: 1.3, life: 0.9, r: 0.9, g: 0.5, b: 0.12 });
+        if (onGround) this.decal({ kind: DK.mark, cell: DECAL.scorch, x, z, radius: 0.9, life: 14, r: 5, g: 1.8, b: 0.3, alpha: 0.7, fadeIn: 0.08 });
+        break;
       case 'lightning':
         this.flash(x, pos.y, z, 1.3, [4, 5, 12], 0.1);
         this.sparks(x, pos.y, z, this.n(10), 5, [4, 6, 12], [0.6, 1, 4], 0.6, 0.05);
@@ -705,6 +720,72 @@ export class Vfx {
       this.emitA({ x: x + rnd(-0.5, 0.5), y: gy + rnd(0.8, 1.9), z: z + rnd(-0.5, 0.5), life: rnd(0.35, 0.6), size: 0.1, size1: 0.5, r: 3, g: 5, b: 2.4, cell: CELL.star, fadeIn: 0.3, delay: rnd(0.1, 0.7), spin: 1.5 });
     // a soft shaft of light over the patient
     this.emitA({ x, y: gy + 1.1, z, life: 0.9, size: 1.9, size1: 2.5, r: 0.5, g: 1.1, b: 0.4, cell: CELL.dot, fadeIn: 0.3, fadeOut: 0.3 });
+  }
+
+  /**
+   * The Sun Mirror's beam: a straight shaft of focused sunlight from the dish to the target (white-gold core in a wide
+   * warm glow), a heat shimmer of faint wavering threads around it, a flare on the dish and a hot spot that tracks the
+   * target (`follow`) while it burns. Ribbons and particles only: no extra pass, nothing left once it fades.
+   */
+  sunbeam(from: THREE.Vector3, to: THREE.Vector3, flightSec: number, follow?: Follow): void {
+    const a = from.clone();
+    const b = to.clone();
+    const dy = b.y - this.ground(b.x, b.z);
+    const rampIn = Math.max(0.05, Math.min(0.12, flightSec * 0.6));
+    const hold = 0.45;
+    const life = rampIn + hold + 0.35;
+    const core = new THREE.Color(9, 7.2, 3.6);
+    const glow = new THREE.Color(GOLD[0] * 0.55, GOLD[1] * 0.45, GOLD[2] * 0.3);
+    const haze = new THREE.Color(1.6, 1.0, 0.35);
+    const N = 14;
+    const pts = Array.from({ length: N }, () => new THREE.Vector3());
+    const coreW = pts.map((_, i) => 0.1 + 0.14 * (i / (N - 1)));
+    const glowW = pts.map((_, i) => 0.9 + 0.9 * (i / (N - 1)));
+    const shimmer = [0, 1].map(() => Array.from({ length: N }, () => new THREE.Vector3()));
+    const side = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+    const tip = new THREE.Vector3();
+    this.flash(a.x, a.y, a.z, 2.6, WHITE_HOT, 0.2);
+    this.flash(a.x, a.y, a.z, 1.6, GOLD, 0.45);
+    let t = 0;
+    let spot = 0;
+    this.actor({
+      update: (dt) => {
+        t += dt;
+        const p = follow?.();
+        if (p) b.set(p.x, p.y + dy, p.z);
+        // the shaft grows from the dish to the target, holds, then thins out from the dish end
+        const grow = Math.min(1, t / rampIn);
+        const fade = t < rampIn + hold ? 1 : Math.max(0, 1 - (t - rampIn - hold) / 0.35);
+        tip.lerpVectors(a, b, grow);
+        dir.subVectors(tip, a);
+        side.set(-dir.z, 0, dir.x).normalize();
+        const flick = 0.85 + 0.15 * Math.sin(t * 61) * Math.sin(t * 23);
+        for (let i = 0; i < N; i++) pts[i].lerpVectors(a, tip, i / (N - 1));
+        this.ribbonList.push({ points: pts, width: glowW, color: glow, alpha: 0.5 * fade * flick });
+        this.ribbonList.push({ points: pts, width: coreW, color: core, alpha: fade });
+        // heat shimmer: two faint threads wavering either side of the shaft
+        shimmer.forEach((s, k) => {
+          const sgn = k ? 1 : -1;
+          for (let i = 0; i < N; i++) {
+            const u = i / (N - 1);
+            const w = Math.sin(u * 19 + t * (14 + 5 * k) + k * 2.1) * (0.12 + 0.22 * u);
+            s[i].copy(pts[i]).addScaledVector(side, sgn * (0.28 + 0.1 * u) + w).setY(pts[i].y + 0.08 * Math.sin(u * 13 - t * 17));
+          }
+          this.ribbonList.push({ points: s, width: 0.05, color: haze, alpha: 0.35 * fade });
+        });
+        if (grow >= 1 && fade > 0.3) {
+          spot -= dt;
+          if (spot <= 0) {
+            spot = 0.06;
+            this.emitA({ x: b.x, y: b.y, z: b.z, life: 0.1, size: rnd(0.7, 1.0), size1: 0.4, r: 8, g: 6, b: 2.6, cell: CELL.star, fadeOut: 0.3 });
+            this.embers(b.x, b.y, b.z, 1, 1.6, -2.5);
+          }
+        }
+        return t < life;
+      },
+      dispose: () => {},
+    });
   }
 
   lightning(from: THREE.Vector3, to: THREE.Vector3): void {

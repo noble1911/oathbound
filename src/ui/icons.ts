@@ -12,6 +12,7 @@ const P: Record<string, string> = {
   bolt: '<path d="M3 21l15-15M18 6l3-3M15 3l3 3-3 3M11 13l-3-1M14 10l-3-1" />',
   stone: '<circle cx="12" cy="13" r="6" fill="currentColor" fill-opacity=".35" /><path d="M8 12l3-2 3 2M10 16l2-1" />',
   fists: '<path d="M6 10V7a1.5 1.5 0 013 0v3M9 9V6a1.5 1.5 0 013 0v4M12 9V7a1.5 1.5 0 013 0v4M15 10V9a1.5 1.5 0 013 0v4c0 4-3 7-6 7s-6-2-6-6v-4" />',
+  beam: '<circle cx="9" cy="12" r="6" /><path d="M6 9a4 4 0 000 6" /><path d="M15 12h7M14.5 8.5l6-3M14.5 15.5l6 3" />',
   breath: '<path d="M3 12c3-4 6-4 8-2M3 12c3 4 6 4 8 2" /><path d="M11 12c2-3 5-5 10-6-2 2-3 4-3 6s1 4 3 6c-5-1-8-3-10-6z" fill="currentColor" fill-opacity=".35" />',
   // tags
   mounted: '<path d="M4 20l2-6c-1-3 1-6 4-7l3-3 1 3c3 1 5 4 5 7v6M10 14h6M8 20v-4M16 20v-4" />',

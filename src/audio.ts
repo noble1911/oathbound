@@ -711,6 +711,11 @@ class Sound {
   lightning(pos?: Vec2): void {
     this.play('zap', { pos });
   }
+  /** The Sun Mirror's beam: the ability shimmer with a soft fire rush under it (no file of its own). */
+  sunbeam(pos?: Vec2): void {
+    this.play('cast', { pos });
+    this.play('fireball', { pos, gain: 0.6, delay: 0.06 });
+  }
   heal(pos?: Vec2): void {
     this.play('heal', { pos });
   }
