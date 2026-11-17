@@ -18,22 +18,21 @@ export const KEEP_HP = 4000;
 export const WARDEN_KEEP_BONUS = 800;
 export const ARMY_CAP = 16;
 /**
- * Deploy points (DESIGN §2), counted in HALF-points: every round each player may deploy squads whose deploy weights
- * (deployWeight) add up to DEPLOY_BUDGET (4 = 2 points). The Marshal and each 'of Command' relic add DEPLOY_BONUS
- * (one point). Kept under its old name: it is the base limit, now in half-points.
+ * Deploy points (DESIGN §2): every round each player may deploy squads whose deploy weights (deployWeight: 1, 2
+ * or 3) add up to DEPLOY_BUDGET (4 points). The Marshal and each 'of Command' relic add DEPLOY_BONUS (2 points).
+ * Kept under its old name: it is the base limit. (The points were once shown halved; the values never changed.)
  */
 export const BASE_DEPLOY_LIMIT = 4;
 export const DEPLOY_BUDGET = BASE_DEPLOY_LIMIT;
 export const DEPLOY_BONUS = 2;
-/** Deploy weight of a unit in half-points, by its cost: 100 gold = 1 (half a point), 150-300 = 2, 400 and up = 3. */
+/** Deploy weight of a unit in deploy points, by its cost: 100 gold = 1, 150-300 = 2, 400 and up = 3. */
 export function deployWeight(type: UnitType): number {
   const c = UNITS[type].cost;
   return c <= 100 ? 1 : c < 400 ? 2 : 3;
 }
-/** Half-points as the UI says them: 3 -> "1½", 4 -> "2", 1 -> "½". */
-export function deployPointsText(half: number): string {
-  const whole = Math.trunc(half / 2), frac = half % 2 ? '½' : '';
-  return whole === 0 && frac ? frac : `${whole}${frac}`;
+/** Deploy points as the UI writes them: whole numbers, exactly the sim's values (3 -> "3"). */
+export function deployPointsText(points: number): string {
+  return String(points);
 }
 export const MAX_SQUAD_LEVEL = 5;
 export const MAX_LORD_LEVEL = 10;

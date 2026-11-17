@@ -159,9 +159,9 @@ export function setRulesContext(limit: () => number | null): void {
 }
 const marshalBonus = (): string => {
   const m = Object.values(LORDS).find((l) => l.id === 'marshal');
-  return m ? `${deployPointsText(BASE_DEPLOY_LIMIT + DEPLOY_BONUS)} with ${esc(m.title)} ${esc(m.name)}` : 'some Lords add one';
+  return m ? `${deployPointsText(BASE_DEPLOY_LIMIT + DEPLOY_BONUS)} with ${esc(m.title)} ${esc(m.name)}` : 'some Lords add more';
 };
-/** "2 deploy points" for the viewer's own limit in a match (half-points in the sim), else the base rule with its exceptions. */
+/** "4 deploy points" for the viewer's own limit in a match, else the base rule with its exceptions. */
 function deployText(): { n: string; note: string } {
   const mine = deployLimit();
   if (mine && mine > 0) return { n: `${deployPointsText(mine)} deploy points`, note: mine === BASE_DEPLOY_LIMIT ? ` (the base limit; ${marshalBonus()}, and some relics add more)` : ` this round (the base limit is ${deployPointsText(BASE_DEPLOY_LIMIT)}; your Lord and relics add the rest)` };
@@ -220,7 +220,7 @@ function page(id: TabId): string {
       return `<h3>Break their Keep</h3>
         <p class="lead">Each commander holds a <b>Keep with ${KEEP_HP.toLocaleString('en-US')} life</b>. Bring the enemy Keep to zero and the war is yours.</p>
         <div class="rl-flow">
-          <div class="rl-step"><i>1</i><b>Plan</b><p>Both commanders plan in secret, at the same time. Deploy up to <b>${deployText().n}</b> a round on your half${deployLimit() ? '' : ` (${marshalBonus()})`}: a 100-gold squad costs ½, a 150 to 300-gold one 1, a 400-gold one 1½. Level squads up, equip loot. Press <kbd>Space</kbd> when ready.</p></div>
+          <div class="rl-step"><i>1</i><b>Plan</b><p>Both commanders plan in secret, at the same time. Deploy up to <b>${deployText().n}</b> a round on your half${deployLimit() ? '' : ` (${marshalBonus()})`}: a 100-gold squad costs 1, a 150 to 300-gold one 2, a 400-gold one 3. Level squads up, equip loot. Press <kbd>Space</kbd> when ready.</p></div>
           <div class="rl-step"><i>2</i><b>Battle</b><p>The armies fight on their own: no orders. A battle ends when one army is wiped out, or after <b>1:30</b>.</p></div>
           <div class="rl-step"><i>3</i><b>Siege</b><p>The winner's <b>surviving squads march on the enemy Keep</b>. Costlier and higher-level survivors hit harder, and later rounds add more. A narrow win adds less than a clear one.</p></div>
           <div class="rl-step"><i>4</i><b>Spoils</b><p>Pick <b>1 item of 3</b> and unlock <b>a new unit type</b>. Then plan again.</p></div>

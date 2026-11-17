@@ -83,12 +83,13 @@ which units to unlock, what to deploy and where, which item to take and who wear
   - The schedule is the same for both players every round, whoever is ahead. There is no comeback gold and no
     underdog deployment (`PlayerState.comeback` is kept for older UIs and is always zeros).
   - Unspent gold carries over.
-- **Deploy points (the per-round unit limit, weighted):** every round each player has **2 deploy points**, the same for both
-  players. A squad's **deploy weight** is set by its cost: **100 gold = ½**, **150–300 = 1**, **400+ = 1½**. So a round
+- **Deploy points (the per-round unit limit, weighted):** every round each player has **4 deploy points**, the same for both
+  players. A squad's **deploy weight** is set by its cost: **100 gold = 1**, **150–300 = 2**, **400+ = 3**. So a round
   can bring four cheap squads, two mid ones, or a Golem and a cheap squad. Only choices add to it: the Marshal's passive
-  (+1 point) and each "of Command" relic you picked (+1 point). In code the points are integer half-points
+  (+2 points) and each "of Command" relic you picked (+2 points). The code and the UI use the same whole numbers
   (`deployWeight` 1/2/3 against `DEPLOY_BUDGET` 4, `DEPLOY_BONUS` 2 per bonus; `PlayerState.deploysUsed` /
-  `deployLimit` are half-points), and the UI writes them "Deploys left: 1½". Selling a squad in its round refunds its
+  `deployLimit`), and the UI writes them "Deploys left: 3 of 4 this round". (They were once shown halved, as "½",
+  "1" and "1½" of 2; only the display changed.) Selling a squad in its round refunds its
   weight. Upgrades and equipping have no limit.
 - **Army cap:** 16 squads.
 - **Unit unlocks (no random drafts):** you start with your Lord's 2 signature units. Every round, round 1 included, you may unlock **any one** locked unit whose `minRound` has come: in round 1 any unit of the basic pool, from round 2 any unit at all (the Dragon from round 5). It is a free strategic choice from the full list, the same rule for both players (`unlockOptions`; `PlayerState.draftOptions` holds that list). This is the Mechabellum-style counter-picking arms race, without the luck of the draw.
@@ -178,7 +179,7 @@ At match start, each player picks a faction (§4b) and one of its four Lords. Ev
 
 | Lord | Signature units | Passive | Auto ability |
 |---|---|---|---|
-| **Marshal Aldric** (sword) | Militia, Cavaliers | +1 deploy point per round | Rally: +40% attack speed to squads within 20 m for 10 s |
+| **Marshal Aldric** (sword) | Militia, Cavaliers | +2 deploy points per round | Rally: +40% attack speed to squads within 20 m for 10 s |
 | **Archmage Sefa** (tome) | Mages, Clerics | Magic damage +55% | Meteor: a 10 m AoE at the densest enemy cluster (18 + 3 per Lord level) |
 | **Warden Hrolf** (axe) | Berserkers, Knights | Keep +800 HP; squads +10% HP | Bulwark: allies within 12 m take −40% damage for 6 s |
 | **Skylady Ione** (lance) | Pegasus, Archers | Loot picks see 4 items instead of 3 | Skyfall: dive on the furthest enemy ranged squad |
@@ -310,7 +311,7 @@ exactly the same items** (`rollLoot`, seeded by the match and the round only), a
   |---|---|
   | Offence (weapon) | Keen (+crit), Vicious (+damage), Slaying (+damage vs a tag), of Haste (+attack speed), of Embers (burn) |
   | Defence (armor) | Stalwart (+life), Plated (+physical reduction), of Warding (+magic resist), of Thorns (reflect melee), of the Phoenix (first death revived) |
-  | Utility (relic) | Fleet (+move speed), Far-reaching (+range, ranged only), of the Leech (lifesteal), of Frost (slow on hit, stacks to 50%), of Command (+1 deploy next round, Rare+) |
+  | Utility (relic) | Fleet (+move speed), Far-reaching (+range, ranged only), of the Leech (lifesteal), of Frost (slow on hit, stacks to 50%), of Command (+2 deploy points next round, Rare+) |
 
   Leech sits in utility rather than offence or defence: it is sustain that only works through damage dealt, so it
   suits neither pure kind, and it keeps the relic worth taking for melee armies.

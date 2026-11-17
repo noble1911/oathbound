@@ -161,12 +161,12 @@ function unitChips(list: UnitType[]): string {
 }
 
 /**
- * A unit's deploy weight as a chip: "[deploy] ½" (100 gold), "1" (150-300) or "1½" (400+), of the 2 deploy
+ * A unit's deploy weight as a chip: "[deploy] 1" (100 gold), "2" (150-300) or "3" (400+), of the 4 deploy
  * points a round.
  */
 export function deployChip(u: UnitType): string {
   const w = deployWeight(u);
-  return `<span class="dpw" data-tip="${esc(`Deploy weight ${deployPointsText(w)}: you have ${deployPointsText(DEPLOY_BUDGET)} deploy points a round (100 gold units cost ½, 150 to 300 cost 1, 400 and up cost 1½)`)}">${icon('deploy')}${deployPointsText(w)}</span>`;
+  return `<span class="dpw" data-tip="${esc(`Deploy weight ${deployPointsText(w)}: you have ${deployPointsText(DEPLOY_BUDGET)} deploy points a round (100 gold units cost 1, 150 to 300 cost 2, 400 and up cost 3)`)}">${icon('deploy')}${deployPointsText(w)}</span>`;
 }
 
 /** A wheel class as a token: its glyph and name. */

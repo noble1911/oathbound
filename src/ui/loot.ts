@@ -176,7 +176,7 @@ export class DraftModal {
       return `<button class="dcard" data-u="${u}">
         ${u === fallback ? '<em class="dc-def" data-tip="Recruited for you if planning ends before you choose">Default</em>' : ''}
         ${crest(u, null, 'lg')}
-        <b>${esc(d.name)}</b>
+        <b${d.name.length > 13 ? ' class="long"' : ''}>${esc(d.name)}</b>
         <span class="dc-cls" data-tip="${esc(wheelTip(u))}">${classTag(d.class, 'me')}${role}</span>
         <span class="dc-cost">${icon('gold')}${d.cost} <em>×${soldierStats(u, 1).size}</em>${deployChip(u)}<span class="dc-tags">${tagsOf(u).map((g) => `<i data-tip="${esc(TAG_LABEL[g])}">${icon(g)}</i>`).join('')}</span></span>
         <span class="dc-wh">${draftLines(u).map(row).join('')}</span>

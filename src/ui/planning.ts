@@ -147,7 +147,7 @@ export class PlanningScreen {
       </div>
       <aside class="stash"><button class="icon stash-tab" aria-expanded="false" data-tip="Stash: the items you hold [B]">${icon('bag')}<em class="badge"></em></button><div class="stash-fly panel"><header>${icon('bag')}<b>Stash</b><small></small><button class="icon close stash-x" data-tip="Close [B]">${icon('close')}</button></header><div class="stash-grid"></div><p class="stash-hint">Drag items onto a squad or its slots. Drag here to unequip.</p></div></aside>
       <div class="bottom">
-        <div class="deploy-badge" data-tip="Deploy points left this round. A 100-gold squad costs ½, a 150 to 300-gold squad 1, a 400-gold one 1½. Levelling up and equipping are unlimited."><small>Deploys left</small><b>2</b><span>of 2 this round</span></div>
+        <div class="deploy-badge" data-tip="Deploy points left this round. A 100-gold squad costs 1, a 150 to 300-gold squad 2, a 400-gold one 3. Levelling up and equipping are unlimited."><small>Deploys left</small><b>4</b><span>of 4 this round</span></div>
         <div class="shop"></div>
         <div class="ready-box"></div>
       </div>
@@ -420,7 +420,7 @@ export class PlanningScreen {
     $(g, 'span').textContent = has ? 'Enemy positions: last round' : 'No intel until round 2';
     g.dataset.tip = has ? GHOST_TIP : GHOST_TIP_NONE;
     const badge = $(this.root, '.deploy-badge');
-    // deploy points are half-points in the sim: "1½ of 2 this round"
+    // deploy points, as the sim counts them: "3 of 4 this round"
     $(badge, 'b').textContent = deployPointsText(left);
     $(badge, 'span').textContent = `of ${deployPointsText(me.deployLimit)} this round`;
     badge.classList.toggle('none', left === 0);
@@ -457,7 +457,7 @@ export class PlanningScreen {
         return `<button class="ucard ${why ? 'off' : ''} ${me.gold < d.cost ? 'poor' : ''}" data-u="${u}">
           ${k ? `<kbd>${k}</kbd>` : ''}
           ${crest(u, null, 'md')}
-          <b>${esc(d.name)}</b>
+          <b${d.name.length > 13 ? ' class="long"' : ''}>${esc(d.name)}</b>
           <div class="uc-meta"><span class="uc-cost">${icon('gold')}${d.cost}</span><span class="uc-size">×${soldierStats(u, 1).size}</span>${deployChip(u)}</div>
           <div class="uc-tags">${classIcon(u)}<span class="uc-role">${esc(d.role)}</span></div>
           <div class="uc-tagc">${tagIcons(u)}</div>

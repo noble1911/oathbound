@@ -173,8 +173,8 @@ try {
     // ---- the weight refusal: spend deploys on cheap squads until a 400-gold unit no longer fits
     await p.mouse.move(5, H / 2);
     const left = await p.evaluate(() => { const me = window.__ob.app.room.view.you; return me.deployLimit - me.deploysUsed; });
-    note(`deploy points left (half-points): ${left}`);
-    // force: 1 half-point left, and a heavy unit unlocked (the Golem), so the badge reads ½ and the Golem is refused
+    note(`deploy points left: ${left}`);
+    // force: 1 point left, and a heavy unit unlocked (the Golem, 3 points), so the badge reads 1 and the Golem is refused
     await p.evaluate(() => {
       const pl = window.__ob.app.local.s.players[0];
       pl.deploysUsed = pl.deployLimit - 1;
@@ -182,7 +182,14 @@ try {
     });
     await emit(p);
     await sleep(700);
-    await shot(p, 'deploy-half-left');
+    await shot(p, 'deploy-one-left');
+    {
+      const bt = await p.evaluate(() => { const b = document.querySelector('.deploy-badge'); return b ? [b.querySelector('b')?.textContent, b.querySelector('span')?.textContent, b.dataset.tip] : null; });
+      // whole deploy points: never a "½" anywhere in the badge or its tip
+      if (!bt || bt[0] !== '1' || !/^of d+ this round$/.test(bt[1]) || /½/.test(bt.join(' '))) errors.push(`deploy badge should read whole points ("1", "of N this round"): ${JSON.stringify(bt)}`);
+      const chips = await p.evaluate(() => [...document.querySelectorAll('.dpw')].map((c) => c.textContent.trim() + '|' + (c.dataset.tip ?? '')));
+      if (chips.some((c) => /½/.test(c)) || !chips.every((c) => /^[123]|/.test(c))) errors.push(`weight chips should read 1, 2 or 3: ${JSON.stringify(chips.slice(0, 4))}`);
+    }
     await audit(p, 'shop', ['.ucard b', '.uc-role', '.uc-meta', '.uc-tags', '.deploy-badge', '.dpw']);
     const golem = await p.$('.shop .ucard[data-u="golem"]');
     if (golem) {
@@ -197,7 +204,9 @@ try {
       await p.mouse.up();
       await sleep(400);
       await shot(p, 'deploy-refused-toast');
-      note(`toasts: ${JSON.stringify(await p.evaluate(() => [...document.querySelectorAll('.toast')].map((t) => t.textContent.trim())))}`);
+      const toasts = await p.evaluate(() => [...document.querySelectorAll('.toast')].map((t) => t.textContent.trim()));
+      note(`toasts: ${JSON.stringify(toasts)}`);
+      if (!toasts.some((t) => /Needs 3 deploy points, 1 left/.test(t))) errors.push(`refusal toast should say "Needs 3 deploy points, 1 left": ${JSON.stringify(toasts)}`);
       // the keyboard path too
       const k = await p.evaluate(() => document.querySelector('.shop .ucard[data-u="golem"] kbd')?.textContent);
       if (k) {

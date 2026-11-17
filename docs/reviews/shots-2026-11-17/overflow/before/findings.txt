@@ -1,0 +1,262 @@
+[1920x1080] FAIL kingdom shop group 1 (5 cards): militia div.uc-meta "100×12½" leaves its card by 5px
+[1920x1080] FAIL kingdom shop group 1 (5 cards): militia span.dpw "½" leaves its card by 5px
+[1920x1080] FAIL kingdom shop group 3 (4 cards): golem div.uc-meta "400×11½" leaves its card by 5px
+[1920x1080] FAIL kingdom shop group 3 (4 cards): golem span.dpw "1½" leaves its card by 5px
+[1920x1080] FAIL kingdom shop group 3 (4 cards): dragon div.uc-meta "500×11½" leaves its card by 5px
+[1920x1080] FAIL kingdom shop group 3 (4 cards): dragon span.dpw "1½" leaves its card by 5px
+[1920x1080] FAIL ashen draft cards (8/8): skeleton span.dc-cls "SwarmChaff, anti-cavalry" leaves its card by 10px
+[1920x1080] FAIL ashen draft cards (8/8): skeleton small "Chaff, anti-cavalry" leaves its card by 10px
+[1920x1080] FAIL ashen draft cards (8/8): skeleton span.dc-wh "BeatsGiantFearsMagic" leaves its card by 10px
+[1920x1080] FAIL ashen draft cards (8/8): skeleton span.dc-ctr.bad "FearsMagic" leaves its card by 10px
+[1920x1080] FAIL ashen shop group 1 (5 cards): skeleton b "Skeleton Spearmen" content 149x27 > box 145x23
+[1920x1080] FAIL ashen shop group 1 (5 cards): skeleton b "Skeleton Spearmen" leaves its card by 5px
+[1920x1080] FAIL ashen shop group 1 (5 cards): skeleton div.uc-meta "100×10½" leaves its card by 5px
+[1920x1080] FAIL ashen shop group 1 (5 cards): skeleton span.dpw "½" leaves its card by 5px
+[1920x1080] FAIL ashen shop group 1 (5 cards): skeleton div.uc-tags "Chaff, anti-cavalry" leaves its card by 5px
+[1920x1080] FAIL ashen shop group 2 (3 cards): bone_golem div.uc-meta "400×11½" leaves its card by 5px
+[1920x1080] FAIL ashen shop group 2 (3 cards): bone_golem span.dpw "1½" leaves its card by 5px
+[1920x1080] FAIL ashen shop all (8 cards): skeleton b "Skeleton Spearmen" content 149x27 > box 145x23
+[1920x1080] FAIL ashen shop all (8 cards): skeleton b "Skeleton Spearmen" leaves its card by 5px
+[1920x1080] FAIL ashen shop all (8 cards): skeleton div.uc-meta "100×10½" leaves its card by 5px
+[1920x1080] FAIL ashen shop all (8 cards): skeleton span.dpw "½" leaves its card by 5px
+[1920x1080] FAIL ashen shop all (8 cards): skeleton div.uc-tags "Chaff, anti-cavalry" leaves its card by 5px
+[1920x1080] FAIL ashen shop all (8 cards): bone_golem div.uc-meta "400×11½" leaves its card by 5px
+[1920x1080] FAIL ashen shop all (8 cards): bone_golem span.dpw "1½" leaves its card by 5px
+[1920x1080] FAIL caliphate draft cards (10/10): spear_levy span.dc-cls "SwarmChaff, anti-cavalry" leaves its card by 10px
+[1920x1080] FAIL caliphate draft cards (10/10): spear_levy small "Chaff, anti-cavalry" leaves its card by 10px
+[1920x1080] FAIL caliphate draft cards (10/10): spear_levy span.dc-wh "BeatsGiantFearsMagic" leaves its card by 10px
+[1920x1080] FAIL caliphate draft cards (10/10): spear_levy span.dc-ctr.bad "FearsMagic" leaves its card by 10px
+[1920x1080] FAIL caliphate draft cards (10/10): war_elephant span.dc-cls "GiantGiant, archer tower" leaves its card by 3px
+[1920x1080] FAIL caliphate draft cards (10/10): war_elephant small "Giant, archer tower" leaves its card by 3px
+[1920x1080] FAIL caliphate draft cards (10/10): war_elephant span.dc-wh "BeatsLineFearsSwarm" leaves its card by 3px
+[1920x1080] FAIL caliphate draft cards (10/10): war_elephant span.dc-ctr.bad "FearsSwarm" leaves its card by 3px
+[1920x1080] FAIL caliphate draft cards (10/10): camel_archer span.dc-cls "RangedMounted ranged" leaves its card by 3px
+[1920x1080] FAIL caliphate draft cards (10/10): camel_archer small "Mounted ranged" leaves its card by 3px
+[1920x1080] FAIL caliphate draft cards (10/10): camel_archer span.dc-wh "BeatsAirFearsCavalry" leaves its card by 3px
+[1920x1080] FAIL caliphate draft cards (10/10): camel_archer span.dc-ctr.bad "FearsCavalry" leaves its card by 3px
+[1920x1080] FAIL caliphate shop group 1 (5 cards): spear_levy div.uc-meta "100×10½" leaves its card by 5px
+[1920x1080] FAIL caliphate shop group 1 (5 cards): spear_levy span.dpw "½" leaves its card by 5px
+[1920x1080] FAIL caliphate shop group 1 (5 cards): spear_levy div.uc-tags "Chaff, anti-cavalry" leaves its card by 5px
+[1920x1080] FAIL caliphate shop group 2 (5 cards): war_elephant div.uc-meta "400×11½" leaves its card by 5px
+[1920x1080] FAIL caliphate shop group 2 (5 cards): war_elephant span.dpw "1½" leaves its card by 5px
+[1920x1080] FAIL caliphate shop group 2 (5 cards): war_elephant div.uc-tags "Giant, archer tower" leaves its card by 5px
+[1920x1080] FAIL caliphate shop all (10 cards): spear_levy div.uc-meta "100×10½" leaves its card by 14px
+[1920x1080] FAIL caliphate shop all (10 cards): spear_levy span.dpw "½" leaves its card by 14px
+[1920x1080] FAIL caliphate shop all (10 cards): scimitar div.uc-meta "150×61" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): scimitar span.dpw "1" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): sun_priest div.uc-meta "150×31" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): sun_priest span.dpw "1" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): camel_archer div.uc-meta "200×41" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): camel_archer span.dpw "1" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): mamluk div.uc-meta "200×41" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): mamluk span.dpw "1" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): djinn_binder div.uc-meta "200×41" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): djinn_binder span.dpw "1" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): sun_mirror div.uc-meta "250×11" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): sun_mirror span.dpw "1" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): djinn div.uc-meta "300×21" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): djinn span.dpw "1" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): sand_golem div.uc-meta "300×11" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): sand_golem span.dpw "1" leaves its card by 2px
+[1920x1080] FAIL caliphate shop all (10 cards): war_elephant div.uc-meta "400×11½" leaves its card by 14px
+[1920x1080] FAIL caliphate shop all (10 cards): war_elephant span.dpw "1½" leaves its card by 14px
+[1366x768] FAIL kingdom shop group 1 (5 cards): militia b "Militia" content 38x19 > box 38x16
+[1366x768] FAIL kingdom shop group 1 (5 cards): militia div.uc-meta "100×12½" leaves its card by 3px
+[1366x768] FAIL kingdom shop group 1 (5 cards): militia span.dpw "½" leaves its card by 3px
+[1366x768] FAIL kingdom shop group 1 (5 cards): pikemen b "Pikemen" content 48x19 > box 48x16
+[1366x768] FAIL kingdom shop group 1 (5 cards): archers b "Archers" content 43x19 > box 43x16
+[1366x768] FAIL kingdom shop group 1 (5 cards): berserkers b "Berserkers" content 59x19 > box 59x16
+[1366x768] FAIL kingdom shop group 1 (5 cards): knights b "Knights" content 43x19 > box 43x16
+[1366x768] FAIL kingdom shop group 2 (5 cards): clerics b "Clerics" content 36x19 > box 36x16
+[1366x768] FAIL kingdom shop group 2 (5 cards): cavaliers b "Cavaliers" content 51x19 > box 51x16
+[1366x768] FAIL kingdom shop group 2 (5 cards): mages b "Mages" content 37x19 > box 37x16
+[1366x768] FAIL kingdom shop group 2 (5 cards): pegasus b "Pegasus Knights" content 91x19 > box 91x16
+[1366x768] FAIL kingdom shop group 2 (5 cards): ballista b "Ballista" content 42x19 > box 42x16
+[1366x768] FAIL kingdom shop group 3 (4 cards): trebuchet b "Trebuchet" content 56x19 > box 56x16
+[1366x768] FAIL kingdom shop group 3 (4 cards): wyvern b "Wyvern Riders" content 81x19 > box 81x16
+[1366x768] FAIL kingdom shop group 3 (4 cards): golem b "Stone Golem" content 69x19 > box 69x16
+[1366x768] FAIL kingdom shop group 3 (4 cards): golem div.uc-meta "400×11½" leaves its card by 3px
+[1366x768] FAIL kingdom shop group 3 (4 cards): golem span.dpw "1½" leaves its card by 3px
+[1366x768] FAIL kingdom shop group 3 (4 cards): dragon b "Dragon" content 41x19 > box 41x16
+[1366x768] FAIL kingdom shop group 3 (4 cards): dragon div.uc-meta "500×11½" leaves its card by 3px
+[1366x768] FAIL kingdom shop group 3 (4 cards): dragon span.dpw "1½" leaves its card by 3px
+[1366x768] FAIL ashen draft cards (8/8): skeleton span.dc-cls "SwarmChaff, anti-cavalry" leaves its card by 8px
+[1366x768] FAIL ashen draft cards (8/8): skeleton small "Chaff, anti-cavalry" leaves its card by 8px
+[1366x768] FAIL ashen draft cards (8/8): skeleton span.dc-wh "BeatsGiantFearsMagic" leaves its card by 8px
+[1366x768] FAIL ashen draft cards (8/8): skeleton span.dc-ctr.bad "FearsMagic" leaves its card by 8px
+[1366x768] FAIL ashen shop group 1 (5 cards): skeleton b "Skeleton Spearmen" content 106x19 > box 103x16
+[1366x768] FAIL ashen shop group 1 (5 cards): skeleton b "Skeleton Spearmen" leaves its card by 3px
+[1366x768] FAIL ashen shop group 1 (5 cards): skeleton div.uc-meta "100×10½" leaves its card by 3px
+[1366x768] FAIL ashen shop group 1 (5 cards): skeleton span.dpw "½" leaves its card by 3px
+[1366x768] FAIL ashen shop group 1 (5 cards): skeleton div.uc-tags "Chaff, anti-cavalry" leaves its card by 3px
+[1366x768] FAIL ashen shop group 1 (5 cards): bone_archer b "Bone Archers" content 73x19 > box 73x16
+[1366x768] FAIL ashen shop group 1 (5 cards): grave_knight b "Grave Knights" content 77x19 > box 77x16
+[1366x768] FAIL ashen shop group 1 (5 cards): wraith_rider b "Wraith Riders" content 77x19 > box 77x16
+[1366x768] FAIL ashen shop group 1 (5 cards): grave_acolyte b "Grave Acolytes" content 82x19 > box 82x16
+[1366x768] FAIL ashen shop group 2 (3 cards): bone_drake b "Bone Drake" content 64x19 > box 64x16
+[1366x768] FAIL ashen shop group 2 (3 cards): corpse_catapult b "Corpse Catapult" content 87x19 > box 87x16
+[1366x768] FAIL ashen shop group 2 (3 cards): bone_golem b "Bone Golem" content 66x19 > box 66x16
+[1366x768] FAIL ashen shop group 2 (3 cards): bone_golem div.uc-meta "400×11½" leaves its card by 3px
+[1366x768] FAIL ashen shop group 2 (3 cards): bone_golem span.dpw "1½" leaves its card by 3px
+[1366x768] FAIL ashen shop all (8 cards): skeleton b "Skeleton Spearmen" content 106x19 > box 103x16
+[1366x768] FAIL ashen shop all (8 cards): skeleton b "Skeleton Spearmen" leaves its card by 3px
+[1366x768] FAIL ashen shop all (8 cards): skeleton div.uc-meta "100×10½" leaves its card by 3px
+[1366x768] FAIL ashen shop all (8 cards): skeleton span.dpw "½" leaves its card by 3px
+[1366x768] FAIL ashen shop all (8 cards): skeleton div.uc-tags "Chaff, anti-cavalry" leaves its card by 3px
+[1366x768] FAIL ashen shop all (8 cards): bone_archer b "Bone Archers" content 73x19 > box 73x16
+[1366x768] FAIL ashen shop all (8 cards): grave_knight b "Grave Knights" content 77x19 > box 77x16
+[1366x768] FAIL ashen shop all (8 cards): wraith_rider b "Wraith Riders" content 77x19 > box 77x16
+[1366x768] FAIL ashen shop all (8 cards): grave_acolyte b "Grave Acolytes" content 82x19 > box 82x16
+[1366x768] FAIL ashen shop all (8 cards): bone_drake b "Bone Drake" content 64x19 > box 64x16
+[1366x768] FAIL ashen shop all (8 cards): corpse_catapult b "Corpse Catapult" content 87x19 > box 87x16
+[1366x768] FAIL ashen shop all (8 cards): bone_golem b "Bone Golem" content 66x19 > box 66x16
+[1366x768] FAIL ashen shop all (8 cards): bone_golem div.uc-meta "400×11½" leaves its card by 3px
+[1366x768] FAIL ashen shop all (8 cards): bone_golem span.dpw "1½" leaves its card by 3px
+[1366x768] FAIL caliphate draft cards (10/10): spear_levy span.dc-cls "SwarmChaff, anti-cavalry" leaves its card by 8px
+[1366x768] FAIL caliphate draft cards (10/10): spear_levy small "Chaff, anti-cavalry" leaves its card by 8px
+[1366x768] FAIL caliphate draft cards (10/10): spear_levy span.dc-wh "BeatsGiantFearsMagic" leaves its card by 8px
+[1366x768] FAIL caliphate draft cards (10/10): spear_levy span.dc-ctr.bad "FearsMagic" leaves its card by 8px
+[1366x768] FAIL caliphate draft cards (10/10): war_elephant span.dc-cls "GiantGiant, archer tower" leaves its card by 3px
+[1366x768] FAIL caliphate draft cards (10/10): war_elephant small "Giant, archer tower" leaves its card by 3px
+[1366x768] FAIL caliphate draft cards (10/10): war_elephant span.dc-wh "BeatsLineFearsSwarm" leaves its card by 3px
+[1366x768] FAIL caliphate draft cards (10/10): war_elephant span.dc-ctr.bad "FearsSwarm" leaves its card by 3px
+[1366x768] FAIL caliphate draft cards (10/10): camel_archer span.dc-cls "RangedMounted ranged" leaves its card by 3px
+[1366x768] FAIL caliphate draft cards (10/10): camel_archer small "Mounted ranged" leaves its card by 3px
+[1366x768] FAIL caliphate draft cards (10/10): camel_archer span.dc-wh "BeatsAirFearsCavalry" leaves its card by 3px
+[1366x768] FAIL caliphate draft cards (10/10): camel_archer span.dc-ctr.bad "FearsCavalry" leaves its card by 3px
+[1366x768] FAIL caliphate shop group 1 (5 cards): spear_levy b "Spear Levy" content 60x19 > box 60x16
+[1366x768] FAIL caliphate shop group 1 (5 cards): spear_levy div.uc-meta "100×10½" leaves its card by 3px
+[1366x768] FAIL caliphate shop group 1 (5 cards): spear_levy span.dpw "½" leaves its card by 3px
+[1366x768] FAIL caliphate shop group 1 (5 cards): spear_levy div.uc-tags "Chaff, anti-cavalry" leaves its card by 3px
+[1366x768] FAIL caliphate shop group 1 (5 cards): scimitar b "Scimitar Guard" content 82x19 > box 82x16
+[1366x768] FAIL caliphate shop group 1 (5 cards): camel_archer b "Camel Archers" content 79x19 > box 79x16
+[1366x768] FAIL caliphate shop group 1 (5 cards): mamluk b "Mamluk Lancers" content 92x19 > box 92x16
+[1366x768] FAIL caliphate shop group 1 (5 cards): djinn_binder b "Djinn-Binders" content 77x19 > box 77x16
+[1366x768] FAIL caliphate shop group 2 (5 cards): sun_priest b "Sun Priests" content 61x19 > box 61x16
+[1366x768] FAIL caliphate shop group 2 (5 cards): sun_mirror b "Sun Mirror" content 61x19 > box 61x16
+[1366x768] FAIL caliphate shop group 2 (5 cards): djinn b "Bound Djinn" content 69x19 > box 69x16
+[1366x768] FAIL caliphate shop group 2 (5 cards): sand_golem b "Sand Golem" content 66x19 > box 66x16
+[1366x768] FAIL caliphate shop group 2 (5 cards): war_elephant b "War Elephant" content 76x19 > box 76x16
+[1366x768] FAIL caliphate shop group 2 (5 cards): war_elephant div.uc-meta "400×11½" leaves its card by 3px
+[1366x768] FAIL caliphate shop group 2 (5 cards): war_elephant span.dpw "1½" leaves its card by 3px
+[1366x768] FAIL caliphate shop group 2 (5 cards): war_elephant div.uc-tags "Giant, archer tower" leaves its card by 3px
+[1366x768] FAIL caliphate shop all (10 cards): spear_levy div.uc-meta "100×10½" leaves its card by 9px
+[1366x768] FAIL caliphate shop all (10 cards): spear_levy span.dpw "½" leaves its card by 9px
+[1366x768] FAIL caliphate shop all (10 cards): war_elephant div.uc-meta "400×11½" leaves its card by 9px
+[1366x768] FAIL caliphate shop all (10 cards): war_elephant span.dpw "1½" leaves its card by 9px
+[1024x768] FAIL kingdom shop group 1 (5 cards): militia div.uc-meta "100×12½" leaves its card by 3px
+[1024x768] FAIL kingdom shop group 1 (5 cards): militia span.dpw "½" leaves its card by 3px
+[1024x768] FAIL kingdom shop group 3 (4 cards): golem div.uc-meta "400×11½" leaves its card by 3px
+[1024x768] FAIL kingdom shop group 3 (4 cards): golem span.dpw "1½" leaves its card by 3px
+[1024x768] FAIL kingdom shop group 3 (4 cards): dragon div.uc-meta "500×11½" leaves its card by 3px
+[1024x768] FAIL kingdom shop group 3 (4 cards): dragon span.dpw "1½" leaves its card by 3px
+[1024x768] FAIL kingdom shop all (14 cards): militia div.uc-meta "100×12½" leaves its card by 53px
+[1024x768] FAIL kingdom shop all (14 cards): militia span.uc-size "×12" leaves its card by 19px
+[1024x768] FAIL kingdom shop all (14 cards): militia span.dpw "½" leaves its card by 53px
+[1024x768] FAIL kingdom shop all (14 cards): militia svg "" leaves its card by 41px
+[1024x768] FAIL kingdom shop all (14 cards): pikemen b "Pikemen" content 41x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): pikemen div.uc-meta "100×8½" leaves its card by 47px
+[1024x768] FAIL kingdom shop all (14 cards): pikemen span.uc-size "×8" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): pikemen span.dpw "½" leaves its card by 47px
+[1024x768] FAIL kingdom shop all (14 cards): pikemen svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): archers b "Archers" content 36x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): archers div.uc-meta "100×9½" leaves its card by 47px
+[1024x768] FAIL kingdom shop all (14 cards): archers span.uc-size "×9" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): archers span.dpw "½" leaves its card by 47px
+[1024x768] FAIL kingdom shop all (14 cards): archers svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): berserkers b "Berserkers" content 50x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): berserkers div.uc-meta "150×61" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): berserkers span.uc-size "×6" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): berserkers span.dpw "1" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): berserkers svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): clerics div.uc-meta "150×31" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): clerics span.uc-size "×3" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): clerics span.dpw "1" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): clerics svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): knights b "Knights" content 36x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): knights div.uc-meta "200×41" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): knights span.uc-size "×4" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): knights span.dpw "1" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): knights svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): cavaliers b "Cavaliers" content 43x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): cavaliers div.uc-meta "200×41" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): cavaliers span.uc-size "×4" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): cavaliers span.dpw "1" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): cavaliers svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): mages div.uc-meta "200×41" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): mages span.uc-size "×4" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): mages span.dpw "1" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): mages svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): pegasus b "Pegasus Knights" content 77x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): pegasus div.uc-meta "200×31" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): pegasus span.uc-size "×3" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): pegasus span.dpw "1" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): pegasus svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): ballista b "Ballista" content 36x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): ballista div.uc-meta "200×11" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): ballista span.uc-size "×1" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): ballista span.dpw "1" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): ballista svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): trebuchet b "Trebuchet" content 47x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): trebuchet div.uc-meta "300×11" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): trebuchet span.uc-size "×1" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): trebuchet span.dpw "1" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): trebuchet svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): wyvern b "Wyvern Riders" content 69x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): wyvern div.uc-meta "300×21" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): wyvern span.uc-size "×2" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): wyvern span.dpw "1" leaves its card by 43px
+[1024x768] FAIL kingdom shop all (14 cards): wyvern svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): golem b "Stone Golem" content 59x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): golem div.uc-meta "400×11½" leaves its card by 53px
+[1024x768] FAIL kingdom shop all (14 cards): golem span.uc-size "×1" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): golem span.dpw "1½" leaves its card by 53px
+[1024x768] FAIL kingdom shop all (14 cards): golem svg "" leaves its card by 35px
+[1024x768] FAIL kingdom shop all (14 cards): dragon b "Dragon" content 35x16 > box 33x14
+[1024x768] FAIL kingdom shop all (14 cards): dragon div.uc-meta "500×11½" leaves its card by 53px
+[1024x768] FAIL kingdom shop all (14 cards): dragon span.uc-size "×1" leaves its card by 14px
+[1024x768] FAIL kingdom shop all (14 cards): dragon span.dpw "1½" leaves its card by 53px
+[1024x768] FAIL kingdom shop all (14 cards): dragon svg "" leaves its card by 35px
+[1024x768] FAIL ashen draft cards (8/8): skeleton span.dc-cls "SwarmChaff, anti-cavalry" leaves its card by 5px
+[1024x768] FAIL ashen draft cards (8/8): skeleton small "Chaff, anti-cavalry" leaves its card by 5px
+[1024x768] FAIL ashen draft cards (8/8): skeleton span.dc-wh "BeatsGiantFearsMagic" leaves its card by 5px
+[1024x768] FAIL ashen draft cards (8/8): skeleton span.dc-ctr.bad "FearsMagic" leaves its card by 5px
+[1024x768] FAIL ashen shop group 1 (5 cards): skeleton b "Skeleton Spearmen" content 112x20 > box 109x17
+[1024x768] FAIL ashen shop group 1 (5 cards): skeleton b "Skeleton Spearmen" leaves its card by 3px
+[1024x768] FAIL ashen shop group 1 (5 cards): skeleton div.uc-meta "100×10½" leaves its card by 3px
+[1024x768] FAIL ashen shop group 1 (5 cards): skeleton span.dpw "½" leaves its card by 3px
+[1024x768] FAIL ashen shop group 1 (5 cards): skeleton div.uc-tags "Chaff, anti-cavalry" leaves its card by 3px
+[1024x768] FAIL ashen shop group 2 (3 cards): bone_golem div.uc-meta "400×11½" leaves its card by 3px
+[1024x768] FAIL ashen shop group 2 (3 cards): bone_golem span.dpw "1½" leaves its card by 3px
+[1024x768] FAIL caliphate draft cards (10/10): spear_levy span.dc-cls "SwarmChaff, anti-cavalry" leaves its card by 5px
+[1024x768] FAIL caliphate draft cards (10/10): spear_levy small "Chaff, anti-cavalry" leaves its card by 5px
+[1024x768] FAIL caliphate draft cards (10/10): spear_levy span.dc-wh "BeatsGiantFearsMagic" leaves its card by 5px
+[1024x768] FAIL caliphate draft cards (10/10): spear_levy span.dc-ctr.bad "FearsMagic" leaves its card by 5px
+[1024x768] FAIL caliphate shop group 1 (5 cards): spear_levy div.uc-meta "100×10½" leaves its card by 3px
+[1024x768] FAIL caliphate shop group 1 (5 cards): spear_levy span.dpw "½" leaves its card by 3px
+[1024x768] FAIL caliphate shop group 1 (5 cards): spear_levy div.uc-tags "Chaff, anti-cavalry" leaves its card by 3px
+[1024x768] FAIL caliphate shop group 2 (5 cards): war_elephant div.uc-meta "400×11½" leaves its card by 3px
+[1024x768] FAIL caliphate shop group 2 (5 cards): war_elephant span.dpw "1½" leaves its card by 3px
+[1024x768] FAIL caliphate shop group 2 (5 cards): war_elephant div.uc-tags "Giant, archer tower" leaves its card by 3px
+[1024x768] FAIL caliphate shop all (10 cards): spear_levy div.uc-meta "100×10½" leaves its card by 11px
+[1024x768] FAIL caliphate shop all (10 cards): spear_levy span.dpw "½" leaves its card by 11px
+[1024x768] FAIL caliphate shop all (10 cards): scimitar div.uc-meta "150×61" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): scimitar span.dpw "1" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): sun_priest div.uc-meta "150×31" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): sun_priest span.dpw "1" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): camel_archer div.uc-meta "200×41" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): camel_archer span.dpw "1" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): mamluk b "Mamluk Lancers" content 78x16 > box 75x14
+[1024x768] FAIL caliphate shop all (10 cards): mamluk div.uc-meta "200×41" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): mamluk span.dpw "1" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): djinn_binder div.uc-meta "200×41" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): djinn_binder span.dpw "1" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): sun_mirror div.uc-meta "250×11" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): sun_mirror span.dpw "1" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): djinn div.uc-meta "300×21" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): djinn span.dpw "1" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): sand_golem div.uc-meta "300×11" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): sand_golem span.dpw "1" leaves its card by 2px
+[1024x768] FAIL caliphate shop all (10 cards): war_elephant div.uc-meta "400×11½" leaves its card by 11px
+[1024x768] FAIL caliphate shop all (10 cards): war_elephant span.dpw "1½" leaves its card by 11px
+261 overflow finding(s)

@@ -310,10 +310,10 @@ export interface PlayerState {
   squads: Squad[];
   /** Unequipped items. */
   stash: Item[];
-  /** Deploy points used this planning phase, in HALF-points: the sum of the deploy weights (deployWeight: 1, 2 or 3) of
+  /** Deploy points used this planning phase: the sum of the deploy weights (deployWeight: 1, 2 or 3) of
    *  the squads deployed this round (the Lord costs nothing). */
   deploysUsed: number;
-  /** Deploy points allowed this round, in half-points: DEPLOY_BUDGET (4 = 2 points), +2 for the Marshal and +2 per
+  /** Deploy points allowed this round: DEPLOY_BUDGET (4), +2 for the Marshal and +2 per
    *  'of Command' relic (at most +4). */
   deployLimit: number;
   lordXp: number;

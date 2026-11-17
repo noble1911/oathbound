@@ -107,7 +107,7 @@ describe('match rules', () => {
       expect(p.draftPicks).toBe(1);
       expect(p.keepHp).toBe(KEEP_HP);
     }
-    // Deploy points in half-points: 2 points (4), the Marshal 3 (6).
+    // Deploy points: 4, the Marshal 6.
     expect(s.players[0].deployLimit).toBe(6); // Marshal
     expect(s.players[1].deployLimit).toBe(4);
     expect(income(2)).toBe(250);
@@ -148,7 +148,7 @@ describe('match rules', () => {
     p0.gold = 10000;
     const r = applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [3500, 2000] });
     expect(r).toEqual({ ok: false, error: 'deployment limit reached' });
-    // The Marshal gets 3 points (6 half-points): Militia weigh ½ each, so six in all, and then a Cavalier (1) no longer fits.
+    // The Marshal gets 6 points: Militia weigh 1 each, so six in all, and then a Cavalier (2) no longer fits.
     s.players[1].gold = 10000;
     for (let i = 0; i < 4; i++) expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [1000 + i * 1000, 9000] }).ok).toBe(true);
     expect(s.players[1].deploysUsed).toBe(5);

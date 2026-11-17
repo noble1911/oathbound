@@ -107,7 +107,7 @@ export const LORDS: Record<LordId, LordDef> = {
     id: 'marshal', class: 'line', faction: 'kingdom', name: 'Aldric', title: 'Marshal', modelId: 'lord_marshal', weapon: 'sword', damageType: 'physical', projectile: 'none',
     signature: ['militia', 'cavaliers'], tags: ['infantry'],
     hp: 900, dmg: 40, attackTicks: 20, range: 160, speed: 16, armor: 30, magicResist: 20, splash: 0,
-    passive: '+1 deploy point per round',
+    passive: '+2 deploy points per round',
     ability: 'rally', abilityName: 'Rally', abilityText: `Allied squads within ${RALLY_RANGE / 100} m gain +${RALLY_PCT}% attack speed for 10 s.`,
   },
   archmage: {

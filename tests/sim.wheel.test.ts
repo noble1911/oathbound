@@ -87,7 +87,7 @@ describe('the counter wheel', () => {
 });
 
 describe('deploy weights', () => {
-  it('weighs units by cost in half-points: 100 = ½, 150-300 = 1, 400+ = 1½', () => {
+  it('weighs units by cost in deploy points: 100 = 1, 150-300 = 2, 400+ = 3', () => {
     for (const u of UNIT_TYPES) {
       const c = UNITS[u].cost;
       expect(deployWeight(u)).toBe(c <= 100 ? 1 : c <= 300 ? 2 : 3);
@@ -96,7 +96,7 @@ describe('deploy weights', () => {
     expect(deployWeight('sand_golem')).toBe(2);
     expect(deployWeight('dragon')).toBe(3);
     expect(DEPLOY_BUDGET).toBe(4);
-    expect([1, 2, 3, 4, 6].map(deployPointsText)).toEqual(['½', '1', '1½', '2', '3']);
+    expect([1, 2, 3, 4, 6].map(deployPointsText)).toEqual(['1', '2', '3', '4', '6']);
   });
 
   it('lets four cheap squads, two mid ones, or a Golem and a cheap squad in one round', () => {

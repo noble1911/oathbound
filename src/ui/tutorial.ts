@@ -131,7 +131,7 @@ export class Coach {
         return { id: 'level', title: teach ? 'Level up a squad' : 'Spend what is left', text: `${lead} <b>Click one of your squads</b> on the field (or press <kbd>Tab</kbd>), then <b>Level up</b> <kbd>U</kbd>.` };
       };
       if (up && teach) return levelStep();
-      if (canDeploy) return { id: 'deploys', slot: shopSlot, target: '.deploy-badge', title: `${deployPointsText(left)} deploy point${left === 2 ? '' : 's'} left`, text: `You have <b>${deployPointsText(me.deployLimit)} deploy points</b> this round: a 100-gold squad costs ½, a 150 to 300-gold squad 1, a 400-gold one 1½. Put tough units in front and archers or mages behind them. <b>Your army is permanent</b>: it comes back every round.` };
+      if (canDeploy) return { id: 'deploys', slot: shopSlot, target: '.deploy-badge', title: `${deployPointsText(left)} deploy point${left === 1 ? '' : 's'} left`, text: `You have <b>${deployPointsText(me.deployLimit)} deploy points</b> this round: a 100-gold squad costs 1, a 150 to 300-gold squad 2, a 400-gold one 3. Put tough units in front and archers or mages behind them. <b>Your army is permanent</b>: it comes back every round.` };
       if (up) return levelStep();
       // two melee squads of different speeds: time to teach the stagger
       const melee = army.map((s) => UNITS[s.type as UnitType]).filter((d) => d && d.range <= 400 && !d.tags.includes('flier'));

@@ -220,8 +220,8 @@ try {
     await p.keyboard.press('Escape');
     await sleep(600);
     c = await note();
-    // deploys are weighted now: the Marshal's limit is 3 deploy points (2 + his passive), not "3 new squads"
-    check(/deploy points? left/.test(c?.t ?? '') && /You have 3 deploy points this round/.test(c.x), `deploys step quotes the Marshal's limit (${c?.t}: ${c?.x.slice(0, 60)})`);
+    // deploys are weighted: the Marshal's limit is 6 deploy points (4 + his passive's 2), whole numbers, never "½"
+    check(/deploy points? left/.test(c?.t ?? '') && /You have 6 deploy points this round/.test(c.x) && !/½/.test(c.t + c.x), `deploys step quotes the Marshal's limit (${c?.t}: ${c?.x.slice(0, 60)})`);
     await deployAll();
     await sleep(800);
     c = await note();

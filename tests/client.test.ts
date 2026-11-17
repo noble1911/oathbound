@@ -34,7 +34,7 @@ describe('unit readings', () => {
   });
   it('says why a unit does not fit the deploy points left, and what a level gives', () => {
     expect(deployRefusal('militia', 3, 4)).toBeNull();
-    expect(deployRefusal('golem', 2, 4)).toBe('Needs 1½ deploy points, 1 left');
+    expect(deployRefusal('golem', 2, 4)).toBe('Needs 3 deploy points, 2 left');
     expect(deployRefusal('knights', 4, 4)).toMatch(/No deploy points left/);
     expect(levelGainText('militia', 1)).toBe('+3 soldiers');
     expect(levelGainText('knights', 1)).toMatch(/life/);

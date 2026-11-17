@@ -111,6 +111,11 @@ try {
   const bad = audit.filter((x) => !/OVERLAP \.shell \.corner x \.coach/.test(x));
   check(bad.length === 0, `planning layout clean ${JSON.stringify(bad.slice(0, 6))}`);
   check((await p.$$('.r-deploy')).length === 0 && (await p.$$('.deploy-badge')).length === 1, '"Deploys left" shown once');
+  {
+    // whole deploy points, exactly the sim's numbers: "4" left "of 4 this round" (6 for the Marshal), never "½"
+    const dp = await p.evaluate(() => { const b = document.querySelector('.deploy-badge'); const me = window.__ob.app.room.view.you; return { b: b?.querySelector('b')?.textContent, s: b?.querySelector('span')?.textContent, tip: b?.dataset.tip ?? '', left: me.deployLimit - me.deploysUsed, limit: me.deployLimit }; });
+    check(dp.b === String(dp.left) && dp.s === `of ${dp.limit} this round` && !/½/.test(dp.b + dp.s + dp.tip), `deploy badge reads whole points (${dp.b} ${dp.s}; sim ${dp.left}/${dp.limit})`);
+  }
   const zone = await p.evaluate(() => { const s = window.__ob.app.scene; const pts = { fl: [300, 3900], fr: [7700, 3900], ml: [300, 2200], mr: [7700, 2200], bc: [4000, 1300], lord: window.__ob.app.room.view.you.squads[0].pos }; const o = {}; for (const k in pts) o[k] = s.toScreen(pts[k], 0); return o; });
   const hud = { top: Math.max((await rect('.res')).b, (await rect('.topbar')).b), bottom: (await rect('.bottom')).y };
   const vis = (q) => q && q.x >= 0 && q.x <= W && q.y >= hud.top - 2 && q.y <= hud.bottom + 2;

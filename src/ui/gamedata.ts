@@ -58,20 +58,20 @@ export function unitsOfClass(c: WheelClass, pool: readonly UnitType[] = UNIT_TYP
 
 // ---------------------------------------------------------------- deploy weight
 
-/** "½", "1" or "1½": the deploy points a unit costs (the sim's deployWeight, in half-points). */
+/** "1", "2" or "3": the deploy points a unit costs (the sim's deployWeight). */
 export function deployCostText(u: UnitType): string {
   return deployPointsText(deployWeight(u));
 }
 /**
- * Why a unit does not fit the deploy points left this round ("Needs 1½ deploy points, ½ left"), or null.
- * `used` and `limit` are the PlayerState half-points.
+ * Why a unit does not fit the deploy points left this round ("Needs 3 deploy points, 1 left"), or null.
+ * `used` and `limit` are the PlayerState deploy points.
  */
 export function deployRefusal(u: UnitType, used: number, limit: number): string | null {
   const left = Math.max(0, limit - used);
   const w = deployWeight(u);
   if (used + w <= limit) return null;
   if (left === 0) return `No deploy points left this round (${deployPointsText(limit)} used)`;
-  return `Needs ${deployPointsText(w)} deploy point${w === 2 ? '' : 's'}, ${deployPointsText(left)} left`;
+  return `Needs ${deployPointsText(w)} deploy point${w === 1 ? '' : 's'}, ${deployPointsText(left)} left`;
 }
 
 // ---------------------------------------------------------------- levels

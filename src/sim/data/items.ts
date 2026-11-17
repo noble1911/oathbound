@@ -5,7 +5,7 @@
 // Each slot is one KIND of item, and an affix rolls on exactly one slot:
 //   weapon = offence: Keen (crit), Vicious (damage), Slaying, of Haste (attack speed), of Embers (burn);
 //   armor  = defence: Stalwart (life), Plated (armour), of Warding (magic resist), of Thorns, of the Phoenix (revive);
-//   relic  = utility: Fleet (speed), Far-reaching (range), of the Leech, of Frost (slow), of Command (+1 deploy).
+//   relic  = utility: Fleet (speed), Far-reaching (range), of the Leech, of Frost (slow), of Command (+2 deploy points).
 import type { AffixId, BaseId, LegendaryId, Rarity, Slot, Tag, WheelClass } from '../types.ts';
 
 export interface BaseDef { id: BaseId; name: string; slot: Slot; implicit: AffixId; lo: number; hi: number; implicitTag?: Tag }
@@ -97,7 +97,7 @@ export const AFFIXES: Record<AffixId, AffixDef> = {
   farreach: { id: 'farreach', kind: 'prefix', name: 'Far-reaching', slots: ['relic'], lo: 200, hi: 400, growth: 3, text: '+{v} m range (ranged only)', weight: 8, power: 0.02 },
   leech: { id: 'leech', kind: 'suffix', name: 'of the Leech', slots: ['relic'], lo: 4, hi: 8, growth: 5, text: '{v}% of damage dealt is returned as life', weight: 9, power: 1.0 },
   frost: { id: 'frost', kind: 'suffix', name: 'of Frost', slots: ['relic'], lo: 15, hi: 25, growth: 2, text: 'Attacks slow the target by {v}% for 2 seconds', weight: 7, power: 0.5 },
-  command: { id: 'command', kind: 'suffix', name: 'of Command', slots: ['relic'], lo: 1, hi: 1, growth: 0, text: '+1 squad deployment next round', weight: 3, rareOnly: true, power: 10, fixed: true },
+  command: { id: 'command', kind: 'suffix', name: 'of Command', slots: ['relic'], lo: 1, hi: 1, growth: 0, text: '+2 deploy points next round', weight: 3, rareOnly: true, power: 10, fixed: true },
 };
 export const AFFIX_IDS = Object.keys(AFFIXES) as AffixId[];
 

@@ -28,9 +28,9 @@ export {
 } from './match.ts';
 // roundOutcomeText(summaryOrResult, seat): {outcome: 'won'|'lost'|'draw', title, detail} — the one wording for round results
 // comebackFor(): Comeback                              — deprecated: always zeros (there is no catch-up; both players are equal)
-// deployWeight(type): 1 | 2 | 3                       — deploy weight in half-points (100 gold = 1, 150-300 = 2, 400+ = 3);
-//                                                       PlayerState.deployLimit / deploysUsed are half-points too (budget 4)
-// deployPointsText(half): "1½"                          — half-points as the UI writes them
+// deployWeight(type): 1 | 2 | 3                       — deploy weight in deploy points (100 gold = 1, 150-300 = 2, 400+ = 3);
+//                                                       PlayerState.deployLimit / deploysUsed are deploy points too (budget 4)
+// deployPointsText(points): "3"                        — deploy points as the UI writes them (whole numbers)
 // usableSlots(player): Slot[]                          — slots with an empty open slot to fill (informational)
 // squadFootprint(type) / overlappingSquad(squads, type, pos, ignoreId?) / freeSpotNear(squads, seat, type, pos, ignoreId?)
 //                                                     — deploy/move footprints: squads of one player may not overlap
