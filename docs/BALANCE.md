@@ -1,6 +1,6 @@
 # Oathbound v2: balance report
 
-The gated numbers come from `node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 700000`: Hard
+The gated numbers come from `node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 1100000`: Hard
 against Hard and Normal against Normal (12 Lords, 7920 matches each) and the classic tournament of the six bot
 strategies (10 224 matches). Every entry plays every other entry from both seats. `--full` prints the whole report per
 field: the match-length histogram, the margin of victory, and the per-unit and per-legendary tables.
@@ -11,14 +11,14 @@ To re-tune:
 
 Both rewrite `src/sim/data/balance.ts`. Run one tuner at a time.
 
-## Current report: counter wheel, item rework and the Sun Mirror (2026-11-17)
+## Current report: counter wheel, item rework, the Sun Mirror and the helpless-side rule (2026-11-17)
 
 The balance pass after the counter wheel, weighted deploys, swarm levelling and the item rework (commit `c832694`,
 `docs/reviews/GAMEPLAY-2026-11-16.md`), re-tuned after the Caliphate got its Siege unit, the **Sun Mirror** (commit
-`90bb845`; see "The Sun Mirror" below). Three fields are gated, all on seeds tuning never saw (`--seed0 700000`):
+`90bb845`; see "The Sun Mirror" below), and checked again after the **helpless-side rule** (see below). Three fields are gated, all on seeds tuning never saw (`--seed0 1100000`):
 
 ```
-node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 700000
+node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 1100000
 ```
 
 `--fields` runs several fields in one go: `hard` and `normal` are one level against itself (12 Lords, 7920 matches
@@ -30,18 +30,18 @@ matches).
 | Gate | Hard vs Hard | Normal vs Normal | Classic tournament | Target |
 |---|---|---|---|---|
 | Matches | 7920 | 7920 | 10224 | |
-| Seat-0 win rate | **50.0%** | **51.1%** | **50.1%** | < 52% |
-| Kingdom vs the other two | **49.5%** | **48.9%** | **47.9%** | 46–54% |
-| Ashen vs the other two | **51.4%** | **51.6%** | **50.7%** | 46–54% |
-| Caliphate vs the other two | **49.0%** | **49.6%** | **51.4%** | 46–54% |
-| Lords, lowest to highest | 46.7 (marshal) to 53.3 (deathknight) | 46.7 (marshal) to 52.3 (drakerider) | 47.3 (skylady) to 54.1 (sultana) | 45–55% |
-| Units (n >= 100) | 41.0 (ballista) to 57.5 (wraith_rider) | 40.3 (spear_levy) to 59.8 (mages) | 40.6 (wraith_rider) to 60.5 (war_elephant) | 40–60% |
-| Legendaries (wearer win rate) | 44.6 (earthshaker) to 59.3 (lifebinder) | 41.7 (windrunner) to 56.5 (sunfire) | 41.6 (windrunner) to 56.2 (sunfire) | 40–60% |
-| Average match length | **8.75** rounds | **8.72** rounds | **8.79** rounds | 8-11 |
-| 95th percentile / longest | 10 / 12 | 11 / 15 | 11 / 16 | 95% done by round 12 |
-| Past round 12 | 0.0% | 0.7% | 1.2% | rare |
-| Blowouts (winner above 75% keep) | 30.4% | 47.0% | 50.1% | reported |
-| Lord share of army damage | 15.7% | 17.9% | 17.8% | <= 25% |
+| Seat-0 win rate | **49.1%** | **50.3%** | **51.0%** | < 52% |
+| Kingdom vs the other two | **48.3%** | **50.7%** | **49.7%** | 46–54% |
+| Ashen vs the other two | **53.6%** | **49.9%** | **49.7%** | 46–54% |
+| Caliphate vs the other two | **48.2%** | **49.3%** | **50.7%** | 46–54% |
+| Lords, lowest to highest | 46.2 (vizier) to 54.8 (lich) | 47.0 (archmage) to 53.2 (skylady) | 47.8 (archmage) to 52.4 (sultana) | 45–55% |
+| Units (n >= 100) | 40.1 (ballista) to 59.7 (wraith_rider) | 40.1 (spear_levy) to 59.8 (wraith_rider) | 40.2 (djinn) to 60.2 (war_elephant) | 40–60% |
+| Legendaries (wearer win rate) | 45.0 (windrunner) to 57.1 (lifebinder) | 43.5 (gravebloom) to 56.2 (sunfire) | 43.0 (windrunner) to 57.5 (hydra_volley) | 40–60% |
+| Average match length | **8.84** rounds | **8.77** rounds | **8.82** rounds | 8-11 |
+| 95th percentile / longest | 11 / 13 | 11 / 16 | 11 / 16 | 95% done by round 12 |
+| Past round 12 | 0.0% | 0.9% | 1.4% | rare |
+| Blowouts (winner above 75% keep) | 29.8% | 46.9% | 50.5% | reported |
+| Lord share of army damage | 15.6% | 17.8% | 17.6% | <= 25% |
 
 Before this pass (commit `c832694`):
 - Hard vs Hard was already inside the gates: Lords 44.5-55.5%, Kingdom 48.1, Ashen 51.2, Caliphate 50.6, 8.75 rounds.
@@ -94,7 +94,7 @@ found by swapping Hard's parts into Normal one at a time (`--strats normal`, 792
   that fights hand to hand.
 - **Inside a class** (`wheelCv`): a braced unit is worth 0.7 more against a charge, a raider 0.7 more against a
   backline unit. This is what tells Pikemen from Knights and Pegasus Knights from Wyverns: Pikemen went from 58
-  deploys to 125, Pegasus Knights from 34 to 260 (528 Hard matches).
+  deploys to 126, Pegasus Knights from 34 to 260 (528 Hard matches).
 - **A flier the enemy cannot reach** is worth 0.5 more (`AIR_FREE_CV`).
 - **Flavoured strategies read the wheel in full.** `rush`, `ranged`, `armor` and `air` used to take the square root of
   the counter value, so `air` bought fliers into a wall of bows and the units it loves read 30-40% in the field for
@@ -136,7 +136,7 @@ found by swapping Hard's parts into Normal one at a time (`--strats normal`, 792
   at Hard. **Sultana**: squads attack 8% → **12%** faster. Her body was at the ceiling (180) and she read 37%.
 - The Dragon is worth its price once bots can buy it: Hard without the Dragon wins 46% among Kingdom Lords.
 - No rule changed. The Ossuary Warden stays a **Giant** (his body is the largest Lord model, DESIGN §3): Swarm beats
-  him, he beats Line, and with `LORD_POWER` 73 he reads 49.8% at Hard, 49.7% at Normal and 50.6% in the tournament.
+  him, he beats Line, and with `LORD_POWER` 73 he reads 50.7% at Hard, 50.5% at Normal and 50.0% in the tournament.
 
 ### The Sun Mirror
 
@@ -152,106 +152,136 @@ faction, the Lords and the reserves, not the unit:
 - `FACTION_POWER`: Caliphate 1097 → **1081**, Ashen 1008 → **1023**, Kingdom unchanged at 914.
 - `LORD_POWER`: marshal 135 → 144, archmage 61 → 57, warden 126 → 130, skylady 54 → 52, lich 83 → 92, deathknight 146 → 143, ossuary 77 → 73, drakerider 105 → 101, sultana 158 → 160, vizier 60 → 68, rajah 113 → 110, rocrider 77 → 72.
 - `UNIT_POWER`: Spear Levy 119 → 126 (it read 38% at Normal), War Elephant 95 → 92 (62% in the tournament).
-- `NORMAL_RESERVE` and `CLASSIC_RESERVE` re-tuned (table above).
+- `NORMAL_RESERVE` and `CLASSIC_RESERVE` re-tuned (the table above shows them as they are now).
 
-The Sun Mirror now reads **52.3 / 50.1 / 48.9** as a unit and takes 6.7% / 7.4% / 6.9% of the Caliphate's deploys (Hard / Normal /
-`counter`). The Caliphate reads 49.0 / 49.6 / 51.4.
+After that re-tune the Sun Mirror read **52.3 / 50.1 / 48.9** as a unit and took 6.7% / 7.4% / 6.9% of the Caliphate's deploys (Hard / Normal /
+`counter`), and the Caliphate read 49.0 / 49.6 / 51.4.
 
-A second seed set tuning never saw (`--fields hard:60,normal:60 --seed0 900000`) reads the same within the usual 2-4 points
-between seed sets. One Lord leaves the band there, the Grand Vizier at Hard (48.5 on the gated set):
-- Hard: factions kingdom 49.3, ashen 53.9, caliphate 46.8; lords marshal 48.8, archmage 49.8, warden 49.1, skylady 50.4, lich 53.4, sultana 49.5, deathknight 54.2, ossuary 49.9, drakerider 53.7, vizier 44.8, rajah 47.7, rocrider 48.7.
-- Normal: factions kingdom 49.9, ashen 50.3, caliphate 49.8; lords marshal 47.5, archmage 49.1, warden 52.7, skylady 50.5, lich 47.5, sultana 47.6, deathknight 52.0, ossuary 50.1, drakerider 51.1, vizier 48.1, rajah 50.2, rocrider 53.5.
+### The helpless-side rule
+
+Reported from live play: "it said you can no longer harm the enemy and I won that round". A stalemate is called when
+one side has had nothing that can target what the other has left for 10 s (`HELPLESS_TICKS`), and it used to be decided
+on points like every other stall. The helpless side usually has more of its army standing (four Golems under one
+Wyvern), so it often won.
+
+**The rule now** (`endOnPoints` in `src/sim/battle.ts`, DESIGN §1): when a stall is called and exactly one side can no
+longer harm the other, **the side that still can wins the round**, whatever the points. Stalls in which neither side can
+harm the other, or in which no blow has landed for 10 s, and timeouts stay on points.
+
+**Keep damage for that win:** the winner's survivors deal their own keep damage plus the round bonus for the winner's
+points lead, exactly as in a points win. The lead is floored at 0, so a winner that is behind on points gets no round
+bonus and nothing is ever taken off its survivors' damage. A lone flier over an intact ground army wins the round and
+deals only its own small keep damage; it does not get paid like a rout.
+
+**The words:** the round is a plain "Victory" / "Defeat" (not "on points"), and the sentence gives the reason: "Your
+army could no longer harm the enemy army, so the field is theirs." / "The enemy army could no longer harm yours, so the
+field is yours." (`stalemateField`, `roundOutcomeText`; the results card adds the time it was called, and the battle
+banner shows the same cause under "Round won" / "Round lost").
+
+**How often it matters** (132 Hard matches, 1173 battles): 130 battles (11%) ended in a stalemate, and in 113 of those
+exactly one side was helpless. Of the 113, the new rule reversed the points verdict in 41 and decided 21 that were
+draws; in 49 the winner was behind on points and earned no round bonus. About one battle in twenty has a different
+result. Stalemates are as frequent as before (11.7% of battles at Hard, 9.6% at Normal, 7.4% in the tournament).
+
+**Balance.** Fliers gained, as expected (the Dragon read 61.2% at Hard on the first run, Wyverns +3, the Ballista
+38.4%). Every Lord and faction stayed inside its band at all three levels without a re-tune, so `FACTION_POWER`,
+`LORD_POWER` and the reserves are unchanged. Four unit multipliers moved: Dragon 76 → 71, Ballista 100 → 108,
+Trebuchet 86 → 90, War Elephant 92 → 90.
+
+A second seed set tuning never saw (`--fields hard:60,normal:60 --seed0 1300000`) reads:
+- Hard: factions kingdom 47.6, ashen 52.7, caliphate 49.7; lords marshal 45.7, archmage 47.4, warden 49.2, skylady 50.8, lich 53.3, sultana 50.4, deathknight 53.0, ossuary 50.4, drakerider 51.3, vizier 47.9, rajah 49.6, rocrider 51.1; units 40.5 trebuchet .. 60.2 wraith_rider.
+- Normal: factions kingdom 50.1, ashen 50.2, caliphate 49.8; lords marshal 47.3, archmage 48.2, warden 52.7, skylady 52.1, lich 47.5, sultana 50.8, deathknight 51.7, ossuary 49.1, drakerider 52.2, vizier 48.6, rajah 47.3, rocrider 52.7; units 40.3 spear_levy .. 60.2 wraith_rider.
 
 ### Lords, units and legendaries
 
 | Lord | Hard | Normal | Classic |
 |---|---|---|---|
-| Marshal Aldric | 46.7 | 46.7 | 47.9 |
-| Archmage Sefa | 49.2 | 48.6 | 47.5 |
-| Warden Hrolf | 51.7 | 51.7 | 51.1 |
-| Skylady Ione | 51.0 | 49.7 | 47.3 |
-| Lich-Priest Morthen | 49.4 | 51.5 | 50.0 |
-| Death Knight Vaelric | 53.3 | 51.0 | 49.4 |
-| Ossuary Warden Gorrath | 49.8 | 49.7 | 50.6 |
-| Drake Rider Nyssara | 51.7 | 52.3 | 52.0 |
-| Sultana Zahira | 50.2 | 50.3 | 54.1 |
-| Grand Vizier Kasim | 48.5 | 48.2 | 50.1 |
-| Rajah Bahadur | 50.4 | 48.9 | 48.9 |
-| Roc Rider Amira | 48.1 | 51.4 | 51.1 |
+| Marshal Aldric | 46.6 | 49.7 | 52.0 |
+| Archmage Sefa | 48.0 | 47.0 | 47.8 |
+| Warden Hrolf | 48.6 | 52.2 | 50.1 |
+| Skylady Ione | 51.8 | 53.2 | 49.1 |
+| Lich-Priest Morthen | 54.8 | 47.7 | 50.5 |
+| Death Knight Vaelric | 53.0 | 50.5 | 48.0 |
+| Ossuary Warden Gorrath | 50.7 | 50.5 | 50.0 |
+| Drake Rider Nyssara | 51.9 | 51.1 | 50.6 |
+| Sultana Zahira | 49.8 | 49.3 | 52.4 |
+| Grand Vizier Kasim | 46.2 | 47.1 | 48.8 |
+| Rajah Bahadur | 48.9 | 48.6 | 49.7 |
+| Roc Rider Amira | 49.7 | 53.0 | 51.0 |
 
 | Unit | Hard | Normal | Classic |
 |---|---|---|---|
-| militia | 47.8 | 48.7 | 54.1 |
-| cavaliers | 49.1 | 48.4 | 47.7 |
-| knights | 45.0 | 55.9 | 54.6 |
-| pikemen | 51.7 | 43.2 | 50.2 |
-| golem | 49.8 | 53.4 | 53.8 |
-| mages | 48.0 | 59.8 | 53.5 |
-| trebuchet | 43.9 | 46.5 | 54.0 |
-| ballista | 41.0 | 47.8 | 50.4 |
-| dragon | 55.5 | 54.7 | 50.1 |
-| archers | 47.6 | 50.3 | 52.9 |
-| clerics | 44.4 | 46.5 | 49.2 |
-| skeleton | 50.7 | 46.1 | 51.2 |
-| grave_acolyte | 49.1 | 52.5 | 55.7 |
-| bone_golem | 52.2 | 54.4 | 50.5 |
-| bone_drake | 53.0 | 47.3 | 47.0 |
-| corpse_catapult | 50.4 | 49.4 | 57.2 |
-| bone_archer | 48.5 | 50.4 | 53.8 |
-| grave_knight | 50.9 | 46.4 | 52.1 |
-| wyvern | 53.4 | 47.3 | 41.0 |
-| pegasus | 47.5 | 46.0 | 44.4 |
-| wraith_rider | 57.5 | 56.7 | 40.6 |
-| berserkers | 44.9 | 58.2 | 55.3 |
-| mamluk | 45.2 | 52.8 | 51.1 |
-| camel_archer | 51.0 | 45.0 | 48.0 |
-| scimitar | 51.1 | 50.6 | 43.9 |
-| djinn_binder | 50.0 | 56.1 | 50.3 |
-| war_elephant | 47.9 | 57.3 | **60.5** ⚠ |
-| spear_levy | 51.7 | 40.3 | 42.0 |
-| djinn | 54.7 | 48.0 | 41.0 |
-| sun_priest | 47.5 | 46.1 | 51.2 |
-| sun_mirror | 52.3 | 50.1 | 48.9 |
-| sand_golem | 56.6 | 52.7 | 49.1 |
+| cavaliers | 47.8 | 50.2 | 50.1 |
+| pikemen | 52.2 | 46.9 | 50.6 |
+| trebuchet | 41.3 | 48.0 | 56.2 |
+| golem | 50.5 | 53.8 | 53.3 |
+| militia | 46.5 | 49.7 | 53.9 |
+| knights | 43.2 | 54.9 | 52.8 |
+| mages | 48.3 | 59.5 | 54.1 |
+| dragon | 57.9 | 54.5 | 50.9 |
+| archers | 49.4 | 51.8 | 55.7 |
+| pegasus | 49.3 | 47.9 | 45.6 |
+| wyvern | 56.7 | 48.7 | 43.8 |
+| skeleton | 49.6 | 43.6 | 49.7 |
+| grave_acolyte | 49.9 | 52.4 | 54.7 |
+| grave_knight | 47.9 | 45.2 | 50.9 |
+| corpse_catapult | 50.3 | 47.0 | 56.9 |
+| bone_archer | 48.4 | 50.3 | 54.0 |
+| clerics | 45.0 | 48.5 | 49.9 |
+| bone_golem | 51.5 | 53.4 | 49.6 |
+| bone_drake | 55.5 | 47.2 | 47.4 |
+| wraith_rider | 59.7 | 59.8 | 42.2 |
+| mamluk | 48.5 | 53.6 | 52.6 |
+| camel_archer | 50.8 | 44.5 | 49.0 |
+| djinn_binder | 49.3 | 55.9 | 50.4 |
+| scimitar | 50.5 | 49.1 | 43.4 |
+| djinn | 54.9 | 47.8 | 40.2 |
+| sand_golem | 57.0 | 53.1 | 48.6 |
+| spear_levy | 51.3 | 40.1 | 41.9 |
+| war_elephant | 48.6 | 57.6 | **60.2** ⚠ |
+| sun_priest | 47.7 | 45.9 | 50.3 |
+| sun_mirror | 52.2 | 50.7 | 47.7 |
+| berserkers | 42.1 | 53.6 | 54.2 |
+| ballista | 40.1 | 50.8 | 53.0 |
 
 | Legendary | Hard | Normal | Classic |
 |---|---|---|---|
-| bloodthirst | 49.9 | 51.1 | 49.4 |
-| earthshaker | 44.6 | 49.9 | 50.3 |
-| ember_crown | 50.3 | 50.3 | 49.2 |
-| frostheart | 51.5 | 52.5 | 52.2 |
-| gravebloom | 45.6 | 43.0 | 42.7 |
-| hydra_volley | 50.7 | 53.0 | 54.3 |
-| kingsbane | 48.5 | 51.1 | 49.7 |
-| lifebinder | 59.3 | 53.8 | 53.1 |
-| mirror_aegis | 49.5 | 48.8 | 47.7 |
-| stormcaller | 48.9 | 48.8 | 49.8 |
-| sunfire | 52.4 | 56.5 | 56.2 |
-| undying_oath | 53.1 | 49.4 | 50.5 |
-| warhorn | 47.7 | 49.3 | 50.9 |
-| windrunner | 44.7 | 41.7 | 41.6 |
+| bloodthirst | 51.8 | 49.4 | 49.2 |
+| earthshaker | 47.0 | 47.9 | 48.8 |
+| ember_crown | 48.1 | 49.3 | 50.5 |
+| frostheart | 52.4 | 48.7 | 52.7 |
+| gravebloom | 45.6 | 43.5 | 43.3 |
+| hydra_volley | 49.6 | 53.1 | 57.5 |
+| kingsbane | 48.3 | 49.0 | 49.5 |
+| lifebinder | 57.1 | 55.9 | 53.3 |
+| mirror_aegis | 49.9 | 50.9 | 47.6 |
+| stormcaller | 49.8 | 49.8 | 49.9 |
+| sunfire | 52.1 | 56.2 | 56.1 |
+| undying_oath | 52.7 | 51.3 | 50.9 |
+| warhorn | 46.9 | 48.8 | 51.1 |
+| windrunner | 45.0 | 44.5 | 43.0 |
 
 Match lengths:
-- Hard: 6r 1.2%, 7r 10.0%, 8r 28.9%, 9r 36.4%, 10r 19.7%, 11r 3.6%, 12r 0.2%.
-- Normal: 6r 3.4%, 7r 15.8%, 8r 26.4%, 9r 27.7%, 10r 17.3%, 11r 6.9%, 12r 2.0%, 13r 0.5%, 14r 0.1%, 15r 0.1%.
-- Classic: 6r 3.8%, 7r 16.2%, 8r 25.1%, 9r 25.2%, 10r 17.4%, 11r 7.9%, 12r 3.2%, 13r 0.8%, 14r 0.3%, 15r 0.1%, 16r 0.0%.
+- Hard: 6r 1.1%, 7r 8.6%, 8r 27.6%, 9r 36.3%, 10r 21.3%, 11r 4.7%, 12r 0.4%, 13r 0.0%.
+- Normal: 6r 3.0%, 7r 15.3%, 8r 26.0%, 9r 27.4%, 10r 18.6%, 11r 6.6%, 12r 2.2%, 13r 0.6%, 14r 0.2%, 15r 0.1%, 16r 0.0%.
+- Classic: 6r 3.7%, 7r 16.4%, 8r 24.6%, 9r 24.6%, 10r 17.5%, 11r 8.3%, 12r 3.5%, 13r 0.9%, 14r 0.4%, 15r 0.1%, 16r 0.0%.
 
 Faction pairings (row beats column):
-- Hard: Kingdom v Ashen 47.9%, Kingdom v Caliphate 51.2%, Ashen v Caliphate 50.7%.
-- Normal: Kingdom v Ashen 54.3%, Kingdom v Caliphate 43.4%, Ashen v Caliphate 57.4%.
-- Classic: Kingdom v Ashen 50.0%, Kingdom v Caliphate 45.7%, Ashen v Caliphate 51.4%.
+- Hard: Kingdom v Ashen 44.8%, Kingdom v Caliphate 51.7%, Ashen v Caliphate 51.9%.
+- Normal: Kingdom v Ashen 56.4%, Kingdom v Caliphate 45.1%, Ashen v Caliphate 56.2%.
+- Classic: Kingdom v Ashen 51.0%, Kingdom v Caliphate 48.3%, Ashen v Caliphate 50.4%.
 
-Classic strategies: ranged 71.8%, counter 59.8%, armor 46.7%, random 45.1%, rush 42.7%, air 33.9%.
+Classic strategies: ranged 72.2%, counter 60.4%, random 46.6%, armor 44.6%, rush 44.3%, air 32.0%.
 
 ### Ladder
 
-`node tools/tournament.ts --strats easy,normal,hard --seeds 4 --seed0 800000` (5040 matches):
+`node tools/tournament.ts --strats easy,normal,hard --seeds 4 --seed0 1200000` (5040 matches):
 
 | | Twelve-Lord report | Now | Target |
 |---|---|---|---|
-| Hard beats Normal | 83% | **85%** | > 65% |
-| Normal beats Easy | 95% | **92%** | > 75% |
-| Hard beats Easy | 98% | 97% | |
+| Hard beats Normal | 83% | **84%** | > 65% |
+| Normal beats Easy | 95% | **90%** | > 75% |
+| Hard beats Easy | 98% | 98% | |
 
 ### Every unit gets used
 
@@ -260,47 +290,47 @@ deploys of its own faction:
 
 | Unit | Hard: deploys (share) | Normal: deploys (share) | `counter` strategy: deploys (share) | Hard before the pass (264 matches) |
 |---|---|---|---|---|
-| militia | 1054 (27.2%) | 1097 (24.7%) | 1183 (23.2%) | 415 |
-| pikemen | 125 (3.2%) | 320 (7.2%) | 456 (9.0%) | 58 |
-| berserkers | 42 (1.1%) | 193 (4.3%) | 236 (4.6%) | 137 |
-| archers | 498 (12.8%) | 619 (13.9%) | 820 (16.1%) | 323 |
-| knights | 226 (5.8%) | 181 (4.1%) | 193 (3.8%) | 234 |
-| cavaliers | 361 (9.3%) | 334 (7.5%) | 322 (6.3%) | 149 |
-| mages | 305 (7.9%) | 293 (6.6%) | 344 (6.8%) | 181 |
-| clerics | 220 (5.7%) | 282 (6.3%) | 311 (6.1%) | 13 |
-| pegasus | 260 (6.7%) | 389 (8.7%) | 450 (8.8%) | 34 |
-| ballista | 54 (1.4%) | 183 (4.1%) | 200 (3.9%) | 92 |
-| trebuchet | 160 (4.1%) | 87 (2.0%) | 109 (2.1%) | 103 |
-| golem | 330 (8.5%) | 307 (6.9%) | 333 (6.5%) | 145 |
-| wyvern | 108 (2.8%) | 62 (1.4%) | 62 (1.2%) | 70 |
-| dragon | 137 (3.5%) | 102 (2.3%) | 74 (1.5%) | 0 |
-| skeleton | 1171 (30.6%) | 1130 (27.9%) | 1310 (26.1%) | 490 |
-| grave_knight | 359 (9.4%) | 475 (11.7%) | 562 (11.2%) | 327 |
-| bone_archer | 669 (17.5%) | 794 (19.6%) | 1145 (22.8%) | 387 |
-| wraith_rider | 333 (8.7%) | 337 (8.3%) | 420 (8.4%) | 123 |
-| grave_acolyte | 329 (8.6%) | 355 (8.8%) | 453 (9.0%) | 159 |
-| bone_drake | 414 (10.8%) | 388 (9.6%) | 448 (8.9%) | 87 |
-| corpse_catapult | 262 (6.9%) | 275 (6.8%) | 307 (6.1%) | 182 |
-| bone_golem | 286 (7.5%) | 300 (7.4%) | 369 (7.4%) | 146 |
-| spear_levy | 871 (24.5%) | 868 (23.5%) | 1107 (24.5%) | 273 |
-| scimitar | 370 (10.4%) | 464 (12.5%) | 564 (12.5%) | 219 |
-| camel_archer | 342 (9.6%) | 389 (10.5%) | 503 (11.1%) | 131 |
-| mamluk | 340 (9.6%) | 342 (9.2%) | 395 (8.8%) | 179 |
-| djinn_binder | 312 (8.8%) | 330 (8.9%) | 409 (9.1%) | 200 |
-| sun_priest | 251 (7.1%) | 272 (7.4%) | 344 (7.6%) | 37 |
-| djinn | 407 (11.4%) | 364 (9.8%) | 393 (8.7%) | 182 |
-| war_elephant | 169 (4.8%) | 89 (2.4%) | 130 (2.9%) | 142 |
-| sand_golem | 255 (7.2%) | 309 (8.4%) | 356 (7.9%) | 204 |
-| sun_mirror | 240 (6.7%) | 272 (7.4%) | 313 (6.9%) | new |
+| militia | 1061 (27.1%) | 1095 (24.4%) | 1181 (23.1%) | 415 |
+| pikemen | 126 (3.2%) | 322 (7.2%) | 455 (8.9%) | 58 |
+| berserkers | 42 (1.1%) | 194 (4.3%) | 236 (4.6%) | 137 |
+| archers | 507 (12.9%) | 632 (14.1%) | 823 (16.1%) | 323 |
+| knights | 223 (5.7%) | 182 (4.1%) | 194 (3.8%) | 234 |
+| cavaliers | 366 (9.3%) | 338 (7.5%) | 325 (6.4%) | 149 |
+| mages | 310 (7.9%) | 299 (6.7%) | 350 (6.9%) | 181 |
+| clerics | 219 (5.6%) | 282 (6.3%) | 310 (6.1%) | 13 |
+| pegasus | 260 (6.6%) | 393 (8.8%) | 454 (8.9%) | 34 |
+| ballista | 55 (1.4%) | 186 (4.1%) | 200 (3.9%) | 92 |
+| trebuchet | 163 (4.2%) | 86 (1.9%) | 110 (2.2%) | 103 |
+| golem | 331 (8.4%) | 307 (6.8%) | 331 (6.5%) | 145 |
+| wyvern | 117 (3.0%) | 61 (1.4%) | 61 (1.2%) | 70 |
+| dragon | 140 (3.6%) | 105 (2.3%) | 72 (1.4%) | 0 |
+| skeleton | 1173 (30.6%) | 1136 (27.8%) | 1313 (26.2%) | 490 |
+| grave_knight | 359 (9.4%) | 477 (11.7%) | 561 (11.2%) | 327 |
+| bone_archer | 672 (17.5%) | 808 (19.8%) | 1147 (22.9%) | 387 |
+| wraith_rider | 337 (8.8%) | 336 (8.2%) | 421 (8.4%) | 123 |
+| grave_acolyte | 328 (8.6%) | 355 (8.7%) | 454 (9.0%) | 159 |
+| bone_drake | 414 (10.8%) | 393 (9.6%) | 447 (8.9%) | 87 |
+| corpse_catapult | 263 (6.9%) | 275 (6.7%) | 308 (6.1%) | 182 |
+| bone_golem | 284 (7.4%) | 305 (7.5%) | 368 (7.3%) | 146 |
+| spear_levy | 880 (24.7%) | 875 (23.6%) | 1112 (24.5%) | 273 |
+| scimitar | 370 (10.4%) | 460 (12.4%) | 563 (12.4%) | 219 |
+| camel_archer | 344 (9.6%) | 390 (10.5%) | 501 (11.1%) | 131 |
+| mamluk | 343 (9.6%) | 345 (9.3%) | 398 (8.8%) | 179 |
+| djinn_binder | 313 (8.8%) | 327 (8.8%) | 407 (9.0%) | 200 |
+| sun_priest | 249 (7.0%) | 273 (7.4%) | 346 (7.6%) | 37 |
+| djinn | 401 (11.2%) | 370 (10.0%) | 403 (8.9%) | 182 |
+| war_elephant | 169 (4.7%) | 90 (2.4%) | 131 (2.9%) | 142 |
+| sand_golem | 255 (7.1%) | 310 (8.4%) | 358 (7.9%) | 204 |
+| sun_mirror | 244 (6.8%) | 272 (7.3%) | 313 (6.9%) | new |
 
 The least used unit is berserkers at Hard (1.1%), wyvern at Normal (1.4%) and wyvern for the `counter` strategy (1.2%).
 
 ### Economy and placement checks
 
-- **Loot** (Hard, `picks.ts`): pick share by slot: weapon 33.5%, armor 35.6%, relic 30.9%. Take rate per legendary when offered: ember_crown (15.7%) to earthshaker (51.3%); none is taken more than 60% of the time. Normal: pick share by slot: weapon 24.7%, armor 53.9%, relic 21.4%.
-- **Tall vs wide** (`matches.ts --variants wide,tall --seeds 4`, a variant against shipped Hard): wide | 47.6 ± 3.0 | 54.0 | 8.89 | 5.1; tall | 0.7 ± 0.5 | 10.5 | 6.50 | -93.3 (columns: match win %, round win %, average rounds, keep margin).
-- **Economy** (`econ.ts`): Totals: deploys 69.6% of spend, level-ups 30.4%; mean unspent after planning 30 gold.
-- **Chaos** (`chaos.ts --seeds 2`): how often the round result flips when a whole army is shifted by 1 cm / 10 cm / 1 m / 3 m, or one squad by 1 m (columns: share of battles, then the five flip rates). All battles: `all battles               | 100.0% | 10.5% | 13.4% | 16.8% | 19.9% | 8.3%`.
+- **Loot** (Hard, `picks.ts`): pick share by slot: weapon 33.6%, armor 35.6%, relic 30.8%. Take rate per legendary when offered: ember_crown (15.7%) to earthshaker (51.0%); none is taken more than 60% of the time. Normal: pick share by slot: weapon 24.7%, armor 53.9%, relic 21.4%.
+- **Tall vs wide** (`matches.ts --variants wide,tall --seeds 4`, a variant against shipped Hard): wide | 48.0 ± 3.0 | 53.9 | 8.94 | 5.6; tall | 0.7 ± 0.5 | 13.6 | 6.57 | -92.9 (columns: match win %, round win %, average rounds, keep margin).
+- **Economy** (`econ.ts`): Totals: deploys 69.5% of spend, level-ups 30.5%; mean unspent after planning 30 gold.
+- **Chaos** (`chaos.ts --seeds 2`): how often the round result flips when a whole army is shifted by 1 cm / 10 cm / 1 m / 3 m, or one squad by 1 m (columns: share of battles, then the five flip rates). All battles: `all battles               | 100.0% | 9.0% | 10.9% | 14.6% | 17.6% | 6.6%`.
 
 ### Tried and rejected
 
@@ -314,19 +344,19 @@ The least used unit is berserkers at Hard (1.1%), wyvern at Normal (1.4%) and wy
 
 ### Open
 
-- **Unit rates outside 40–60%**: war_elephant 60.5% (tournament; 47.9 at Hard). Where the unit is inside the band at Hard, the rate is how that planner uses the unit, not the unit itself.
+- **Unit rates outside 40–60%**: war_elephant 60.2% (tournament; 48.6 at Hard). Where the unit is inside the band at Hard, the rate is how that planner uses the unit, not the unit itself.
 - **The reserve tables are high.** Normal keeps under 1% (Grand Vizier) to about 40% (Sultana) of its gold, 24% on average,
   because the Vizier is so much weaker in Normal's hands than in Hard's. A reserve is a delay, not a loss (unspent gold
   carries over), and the ladder holds, but a Normal that understood the Vizier would let the whole table come down.
   The tournament strategies' table is as wide; those bots are a yardstick, nobody plays against them.
 - **The Caliphate's `FACTION_POWER` is still the highest** (1081 against the Kingdom's 914), even with a Siege unit. It no
-  longer stands in for a missing counter; it is what the roster needs to read 49.0 / 49.6 / 51.4.
+  longer stands in for a missing counter; it is what the roster needs to read 48.2 / 49.3 / 50.7.
 - **Tall still loses to wide** (0.7% for one deployment a round against shipped Hard): the deploy points are the
   binding limit, as before this pass.
 - **Seed and chaos sensitivity.** The Lord matrix is rock-paper-scissors (single pairings read 5-95%), so a Lord's
   rate moves in steps of a matchup: the same configuration reads up to 4 points apart on two seed sets, and a small
   change to any planner moves several Lords at once. Re-check at 60 seeds before trusting a change.
-- **Legendaries**: Gravebloom (45.6 / 43.0 / 42.7) and Windrunner (44.7 / 41.7 / 41.6) are the weakest and Lifebinder (59.3 / 53.8 / 53.1) the strongest; all are inside 40–60% at every level (41.6 to 59.3).
+- **Legendaries**: Gravebloom (45.6 / 43.5 / 43.3) and Windrunner (45.0 / 44.5 / 43.0) are the weakest and Lifebinder (57.1 / 55.9 / 53.3) the strongest; all are inside 40–60% at every level (43.0 to 57.5).
 - **Flavoured strategies** still spread widely in the tournament (see the strategy line above); they are not gated.
 
 ## Previous report: twelve Lords (2026-11-15)

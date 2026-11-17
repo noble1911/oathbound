@@ -9,7 +9,7 @@ import { rollItem } from '../src/sim/loot.ts';
 import { Rng } from '../src/sim/rng.ts';
 import type { BotStrategy, Item, LordId, MatchState, RoundSummary, Seat, Squad } from '../src/sim/types.ts';
 import { playMatch } from '../src/sim/tournament.ts';
-import { KEEP_DMG_BASE_PER_ROUND, KEEP_DMG_PER_TIER, MAX_LORD_LEVEL, ROUND_BONUS_FULL_MARGIN, SUDDEN_DEATH_ROUND, concede, keepDamageOf, stalemateCause, roundBonus, squadKeepDamage, suddenDeathPct, unlockOptions } from '../src/sim/match.ts';
+import { KEEP_DMG_BASE_PER_ROUND, KEEP_DMG_PER_TIER, MAX_LORD_LEVEL, ROUND_BONUS_FULL_MARGIN, SUDDEN_DEATH_ROUND, concede, keepDamageOf, stalemateCause, stalemateField, roundBonus, squadKeepDamage, suddenDeathPct, unlockOptions } from '../src/sim/match.ts';
 import { itemName, lootSchedule } from '../src/sim/loot.ts';
 import { income } from '../src/sim/match.ts';
 import { readFileSync } from 'node:fs';
@@ -115,12 +115,13 @@ describe('item slots and loot', () => {
 });
 
 describe('stalemates, points and result wording', () => {
-  it('an army that cannot hit the enemy ends the battle early, decided on points with consistent wording', () => {
+  it('an army that can no longer harm the enemy loses the round, whatever the points say', () => {
     const s = newMatch(4, ['warden', 'skylady']);
     s.players[0].squads = [];
     s.players[1].squads = [];
     for (let i = 0; i < 4; i++) squad(s, 0, 'golem', [1500 + i * 1500, 3000], 3); // no anti-air at all
     squad(s, 1, 'wyvern', mirrorPos([4000, 3000]));
+    squad(s, 1, 'militia', mirrorPos([4000, 3600])); // the golems trample these, which puts them ahead on points
     const { result } = simulateBattle(s, { record: false });
     expect(result.end).toBe('stalemate');
     expect(result.timeout).toBe(true);
@@ -129,36 +130,100 @@ describe('stalemates, points and result wording', () => {
     expect(result.helpless).toEqual([true, false]);
     expect(stalemateCause(result, 0)).toBe('Your army could no longer harm the enemy army');
     expect(stalemateCause(result, 1)).toBe('The enemy army could no longer harm yours');
-    // golems still stand nearly whole; the wyverns only chipped them
-    expect(result.score[0]).toBeGreaterThan(result.score[1] - 100);
-    const lead = result.score[0] - result.score[1];
-    expect(result.winner).toBe(lead >= POINTS_MARGIN ? 0 : lead <= -POINTS_MARGIN ? 1 : null);
-    if (result.winner !== null) {
-      expect(result.keepDamage[result.winner]).toBe(0); // the points loser deals nothing
-      // ...and the points winner deals its survivors' damage in full, plus the round bonus scaled by its margin
-      const w = result.winner, margin = result.score[w] - result.score[1 - w];
-      const full = keepDamageOf(s.players[w].squads, result.survivors[w], s.round, true, false, margin);
-      expect(result.keepDamage[1 - w]).toBe(full);
-      expect(full).toBeGreaterThanOrEqual(roundBonus(s.round, margin));
-      expect(full).toBeGreaterThan(0);
-    }
-    // a helpless side ends the battle within about 10 s of the last hope, not 15
-    expect(result.ticks).toBeLessThanOrEqual(1000);
+    // the golems still stand nearly whole and lead on points by far; the wyverns only chipped them...
+    expect(result.score[0] - result.score[1]).toBeGreaterThanOrEqual(POINTS_MARGIN);
+    // ...and still the round goes to the wyverns, the one army that could fight on
+    expect(result.winner).toBe(1);
+    // the stuck side deals nothing
+    expect(result.keepDamage[1]).toBe(0);
+    // the winner is behind on points: no lead, so no round bonus, only its survivors' own keep damage
+    const own = keepDamageOf(s.players[1].squads, result.survivors[1], s.round, true, false, 0);
+    expect(result.keepDamage[0]).toBe(own);
+    expect(own).toBe(Math.trunc((squadKeepDamage(s.players[1].squads[0]) * suddenDeathPct(s.round)) / 100));
+    expect(own).toBeGreaterThan(0);
+    expect(result.survivors[1]).toEqual([s.players[1].squads[0].id]);
     applyBattle(s, result);
     const h = s.history[0];
     expect(h.end).toBe('stalemate');
     expect(h.score).toEqual(result.score);
     expect(h.helpless).toEqual([true, false]);
+    expect(stalemateField(h, 0)).toBe('theirs');
+    expect(stalemateField(h, 1)).toBe('yours');
+    expect(stalemateField(h, null)).toBe("Red's");
     for (const seat of [0, 1] as Seat[]) {
       const txt = roundOutcomeText(h, seat);
       const p = s.players[seat];
-      // the words, the catch-up flag and the comeback gold always agree
+      // the words and the lost-round flag agree; losing brings no catch-up gold (DESIGN §0)
       expect(txt.outcome === 'lost').toBe(p.lostLast);
-      expect(p.comeback.gold > 0).toBe(p.lostLast);
-      if (txt.outcome === 'draw') expect(txt.title).toBe('Stalemate');
-      else expect(txt.title).toBe(txt.outcome === 'won' ? 'Victory on points' : 'Defeat on points');
-      expect(txt.detail).toMatch(/%/);
-      expect(txt.detail).toMatch(seat === 0 ? /^Your army could no longer harm the enemy army/ : /^The enemy army could no longer harm yours/);
+      expect(p.comeback.gold).toBe(0);
+      // not a points decision: a plain win or loss, and the sentence says why
+      expect(txt.title).toBe(seat === 1 ? 'Victory' : 'Defeat');
+      expect(txt.detail).toBe(seat === 0 ? 'Your army could no longer harm the enemy army, so the field is theirs.' : 'The enemy army could no longer harm yours, so the field is yours.');
+    }
+    expect(roundOutcomeText(h, null).detail).toBe("Blue's army could no longer harm Red's army, so the field is Red's.");
+  });
+
+  it('the helpless-side rule is the same from either seat (mirrored armies, mirrored result)', () => {
+    const play = (stuck: Seat): ReturnType<typeof simulateBattle>['result'] => {
+      const s = newMatch(4, ['warden', 'warden']);
+      s.players[0].squads = [];
+      s.players[1].squads = [];
+      const at = (seat: Seat, p: [number, number]): [number, number] => (seat === 0 ? p : mirrorPos(p));
+      const able = (1 - stuck) as Seat;
+      for (let i = 0; i < 4; i++) squad(s, stuck, 'golem', at(stuck, [1500 + i * 1500, 3000]), 3);
+      squad(s, able, 'wyvern', at(able, [4000, 3000]));
+      return simulateBattle(s, { record: false }).result;
+    };
+    const a = play(0), b = play(1);
+    expect(a.winner).toBe(1);
+    expect(b.winner).toBe(0);
+    expect(a.helpless).toEqual([true, false]);
+    expect(b.helpless).toEqual([false, true]);
+    // exact mirror: same length, swapped scores and keep damage
+    expect(b.ticks).toBe(a.ticks);
+    expect(b.score).toEqual([a.score[1], a.score[0]]);
+    expect(b.keepDamage).toEqual([a.keepDamage[1], a.keepDamage[0]]);
+    expect(b.keepDamage[0]).toBe(0);
+    expect(b.keepDamage[1]).toBeGreaterThan(0);
+  });
+
+  it('a winner of the field that also leads on points earns the round bonus for its lead; other stalls stay on points', () => {
+    // one cheap ground squad against a strong flier it cannot reach: the flier side is able AND ahead
+    const s = newMatch(4, ['warden', 'skylady']);
+    s.players[0].squads = [];
+    s.players[1].squads = [];
+    squad(s, 0, 'golem', [4000, 3000], 5);
+    for (let i = 0; i < 3; i++) squad(s, 1, 'wyvern', mirrorPos([2500 + i * 1500, 3000]), 5);
+    const { result } = simulateBattle(s, { record: false });
+    if (result.end === 'stalemate') {
+      expect(result.helpless).toEqual([true, false]);
+      expect(result.winner).toBe(1);
+      const lead = Math.max(0, result.score[1] - result.score[0]);
+      expect(result.keepDamage[0]).toBe(keepDamageOf(s.players[1].squads, result.survivors[1], s.round, true, false, lead));
+    } else expect(result.winner).toBe(1); // the wyverns simply killed it
+    // the margin is floored at 0: a negative lead never takes anything off the survivors' damage
+    expect(roundBonus(3, -60)).toBe(0);
+    expect(keepDamageOf(s.players[1].squads, [s.players[1].squads[0].id], 3, true, false, -60)).toBe(keepDamageOf(s.players[1].squads, [s.players[1].squads[0].id], 3, true, false, 0));
+    // both helpless, a stand-off without blows, and old results in which the stuck side holds the round: points wording
+    expect(stalemateField({ winner: 0, end: 'stalemate', helpless: [true, true] }, 0)).toBeNull();
+    expect(stalemateField({ winner: 0, end: 'stalemate', helpless: [false, false] }, 0)).toBeNull();
+    expect(stalemateField({ winner: 0, end: 'stalemate', helpless: [true, false] }, 0)).toBeNull();
+    expect(stalemateField({ winner: null, end: 'stalemate', helpless: [true, false] }, 0)).toBeNull();
+    expect(stalemateField({ winner: 1, end: 'timeout', helpless: [true, false] }, 0)).toBeNull();
+    expect(roundOutcomeText({ winner: 0, end: 'stalemate', score: [40, 20], helpless: [true, true] }, 0)).toMatchObject({ outcome: 'won', title: 'Victory on points' });
+    expect(roundOutcomeText({ winner: 1, end: 'stalemate', score: [40, 20], helpless: [false, false] }, 0)).toMatchObject({ outcome: 'lost', title: 'Defeat on points' });
+    // a mixed mirror: whatever way it ends, a stall with both or neither side helpless is settled on points
+    const n = newMatch(4, ['warden', 'warden']);
+    n.players[0].squads = [];
+    n.players[1].squads = [];
+    squad(n, 0, 'golem', [4000, 3000], 2);
+    squad(n, 0, 'wyvern', [2000, 2000], 1);
+    squad(n, 1, 'golem', mirrorPos([4000, 3000]), 2);
+    squad(n, 1, 'wyvern', mirrorPos([2000, 2000]), 1);
+    const r = simulateBattle(n, { record: false }).result;
+    if (r.end === 'stalemate' && r.helpless && r.helpless[0] === r.helpless[1]) {
+      const d = r.score[0] - r.score[1];
+      expect(r.winner).toBe(d >= POINTS_MARGIN ? 0 : -d >= POINTS_MARGIN ? 1 : null);
     }
   });
 

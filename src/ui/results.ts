@@ -67,7 +67,10 @@ export function outcomeText(r: Pick<RoundSummary, 'winner'> & Partial<Omit<Round
       const pts = `${share(me)}% of ${seat === null ? "Blue's army" : 'your army'} still stands, ${share(foe)}% of ${seat === null ? "Red's army" : 'the enemy'}`;
       const at = r.ticks ? ` at ${battleClock(r.end === 'timeout' ? TIME_LIMIT_TICKS : Math.min(r.ticks, TIME_LIMIT_TICKS))}` : '';
       const even = t.outcome === 'draw';
-      t.detail = r.end === 'timeout'
+      // a stalemate one side lost because it could no longer harm the other: the field went to the side that could
+      const field = r.end === 'stalemate' ? match.stalemateField(r as Parameters<typeof match.stalemateField>[0], seat) : null;
+      if (field) t.detail = `${match.stalemateCause(r, seat, armies)}, so the field is ${field}${at ? ` (called${at})` : ''}.`;
+      else t.detail = r.end === 'timeout'
         ? `Time ran out${at}${even ? ' with the armies even' : ''}: ${pts}.`
         : `${match.stalemateCause(r, seat, armies)}, so the battle was called${at}${even ? ' with the armies even' : ''}: ${pts}.`;
     }

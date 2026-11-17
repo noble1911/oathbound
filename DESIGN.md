@@ -43,10 +43,14 @@ which units to unlock, what to deploy and where, which item to take and who wear
   - no damage is dealt by anyone for 10 s (or there is no contact at all by 60 s).
 - **Round outcome** (one rule, one wording: `roundOutcomeText` in `src/sim/match.ts`):
   - **Wipe:** the side left standing wins the round ("Victory" / "Defeat"). Both wiped on the same tick is a "Draw".
-  - **Timeout or stall:** decided **on points** ("Victory on points" / "Defeat on points"). A side's points are the
-    percent of its army's value still standing: each squad's value (gold spent; the Lord 300 + 30 per level) times the
-    share of its soldiers' HP left. A lead of 5 points or more wins; closer is a "Draw" (a stall that ends level is
-    shown as "Stalemate").
+  - **A stall in which exactly one side can no longer harm the other:** that side **loses the round**, whatever the
+    points say ("Victory" / "Defeat": "Your army could no longer harm the enemy army, so the field is theirs."). An
+    army that cannot touch what the enemy has left has lost the field, however much of it still stands: four Golems
+    under a lone Wyvern do not win. (`BattleResult.helpless`, `endOnPoints` in `src/sim/battle.ts`, `stalemateField`.)
+  - **Timeout, or any other stall** (neither side can harm the other, or no blow has landed for 10 s): decided **on
+    points** ("Victory on points" / "Defeat on points"). A side's points are the percent of its army's value still
+    standing: each squad's value (gold spent; the Lord 300 + 30 per level) times the share of its soldiers' HP left. A
+    lead of 5 points or more wins; closer is a "Draw" (a stall that ends level is shown as "Stalemate").
   - A lost round costs keep life and nothing else is handed out for it: no catch-up gold, no better loot (§0).
 - **Keep damage:** every surviving squad marches on the enemy Keep and attacks it on screen.
   - A wipe: the winner deals the sum of each surviving squad's `keepDamage` (its cost tier × its level factor, see §3),
@@ -57,6 +61,10 @@ which units to unlock, what to deploy and where, which item to take and who wear
     win should not pay like a clear one. The survivors' own `keepDamage` is never scaled.
   - A points win counts in full: the winner's survivors deal their `keepDamage` plus the round bonus for its margin; the
     loser's deal none.
+  - A stall won because the enemy could no longer harm you pays the same way: your survivors' `keepDamage` plus the
+    round bonus for your points lead. If you are *behind* on points you have no lead, so there is no round bonus (the
+    margin is floored at 0; nothing is ever taken off the survivors' own damage). A lone surviving flier over an intact
+    ground army wins the round but deals only its own small keep damage.
   - A points draw: both sides deal half damage from their survivors.
   - **Sudden death:** from round 8, all keep damage grows by 25% per round (round 8 ×1.25, round 9 ×1.5, ...), so
     late matches resolve (`suddenDeathPct`).

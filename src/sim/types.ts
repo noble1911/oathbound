@@ -462,7 +462,8 @@ export interface BattleResult {
   /**
    * Stalemates only: per seat, whether that army could no longer damage the other when the battle was called (nothing
    * left that could reach what the enemy had standing). Both false = both could, but no blow had landed for a while.
-   * For the wording only (stalemateCause); nothing in the rules reads it.
+   * Exactly one true: that side lost the round, whatever the points (battle.ts endOnPoints); otherwise the stalemate
+   * was decided on points. The wording reads it too (stalemateCause, stalemateField).
    */
   helpless?: [boolean, boolean];
 }

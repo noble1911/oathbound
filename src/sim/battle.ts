@@ -79,7 +79,7 @@ const DMG_SCALE = 200;
 /** Stall detection: no damage for STALL_TICKS after the first contact (or no contact by NO_CONTACT_TICKS) ends the battle. */
 export const STALL_TICKS = 200;
 export const NO_CONTACT_TICKS = 1200;
-/** One side unable to target anything left on the other side for this long also ends the battle. */
+/** One side unable to target anything left on the other side for this long also ends the battle: the other side wins it (endOnPoints). */
 export const HELPLESS_TICKS = 200;
 /** A timeout / stalemate is won on points by a lead of at least this many percentage points; closer is a draw. */
 export const POINTS_MARGIN = 5;
@@ -449,7 +449,7 @@ class Battle {
   score: [number, number] = [0, 0];
   lastDamageTick = -1;
   helplessSince = -1;
-  /** Presentation only: when a stalemate is called, which sides could no longer damage the other (BattleResult.helpless). */
+  /** When a stalemate is called: which sides could no longer damage the other (BattleResult.helpless). Exactly one = that side loses. */
   helpless: [boolean, boolean] | null = null;
   marching = false;
   marchDue = 0;
@@ -1974,21 +1974,29 @@ class Battle {
   }
 
   /**
-   * Timeout or stalemate: decide the round on points. The winner's survivors deal their keep damage (no round bonus:
-   * that is for routing the enemy); the loser's deal none. A draw: both sides' survivors deal half.
+   * Timeout or stalemate with both armies standing. The round is decided on points, with one exception: a stalemate
+   * called because exactly ONE side could no longer harm the other (`helpless`) goes to the side that still could,
+   * whatever the points say. An army that cannot touch what the enemy has left has lost the field, however much of it
+   * still stands (four Golems under a lone Wyvern used to win that round "on points").
+   *
+   * Keep damage: the winner's survivors deal theirs plus the round bonus for its points lead (roundBonus); the
+   * loser's deal none. A side that wins the field while BEHIND on points has no lead, so it earns no round bonus
+   * (the margin is floored at 0, never negative): its survivors' own damage is all it deals. A draw: both sides'
+   * survivors deal half.
    */
   endOnPoints(end: BattleEnd): void {
     this.timeout = true;
     this.end = end;
     this.score = [this.points(0), this.points(1)];
     const d = this.score[0] - this.score[1];
-    this.winner = d >= POINTS_MARGIN ? 0 : -d >= POINTS_MARGIN ? 1 : null;
+    const h = end === 'stalemate' ? this.helpless : null;
+    this.winner = h && h[0] !== h[1] ? (h[0] ? 1 : 0) : d >= POINTS_MARGIN ? 0 : -d >= POINTS_MARGIN ? 1 : null;
     for (const side of [0, 1] as Seat[]) this.survivors[side] = this.survivorIds(side);
     for (const side of [0, 1] as Seat[]) {
       if (this.winner !== null && this.winner !== side) continue;
       // A points win counts in full (survivors + the round bonus); a draw: both sides' survivors deal half.
       const dmg = this.winner === side
-        ? keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, true, false, this.score[side] - this.score[1 - side])
+        ? keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, true, false, Math.max(0, this.score[side] - this.score[1 - side]))
         : keepDamageOf(this.st.players[side].squads, this.survivors[side], this.st.round, false, true);
       this.keepDamage[(1 - side) as Seat] = dmg;
       if (dmg > 0) this.hitKeep((1 - side) as Seat, keepSource((1 - side) as Seat, 2), dmg, true);

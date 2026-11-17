@@ -9,7 +9,7 @@ import { UNITS, formationCols, squadSizeAt } from './data/units.ts';
 import { modsOf, rollLoot } from './loot.ts';
 import { genTerrain } from './terrain.ts';
 import type {
-  BattleResult, Comeback, EnemyView, Intent, IntentResult, Item, LordId, MatchState, PlayerState, PlayerView, RoundOutcome, RoundSummary, Seat, Slot,
+  BattleEnd, BattleResult, Comeback, EnemyView, Intent, IntentResult, Item, LordId, MatchState, PlayerState, PlayerView, RoundOutcome, RoundSummary, Seat, Slot,
   FactionId, Squad, SquadType, UnitClass, UnitType, Vec2,
 } from './types.ts';
 
@@ -578,7 +578,8 @@ export function roundOutcome(r: Pick<RoundSummary, 'winner'>, seat: Seat | null)
 
 /**
  * The words for a round result, so the battle banner, results screen and history all say the same thing.
- * `title` is 'Victory' / 'Defeat' / 'Victory on points' / 'Defeat on points' / 'Draw' / 'Stalemate';
+ * `title` is 'Victory' / 'Defeat' / 'Victory on points' / 'Defeat on points' / 'Draw' / 'Stalemate' (a stalemate that
+ * one side lost because it could no longer harm the other is a plain 'Victory' / 'Defeat': stalemateField);
  * `detail` explains it from `seat`'s point of view. Spectators (seat null) get seat 0's wording with
  * neutral pronouns; the UI should put player names in itself.
  */
@@ -600,6 +601,18 @@ export function stalemateCause(r: { helpless?: [boolean, boolean] }, seat: Seat 
   return `${cap(name[stuck])} could no longer harm ${seat !== null && other === me ? 'yours' : name[other]}`;
 }
 
+/**
+ * A stalemate that one side lost because it could no longer harm the other (and so not a points decision): whose the
+ * field is, from `seat`'s point of view ("yours" / "theirs"; spectators: "Blue's" / "Red's"). Null for every other
+ * ending, including old results in which the helpless side was given the round on points.
+ */
+export function stalemateField(r: { winner: Seat | null; end?: BattleEnd; helpless?: [boolean, boolean] }, seat: Seat | null): string | null {
+  const h = r.helpless;
+  if (r.end !== 'stalemate' || !h || h[0] === h[1] || r.winner === null || h[r.winner]) return null;
+  if (seat === null) return r.winner === 0 ? "Blue's" : "Red's";
+  return r.winner === seat ? 'yours' : 'theirs';
+}
+
 export function roundOutcomeText(r: Pick<RoundSummary, 'winner' | 'end' | 'score' | 'helpless'>, seat: Seat | null): { outcome: RoundOutcome; title: string; detail: string } {
   const outcome = roundOutcome(r, seat);
   const me = (seat ?? 0) as Seat, foe = (1 - me) as Seat;
@@ -612,9 +625,13 @@ export function roundOutcomeText(r: Pick<RoundSummary, 'winner' | 'end' | 'score
     case 'timeout':
       if (outcome === 'draw') return { outcome, title: 'Draw', detail: `Time ran out with the armies even: ${pts}.` };
       return { outcome, title: outcome === 'won' ? 'Victory on points' : 'Defeat on points', detail: `Time ran out: ${pts}.` };
-    case 'stalemate':
+    case 'stalemate': {
+      // One side could no longer harm the other: it lost the field. This is not a points decision.
+      const field = stalemateField(r, seat);
+      if (field) return { outcome, title: outcome === 'won' ? 'Victory' : 'Defeat', detail: `${stalemateCause(r, seat)}, so the field is ${field}.` };
       if (outcome === 'draw') return { outcome, title: 'Stalemate', detail: `${stalemateCause(r, seat)}, and they stood even: ${pts}.` };
       return { outcome, title: outcome === 'won' ? 'Victory on points' : 'Defeat on points', detail: `${stalemateCause(r, seat)}, so the battle ended early: ${pts}.` };
+    }
     default:
       if (outcome === 'draw') return { outcome, title: 'Draw', detail: 'The field falls silent.' };
       return {

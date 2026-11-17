@@ -259,11 +259,14 @@ export function battleHints(st: BattleStats, me: Seat, ctx: { gold?: number; max
     const h = st.helpless;
     const cause = stalemateCause(st, me, armyNames(st.factions ?? [null, null], me));
     const tip = h && !h[me] && h[1 - me]
-      ? 'Your army could still fight but did not finish them in time: more damage, or units that reach what they had left, win it outright.'
+      ? 'You won the round. Routing them outright pays the full round bonus.'
       : h && !h[0] && !h[1]
         ? 'Both armies stood off without a blow landing: send something that closes in.'
         : 'Bring something that can reach what they had left (bows, magic and fliers hit the air).';
-    add(6.5, 'info', `The battle was called at ${clock(st.ticks)}: ${cause.charAt(0).toLowerCase() + cause.slice(1)}, so each side dealt only half Keep damage. ${tip}`);
+    // exactly one side stuck: it lost the round (the sim's rule); otherwise the stalemate was settled on points
+    const oneSided = !!h && h[0] !== h[1];
+    const verdict = oneSided ? (h![me] ? 'so the field went to the enemy' : 'so the field was yours') : 'so the round was settled on points';
+    add(6.5, 'info', `The battle was called at ${clock(st.ticks)}: ${cause.charAt(0).toLowerCase() + cause.slice(1)}, ${verdict}. ${tip}`);
   }
   if (won === false && (ctx.gold ?? 0) >= 200) add(5.5, 'info', `You went into battle with ${ctx.gold} gold unspent. Level up squads (more life and damage, or more soldiers for a Swarm) when you have no deploys left.`);
   if (!out.length) {

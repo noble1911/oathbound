@@ -247,7 +247,15 @@ describe('round wording', () => {
     expect(time.detail).toBe('Time ran out at 1:30: 40% of your army still stands, 20% of the enemy.');
     expect(outcomeText({ winner: null, end: 'stalemate', score: [5, 5], survivors: [1, 1], ticks: 900 }, null).detail).toMatch(/called at 0:45 with the armies even: 5% of Blue's army/);
     // the stuck side, by faction
-    expect(outcomeText({ winner: 0, end: 'stalemate', score: [40, 20], survivors: [3, 2], ticks: 900, helpless: [false, true] }, 0, false, ['your army', 'the Covenant army']).detail)
+    // the stuck side, by faction: it lost the field, and that is not a points decision
+    const field = outcomeText({ winner: 0, end: 'stalemate', score: [20, 40], survivors: [3, 2], ticks: 900, helpless: [false, true] }, 0, false, ['your army', 'the Covenant army']);
+    expect(field.title).toBe('Victory');
+    expect(field.detail).toBe('The Covenant army could no longer harm yours, so the field is yours (called at 0:45).');
+    const lostField = outcomeText({ winner: 0, end: 'stalemate', score: [20, 40], survivors: [3, 2], ticks: 900, helpless: [false, true] }, 1, false, ['the Kingdom army', 'your army']);
+    expect(lostField.title).toBe('Defeat');
+    expect(lostField.detail).toBe('Your army could no longer harm the Kingdom army, so the field is theirs (called at 0:45).');
+    // an old result in which the stuck side holds the round keeps the points wording
+    expect(outcomeText({ winner: 1, end: 'stalemate', score: [20, 40], survivors: [3, 2], ticks: 900, helpless: [false, true] }, 0, false, ['your army', 'the Covenant army']).detail)
       .toMatch(/^The Covenant army could no longer harm yours, so the battle was called at 0:45/);
   });
   it('a conceded match: the room says why it ended and who gave up', async () => {
