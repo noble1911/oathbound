@@ -1,9 +1,1 @@
-[1920x1080] note kingdom draft row: the widest real draft (12 cards) scrolls: 924 > 636
-[1920x1080] note caliphate draft row: the widest real draft (8 cards) scrolls: 650 > 636
-[1366x768] note kingdom draft row: the widest real draft (12 cards) scrolls: 661 > 455
-[1366x768] note caliphate draft row: the widest real draft (8 cards) scrolls: 465 > 455
-0 overflow finding(s)
-[1024x768] note kingdom draft row: the widest real draft (12 cards) scrolls: 644 > 434
-[1024x768] note ashen draft row: the widest real draft (6 cards) scrolls: 441 > 434
-[1024x768] note caliphate draft row: the widest real draft (8 cards) scrolls: 450 > 434
-0 overflow finding(s)
+

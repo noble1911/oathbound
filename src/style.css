@@ -816,37 +816,35 @@ input:focus { border-color: var(--me-hi); box-shadow: inset 0 2px 4px rgba(0, 0,
 .modal.draft { grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 0.7rem; padding-top: 2vh; }
 .modal.draft.fresh { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
 /* phone width: two cards a row (the row scrolls) instead of four squeezed past the edge */
-@media (max-width: 640px) { .modal.draft .draft-row { grid-template-columns: repeat(2, minmax(0, 11.5rem)); } }
-/* the recruit picker: any one of every eligible unit, in a grid sorted by class */
-.draft-row { display: grid; grid-template-columns: repeat(var(--cols, 5), minmax(0, 11.5rem)); gap: 1.1rem 1.2rem; justify-content: center; align-content: safe center; padding: 0.5rem; min-height: 0; max-height: 100%; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: var(--slate-400) transparent; }
+@media (max-width: 640px) { .modal.draft .draft-row { grid-template-columns: repeat(2, minmax(0, 10rem)); } }
+/* the recruit picker: any one of every eligible unit, in a grid sorted by class. Compact cards, up to seven a row, so
+   that a faction's whole offer fits without scrolling from 1024x768 up (e2e/ux/overflow.mjs fails if it scrolls); no
+   text under 12px */
+.draft-row { display: grid; grid-template-columns: repeat(var(--cols, 5), minmax(0, 10rem)); gap: 0.9rem 0.7rem; justify-content: center; align-content: safe center; padding: 0.75rem 0.5rem 0.5rem; min-height: 0; max-height: 100%; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: var(--slate-400) transparent; }
 .draft-ribbon { justify-self: center; width: max-content; margin: 0 auto 0.4rem; padding: 0.6rem 4.2rem 0.95rem; background: url('/ui/kit/ribbon.webp') center / 100% 100% no-repeat; font: 700 1.3rem var(--serif); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); filter: drop-shadow(0 0.3rem 0.5rem rgba(0, 0, 0, 0.6)); animation: ribbonin 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
 @keyframes ribbonin { from { opacity: 0; transform: scale(1.5); } }
-.dcard { position: relative; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; align-content: start; gap: 0.2rem; padding: 0.8rem 0.6rem 0.65rem; border: 1px solid transparent; border-image: url('/ui/kit/frame-steel.webp') 36 / 0.6rem / 0.3rem round; background: var(--stone); color: var(--steel-100); box-shadow: var(--shadow); transition: transform 0.15s, filter 0.15s; animation: cardin 0.5s both; }
+.dcard { position: relative; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr auto auto auto; justify-items: center; align-content: start; gap: 0.25rem; padding: 0.75rem 0.5rem 0.6rem; border: 1px solid transparent; border-image: url('/ui/kit/frame-steel.webp') 36 / 0.6rem / 0.3rem round; background: var(--stone); color: var(--steel-100); box-shadow: var(--shadow); transition: transform 0.15s, filter 0.15s; animation: cardin 0.5s both; }
 .dcard:hover { transform: translateY(-0.3rem); filter: brightness(1.18); }
-.dcard > b { font: 700 1.25rem/1.15 var(--serif); color: #fff; max-width: 100%; text-align: center; text-wrap: balance; overflow-wrap: break-word; }
-.dcard > b.long { font-size: 1.08rem; }
-.dcard > small { color: var(--steel-200); font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.dc-cost { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.1rem 0.25rem; max-width: 100%; font: 700 1rem var(--sans); color: var(--gold-hi); }
-.dc-cost em { font: 600 0.8rem var(--sans); color: var(--steel-200); font-style: normal; }
-.dc-tags { display: inline-flex; gap: 0.2rem; margin-left: 0.35rem; color: var(--steel-200); font-size: 0.8rem; }
-.dc-tags i { display: inline-grid; }
-/* the class stamp and the role beside it, on one baseline */
-.dc-cls { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.15rem 0.35rem; max-width: 100%; cursor: help; }
-.dc-cls small { min-width: 0; color: var(--steel-200); font-size: 0.78rem; line-height: 1.15; text-align: center; text-wrap: balance; }
-/* Beats | Fears: two cells of one row */
-.dc-wh { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.35rem; padding-top: 0.35rem; border-top: 1px solid var(--rule); }
-.dc-ctr { min-width: 0; display: grid; justify-items: start; align-content: start; gap: 0.15rem; text-align: left; cursor: help; }
-.dc-ctr small { font: 700 0.6rem var(--sans); letter-spacing: 0.1em; text-transform: uppercase; }
+.dcard .crest.lg { width: 3rem; height: 3.35rem; }
+.dcard > b { align-self: center; font: 700 max(13px, 1.08rem)/1.12 var(--serif); color: #fff; max-width: 100%; text-align: center; text-wrap: balance; overflow-wrap: break-word; }
+.dcard > b.long { font-size: max(12.5px, 0.96rem); }
+.dc-cost { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.1rem 0.25rem; max-width: 100%; font: 700 max(12.5px, 0.92rem) var(--sans); color: var(--gold-hi); }
+.dc-cost em { font: 600 max(12px, 0.8rem) var(--sans); color: var(--steel-200); font-style: normal; }
+.dc-cost .dpw { margin-left: 0.2rem; font-size: max(12px, 0.8rem); }
+/* the class stamp (the role is on its tip and on the hover card) */
+.dc-cls { display: inline-flex; justify-content: center; max-width: 100%; font-size: max(12px, 0.84rem); cursor: help; }
+/* Beats / Fears: a line each, the label and the class token */
+.dc-wh { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.2rem 0.3rem; align-items: center; padding-top: 0.3rem; border-top: 1px solid var(--rule); }
+.dc-ctr { display: contents; cursor: help; }
+.dc-ctr small { justify-self: start; font: 700 max(12px, 0.72rem)/1.2 var(--sans); letter-spacing: 0.03em; text-transform: uppercase; }
 .dc-ctr.good small { color: var(--good); }
 .dc-ctr.bad small { color: var(--bad); }
 .dc-ctr.info small { color: var(--steel-200); }
 .dc-ctr.info .dc-m { color: var(--steel-200); }
-.dc-m { min-width: 0; font-size: 0.76rem; line-height: 1.2; color: var(--steel-100); }
-.dc-m { max-width: 100%; }
-.dc-m .wcl { max-width: 100%; }
-.dc-ctr u { text-decoration: none; color: var(--steel-300); }
-/* the unit the sim takes if planning ends first */
-.dc-def { position: absolute; top: 0.3rem; right: 0.3rem; padding: 0.05rem 0.35rem; background: var(--iron-800); border: 1px solid var(--slate-400); font: 700 0.56rem var(--sans); font-style: normal; letter-spacing: 0.1em; text-transform: uppercase; color: var(--steel-200); }
+.dc-m { min-width: 0; max-width: 100%; justify-self: start; font-size: max(12px, 0.76rem); line-height: 1.2; color: var(--steel-100); cursor: help; }
+.dc-m .wcl { max-width: 100%; padding-right: 0.3rem; }
+/* the unit the sim takes if planning ends first: a tab on the card's top edge */
+.dc-def { position: absolute; top: 0; left: 50%; transform: translate(-50%, -55%); padding: 0.05rem 0.4rem; background: var(--iron-800); border: 1px solid var(--slate-400); font: 700 max(12px, 0.62rem)/1.15 var(--sans); font-style: normal; letter-spacing: 0.08em; text-transform: uppercase; color: var(--steel-100); white-space: nowrap; }
 .dcard.chosen { outline: 2px solid var(--good); outline-offset: 0.35rem; }
 .loot-same { color: var(--steel-100); font-weight: 600; white-space: nowrap; }
 .draft-have { max-width: 50rem; text-align: center; }
@@ -1391,6 +1389,11 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .modal.loot { gap: 0.35rem; padding-top: 1.5vh; }
   .modal.loot .loot-head h2 { font-size: 2.5rem; margin: 0.1rem 0 0.2rem; }
   .modal.loot .loot-head p { font-size: 0.95rem; }
+  .modal.draft { gap: 0.45rem; padding-top: 1.5vh; }
+  .modal.draft .loot-head h2 { font-size: 2.3rem; margin: 0.05rem 0 0.15rem; }
+  .modal.draft .loot-head p { font-size: 0.95rem; }
+  .modal.draft .draft-ribbon { margin-bottom: 0; padding: 0.45rem 3.4rem 0.75rem; font-size: 1.1rem; }
+  .dcard { gap: 0.18rem; }
   .drop { gap: 0.3rem; }
   .drop-icon .islot.lg { width: 3.4rem; height: 3.4rem; }
   .drop-icon { gap: 0.2rem; }
@@ -1430,9 +1433,9 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
   .fcard > small { font-size: 0.76rem; }
   .fcard > b { font-size: 1.1rem; }
   .lp-ident p { font-size: 0.84rem; }
-  .draft-row { gap: 0.8rem 0.8rem; }
-  .dcard { padding: 0.6rem 0.4rem 0.5rem; }
-  .dcard .crest.lg { width: 3rem; height: 3.35rem; }
+  .draft-row { gap: 0.8rem 0.5rem; }
+  .dcard { padding: 0.65rem 0.35rem 0.5rem; }
+  .dcard .crest.lg { width: 2.7rem; height: 3rem; }
   .rl-step:not(:last-child)::after { display: none; }
   .rl-row { grid-template-columns: 6.6rem 0.8rem 6.6rem minmax(0, 1fr); }
   .rl-row .rl-prey { grid-column: 1 / -1; justify-content: flex-start; }

@@ -10,7 +10,7 @@ import { $, el, esc } from './dom.ts';
 import { icon } from './icons.ts';
 import { itemIcon, itemTooltip } from './items.ts';
 import { SKILLS, canEquip, usableByText } from '../sim/data/skills.ts';
-import { bestFit, counters, soldierStats, RARITY_LABEL, rarityRank, SLOT_LABEL, slotOpen, tagsOf, TAG_LABEL, unitName, type Fit } from './gamedata.ts';
+import { bestFit, counters, soldierStats, RARITY_LABEL, rarityRank, SLOT_LABEL, slotOpen, unitName, type Fit } from './gamedata.ts';
 import { ITEM_KIND, SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
 import { bestOnText, legendaryFits } from '../sim/loot.ts';
 import { classTag, crest, deployChip, unitTooltip, wheelTip } from './units.ts';
@@ -152,6 +152,11 @@ export function draftLines(u: UnitType): [DraftLine, DraftLine] {
   return [first, second];
 }
 
+/** The recruit grid's columns: two rows up to fourteen cards (seven a row), at least three a row. */
+export function draftCols(n: number): number {
+  return Math.min(7, Math.max(3, Math.ceil(n / 2)));
+}
+
 /**
  * "Recruit a new unit type": a free choice of any eligible unit (both commanders get the same
  * options). A grid of unit cards sorted by class, each with its role, cost and what it beats and
@@ -168,17 +173,16 @@ export class DraftModal {
     const fallback = me.draftOptions[0];
     const card = (u: UnitType): string => {
       const d = UNITS[u];
-      // Beats / Fears side by side under the cost: two cells of one row keep the card short enough for two rows of
-      // eight at 1024x768
-      const row = (l: DraftLine): string => `<span class="dc-ctr ${l.tone}" data-tip="${esc(l.tip)}"><small>${l.label}</small><span class="dc-m">${l.cls ? classTag(l.cls) : esc(l.text)}</span></span>`;
-      // "Ranged · Ranged" says nothing twice: the role only when it adds to the class name
-      const role = d.role.toLowerCase() === WHEEL_NAME[d.class].toLowerCase() ? '' : `<small>${esc(d.role)}</small>`;
+      // a compact card, so that a faction's whole offer fits on one screen without scrolling (seven a row, two rows
+      // at 1024x768): crest, name, class stamp, cost, then Beats and Fears on a line each. The role, the tags and the
+      // stats are on the hover card.
+      const row = (l: DraftLine): string => `<span class="dc-ctr ${l.tone}" data-tip="${esc(l.tip)}"><small>${l.label}</small><span class="dc-m">${l.cls ? classTag(l.cls) : `<span class="wcl">${icon('heart')}<span>Heals</span></span>`}</span></span>`;
       return `<button class="dcard" data-u="${u}">
         ${u === fallback ? '<em class="dc-def" data-tip="Recruited for you if planning ends before you choose">Default</em>' : ''}
         ${crest(u, null, 'lg')}
-        <b${d.name.length > 13 ? ' class="long"' : ''}>${esc(d.name)}</b>
-        <span class="dc-cls" data-tip="${esc(wheelTip(u))}">${classTag(d.class, 'me')}${role}</span>
-        <span class="dc-cost">${icon('gold')}${d.cost} <em>×${soldierStats(u, 1).size}</em>${deployChip(u)}<span class="dc-tags">${tagsOf(u).map((g) => `<i data-tip="${esc(TAG_LABEL[g])}">${icon(g)}</i>`).join('')}</span></span>
+        <b${d.name.length > 12 ? ' class="long"' : ''}>${esc(d.name)}</b>
+        <span class="dc-cls" data-tip="${esc(`${d.role}. ${wheelTip(u)}`)}">${classTag(d.class, 'me')}</span>
+        <span class="dc-cost">${icon('gold')}${d.cost} <em>×${soldierStats(u, 1).size}</em>${deployChip(u)}</span>
         <span class="dc-wh">${draftLines(u).map(row).join('')}</span>
       </button>`;
     };
@@ -191,7 +195,7 @@ export class DraftModal {
         <h2>Recruit a new unit type</h2>
         <p>Choose <b>any ${n > 1 ? n : 'one'}</b> of these ${opts.length}. ${n > 1 ? 'They join' : 'It joins'} your shop for the whole match. <span class="loot-same">Your opponent has the same choice.</span></p>
       </header>
-      <div class="draft-row" style="--cols:${Math.min(5, Math.max(3, Math.ceil(opts.length / 2)))}">${opts.map(card).join('')}</div>
+      <div class="draft-row" style="--cols:${draftCols(opts.length)}">${opts.map(card).join('')}</div>
       <div class="draft-have"><small>Already yours</small>${me.unlocked.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('')}</div>
       <footer class="loot-foot"><button class="btn later">Later</button><small class="muted">${fallback ? `If planning ends first, <b>${esc(UNITS[fallback].name)}</b> is recruited for you.` : ''}${healers ? '' : ` The ${esc(FACTIONS[fac!].short)} has <b>no healers</b>: its fallen rise instead.`}</small></footer>
     </div>`);

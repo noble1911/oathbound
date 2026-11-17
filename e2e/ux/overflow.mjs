@@ -2,26 +2,28 @@
 // recruit (draft) cards, the shop cards (full and compact), their hover cards, the loot screen and the Lord pick.
 // A finding is any element whose content is wider or taller than its own box (scrollWidth/scrollHeight past
 // clientWidth/clientHeight: text cut off by an ellipsis or a line clamp, or spilling out), or whose rect leaves its
-// card. Exits non-zero on any finding. (Whether the widest real draft scrolls is printed as a note.)
+// card. The recruit grid may not scroll either: a faction's whole roster on offer, and the widest real offer, must fit
+// on screen at every size. Exits non-zero on any finding.
 //   npx vite --port 5197 &   BASE=http://127.0.0.1:5197/ node e2e/ux/overflow.mjs
-//   SIZES=1366x768 FACTIONS=ashen SHOTS=0 ...   (defaults: 1920x1080,1366x768,1024x768; all factions; screenshots on)
-// Screenshots: $OUT/<W>x<H>-<screen>.jpg (default docs/reviews/shots-2026-11-17/overflow).
+//   SIZES=1366x768 FACTIONS=ashen SHOTS=0 ...   (defaults: 1920x1080,1366x768,1280x1024,1024x768; all factions;
+//   screenshots on)
+// Screenshots: $OUT/<W>x<H>-<screen>.jpg (default docs/reviews/shots-2026-11-17/overflow), the recruit grids in
+// $OUT/recruit-fit/.
 import { launch, sleep, waitFor } from '../qa/lib.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:5197/';
 const OUT = process.env.OUT || 'docs/reviews/shots-2026-11-17/overflow';
-const SIZES = (process.env.SIZES || '1920x1080,1366x768,1024x768').split(',').map((s) => s.split('x').map(Number));
+const SIZES = (process.env.SIZES || '1920x1080,1366x768,1280x1024,1024x768').split(',').map((s) => s.split('x').map(Number));
 const FACTIONS = (process.env.FACTIONS || 'kingdom,ashen,caliphate').split(',');
 const SHOTS = process.env.SHOTS !== '0';
 const LORD = { kingdom: 'marshal', ashen: 'lich', caliphate: 'sultana' };
-fs.mkdirSync(OUT, { recursive: true });
+fs.mkdirSync(path.join(OUT, 'recruit-fit'), { recursive: true });
 
 const browser = await launch();
 const findings = [];
 const errors = [];
-const notes = [];
 let W = 0, H = 0;
 const say = (s) => console.log(`[${W}x${H}] ${s}`);
 const report = (where, list) => {
@@ -38,7 +40,22 @@ async function page(url) {
   await waitFor(p, () => document.body.classList.contains('booted'), null, 60000);
   return p;
 }
-const shot = async (p, name) => { if (SHOTS) await p.screenshot({ path: path.join(OUT, `${W}x${H}-${name}.jpg`), type: 'jpeg', quality: 70 }); };
+const shot = async (p, name, dir = '') => { if (SHOTS) await p.screenshot({ path: path.join(OUT, dir, `${W}x${H}-${name}.jpg`), type: 'jpeg', quality: 70 }); };
+
+/** The recruit grid must show every card without scrolling, each card whole and on screen. */
+const rowFit = (p) => p.evaluate(() => {
+  const row = document.querySelector('.modal.draft .draft-row');
+  if (!row) return ['no draft row'];
+  const out = [];
+  if (row.scrollHeight > row.clientHeight + 1) out.push(`the grid of ${row.children.length} cards scrolls: ${row.scrollHeight} > ${row.clientHeight}`);
+  const rr = row.getBoundingClientRect();
+  for (const c of row.children) {
+    const r = c.getBoundingClientRect();
+    if (r.right > innerWidth || r.left < 0 || r.bottom > innerHeight || r.top < 0) out.push(`card ${c.dataset.u} off-screen`);
+    else if (r.bottom > rr.bottom + 1 || r.top < rr.top - 1) out.push(`card ${c.dataset.u} cut off by the grid`);
+  }
+  return out;
+});
 
 /**
  * Audit every card matched by `cardSel` (or the whole `cardSel` box): the card and each visible descendant may not
@@ -146,21 +163,13 @@ async function factionRun(f) {
   await sleep(1200);
   const nd = (await p.$$('.modal.draft .dcard')).length;
   report(`${f} draft cards (${nd}/${all.length})`, nd === all.length ? await audit(p, '.modal.draft .dcard', '.dc-def') : [`only ${nd} draft cards`]);
-  await shot(p, `${f}-draft`);
+  report(`${f} draft grid fits, whole roster (${nd})`, await rowFit(p));
+  await shot(p, `${f}-draft`, 'recruit-fit');
   // the widest real draft: every unit but the Lord's two signature ones, which are all that is already yours
   const had = await p.evaluate(async (all) => { const pl = window.__ob.app.local.s.players[0]; const had = [...pl.unlocked]; const sig = (await import('/src/sim/data/lords.ts')).LORDS[pl.lord].signature; pl.unlocked = [...sig]; pl.draftOptions = all.filter((u) => !sig.includes(u)); window.__ob.app.local.emit(); return had; }, all);
   await sleep(2600); // a changed offer re-opens the picker after its entrance delay
-  // (informational: the row is a scroll box by design; a scrolled-off card is not text leaving its box)
-  const rowNotes = await p.evaluate(() => {
-    const row = document.querySelector('.modal.draft .draft-row');
-    if (!row) return ['no draft row'];
-    const out = [];
-    if (row.scrollHeight > row.clientHeight + 2) out.push(`the widest real draft (${row.children.length} cards) scrolls: ${row.scrollHeight} > ${row.clientHeight}`);
-    for (const c of row.children) { const r = c.getBoundingClientRect(); if (r.right > innerWidth || r.left < 0) out.push(`card ${c.dataset.u} off-screen`); }
-    return out;
-  });
-  for (const x of rowNotes) { notes.push(`[${W}x${H}] ${f} draft row: ${x}`); say(`note ${f} draft row: ${x}`); }
-  await shot(p, `${f}-draft-real`);
+  report(`${f} draft grid fits, widest real offer (${all.length - 2})`, await rowFit(p));
+  await shot(p, `${f}-draft-real`, 'recruit-fit');
   await p.evaluate((all, had) => { const pl = window.__ob.app.local.s.players[0]; pl.unlocked = had; pl.draftOptions = [...all]; window.__ob.app.local.emit(); }, all, had);
   await sleep(2600);
   await hoverAll(p, '.modal.draft .dcard', `${f}-draft`);
@@ -240,6 +249,6 @@ try {
   await browser.close();
   console.log(`\n${findings.length} overflow finding(s)`);
   for (const e of errors) console.log('ERROR', e);
-  fs.writeFileSync(path.join(OUT, 'findings.txt'), [...findings, ...errors.map((e) => 'ERROR ' + e), ...notes.map((n) => 'note ' + n)].join('\n') + '\n');
+  fs.writeFileSync(path.join(OUT, 'findings.txt'), [...findings, ...errors.map((e) => 'ERROR ' + e)].join('\n') + '\n');
   process.exit(findings.length || errors.length ? 1 : 0);
 }
