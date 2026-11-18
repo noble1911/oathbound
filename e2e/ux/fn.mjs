@@ -231,7 +231,12 @@ try {
       await sleep(700);
       c = await note();
     }
-    check(c?.t === 'Know your enemy' && !/hides/.test(c.x), `ghosts step no longer mentions hiding them (${c?.t})`);
+    // round 2 is the first with squads locked in place (DESIGN §2): the coach says so once, then moves on
+    if (c?.t === 'Locked in place') {
+      check(/locked in place/.test(c.x) && /Muster/.test(c.x) && !!(await p.$('.notice.lock-n.coach-target')), 'round 2: the coach explains locked squads and Muster, ringing the lock notice');
+      for (let i = 0; i < 20 && c?.t === 'Locked in place'; i++) { await sleep(1000); c = await note(); }
+    }
+    check(c?.t === 'Know your enemy' && !/hides/.test(c.x) && /unless they Muster/.test(c.x), `ghosts step no longer mentions hiding them, and says enemy squads stay unless they Muster (${c?.t})`);
     await shot(p, 'tut-ghosts-1024');
     await battle();
     // round 3: the closing choice, only once the recruits and spoils are dealt with

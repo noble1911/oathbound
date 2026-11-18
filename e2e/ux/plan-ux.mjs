@@ -1,6 +1,6 @@
 // Planning UX: box select, Shift-click, group drag and turn, undo (Ctrl+Z) of moves and deploys,
 // mirror, sync by speed, grid snap, the march preview (T) and the Lord's aura ring, offline on
-// ?dev=planning (no server). Checks idle planning still draws 0 fps with the overlays up.
+// ?dev=planning (no server), on an army made free to move (locks and Muster: e2e/ux/relocation.mjs). Checks idle planning still draws 0 fps with the overlays up.
 // Screenshots: e2e/shots/plan-ux-<W>-*.png.
 //   npx vite --port 5193 &   BASE=http://127.0.0.1:5193/ W=1920 H=1080 node e2e/ux/plan-ux.mjs
 import { launch, sleep, waitFor } from '../qa/lib.mjs';
@@ -59,6 +59,9 @@ try {
     await sleep(700);
   }
   await p.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+  // the formation tools are checked on an army that may move: the pre-rolled squads count as deployed this round
+  // (squads from earlier rounds are locked in place; e2e/ux/relocation.mjs checks that rule and Muster)
+  await p.evaluate(() => { const l = window.__ob.app.local; for (const q of l.s.players[0].squads) q.deployedRound = l.s.round; l.emit(); });
   await sleep(1500);
   const a0 = await army();
   check(a0.length >= 4, `round ${ROUND} army on the field (${a0.length} squads)`);
