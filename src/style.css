@@ -1367,6 +1367,9 @@ body:has(.screen.over) .load-chip { top: 0.8rem; bottom: auto; }
 .coach[data-slot='top'] { left: 1rem; top: 1rem; width: 19rem; }
 .coach[data-slot='low'] { left: 1rem; top: auto; bottom: 1rem; width: 17rem; }
 .coach[data-slot='modal'] { left: 3.8rem; top: var(--hud-under); width: 16.5rem; }
+/* where the recruit grid is wide enough to reach under the coach (1024x768: five columns), the picker steps right of it,
+   so the coach never covers a card (the first one is the default) or the heading */
+@media (max-width: 1300px) { #ui:has(.coach.on[data-slot='modal']) .modal.draft { padding-left: calc(3.8rem + 16.5rem + 0.4rem); } }
 /* right: where the squad panel would be, clear of the shop and its tooltips. foot: a wide, short
    note along the bottom of the Lord pick, which keeps that strip free while it is up. */
 .coach[data-slot='right'] { left: auto; right: 1rem; top: var(--hud-under); bottom: auto; }
