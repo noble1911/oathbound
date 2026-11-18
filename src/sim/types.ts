@@ -292,10 +292,10 @@ export interface Squad {
 /**
  * The Lord's orders for the battle, chosen in planning ({t:'stance'}) and kept from round to round (DESIGN §4):
  *  - 'advance' (the default): he marches on the nearest enemy squad like any squad.
- *  - 'hold': he guards the spot he was placed on. He fights what comes within HOLD_LEASH of it (a ranged Lord: his
- *    range + 3 m) and walks back; he joins the battle only once no other squad of his army is left.
- *  - 'follow': he stays FOLLOW_BEHIND behind own squad `squad` (towards his own Keep) and fights what comes within
- *    the same leash of that spot. When the squad falls he advances.
+ *  - 'hold': he waits on the spot he was placed on until an enemy soldier comes within HOLD_WATCH (25 m) of it, or
+ *    until no other squad of his army is left; from then on he advances. While he waits he strikes only what is in reach.
+ *  - 'follow': he stays FOLLOW_BEHIND (6 m) behind own squad `squad` (towards his own Keep) and leaves that spot only
+ *    for enemies within HOLD_LEASH of it (14 m; a ranged Lord: his range + 3 m). When the squad falls he advances.
  * It lives on the Lord's Squad, so the enemy sees it exactly like positions: as it was in the last battle
  * (EnemyView.lastArmy), never this round's.
  */

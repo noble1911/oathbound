@@ -39,9 +39,10 @@ export { concede, armyClasses, suddenDeathPct, unlockOptions, SUDDEN_DEATH_ROUND
 // squadLocked(squad, round) / squadHome(player, id) / relocatedSquads(player, round) / relocationsLeft(player, round) / canMuster(player, round)
 export { MUSTER_MOVES, MARCH_CAP, LOCKED_ERROR, squadLocked, squadHome, relocatedSquads, relocationsLeft, canMuster } from './match.ts';
 // Lord stance (DESIGN §4): {t:'stance', stance: 'advance' | 'hold' | 'follow', squad?} sets Squad.stance on the Lord's squad.
-// lordStance(player): LordStance — what he will do in the coming battle; HOLD_LEASH / FOLLOW_BEHIND are the sim's distances (cm).
+// lordStance(player): LordStance — what he will do in the coming battle. The sim's distances (cm): HOLD_WATCH (a holding Lord
+// is released by an enemy this close to his post), FOLLOW_BEHIND and HOLD_LEASH (a following Lord's spot and how far he leaves it).
 export { lordStance } from './match.ts';
-export { HOLD_LEASH, FOLLOW_BEHIND } from './battle.ts';
+export { HOLD_LEASH, HOLD_WATCH, FOLLOW_BEHIND } from './battle.ts';
 // concede(state, seat): IntentResult                  — `seat` gives up: phase 'over', the other seat wins, overReason 'concede'
 // suddenDeathPct(round)                               — keep-damage multiplier (percent): sudden death from round 10
 // unlockOptions(player, round): UnitType[]            — what may be unlocked this round (= PlayerState.draftOptions; not random)

@@ -54,9 +54,12 @@ const LEVEL_HP = LEVEL_HP_PCT;
 const LEVEL_DMG = LEVEL_DMG_PCT;
 const AGGRO = 1400;
 /** Lord stances (LordStance in types.ts): a Lord told to hold or to follow is tethered to a spot. He chases only what
- *  stands within HOLD_LEASH of it (a ranged Lord: his range + 3 m) and walks back to it. */
+ *  stands within HOLD_LEASH of it (a ranged Lord: his range + 3 m) and walks back to it. (A holding Lord is released
+ *  by an enemy within HOLD_WATCH, which is wider, so the leash only ever binds a following one.) */
 const ST_ADVANCE = 0, ST_HOLD = 1, ST_FOLLOW = 2;
 export const HOLD_LEASH = 1400;
+/** A holding Lord waits at his post until an enemy soldier comes within this distance of it. */
+export const HOLD_WATCH = 2500;
 /** A following Lord's spot: this far behind the centre of the squad he follows, towards his own Keep. */
 export const FOLLOW_BEHIND = 600;
 const BUCKET = 400;
@@ -666,14 +669,16 @@ class Battle {
       b.slotErr = b.slotErrNext;
       b.slotErrNext = 0;
     }
-    // Lord stances: a holding Lord is released when no other squad of his is left, a following one when the squad he
-    // follows has fallen; from then on he advances like any squad, from where he stands.
+    // Lord stances: a holding Lord is released when an enemy comes within HOLD_WATCH of his post or no other squad of
+    // his is left, a following one when the squad he follows has fallen; from then on he advances like any squad, from
+    // where he stands.
     for (const b of this.squads) {
       if (b.stance === ST_ADVANCE || !b.alive) continue;
       let free: boolean;
       if (b.stance === ST_HOLD) {
         free = true;
         for (const a of this.sideSquads[b.side]) if (a !== b && !a.summon && a.alive) { free = false; break; }
+        if (!free) this.near((1 - b.side) as Seat, b.ax, b.ay, HOLD_WATCH, (o) => { if (o.spawnTick <= this.t) free = true; });
       } else {
         const lead = b.leader!;
         free = !lead.alive;

@@ -2,7 +2,7 @@
 // {t:'stance'}, validated by the sim, hidden from the enemy until the battle, and obeyed deterministically.
 import { describe, expect, it } from 'vitest';
 import {
-  FOLLOW_BEHIND, HOLD_LEASH, applyBattle, applyIntent, botPlan, decodeReplay, forceReady, lordStance, mirrorPos, newMatch, nextRound, replayHash, simulateBattle, viewFor, UNITS,
+  FOLLOW_BEHIND, HOLD_LEASH, HOLD_WATCH, applyBattle, applyIntent, botPlan, decodeReplay, forceReady, lordStance, mirrorPos, newMatch, nextRound, replayHash, simulateBattle, viewFor, UNITS,
 } from '../src/sim/index.ts';
 import type { DecodedReplay, LordId, MatchState, Seat, Squad, UnitType, Vec2 } from '../src/sim/types.ts';
 
@@ -127,33 +127,47 @@ describe('Lord stance: the battle obeys it', () => {
     expect(replayHash(simulateBattle(s).replay)).toBe(base);
   });
 
-  it('hold: the Lord stays within the leash of his post while his army stands, then joins the battle', () => {
+  it('hold: the Lord waits at his post until an enemy comes within HOLD_WATCH of it or his army has fallen, then joins the battle', () => {
     const post: Vec2 = [3999, 1200];
     const s = setup(['marshal', 'warden'], [['militia', 'militia'], ['knights', 'knights', 'berserkers', 'berserkers']], post);
     expect(applyIntent(s, 0, { t: 'stance', stance: 'hold' }).ok).toBe(true);
-    const out = simulateBattle(s);
-    const d = decodeReplay(out.replay);
-    const ids = s.players[0].squads.slice(1).map((q) => q.id);
-    const tr = ids.map((id) => track(d, 0, id));
-    let held = 0, left = false;
+    const d = decodeReplay(simulateBattle(s).replay);
+    const n = d.soldierCount;
+    const tr = s.players[0].squads.slice(1).map((q) => track(d, 0, q.id));
+    const foes = d.replay.soldiers.map((o, i) => (o.side === 1 ? i : -1)).filter((i) => i >= 0);
+    let held = 0, left = false, released = false;
     for (let f = 0; f < d.frameCount; f++) {
       const lord = tr[0][f].lord;
       if (!lord) break;
-      const armyUp = tr.some((t) => t[f].squad);
+      // released by what the previous keyframe showed (one frame of slack: the sim decides every tick)
+      const g = Math.max(0, f - 1);
+      const near = foes.some((i) => d.hp[g * n + i] > 0 && Math.hypot(d.x[g * n + i] - post[0], d.y[g * n + i] - post[1]) <= HOLD_WATCH + 100);
+      if (near || !tr.some((t) => t[g].squad)) released = true;
       const off = Math.hypot(lord[0] - post[0], lord[1] - post[1]);
-      // one keyframe of slack: the release is decided at the start of a tick, the frame is sampled after
-      if (armyUp && (f + 1 >= d.frameCount || tr.some((t) => t[f + 1].squad))) { expect(off).toBeLessThanOrEqual(HOLD_LEASH + 200); held++; }
-      if (!armyUp && off > HOLD_LEASH + 400) left = true;
+      if (!released) { expect(off).toBeLessThan(60); held++; }
+      else if (off > 600) left = true;
     }
-    expect(held).toBeGreaterThan(5);
+    // his post is 12 m from his edge: he stands there while the lines meet at the river, 48 m away
+    expect(held).toBeGreaterThan(20);
     // his two Militia squads fall to four heavier squads; the Marshal then leaves his post and fights
     expect(left).toBe(true);
+  });
+
+  it('hold: an enemy within HOLD_WATCH of the post releases him at once', () => {
+    // posted at the front edge, 40 m from the enemy's front squads: outside the watch; the same post with the enemy Lord 20 m away: inside
+    const s = setup(['marshal', 'warden'], [['militia'], ['knights']], [3999, 3900]);
+    expect(applyIntent(s, 0, { t: 'stance', stance: 'hold' }).ok).toBe(true);
+    const far = track(decodeReplay(simulateBattle(s).replay), 0, s.players[0].squads[1].id);
+    expect(far[4].lord).toEqual([3999, 3900]);
+    lordOf(s, 1).pos = [3999, 3900 + HOLD_WATCH - 100];
+    const close = track(decodeReplay(simulateBattle(s).replay), 0, s.players[0].squads[1].id);
+    expect(close[4].lord![1]).toBeGreaterThan(3900 + 100);
   });
 
   it('hold is deterministic and the default Lord would have left the spot', () => {
     const s = setup(['marshal', 'warden'], [['militia', 'militia'], ['knights', 'knights']]);
     const walk = track(decodeReplay(simulateBattle(s).replay), 0, s.players[0].squads[1].id);
-    expect(Math.max(...walk.map((w) => (w.lord ? w.lord[1] : 0)))).toBeGreaterThan(1200 + HOLD_LEASH + 500);
+    expect(Math.max(...walk.slice(0, 50).map((w) => (w.lord ? w.lord[1] : 0)))).toBeGreaterThan(1200 + HOLD_LEASH + 500);
     expect(applyIntent(s, 0, { t: 'stance', stance: 'hold' }).ok).toBe(true);
     expect(replayHash(simulateBattle(s).replay)).toBe(replayHash(simulateBattle(structuredClone(s)).replay));
   });
