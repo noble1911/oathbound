@@ -222,6 +222,25 @@ neither moves nor attacks. All six are integer-only and seat-symmetric (`tests/s
 
 If the Lord dies in battle, it respawns next round like everything else. The death only costs you its presence in that fight.
 
+**Stance (the Lord's orders for the battle; `LordStance`, `{t:'stance'}`, `lordStance` in `src/sim/match.ts`).** In
+planning the player tells the Lord how to behave in the coming battle. It is free, can be changed as often as you like
+until you are ready, and lasts from round to round.
+- **Advance** (the default): he marches on the nearest enemy squad like any squad. A player who never touches the
+  control gets exactly the battle the game had before stances.
+- **Hold:** he waits on the spot he was placed on until an enemy soldier comes within **25 m** of it (`HOLD_WATCH`), or
+  until no other squad of his army is left; from then on he advances. While he waits he strikes only what is in his
+  reach. Posted at the front edge he joins a few seconds after the lines meet; posted deep he is a late reserve.
+- **Follow a squad** (picked by clicking it): he stays **6 m behind** that squad's centre (`FOLLOW_BEHIND`, towards his
+  own Keep) and leaves the spot only for enemies within 14 m of it (`HOLD_LEASH`; a ranged Lord: his range + 3 m). When
+  the squad falls he advances. Selling the squad puts him back on Advance.
+- **Hidden like positions:** the stance lives on the Lord's squad (`Squad.stance`), so the enemy sees the stance he
+  fought the *last* battle with on his ghost (`EnemyView.lastArmy`), never this round's.
+- It is an input of the battle like a position: nothing is rolled, the same orders always give the same battle, and the
+  seats mirror (`tests/sim.stance.test.ts`, `tests/sim.mirror.test.ts`).
+- What it is worth is measured in `docs/BALANCE.md`: in Hard's hands the flying Lords and the Archmage gain a great deal
+  from following a squad (alone they reach the enemy long before their army); every other Lord is best on Advance; Hold
+  loses a little wherever the Lord is posted, so it is a tool for a particular plan, not a default, and the bots never use it.
+
 A Lord is strong but must not carry the army: the balance target is that a Lord deals 25% or less of its army's
 damage on average (see `docs/BALANCE.md`). Lord power therefore sits in the passive and the army-wide ability
 rather than in the hero's own stats, and Lord levels come slowly (Lv10 needs 1375 XP).
