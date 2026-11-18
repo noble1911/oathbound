@@ -548,3 +548,14 @@ bring tall and wide closer. But it moved the Hard faction table by up to 18 poin
 
 Scripts: `tools/review/mkbotx.ts` regenerates `botx.ts` from `src/sim/bot.ts` (its knobs are `noLevel`, `noLayout`,
 `bias`, `sync` and `from`). `matches.ts` has a `lateLevel4` variant.
+
+## What changed after the review (2026-11-18): relocation and the relic slot
+
+Recommendations #3 and #5 were built together; the tables are in `docs/BALANCE.md` ("Current report").
+
+| Item | Change | Before → after |
+|---|---|---|
+| #5 Relocation | Squads lock where they are deployed; the Lord, this round's squads and turning stay free. Muster (instead of the round's unlock) relocates 3; a relic "of the March" 1 a round | `oracle` (fresh positional intel) 65% → 50.0%: the ghosts now tell nearly everything. A Hard that never musters wins 42% against one that does |
+| #3 Levelling | Relic slot at Lv2 (was Lv3). The flat 40% level cost and the armour slot at Lv1 were already in | `tall` vs `wide` head to head 42.2% → 49.1%; relics worn per Hard army 1.71 → 1.83, Normal 0.70 → 1.08 |
+| `tall` in `matches.ts` | Was one deploy *point* a round, which since the weighted deploys means 100-gold squads only (0.7%). Now half the points a round; the old one is `tall1` | `tall` vs Hard 43.0%, `wide` vs Hard 37.7% |
+| Chaos | Not addressed by this pass | 10 cm nudge flips 11.7% of battles (10.9% before) |

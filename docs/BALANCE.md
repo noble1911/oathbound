@@ -1,6 +1,6 @@
 # Oathbound v2: balance report
 
-The gated numbers come from `node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 1100000`: Hard
+The gated numbers come from `node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 4100000`: Hard
 against Hard and Normal against Normal (12 Lords, 7920 matches each) and the classic tournament of the six bot
 strategies (10 224 matches). Every entry plays every other entry from both seats. `--full` prints the whole report per
 field: the match-length histogram, the margin of victory, and the per-unit and per-legendary tables.
@@ -11,7 +11,340 @@ To re-tune:
 
 Both rewrite `src/sim/data/balance.ts`. Run one tuner at a time.
 
-## Current report: counter wheel, item rework, the Sun Mirror and the helpless-side rule (2026-11-17)
+## Current report: relocation, Muster and the relic slot at Lv2 (2026-11-18)
+
+Two features went in together and were balanced together (`docs/reviews/GAMEPLAY-2026-11-16.md` "Relocation",
+`docs/reviews/POSITIONING-AND-ECONOMY.md` #3 and #5; DESIGN §2):
+
+1. **Relocation and Muster.** A squad is locked where it was deployed. The Lord, this round's squads and turning on
+   the spot stay free. **Muster**, taken instead of the round's unit unlock, relocates up to 3 locked squads that
+   round; a Rare+ relic "of the March" gives one relocation a round without it. An older squad still refunds nothing.
+   The enemy ghosts mark which squads moved.
+2. **Levelling.** The relic slot opens at **Lv2** (it was Lv3), so one level opens every slot. Nothing else about
+   levels changed: a level still costs 40% of the unit and gives +25% life and +20% damage.
+
+The gates are run on seeds no tuning run saw:
+
+```
+node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 4100000
+```
+
+### Gates
+
+"Before" is both features with the numbers of the last report (`--seed0 1500000`); "after" is the re-tune below.
+
+| Gate | Hard, before | Hard, after | Normal, before | Normal, after | Classic, before | Classic, after | Target |
+|---|---|---|---|---|---|---|---|
+| Matches | 7920 | 7920 | 7920 | 7920 | 10224 | 10224 | |
+| Seat-0 win rate | 49.6% | **49.4%** | 50.4% | **51.6%** | 50.5% | **50.2%** | < 52% |
+| Kingdom vs the other two | 48.3% | **50.2%** | 49.9% | **48.5%** | 48.9% | **50.7%** | 46–54% |
+| Ashen vs the other two | 54.8% ⚠ | **50.1%** | 51.8% | **49.7%** | 53.0% | **46.2%** | 46–54% |
+| Caliphate vs the other two | 46.9% | **49.7%** | 48.3% | **51.9%** | 48.1% | **53.2%** | 46–54% |
+| Lords, lowest to highest | 44.7 (sultana) to 56.4 (lich, drakerider) ⚠ | **48.0 (drakerider) to 53.3 (lich)** | 46.2 (vizier) to 55.8 (rocrider) ⚠ | **45.8 (lich) to 54.1 (deathknight)** | 47.0 (vizier) to 53.3 (lich) | **45.2 (drakerider) to 54.8 (vizier)** | 45–55% |
+| Units (n >= 100) | 41.2 (knights) to 60.0 (wraith_rider) | **41.4 (knights) to 59.1 (dragon)** | 40.3 (spear_levy) to 60.8 (mages) ⚠ | **43.2 (grave_knight) to 58.6 (mages)** | 39.8 (djinn) ⚠ to 57.9 (corpse_catapult) | **42.4 (wraith_rider) to 58.7 (war_elephant)** | 40–60% |
+| Legendaries (wearer win rate) | 44.5 to 59.3 | **45.3 (windrunner) to 58.1 (lifebinder)** | 42.6 to 54.7 | **42.7 (gravebloom) to 58.0 (sunfire)** | 44.9 to 54.7 | **44.3 (gravebloom) to 57.2 (sunfire)** | 40–60% |
+| Average match length | 8.66 | **8.68** rounds | 8.75 | **8.86** rounds | 8.83 | **8.85** rounds | 8–11 |
+| 95th percentile / longest | 10 / 13 | 10 / 13 | 11 / 15 | 11 / 15 | 11 / 15 | 11 / 16 | 95% done by round 12 |
+| Past round 12 | 0.1% | **0.0%** | 0.7% | **0.8%** | 1.4% | **1.3%** | < 5% |
+| Blowouts (winner above 75% keep) | 38.6% | 37.6% | 46.4% | 43.5% | 49.5% | 49.8% | reported |
+| Lord share of army damage | 15.3% | 15.3% | 17.5% | 17.5% | 17.5% | 17.6% | <= 25% |
+
+Every gate is met at all three levels. Several sit near an edge (Classic: Ashen 46.2, Drake Rider 45.2, Grand Vizier
+54.8; Normal: Lich 45.8, Death Knight 54.1), and the same configuration reads up to 4 points apart on two seed sets
+(the first gate run of this pass, `--seed0 3100000`, differed from the one above only by five small hand steps and
+read Ashen 54.1 at Hard and Wraith Riders 60.2 at Normal).
+
+The table for the rules before this pass (free movement, the relic at Lv3) is below under "Previous report".
+
+### Relocation: what it does to play
+
+- **Intel is now exact.** `matches.ts --variants oracle,static --seeds 2` (528 matches each against shipped Hard): a
+  Hard that lays its free squads out against the enemy's *current* positions (`oracle`) wins **50.0 ± 4.3%**. Under
+  free movement it won 65%. The ghosts now tell nearly everything, because the enemy cannot re-form; what is left
+  hidden is this round's purchases, a Muster and the Lord.
+- **Muster is worth about 6–8 points to Hard.** A Hard that never musters (`OB_KNOBS='{"noMuster":true}'`, the
+  `hardx` strategy against `hard`, 2208 matches) wins **42.1%**; `static` (old squads never move) reads 44.5 ± 4.2%.
+  A Hard that musters every round and never unlocks wins 41.9%: the unlock is the better choice most rounds.
+- **When Hard calls it** (`considerMuster` in `src/sim/bot.ts`): after a round it did not win, when the three
+  worst-placed locked squads stand 60 m or more (summed) from their place in the formation against the enemy's
+  army, and the best unit on offer scores no more than 1.15 times the best it already has. With nothing left to
+  unlock it musters whenever one relocation of 8 m or more is worth making. Each of these thresholds was varied
+  (`musterMin` 3000 / 10000, `musterEdge` 1.0 / 1.4, without the lost-round condition, `relocateMin` 300 / 1500): all
+  read within 2 points of the shipped values (2208 matches each), so they were left alone.
+- **Long-term placement.** Hard's speed stagger is now measured against a fixed pace (a Golem's, 9) instead of the
+  slowest squad it has at the moment, so squads bought rounds apart still arrive together (the old, moving reference
+  reads 50.3% against it: no difference at the bot's level, but it no longer strands early squads). Normal and the
+  tournament strategies place each new squad opposite what it beats, as before; their relocation targets ignore the
+  enemy Lord, who moves freely.
+
+**Muster take rate and relocations** (`node tools/review/muster.ts --seeds 8`, each level against itself):
+
+```
+4224 matches (1056 per strategy, each against itself)
+strategy | Muster taken, of the rounds it was offered | ...when an unlock was the price | ...when free | Musters per match | relocations per Muster | squads relocated per match | after a lost round / after a won or drawn one
+hard     | 18.2% (2924/16040) | 9.9% | 82.3% (1848 free rounds) | 1.38 per seat | 2.62 | 3.63 | 27.3% / 9.5%
+           by round: r2 0.1%, r3 4.8%, r4 9.5%, r5 7.1%, r6 12.2%, r7 31.9%, r8 36.8%, r9 50.8%, r10 61.5%, r11 60.8%
+normal   | 10.8% (1803/16672) | 0.6% | 59.5% (2901 free rounds) | 0.85 per seat | 1.82 | 1.55 | 10.9% / 10.8%
+           by round: r2 0.0%, r3 0.0%, r4 0.0%, r5 0.3%, r6 0.6%, r7 22.6%, r8 16.9%, r9 41.8%, r10 47.0%, r11 52.5%, r12 55.4%
+easy     | 0.0% (0/15554) | 0.0% | 0.0% (2085 free rounds) | 0.00 per seat | 0.00 | 0.00 | 0.0% / 0.0%
+           by round: r2 0.0%, r3 0.0%, r4 0.0%, r5 0.0%, r6 0.0%, r7 0.0%, r8 0.0%, r9 0.0%, r10 0.0%, r11 0.0%, r12 0.0%
+counter  | 13.7% (2355/17148) | 1.0% | 69.3% (3188 free rounds) | 1.12 per seat | 1.98 | 2.21 | 13.5% / 14.0%
+           by round: r2 0.0%, r3 0.0%, r4 0.1%, r5 0.2%, r6 2.0%, r7 22.7%, r8 20.4%, r9 49.9%, r10 56.0%, r11 62.0%, r12 58.7%
+strategy | squads at match end | average squad level | share of squads at Lv1 / Lv2 / Lv3 / Lv4 / Lv5 | squads wearing a weapon / an armor / a relic | relics worn per army | items idle in the stash
+hard     | 10.3 | 2.10 | 37.0% / 34.7% / 15.5% / 7.0% / 5.9% | 19.2% / 18.2% / 17.8% | 1.83 | 0.02
+normal   | 11.9 | 1.76 | 46.1% / 38.4% / 10.4% / 3.5% / 1.6% | 10.6% / 26.3% / 9.1% | 1.08 | 0.56
+easy     | 14.0 | 1.08 | 92.2% / 7.3% / 0.5% / 0.0% / 0.0% | 11.9% / 12.7% / 4.7% | 0.66 | 1.95
+counter  | 14.0 | 1.45 | 59.9% / 35.9% / 3.8% / 0.3% / 0.1% | 8.7% / 24.6% / 6.7% | 0.94 | 0.49
+```
+
+- Hard takes Muster in 18% of the rounds it is offered: 10% of the rounds in which it costs an unlock (27% after a
+  lost round, 9.5% otherwise) and 82% of the rounds in which nothing is left to unlock. That is 1.4 Musters and 3.6
+  relocated squads per player per match, 2.6 squads per Muster.
+- Normal pays for a Muster in under 1% of rounds and takes the free one 60% of the time (0.85 Musters, 1.6 squads
+  relocated per match). Easy never musters.
+- Free Musters are most of the total. The Ashen roster is 8 units and the Caliphate's 10, so their last unlock
+  is in round 6 and round 8 and every Muster after that is free; the Kingdom's 14 last until round 12. Whether a Muster should still cost something then is an open design
+  question (see Open).
+
+### Levelling: what was measured and what changed
+
+The brief for this pass quoted the first review ("tall wins 0.7%, average level 1.05–1.14"). Two of those numbers
+were stale and one was an artefact:
+
+- The flat level cost (40% of the unit) and the armour slot at Lv1 shipped on 2026-11-15. Hard already spent 30% of
+  its gold on levels and ended matches at an average squad level of 2.06.
+- `tall` in `matches.ts` allowed **one deploy point** a round. Since deploys are weighted (100 gold = 1 point,
+  150–300 = 2, 400+ = 3, of 4), that variant could only ever buy 100-gold squads; it read 0.7% (2.1% now) because it
+  could not buy a Knight, not because levels are weak. `tall` is now **half the deploy points** a round (one mid
+  squad or two cheap ones, the rest into levels); the old definition is kept as `tall1`.
+
+With the corrected variant (`matches.ts --variants wide,tall --seeds 4`, 2112 matches each against shipped Hard, and
+`--variants tall --opp wide` for the two against each other; relocation already in):
+
+| Rule | `wide` vs Hard | `tall` vs Hard | `tall` vs `wide` |
+|---|---|---|---|
+| As shipped before (relic at Lv3, level 40%) | 45.3 ± 3.0 | 39.9 ± 3.0 | 42.2 ± 3.0 |
+| **Relic slot at Lv2** (chosen) | 37.4 | 43.1 | **48.9** |
+| Level costs 35% | 37.6 | 40.2 | 50.7 |
+| Level costs 33% | 34.1 | 41.5 | - |
+| Levels give +30% life, +25% damage | 32.9 | 40.4 | - |
+| Relic at Lv2 and level 35% | 31.8 | 40.8 | 56.5 |
+
+The relic at Lv2 was chosen: it brings tall against wide to 49%, it raised `tall` against Hard itself the most
+(40 → 43), it changes no number a player has learned, and it does what the review asked of items ("armour
+and relic slots rarely open"). Cheaper or stronger levels on top of it make never-levelling a losing line (wide 32%)
+and push tall past wide (56.5%). The 5-level cap stays.
+
+After the re-tune (`--seeds 4`): **`tall` vs `wide` 49.1 ± 3.0%**; against shipped Hard, `wide` 37.7 ± 2.9 and `tall`
+43.0 ± 3.0. Hard's own mix (HARD_LEVEL_BIAS 0.5; 0.4 and 0.65 read 50.9% and 47.3% against it) beats both pure lines,
+which is the intended shape: neither extreme is a trap, the mix is best.
+
+Levels and gear at match end (`muster.ts`, second table above): Hard ends at an average squad level of **2.10** (37%
+of squads at Lv1, 35% at Lv2, 28% higher), Normal at **1.76**. Hard's squads wear 1.83 relics per army (1.71 before
+the Lv2 slot; Normal 0.70 → 1.08) and 0.02 items sit idle in its stash. Level-ups are 31.1% of Hard's spend
+(`econ.ts --seeds 4`).
+
+### What changed
+
+**Rules** (`src/sim/match.ts`, `src/sim/data/items.ts`; DESIGN §2, §5).
+- `squadLocked`, `{t:'muster'}`, `MUSTER_MOVES` 3, `PlayerState.moveLimit / musterOffer / muster`,
+  `EnemyView.lastMoved`. A move of a locked squad is refused unless it is a turn on the spot, a move home, a further
+  move of a squad already relocated this round, or a relocation is left.
+- Relic affix `marching` ("of the March", Rare+, like "of Command"): +1 relocation a round, at most `MARCH_CAP` 2.
+- `SLOT_UNLOCK_LEVEL.relic` 3 → 2.
+
+**Bots** (`src/sim/bot.ts`): `applyLayout` moves only what the rule lets move; `considerMuster`, `musterWorth`,
+`wheelSpots`; the fixed stagger pace `STAGGER_REF`. `BotKnobs` / `setBotKnobs` and the `hardx` strategy are for A/B
+runs (`OB_KNOBS` in `tools/tournament.ts`).
+
+**Numbers** (`src/sim/data/balance.ts`; tuned with `--fields hard:24 --tune 4 --tune-what lords,factions`, then
+`--fields hard:24,normal:24,classic:1 --tune 2 --tune-what units`, then the reserves, then five hand steps).
+- `FACTION_POWER`: kingdom 914 → 915, ashen 1023 → 1010, caliphate 1081 → 1091.
+- `LORD_POWER`: marshal 144 → 148, warden 130 → 131, skylady 52 → 49, lich 92 → 86, sultana 160 → 165, deathknight 143 → 144, ossuary 73 → 77, drakerider 101 → 97, vizier 68 → 70, rajah 110 → 106, rocrider 72 → 71.
+- `UNIT_POWER`: berserkers 148 → 147, archers 77 → 76, mages 80 → 78, pegasus 147 → 149, ballista 108 → 107, golem 85 → 84, dragon 71 → 69, skeleton 166 → 169, grave_knight 124 → 126, wraith_rider 94 → 90, corpse_catapult 128 → 127, spear_levy 126 → 132, mamluk 138 → 136, war_elephant 90 → 88, sand_golem 106 → 104.
+- `NORMAL_RESERVE`: marshal 290 → 333, archmage 214 → 177, warden 185 → 217, skylady 117 → 83, lich 303 → 230, sultana 395 → 420, deathknight 330 → 328, ossuary 177 → 208, drakerider 326 → 272, vizier 8 → 20, rajah 274 → 250, rocrider 255 → 295.
+  now: marshal 33.3%, archmage 17.7%, warden 21.7%, skylady 8.3%, lich 23.0%, sultana 42.0%, deathknight 32.8%, ossuary 20.8%, drakerider 27.2%, vizier 2.0%, rajah 25.0%, rocrider 29.5% mean 23.6
+- `CLASSIC_RESERVE`: marshal 105 → 170, archmage 251 → 247, warden 82 → 111, skylady 31 → 0, lich 317 → 327, sultana 400 → 450, deathknight 332 → 345, ossuary 249 → 286, drakerider 259 → 274, vizier 6 → 55, rajah 319 → 310, rocrider 122 → 123.
+  now: marshal 17.0%, archmage 24.7%, warden 11.1%, skylady 0.0%, lich 32.7%, sultana 45.0%, deathknight 34.5%, ossuary 28.6%, drakerider 27.4%, vizier 5.5%, rajah 31.0%, rocrider 12.3% mean 22.5
+
+The reserve cap in the tuner went from 40% to 50% for the Sultana, whom Normal and the tournament strategies play 5
+to 8 points better than Hard does. **Reserves near one third are a cliff:** with 300 gold in round 1, a reserve above
+33.3% no longer leaves 200 for a 200-gold squad. The Death Knight read 49.5% at 32.8%, 36.5% at 35.2% and 56.1% at
+31.7% in three tuning steps. He is set to 32.8% by hand, and the Marshal (33.3%) sits on the same edge.
+
+### Lords, units and legendaries
+
+| Lord | Hard | Normal | Classic |
+|---|---|---|---|
+| Marshal Aldric | 48.4 | 46.9 | 52.7 |
+| Archmage Sefa | 49.5 | 51.4 | 49.7 |
+| Warden Hrolf | 52.7 | 48.4 | 49.2 |
+| Skylady Ione | 49.9 | 48.8 | 50.2 |
+| Lich-Priest Morthen | 53.3 | 45.8 | 47.5 |
+| Death Knight Vaelric | 50.8 | 54.1 | 49.1 |
+| Ossuary Warden Gorrath | 48.3 | 48.0 | 47.1 |
+| Drake Rider Nyssara | 48.0 | 51.2 | 45.2 |
+| Sultana Zahira | 50.3 | 52.4 | 53.8 |
+| Grand Vizier Kasim | 48.4 | 48.1 | 54.8 |
+| Rajah Bahadur | 48.9 | 51.4 | 50.4 |
+| Roc Rider Amira | 51.4 | 53.5 | 50.2 |
+
+| Unit | Hard | Normal | Classic |
+|---|---|---|---|
+| militia | 47.5 | 49.1 | 55.5 |
+| pikemen | 49.6 | 48.5 | 52.8 |
+| berserkers | 48.7 | 54.7 | 51.7 |
+| archers | 48.7 | 50.2 | 56.6 |
+| knights | 41.4 | 54.2 | 54.2 |
+| cavaliers | 49.2 | 48.1 | 48.9 |
+| mages | 49.7 | 58.6 | 54.2 |
+| clerics | 44.3 | 50.6 | 51.5 |
+| pegasus | 50.3 | 48.3 | 52.6 |
+| ballista | 52.0 | 47.9 | 53.7 |
+| trebuchet | 42.8 | 47.7 | 54.5 |
+| golem | 51.2 | 53.2 | 55.0 |
+| wyvern | 55.9 | 50.2 | 44.1 |
+| dragon | 59.1 | 55.5 | 49.0 |
+| skeleton | 47.5 | 44.2 | 44.0 |
+| grave_knight | 48.6 | 43.2 | 48.9 |
+| bone_archer | 47.8 | 49.1 | 50.4 |
+| wraith_rider | 56.6 | 58.0 | 42.4 |
+| grave_acolyte | 46.1 | 50.2 | 51.8 |
+| bone_drake | 52.5 | 46.3 | 45.9 |
+| corpse_catapult | 52.5 | 47.2 | 53.8 |
+| bone_golem | 49.5 | 50.5 | 48.2 |
+| spear_levy | 51.5 | 43.2 | 45.0 |
+| scimitar | 52.4 | 52.3 | 46.8 |
+| camel_archer | 54.0 | 46.6 | 49.7 |
+| mamluk | 50.1 | 55.6 | 52.0 |
+| djinn_binder | 51.0 | 58.2 | 52.5 |
+| sun_priest | 51.1 | 49.8 | 51.2 |
+| djinn | 55.5 | 50.8 | 43.1 |
+| war_elephant | 49.7 | 56.0 | 58.7 |
+| sand_golem | 54.7 | 52.3 | 51.5 |
+| sun_mirror | 53.3 | 50.4 | 49.5 |
+
+| Legendary | Hard | Normal | Classic |
+|---|---|---|---|
+| bloodthirst | 51.4 | 49.4 | 50.5 |
+| earthshaker | 48.6 | 46.5 | 50.6 |
+| ember_crown | 46.4 | 50.4 | 55.5 |
+| frostheart | 51.2 | 49.2 | 52.3 |
+| gravebloom | 45.3 | 42.7 | 44.3 |
+| hydra_volley | 49.1 | 51.5 | 55.5 |
+| kingsbane | 49.5 | 49.1 | 50.2 |
+| lifebinder | 58.1 | 55.2 | 50.8 |
+| mirror_aegis | 48.6 | 50.5 | 46.0 |
+| stormcaller | 52.0 | 48.1 | 47.7 |
+| sunfire | 52.2 | 58.0 | 57.2 |
+| undying_oath | 50.0 | 51.7 | 49.1 |
+| warhorn | 47.7 | 49.4 | 51.2 |
+| windrunner | 45.3 | 43.3 | 46.1 |
+
+Match lengths:
+- Hard: 6r 2.8%, 7r 13.0%, 8r 27.1%, 9r 33.4%, 10r 18.8%, 11r 4.5%, 12r 0.4%, 13r 0.0%.
+- Normal: 6r 2.4%, 7r 13.1%, 8r 25.5%, 9r 28.6%, 10r 19.6%, 11r 7.7%, 12r 2.2%, 13r 0.6%, 14r 0.1%, 15r 0.0%.
+- Classic: 6r 3.4%, 7r 14.8%, 8r 24.9%, 9r 26.1%, 10r 18.0%, 11r 8.4%, 12r 3.1%, 13r 1.0%, 14r 0.3%, 15r 0.1%, 16r 0.0%.
+
+Faction pairings (row beats column):
+- Hard: Kingdom v Ashen 49.5%, Kingdom v Caliphate 50.9%, Ashen v Caliphate 49.7%.
+- Normal: Kingdom v Ashen 54.4%, Kingdom v Caliphate 42.5%, Ashen v Caliphate 53.8%.
+- Classic: Kingdom v Ashen 54.2%, Kingdom v Caliphate 47.1%, Ashen v Caliphate 46.5%.
+
+Classic strategies: ranged 73.8%, counter 60.8%, random 46.0%, armor 44.8%, rush 41.4%, air 33.3%.
+
+### Ladder
+
+`node tools/tournament.ts --strats easy,normal,hard --seeds 4 --seed0 1200000` (5040 matches):
+
+| | Last report | Now | Target |
+|---|---|---|---|
+| Hard beats Normal | 84% | **81%** | > 65% |
+| Normal beats Easy | 90% | **90%** | > 75% |
+| Hard beats Easy | 98% | 97% | |
+
+### Every unit gets used
+
+`node tools/review/picks.ts --seeds 4` (528 matches; `--strat normal`, `--strat counter`). Share of each unit among
+the deploys of its own faction:
+
+| Unit | Hard: deploys (share) | Normal: deploys (share) | `counter` strategy: deploys (share) |
+|---|---|---|---|
+| militia | 1044 (28.1%) | 1090 (24.3%) | 1235 (23.7%) |
+| pikemen | 118 (3.2%) | 321 (7.2%) | 489 (9.4%) |
+| berserkers | 42 (1.1%) | 197 (4.4%) | 227 (4.4%) |
+| archers | 494 (13.3%) | 634 (14.1%) | 836 (16.1%) |
+| knights | 222 (6.0%) | 181 (4.0%) | 173 (3.3%) |
+| cavaliers | 355 (9.5%) | 347 (7.7%) | 344 (6.6%) |
+| mages | 292 (7.9%) | 284 (6.3%) | 352 (6.8%) |
+| clerics | 167 (4.5%) | 289 (6.4%) | 293 (5.6%) |
+| pegasus | 208 (5.6%) | 392 (8.7%) | 479 (9.2%) |
+| ballista | 43 (1.2%) | 192 (4.3%) | 189 (3.6%) |
+| trebuchet | 174 (4.7%) | 73 (1.6%) | 109 (2.1%) |
+| golem | 329 (8.8%) | 314 (7.0%) | 329 (6.3%) |
+| wyvern | 77 (2.1%) | 60 (1.3%) | 57 (1.1%) |
+| dragon | 154 (4.1%) | 110 (2.5%) | 92 (1.8%) |
+| skeleton | 1118 (29.9%) | 1199 (28.6%) | 1338 (26.2%) |
+| grave_knight | 364 (9.7%) | 495 (11.8%) | 564 (11.0%) |
+| bone_archer | 664 (17.7%) | 863 (20.6%) | 1169 (22.9%) |
+| wraith_rider | 327 (8.7%) | 339 (8.1%) | 448 (8.8%) |
+| grave_acolyte | 325 (8.7%) | 340 (8.1%) | 461 (9.0%) |
+| bone_drake | 399 (10.7%) | 381 (9.1%) | 422 (8.3%) |
+| corpse_catapult | 250 (6.7%) | 281 (6.7%) | 329 (6.4%) |
+| bone_golem | 294 (7.9%) | 291 (6.9%) | 382 (7.5%) |
+| spear_levy | 842 (24.4%) | 889 (24.1%) | 1200 (25.8%) |
+| scimitar | 364 (10.5%) | 447 (12.1%) | 567 (12.2%) |
+| camel_archer | 352 (10.2%) | 387 (10.5%) | 521 (11.2%) |
+| mamluk | 339 (9.8%) | 350 (9.5%) | 399 (8.6%) |
+| djinn_binder | 300 (8.7%) | 326 (8.8%) | 399 (8.6%) |
+| sun_priest | 238 (6.9%) | 288 (7.8%) | 351 (7.6%) |
+| djinn | 372 (10.8%) | 361 (9.8%) | 404 (8.7%) |
+| war_elephant | 177 (5.1%) | 71 (1.9%) | 113 (2.4%) |
+| sand_golem | 230 (6.7%) | 328 (8.9%) | 355 (7.6%) |
+| sun_mirror | 238 (6.9%) | 248 (6.7%) | 334 (7.2%) |
+
+The least used unit is berserkers at Hard (1.1%), wyvern at Normal (1.3%) and wyvern for
+the `counter` strategy (1.1%): none is under 1%.
+
+### Economy, placement and chaos
+
+- **Loot** (`picks.ts`): Hard's pick share by slot: weapon 33.4%, armor 35.3%, relic 31.3%; Normal: weapon 24.3%, armor 55.0%, relic 20.7%.
+  Take rate per legendary when offered (Hard): ember_crown 12.7% to earthshaker 51.5%; none above 60%.
+- **Economy** (`econ.ts --seeds 4`): deploys 68.9% of Hard's spend, level-ups 31.1%; mean unspent after planning 31
+  gold. Hard levels from round 1 (average squad level 1.6 after its first turn, 2.0 by round 5, 2.2 at round 10).
+- **Chaos** (`chaos.ts --seeds 2`): how often the round result flips when a whole army is shifted by 1 cm / 10 cm /
+  1 m / 3 m, or one squad by 1 m: all battles **10.5% / 11.7% / 14.4% / 18.4% / 8.4%** (last report: 9.0 / 10.9 /
+  14.6 / 17.6 / 6.6); close wipes 23.3 / 24.9 / 28.5 / 32.5 / 17.9; close stalls and timeouts 19.5 / 17.7 / 23.5 /
+  29.0 / 16.4. Unchanged within noise: the lock does not make battles less sensitive, it makes a placement last.
+  That raises what a noisy first placement costs, which is the risk the first review named for a hard lock
+  (POSITIONING-AND-ECONOMY §3, option B); Muster and the free Lord are the outlets.
+
+### Tried and rejected
+
+| Change | Result |
+|---|---|
+| Cheaper levels (35%, 33%) or bigger gains (+30% / +25%), alone or on top of the Lv2 relic | Never-levelling drops to 32–38% against Hard; with the Lv2 relic, tall beats wide 56.5% |
+| A Hard that always musters and never unlocks | 41.9% against shipped Hard |
+| A Hard that never musters | 42.1% |
+| Muster thresholds (distance, unlock edge, only after a loss, minimum relocation) | All within 2 points of the shipped values |
+| Hard's stagger against its slowest squad of the moment | 50.3% (kept the fixed pace: it is the long-term one) |
+| The reserve tuner past three steps at Normal | Oscillates on the one-third cliff (Death Knight 36–56%) |
+
+### Open
+
+- **Free Musters.** With nothing left to unlock a Muster costs nothing, and the Ashen and Caliphate rosters are fully
+  unlocked after rounds 6 and 8 while the Kingdom's lasts until round 12. Hard takes 82% of them. If late-game relocation should stay a
+  sacrifice, options are: no Muster without an unlock to give up, or a gold price for the free one.
+- **Hard pays for few Musters** (10% of rounds). It reads the layout by distance from its own formation, not by
+  simulating the matchup; a planner that tried the battle with and without three moves would use it better.
+- **Gates near the edge** at Normal and in the tournament (see Gates), and the reserve tables are still the lever
+  that evens the Lords there. Sultana's reserve is now 42% / 45%.
+- **Knights at Hard** read 41.4%, the Dragon 59.1%; both inside 40–60%, as before.
+- **Tall against Hard's mix** is 43%: a viable line against a pure wide one (49%), still behind a player who mixes.
+- `static`, `flip` and `shuffle` in `matches.ts` and `chaos.ts` move squads directly (not through `applyIntent`):
+  they are what-if analysis, not legal play under the lock.
+
+## Previous report: counter wheel, item rework, the Sun Mirror and the helpless-side rule (2026-11-17)
 
 The balance pass after the counter wheel, weighted deploys, swarm levelling and the item rework (commit `c832694`,
 `docs/reviews/GAMEPLAY-2026-11-16.md`), re-tuned after the Caliphate got its Siege unit, the **Sun Mirror** (commit

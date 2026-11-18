@@ -4,7 +4,7 @@
 - Each round, both players spend gold to deploy and upgrade squads on their half of a battlefield.
 - The battle then plays out in real time with no input.
 - Armies advance to destroy each other and push on to the enemy **Keep**.
-- The army is permanent: every squad returns at full strength next round, in the place it was deployed.
+- The army is permanent: every squad returns at full strength next round, in the place it was deployed, and it is **locked there** (a Muster, taken instead of a unit unlock, relocates three).
 - Mechabellum's reinforcement cards are replaced by **ARPG loot**: rarity-tiered items with random affixes and uniques, equipped onto squads and onto your Lord.
 
 The target is an AAA-feeling presentation: animated textured models, crowds of soldiers, real VFX and cinematic battle playback.
@@ -36,6 +36,9 @@ which units to unlock, what to deploy and where, which item to take and who wear
 - **Hidden information (Mechabellum-style):**
   - During planning you see where the enemy's army stood *last* round.
   - You don't see what they buy, move or equip this round until the battle starts.
+  - Squads are locked where they were deployed (§2), so the ghosts are where most of the enemy army will stand again.
+    Each ghost that stood somewhere else in the battle before is marked **moved** (`EnemyView.lastMoved`), and a squad
+    that was new last round is marked **new**. Both battles were public, so the marks add no hidden information.
   - Round 1 shows nothing.
 - **Battle end:** one army is wiped out, or 90 s of sim time pass, or the battle **stalls**, which ends it early:
   - neither side has anything that can target what is left of the other (e.g. ground melee against fliers);
@@ -94,7 +97,7 @@ which units to unlock, what to deploy and where, which item to take and who wear
 - **Army cap:** 16 squads.
 - **Unit unlocks (no random drafts):** you start with your Lord's 2 signature units. Every round, round 1 included, you may unlock **any one** locked unit whose `minRound` has come: in round 1 any unit of the basic pool, from round 2 any unit at all (the Dragon from round 5). It is a free strategic choice from the full list, the same rule for both players (`unlockOptions`; `PlayerState.draftOptions` holds that list). This is the Mechabellum-style counter-picking arms race, without the luck of the draw.
 - **Squad level-ups:** gold upgrades a squad from Lv1 to Lv5. Every level costs the same, **40% of the unit's cost**
-  (`LEVEL_COST_PCT`; a Lv5 squad costs 2.6× its price in all). Each level gives +25% HP and +20% damage, and Lv3 opens
+  (`LEVEL_COST_PCT`; a Lv5 squad costs 2.6× its price in all). Each level gives +25% HP and +20% damage, and Lv2 opens
   the relic slot. **Swarm squads level by adding soldiers instead** (`squadSizeAt`, `SWARM_GROWTH_PCT` = 25): each
   level adds 25% of the base squad size, rounded down (Militia 12 → 15 → 18 → 21 → 24; Skeletons and Levy 10 → 12 → 15
   → 17 → 20), with no per-soldier gain. A grown squad widens its formation (`formationCols`: 5 columns from 17
@@ -102,7 +105,22 @@ which units to unlock, what to deploy and where, which item to take and who wear
   needs no deployment and no army slot, and makes a squad's items count for more.
 - **Selling** in the round a squad was deployed is an undo: it refunds everything spent on it (its cost and any
   level-ups). A squad deployed in an earlier round refunds nothing.
-- Squads can be moved freely within your half during planning, every round.
+- **Relocation (Mechabellum-style; `squadLocked`, `relocationsLeft` in `src/sim/match.ts`).**
+  - **Locked:** a squad deployed in an earlier round is locked in place. The server refuses a move of it.
+  - **Free:** the Lord, every round; a squad bought this round, until the battle starts; and **turning** any squad on
+    the spot (a move to the same position with a new facing). Facing turns the formation's rows; it measures as noise
+    (docs/reviews/POSITIONING-AND-ECONOMY.md §1), so it is not worth a rule.
+  - **No free moves.** A round has 0 relocations.
+  - **Muster** (`{t:'muster'}`) is taken **instead of that round's unit unlock**: it allows **3 relocations**
+    (`MUSTER_MOVES`) of locked squads that round. A relocated squad may be moved again as often as you like, and moving
+    it back to where it stood gives the relocation back, so a Muster is three squads, not three drags. It is offered
+    from round 2, once a round, and cannot be taken after the unlock (or the unlock after it). When nothing is left to
+    unlock, Muster is still offered and then costs nothing.
+  - **"of the March"** (a Rare+ relic suffix): each one worn when a round begins allows one relocation that round
+    without a Muster, at most 2 (`MARCH_CAP`). A Muster adds its three on top.
+  - **Selling is not a way round it:** an older squad refunds nothing, so selling and rebuying it costs the full price,
+    deploy points, its levels and (until re-equipped) its items.
+  - The rule is the same for both seats (`tests/sim.relocation.test.ts`).
 - Squads may not overlap: each has a ground footprint (its formation's half-extent plus a body radius,
   `squadFootprint`), and a deploy or move onto another of your squads is refused ("overlaps another squad").
 
@@ -299,7 +317,7 @@ exactly the same items** (`rollLoot`, seeded by the match and the round only), a
 | Rare | yellow | 3 (or 2 and an active skill) | 36 |
 | Legendary | orange | 2 affixes + 1 legendary power (worth `LEGENDARY_POWER` = 16) | 40 |
 
-- **Slots:** a squad has Weapon and Armor from Lv1 and Relic from Lv3. The Lord has all three from the start. An item applies to *every soldier in the squad*.
+- **Slots:** a squad has Weapon and Armor from Lv1 and Relic from Lv2 (`SLOT_UNLOCK_LEVEL`; it was Lv3 until 2026-11-18: one level, 40% of the unit's price, now opens every slot). The Lord has all three from the start. An item applies to *every soldier in the squad*.
 - **Bases** (by slot; the implicit is of the slot's kind):
   - Weapon: Steel Blade (+damage), Ironbark Bow (Slaying fliers), War Axe (attack speed), Ash Spear (Slaying
     mounted), Grimoire (crit).
@@ -311,7 +329,7 @@ exactly the same items** (`rollLoot`, seeded by the match and the round only), a
   |---|---|
   | Offence (weapon) | Keen (+crit), Vicious (+damage), Slaying (+damage vs a tag), of Haste (+attack speed), of Embers (burn) |
   | Defence (armor) | Stalwart (+life), Plated (+physical reduction), of Warding (+magic resist), of Thorns (reflect melee), of the Phoenix (first death revived) |
-  | Utility (relic) | Fleet (+move speed), Far-reaching (+range, ranged only), of the Leech (lifesteal), of Frost (slow on hit, stacks to 50%), of Command (+2 deploy points next round, Rare+) |
+  | Utility (relic) | Fleet (+move speed), Far-reaching (+range, ranged only), of the Leech (lifesteal), of Frost (slow on hit, stacks to 50%), of Command (+2 deploy points next round, Rare+), of the March (relocate 1 locked squad every round, Rare+; §2) |
 
   Leech sits in utility rather than offence or defence: it is sustain that only works through damage dealt, so it
   suits neither pure kind, and it keeps the relic worth taking for melee armies.
@@ -462,11 +480,17 @@ The same infrastructure as v1 (cue-club pattern):
     buys and unlocks counters to the enemy's last army, keeps a frontline and an answer to fliers, keeps part of its
     gold in reserve (per Lord, `NORMAL_RESERVE` in `src/sim/data/balance.ts`: the lever that keeps Normal against
     Normal even), equips each item on the most valuable squad it works on, and sets each new squad down in its role
-    lane opposite what it beats. It never re-forms squads already placed, except archers under enemy fliers.
+    lane opposite what it beats. Squads are locked once placed (§2); it calls Muster when its locked squads stand far
+    from what they beat (its archers away from the enemy's fliers, say) and no unit on offer is worth more. In
+    practice that is mostly once its roster is fully unlocked and the Muster is free.
   - Every level **saves up** for a dear unit it wants (a Dragon costs more than a round's income).
-  - **Hard** spends everything, re-forms its whole army each round against the enemy's last formation (counters
-    opposite what they counter, raiders on the flank holding the enemy backline), gears squads by affix fit, and
-    makes slot-aware level-ups and counter drafts.
+  - **Hard** spends everything, sets each new squad and its Lord into a formation against the enemy's last one
+    (counters opposite what they counter, raiders on the flank holding the enemy backline, melee set back by speed
+    against a fixed pace so squads bought rounds apart still arrive together), gears squads by affix fit, and makes
+    slot-aware level-ups and counter drafts. It calls **Muster** instead of an unlock after a round it did not win,
+    when three of its locked squads stand far from their place in that formation and no unit on offer is clearly
+    better than what it has; with nothing left to unlock it musters whenever a relocation is worth making.
+  - **Easy** never musters.
   - A disconnected player's seat is played by Hard after the grace period, until they rejoin.
 - Spectators are allowed (read-only seats beyond 2).
 - **Conceding:** the `concede` message (or leaving a running match) ends the match with the opponent as the winner;
