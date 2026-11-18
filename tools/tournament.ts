@@ -147,10 +147,10 @@ async function main(): Promise<void> {
           const xs = byF[LORDS[l as LordId].faction];
           if (xs.length < 2 || b.lords[l] === undefined) continue;
           const mean = xs.reduce((a, x) => a + x, 0) / xs.length;
-          b.lords[l] = Math.max(40, Math.min(200, Math.round(b.lords[l] * (1 + step(wr - mean + 0.5, gain)))));
+          b.lords[l] = Math.max(25, Math.min(200, Math.round(b.lords[l] * (1 + step(wr - mean + 0.5, gain)))));
         }
       }
-    } else if (what.includes('lords')) for (const [l, wr] of Object.entries(rep.lords)) if (b.lords[l] !== undefined) b.lords[l] = Math.max(40, Math.min(200, Math.round(b.lords[l] * (1 + step(wr, gain)))));
+    } else if (what.includes('lords')) for (const [l, wr] of Object.entries(rep.lords)) if (b.lords[l] !== undefined) b.lords[l] = Math.max(25, Math.min(200, Math.round(b.lords[l] * (1 + step(wr, gain)))));
     // --tune-what reserve: the bots' per-Lord reserve (per mille of gold; NORMAL_RESERVE for a 'normal' field, CLASSIC_RESERVE
     // for 'classic'). A Lord that wins too much keeps more gold back: 6 per mille per point of win rate, at most 30 a step,
     // and the table's mean stays where it was unless a Lord would need less than nothing.

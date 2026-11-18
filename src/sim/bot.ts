@@ -369,10 +369,12 @@ export interface BotKnobs {
   levelBias: number;
   /** Never call Muster. */
   noMuster: boolean;
+  /** Leave the Lord on his default stance (advance). */
+  noStance: boolean;
 }
 const KNOBS: { base: BotKnobs; x: BotKnobs } = {
-  base: { musterMin: 6000, musterEdge: 1.15, musterAfterLoss: true, relocateMin: 800, staggerRef: 9, levelBias: 0.5, noMuster: false },
-  x: { musterMin: 6000, musterEdge: 1.15, musterAfterLoss: true, relocateMin: 800, staggerRef: 9, levelBias: 0.5, noMuster: false },
+  base: { musterMin: 6000, musterEdge: 1.15, musterAfterLoss: true, relocateMin: 800, staggerRef: 9, levelBias: 0.5, noMuster: false, noStance: false },
+  x: { musterMin: 6000, musterEdge: 1.15, musterAfterLoss: true, relocateMin: 800, staggerRef: 9, levelBias: 0.5, noMuster: false, noStance: false },
 };
 /** Set the experimental knobs of 'hardx' (review tooling only; the game never calls this). */
 export function setBotKnobs(k: Partial<BotKnobs>): void { Object.assign(KNOBS.x, KNOBS.base, k); }
@@ -568,6 +570,8 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
     const spot = freeSpotNear(p.squads, seat, 'lord', seat === 0 ? placeFor('lord', p.squads, p.lord) : mirrorPos(placeFor('lord', p.squads, p.lord)), lord.id);
     if (spot) applyIntent(s, seat, { t: 'move', squad: lord.id, pos: spot });
   }
+  // 6. The Lord's orders for the battle (he holds where he stands: this planner places him once).
+  lordOrders(s, seat, KN, false);
   applyIntent(s, seat, { t: 'ready' });
 }
 
@@ -904,6 +908,56 @@ function hardLevelPick(s: MatchState, seat: Seat, threats: Threat[], salt: numbe
   return best ? { q: best, w: bw } : null;
 }
 
+// ---------------------------------------------------------------- the Lord's stance
+
+/**
+ * The Lord's orders (LordStance), by what was measured (tools/review/orders.ts, docs/BALANCE.md): against a Hard that
+ * leaves every Lord on 'advance',
+ *  - a flying Lord who follows the dearest melee squad on the ground wins 64-70% (alone she reaches the enemy long
+ *    before her army and meets every bow on the field);
+ *  - the Ossuary Warden holding a post at the front edge wins 59% (Grave Taunt wants the enemy to come to him);
+ *  - the Archmage following her dearest ranged squad wins 56-59%;
+ *  - every other Lord does best on 'advance', and no Lord gains from 'hold' wherever he is posted (the Ossuary Warden
+ *    at the front edge is the nearest to even, 49%), so the bots never hold.
+ * Normal and the tournament strategies place the Lord once, behind the army, and re-form nothing: there only the
+ * Roc Rider gains from following (55%); the Skylady and the Archmage lose by it (44%, 43%) and the Drake Rider is even, so
+ * they stay on 'advance'.
+ */
+type LordOrder = 'front' | 'ranged' | 'hold';
+const LORD_ORDER: Partial<Record<LordId, LordOrder>> = { skylady: 'front', drakerider: 'front', rocrider: 'front', archmage: 'ranged' };
+const LORD_ORDER_CLASSIC: Partial<Record<LordId, LordOrder>> = { rocrider: 'front' };
+/** Where a holding Lord is posted (seat 0 frame): the front edge of the deploy zone. */
+const HOLD_POST_Y = 3800;
+
+function lordOrders(s: MatchState, seat: Seat, KN: BotKnobs, hard: boolean): void {
+  const repost = hard;
+  const p = s.players[seat];
+  const lordSq = p.squads.find((q) => q.type === 'lord');
+  const order = p.lord && !KN.noStance ? (hard ? LORD_ORDER : LORD_ORDER_CLASSIC)[p.lord] : undefined;
+  if (!lordSq) return;
+  const us = units(p.squads);
+  const dearest = (ok: (q: Squad) => boolean): Squad | null => {
+    let best: Squad | null = null;
+    for (const q of us) if (ok(q) && (!best || q.spent > best.spent)) best = q;
+    return best;
+  };
+  const melee = (q: Squad): boolean => UNITS[q.type as UnitType].range <= 400 && !UNITS[q.type as UnitType].traits.includes('healer');
+  let lead: Squad | null = null;
+  if (order === 'front') lead = dearest((q) => melee(q) && !UNITS[q.type as UnitType].tags.includes('flier'));
+  else if (order === 'ranged') lead = dearest((q) => !melee(q) && K(q.type as UnitType) !== 'trebuchet' && !UNITS[q.type as UnitType].traits.includes('healer'));
+  if (lead) { applyIntent(s, seat, { t: 'stance', stance: 'follow', squad: lead.id }); return; }
+  if (order === 'hold' && us.length) {
+    if (repost) {
+      const x = own(seat, lordSq.pos)[0];
+      const spot = freeSpotNear(p.squads, seat, 'lord', own(seat, [x, HOLD_POST_Y]), lordSq.id);
+      if (spot) applyIntent(s, seat, { t: 'move', squad: lordSq.id, pos: spot });
+    }
+    applyIntent(s, seat, { t: 'stance', stance: 'hold' });
+    return;
+  }
+  if (lordSq.stance) applyIntent(s, seat, { t: 'stance', stance: 'advance' });
+}
+
 function planHard(s: MatchState, seat: Seat, salt: number, strat: BotStrategy = 'hard'): void {
   const v = viewFor(s, seat);
   const p = s.players[seat];
@@ -961,6 +1015,8 @@ function planHard(s: MatchState, seat: Seat, salt: number, strat: BotStrategy = 
   //    it, and after a Muster so do the three locked squads that stand furthest from theirs.
   hardEquip(s, seat, threats);
   applyLayout(s, seat, hardLayout(p, threats, KN.staggerRef), KN.relocateMin);
+  // 7. The Lord's orders for the battle.
+  lordOrders(s, seat, KN, true);
   applyIntent(s, seat, { t: 'ready' });
 }
 
