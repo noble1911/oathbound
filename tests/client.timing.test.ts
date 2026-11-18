@@ -13,7 +13,7 @@ const items = { weapon: null, armor: null, relic: null };
 const terrain = genTerrain(7);
 
 function sq(id: number, type: UnitType, pos: Vec2, owner: Seat = 0): Squad {
-  return { id, owner, type, level: 1, pos, facing: owner === 0 ? 64 : 192, items: { ...items }, deployedRound: 1, spent: UNITS[type].cost };
+  return { id, owner, type, level: 1, pos, items: { ...items }, deployedRound: 1, spent: UNITS[type].cost };
 }
 
 /** A planning match whose seat-0 army is `army` (ids kept). */
@@ -53,9 +53,9 @@ describe('placement helpers', () => {
     for (const q of s.players[0].squads) expect(q.pos).toEqual(targets.get(q.id)!.pos);
   });
 
-  it('moves and turns a group inside the zone with no overlaps', () => {
+  it('moves a group inside the zone with no overlaps', () => {
     const group = army.slice(0, 3);
-    const out = groupPlace(group, [army[3]!], 0, [-5000, 4000], 64, 100)!;
+    const out = groupPlace(group, [army[3]!], 0, [-5000, 4000], 100)!;
     expect(out.size).toBe(3);
     const placed = [...out].map(([id, p]) => ({ ...army.find((q) => q.id === id)!, pos: p.pos }));
     for (const q of placed) {
@@ -63,7 +63,6 @@ describe('placement helpers', () => {
       expect(overlappingSquad([...placed, army[3]!], q.type, q.pos, q.id)).toBeNull();
       expect(q.pos[0] % 100 === 0 || q.pos[0] === deployZone(0).x1).toBe(true);
     }
-    expect(out.get(1)!.facing).toBe((64 + 64) & 255);
     const s = match(army);
     for (const i of planMoves(army, out, 0)) expect(applyIntent(s, 0, i).ok).toBe(true);
   });

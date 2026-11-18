@@ -1,4 +1,4 @@
-// Planning UX: box select, Shift-click, group drag and turn, undo (Ctrl+Z) of moves and deploys,
+// Planning UX: box select, Shift-click, group drag, group formation (R), undo (Ctrl+Z) of moves, formations and deploys,
 // mirror, sync by speed, grid snap, the march preview (T) and the Lord's aura ring, offline on
 // ?dev=planning (no server), on an army made free to move (locks and Muster: e2e/ux/relocation.mjs). Checks idle planning still draws 0 fps with the overlays up.
 // Screenshots: e2e/shots/plan-ux-<W>-*.png.
@@ -31,7 +31,7 @@ const frames = async (ms) => {
 // my squads (as the server has them) and where they are on screen
 const army = () => p.evaluate(() => {
   const { app } = window.__ob;
-  return app.room.view.you.squads.map((s) => ({ id: s.id, type: s.type, pos: [...s.pos], facing: s.facing, scr: app.scene.toScreen(s.pos, 0) }));
+  return app.room.view.you.squads.map((s) => ({ id: s.id, type: s.type, pos: [...s.pos], formation: window.__ob.sim.formationOf(s), scr: app.scene.toScreen(s.pos, 0) }));
 });
 const scr = (pos, h = 0) => p.evaluate((pos, h) => window.__ob.app.scene.toScreen(pos, h), pos, h);
 const sel = () => p.evaluate(() => [...window.__ob.app.screen.sel]);
@@ -128,17 +128,24 @@ try {
   const undone = await army();
   check(undone.every((q) => before.find((b) => b.id === q.id).pos.join() === q.pos.join()), 'Ctrl+Z puts the group back');
 
-  // ---- group turn (Shift+E), then undo
-  await p.keyboard.down('Shift');
-  await p.keyboard.press('e');
-  await p.keyboard.press('e');
-  await p.keyboard.up('Shift');
-  await sleep(500);
-  const turned = await army();
-  check(turned.filter((q) => s.includes(q.id)).some((q) => before.find((b) => b.id === q.id).facing !== q.facing), 'Shift+E turns the group');
-  await p.click('.ptools .pt-undo');
-  await sleep(600);
-  check((await army()).every((q) => { const b = before.find((x) => x.id === q.id); return b.pos.join() === q.pos.join() && b.facing === q.facing; }), 'two quick turns undo in one step');
+  // ---- group formation (R): the whole selection goes deep, in place, then undo
+  const able = await p.evaluate((ids) => window.__ob.app.room.view.you.squads.filter((q) => ids.includes(q.id) && window.__ob.sim.hasFormation(q.type)).map((q) => q.id), s);
+  check(!(await p.$('.sqpanel .g-turn')), 'no Turn button on the group panel');
+  if (able.length) {
+    check(!!(await p.$('.sqpanel .seg.formation')), 'the group panel has the Wide / Deep control');
+    const f0 = await army();
+    // any in the default formation: all take the other; else all go back to the default
+    const D = await p.evaluate(() => window.__ob.sim.DEFAULT_FORMATION);
+    const want = f0.some((q) => able.includes(q.id) && q.formation === D) ? (D === 'wide' ? 'deep' : 'wide') : D;
+    await p.keyboard.press('r');
+    await sleep(600);
+    const f1 = await army();
+    check(f1.filter((q) => able.includes(q.id)).every((q) => q.formation === want), `R sets the selection ${want} (${able.length} squads)`);
+    check(f1.every((q) => f0.find((b) => b.id === q.id).pos.join() === q.pos.join()), 'and moves nothing');
+    await p.click('.ptools .pt-undo');
+    await sleep(600);
+    check((await army()).every((q) => f0.find((b) => b.id === q.id).formation === q.formation), 'one undo puts every formation back');
+  }
 
   // ---- routes (T) and sync by speed
   await p.keyboard.press('t');
@@ -151,8 +158,9 @@ try {
   const synced = await p.evaluate(() => {
     const scr = window.__ob.app.screen;
     const me = window.__ob.app.room.view.you;
-    // a squad parked on the back edge is too fast to hold back any further: it is left out of the spread
-    return me.squads.filter((q) => q.type !== 'lord').map((q) => { const m = scr.march(q); return m.ranged || q.pos[1] <= 700 ? null : m.river?.sec; }).filter((x) => x != null);
+    // a squad parked on the back edge is too fast to hold back any further: it is left out of the spread. Its centre
+    // stands its footprint (capped at 6 m, timing.ts syncBySpeed) inside the zone's back edge (y 400)
+    return me.squads.filter((q) => q.type !== 'lord').map((q) => { const m = scr.march(q); return m.ranged || q.pos[1] <= 1000 ? null : m.river?.sec; }).filter((x) => x != null);
   });
   check(synced.length < 2 || Math.max(...synced) - Math.min(...synced) < 1, `sync: melee river times ${synced.map((x) => x.toFixed(1)).join(', ')}`);
   await p.keyboard.down('Control');

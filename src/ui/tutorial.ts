@@ -17,6 +17,7 @@ import { sound } from '../audio.ts';
 import { $, el, store } from './dom.ts';
 import { icon } from './icons.ts';
 import { COUNTER_TEXT } from './gamedata.ts';
+import { formationCoach, formationLockedCoach } from './formation.ts';
 
 interface Step {
   id: string;
@@ -122,7 +123,7 @@ export class Coach {
         if (has('.planning.item-dragging')) return { id: 'equip', target: '.stash', title: 'Drop it on a squad', text: 'Release the item over a squad on the field, or over a slot in its panel.' };
         return { id: 'equip', target: '.stash', title: 'Equip your loot', text: `<b>Drag the item</b> from your stash onto a squad or your Lord. Squads carry a Weapon and Armor from level ${armor}, a Relic from level ${SLOT_UNLOCK_LEVEL.relic}; your Lord has all three slots.` };
       }
-      if (!army.length && canDeploy) return { id: 'deploy', slot: shopSlot, target: '.ucard:not(.off)', title: 'Deploy a squad', text: 'These are your unit types. <b>Drag a card onto your half of the field</b> (inside the glowing border), or press <kbd>1</kbd> and click the ground. <kbd>Q</kbd> <kbd>E</kbd> turn it while you place.' };
+      if (!army.length && canDeploy) return { id: 'deploy', slot: shopSlot, target: '.ucard:not(.off)', title: 'Deploy a squad', text: 'These are your unit types. <b>Drag a card onto your half of the field</b> (inside the glowing border), or press <kbd>1</kbd> and click the ground. ' + formationCoach() };
       const up = army.find((s) => s.level < MAX_SQUAD_LEVEL && me.gold >= levelUpCost(s.type as never, s.level));
       if (army.some((s) => s.level > 1)) this.seen.add('level-done');
       // round 2 teaches levelling up before anything else is bought (the tutorial match pays for it)
@@ -137,7 +138,7 @@ export class Coach {
       if (up) return levelStep();
       // squads from earlier rounds are locked in place (DESIGN §2): said once, the first time there are some
       if (round >= 2 && army.some((s) => squadLocked(s, round)) && !this.seen.has('locked-done'))
-        return { id: 'locked', target: '.lock-n', title: 'Locked in place', text: `Your squads from last round are <b>locked in place</b>: drag only this round's squads and your Lord. Turning a locked squad is free (<kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd>). To move up to ${MUSTER_MOVES} of them, take <b>Muster</b> instead of a unit unlock.` };
+        return { id: 'locked', target: '.lock-n', title: 'Locked in place', text: `Your squads from last round are <b>locked in place</b>: drag only this round's squads and your Lord. ${formationLockedCoach()} To move up to ${MUSTER_MOVES} of them, take <b>Muster</b> instead of a unit unlock.` };
       // two melee squads that may still move, of different speeds: time to teach the stagger
       const melee = army.filter((s) => !squadLocked(s, round) || (me.moveLimit ?? 0) > 0).map((s) => UNITS[s.type as UnitType]).filter((d) => d && d.range <= 400 && !d.tags.includes('flier'));
       if (round >= 2 && new Set(melee.map((d) => d.speed)).size >= 2 && !this.seen.has('timing-done'))

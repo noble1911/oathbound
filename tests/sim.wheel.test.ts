@@ -17,7 +17,7 @@ function arena(mine: Spec[], theirs: Spec[], lords: [LordId, LordId] = ['marshal
     p.squads[0].pos = seat === 0 ? [300, 500] : [7699, 11499];
     for (const [unit, level, pos] of seat === 0 ? mine : theirs) {
       const at: Vec2 = seat === 0 ? pos : [7999 - pos[0], 11999 - pos[1]];
-      p.squads.push({ id: s.nextId++, owner: seat, type: unit, level, pos: at, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
+      p.squads.push({ id: s.nextId++, owner: seat, type: unit, level, pos: at, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
     }
   }
   return s;

@@ -36,7 +36,7 @@ function arena(mine: Spec[], theirs: Spec[], lords: [LordId, LordId] = ['warden'
       const at: Vec2 = seat === 0 ? pos : [7999 - pos[0], 11999 - pos[1]];
       const items = { weapon: null, armor: null, relic: null } as { weapon: Item | null; armor: Item | null; relic: Item | null };
       if (skill) items[SKILLS[skill].slot] = skillItem(skill);
-      p.squads.push({ id: s.nextId++, owner: seat, type: unit, level, pos: at, facing: seat === 0 ? 64 : 192, items, deployedRound: 1, spent: UNITS[unit].cost * level });
+      p.squads.push({ id: s.nextId++, owner: seat, type: unit, level, pos: at, items, deployedRound: 1, spent: UNITS[unit].cost * level });
     }
   }
   return s;
@@ -125,7 +125,7 @@ describe('skill loot', () => {
   it('skill items reach both players alike: the offer does not look at the army', () => {
     const s = newMatch(5, ['marshal', 'marshal']);
     const p = s.players[0];
-    p.squads.push({ id: 99, owner: 0, type: 'archers', level: 4, pos: [2000, 2000], facing: 64, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 100 });
+    p.squads.push({ id: 99, owner: 0, type: 'archers', level: 4, pos: [2000, 2000], items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 100 });
     expect(armyClasses(p).sort()).toEqual(['infantry', 'lord', 'ranged']);
     expect(skillFits({ skill: 'fireball' }, armyClasses(p))).toBe(false);
     expect(skillFits({ skill: 'cleave' }, armyClasses(p))).toBe(true);

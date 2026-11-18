@@ -138,7 +138,7 @@ describe('real sim', () => {
     const before = g.view!.you!.squads.length;
     // a distinctive spot in seat 1's half
     const pos: Vec2 = [1234, 9876];
-    guest.send({ t: 'intent', intent: { t: 'deploy', unit: g.view!.you!.unlocked[0], pos, facing: 199 } });
+    guest.send({ t: 'intent', intent: { t: 'deploy', unit: g.view!.you!.unlocked[0], pos, formation: 'deep' } });
     const after = await guest.wait('room', (m) => (m.room.view?.you?.squads.length ?? 0) > before);
     const mine = after.room.view!.you!.squads.find((s) => s.pos[0] === 1234);
     expect(mine).toBeTruthy();

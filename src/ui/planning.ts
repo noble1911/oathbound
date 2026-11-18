@@ -1,12 +1,13 @@
 // Planning HUD: Keep bars / round / timer, the resource strip (gold, deploys n/limit, army, the
-// enemy-intel label: last round's enemy positions are always drawn from round 2), the shop bar of unlocked units, drag-to-deploy with a formation ghost and rotation
-// (right-drag or Q/E), moving squads, the selected-squad panel (level-up, stats, item slots,
+// enemy-intel label: last round's enemy positions are always drawn from round 2), the shop bar of unlocked units, drag-to-deploy with a formation ghost,
+// moving squads, the selected-squad panel (formation wide / deep, level-up, stats, item slots,
 // sell), the stash with drag-and-drop equipping and comparison tooltips, the loot and draft
-// modals, and Ready. Keys: Space ready, Tab / Shift+Tab select the next / previous of your squads, 1-9 0 - shop, Q/E turn the squad while placing
-// or dragging (Shift+Q/E for the selected squad; otherwise Q/E turn the camera), U level up, Del
+// modals, and Ready. Squads always face the enemy; how they stand is their formation (src/ui/formation.ts). Keys: Space
+// ready, Tab / Shift+Tab select the next / previous of your squads, 1-9 0 - shop, R wide / deep (the selection, or the
+// squad being placed), U level up, Del
 // sell (press twice), Home reset the camera, Esc cancel. Spectators get a read-only version: both
 // Keeps, both last-round armies, no shop, no deploy badge.
-import type { Intent, Item, LordId, LordStance, PlayerState, PlayerView, Seat, Slot, Squad, UnitType, Vec2 } from '../sim/types.ts';
+import type { Formation, Intent, Item, LordId, LordStance, PlayerState, PlayerView, Seat, Slot, Squad, UnitType, Vec2 } from '../sim/types.ts';
 import { factionOfLord } from '../sim/data/factions.ts';
 import type { RoomView } from '../net/protocol.ts';
 import { UNITS } from '../sim/data/units.ts';
@@ -24,40 +25,36 @@ import { classIcon, crest, deployChip, squadTooltip, statBlock, countersBlock, s
 import { squadSheet } from '../sim/sheet.ts';
 import { squadSize } from '../sim/battle.ts';
 import { squadSkills } from '../sim/data/skills.ts';
-import { defaultFacing, deployRefusal, effectiveStats, levelGainText, rarityRank, SHOP_KEYS, SLOT_LABEL, SLOTS, slotOpen, soldierStats, unitName, allItems } from './gamedata.ts';
+import { deployRefusal, effectiveStats, levelGainText, rarityRank, SHOP_KEYS, SLOT_LABEL, SLOTS, slotOpen, soldierStats, unitName, allItems } from './gamedata.ts';
 import { niceError, TopBar } from './hud.ts';
 import { DraftModal, LootModal, draftKey } from './loot.ts';
 import { frontLine, groupPlace, itemsKey, marchFoes, marchOf, mirrorPlace, planMoves, settle, snapPos, syncBySpeed, type March, type MarchFoe, type Placed } from './timing.ts';
 import type { TagBadge, TimingSpec } from './scene-adapter.ts';
 import { dragRefusal, ghostMark, GHOST_MARK_TEXT, lockedText, lockState, mirrorable, pinnedIn, relocCount, relocSource, targetsRefusal, type RelocMe } from './relocation.ts';
+import { canForm, DEFAULT_FORMATION, FORMATIONS, FORMATION_FREE, FORMATION_ICON, FORMATION_KEY, FORMATION_LABEL, formationIntent, formationLine, formationOf, formationTip, ghostFormationText, groupTarget, marked, otherFormation, withFormation } from './formation.ts';
 import { followable, ghostStanceText, leadName, sameStance, shownStance, stanceIntent, stanceLeash, stanceLine, stanceMarker, stanceTip, STANCE_ICON, STANCE_KINDS, STANCE_LABEL } from './stance.ts';
 
 type Drag =
-  | { kind: 'place'; unit: UnitType; facing: number; fromShop: boolean; moved: boolean; pos: Vec2 | null; rot: Vec2 | null }
-  | { kind: 'move'; id: number; facing: number; start: [number, number]; moved: boolean; pos: Vec2 | null; rot: Vec2 | null }
+  /** Placing a unit from the shop: the default formation unless R flipped it for this one placement (nothing is remembered). */
+  | { kind: 'place'; unit: UnitType; formation: Formation; fromShop: boolean; moved: boolean; pos: Vec2 | null }
+  | { kind: 'move'; id: number; start: [number, number]; moved: boolean; pos: Vec2 | null }
   /**
    * Several selected squads at once: `grab` is the ground under the press, `delta` how far the group has
-   * moved, `steps` how far it has turned about its centroid (right-drag or Q/E). `base` is where each
-   * squad stood when the drag began; `out` the settled spots shown while dragging.
+   * moved. `base` is where each squad stood when the drag began; `out` the settled spots shown while dragging.
    */
-  | { kind: 'group'; ids: number[]; start: [number, number]; grab: Vec2; moved: boolean; delta: Vec2; steps: number; rot: { from: number; at: number } | null; base: Map<number, Placed>; out: Map<number, Placed> | null; pos: Vec2 | null; turnOnly: boolean; hit: number; pinned: Set<number>; turnPinned: Set<number> };
+  | { kind: 'group'; ids: number[]; start: [number, number]; grab: Vec2; moved: boolean; delta: Vec2; base: Map<number, Placed>; out: Map<number, Placed> | null; pos: Vec2 | null; hit: number; pinned: Set<number> };
 
 /** One undoable planning action: `undo` sends the intents that revert it (false: nothing left to revert). */
 interface UndoEntry {
   label: string;
   at: number;
   undo: () => boolean;
-  /** Same key, moments apart (a few Q/E presses): one undo step. */
   key?: string;
 }
 const UNDO_MAX = 24;
-/** Group turn per Q/E press (binary angle: 16 = 22.5 degrees). */
-const TURN_STEP = 16;
 
 const GHOST_TIP = 'The red ghosts on the far half are where the enemy army stood in the last battle. You never see what they are doing now. Enemy squads stay where they stand unless they Muster. Hover or click one to read it.';
 const GHOST_TIP_NONE = 'From round 2 you always see where the enemy army stood in the last battle.';
-
-const ANG = (dx: number, dy: number) => Math.round(((Math.atan2(dy, dx) / (Math.PI * 2)) * 256 + 256)) & 255;
 
 function bestRarity(sq: Squad): SquadVisual['rarity'] {
   let r: SquadVisual['rarity'] = null;
@@ -69,7 +66,7 @@ function bestRarity(sq: Squad): SquadVisual['rarity'] {
 }
 
 export function visual(sq: Squad, lord: LordId | null): SquadVisual {
-  return { id: sq.id, type: sq.type, lord: sq.type === 'lord' ? lord : null, owner: sq.owner, pos: sq.pos, facing: sq.facing, level: sq.level, size: squadSize(sq), rarity: bestRarity(sq) };
+  return { id: sq.id, type: sq.type, lord: sq.type === 'lord' ? lord : null, owner: sq.owner, pos: sq.pos, formation: formationOf(sq), level: sq.level, size: squadSize(sq), rarity: bestRarity(sq) };
 }
 
 export class PlanningScreen {
@@ -97,6 +94,8 @@ export class PlanningScreen {
   private drag: Drag | null = null;
   /** Where my squads are shown until the server's snapshot catches up with the moves just sent. */
   private pend = new Map<number, Placed>();
+  /** Formations just sent and not yet in a snapshot (shown at once; dropped, so the squad snaps back, on a refusal). */
+  private pendForm = new Map<number, Formation>();
   /** This planning phase's undoable actions (newest last). */
   private undos: UndoEntry[] = [];
   /** Box selection in progress (screen px). */
@@ -202,6 +201,7 @@ export class PlanningScreen {
     if (newRound) {
       // undo, optimistic moves and the selection belong to one planning phase
       this.pend.clear();
+      this.pendForm.clear();
       this.undos = [];
       if (this.sel.size > 1) this.sel.clear();
       this.pendStance = null;
@@ -211,7 +211,11 @@ export class PlanningScreen {
     if (this.me?.ready) this.endPick();
     for (const [id, p] of this.pend) {
       const sq = this.me?.squads.find((s) => s.id === id);
-      if (!sq || (sq.pos[0] === p.pos[0] && sq.pos[1] === p.pos[1] && sq.facing === p.facing)) this.pend.delete(id);
+      if (!sq || (sq.pos[0] === p.pos[0] && sq.pos[1] === p.pos[1])) this.pend.delete(id);
+    }
+    for (const [id, f] of this.pendForm) {
+      const sq = this.me?.squads.find((s) => s.id === id);
+      if (!sq || formationOf(sq) === f) this.pendForm.delete(id);
     }
     const gone = [...this.sel].filter((id) => !this.me?.squads.some((s) => s.id === id));
     if (gone.length) {
@@ -348,8 +352,9 @@ export class PlanningScreen {
     const last = this.undos[this.undos.length - 1];
     if (last && performance.now() - last.at < 1500) this.undos.pop();
     this.pend.clear();
-    if (this.pendStance) {
+    if (this.pendStance || this.pendForm.size) {
       this.pendStance = null;
+      this.pendForm.clear();
       this.renderPanel();
     }
     this.refuse(e);
@@ -382,7 +387,10 @@ export class PlanningScreen {
     const live = this.drag?.kind === 'group' && this.drag.moved ? this.drag.out : null;
     return me.squads.map((s) => {
       const p = live?.get(s.id) ?? this.pend.get(s.id);
-      return p ? { ...s, pos: p.pos, facing: p.facing } : s;
+      const f = this.pendForm.get(s.id);
+      if (!p && !f) return s;
+      const q: Squad = { ...s, ...(p ? { pos: p.pos } : {}) };
+      return f ? withFormation(q, f) : q;
     });
   }
 
@@ -470,10 +478,10 @@ export class PlanningScreen {
     const c = relocCount(rm, this.round);
     const tipText = moves
       ? `${relocSource(me)}: relocate up to ${c.limit} of your squads from earlier rounds this round (${c.used} used). Moving one back to where it stood frees its move. This round's squads and the Lord move freely.`
-      : `Squads deployed in earlier rounds stay where they stand: drag only this round's squads and the Lord. Turning a locked squad is free. Take Muster instead of a unit unlock to relocate up to ${MUSTER_MOVES}.`;
+      : `Squads deployed in earlier rounds stay where they stand: drag only this round's squads and the Lord. Their formation is still free to change. Take Muster instead of a unit unlock to relocate up to ${MUSTER_MOVES}.`;
     return moves
       ? `<div class="notice lock-n moves${c.left ? '' : ' none'}" data-tip="${esc(tipText)}">${icon('move')}<span><b>Moves left <em>${c.left}/${c.limit}</em></b><small>${esc(relocSource(me))} · relocate locked squads</small></span></div>`
-      : `<div class="notice lock-n" data-tip="${esc(tipText)}">${icon('lock')}<span><b>${locked} locked in place</b><small>Turn freely · Muster to relocate</small></span></div>`;
+      : `<div class="notice lock-n" data-tip="${esc(tipText)}">${icon('lock')}<span><b>${locked} locked in place</b><small>Formation free · Muster to relocate</small></span></div>`;
   }
 
   /** Why a unit can't be deployed right now, or null. */
@@ -521,7 +529,7 @@ export class PlanningScreen {
       tip(c, () => {
         const why = this.blocked(u);
         const k = SHOP_KEYS[units.indexOf(u)];
-        return unitTooltip(u, why ? `<div class="it-hint bad">${esc(why)}</div>` : `<div class="it-hint">Drag onto your half, or ${k ? `press ${k}` : 'click'} then click the field. Q/E or right-drag turns it.</div>`, this.me?.lord ?? null);
+        return unitTooltip(u, why ? `<div class="it-hint bad">${esc(why)}</div>` : `<div class="it-hint">Drag onto your half, or ${k ? `press ${k}` : 'click'} then click the field.${canForm(u) ? ` It stands ${FORMATION_LABEL[DEFAULT_FORMATION].toLowerCase()}; ${FORMATION_KEY} while placing makes it ${FORMATION_LABEL[otherFormation(DEFAULT_FORMATION)].toLowerCase()}.` : ''}</div>`, this.me?.lord ?? null);
       });
       c.addEventListener('pointerenter', () => sound.hover());
       c.addEventListener('pointerdown', (e) => {
@@ -668,20 +676,30 @@ export class PlanningScreen {
     const spread = times.length >= 2 ? Math.max(...times) - Math.min(...times) : null;
     const lord = me.lord;
     const stance = this.stanceNow();
+    // formation of the whole selection (the squads that have one): one press sets them all
+    const able = shown.filter((q) => canForm(q.type));
+    const fms = new Set(able.map((q) => formationOf(q)));
+    const one = fms.size === 1 ? [...fms][0]! : null;
+    const deep = able.filter((q) => formationOf(q) === 'deep').length;
+    const fmLine = one ? formationLine(one) : `Mixed: ${able.length - deep} wide, ${deep} deep`;
+    const fm = able.length
+      ? `<div class="sp-sec stc fm"><small data-tip="${esc(`Sets every selected squad that has a formation (${able.length} of ${shown.length}). ${FORMATION_FREE}.`)}">Formation${able.length === shown.length ? '' : ` · ${able.length}/${shown.length}`}</small>${this.formSeg(one, me.ready, 'Formation of the selected squads')}<p class="stc-line">${icon(FORMATION_ICON[one ?? DEFAULT_FORMATION])}<span>${esc(fmLine)}</span></p></div>`
+      : '';
     const html = `
       <header class="sp-h"><div class="sp-t"><small>Selection</small><b>${rows.length} squads</b><span class="sp-gsum">${melee.length} melee · ${rows.length - melee.length} ranged or Lord</span></div><button class="icon close" data-tip="Deselect [Esc]">${icon('close')}</button></header>
-      <div class="sp-acts grp"><button class="btn primary g-sync" ${me.ready || melee.length < 2 ? 'disabled' : ''} data-tip="Stagger the selected melee squads in depth so they reach the river together: the slowest at the front edge, the fast ones held back.">${icon('sync')}<span>Sync by speed</span></button><button class="btn g-turn" ${me.ready ? 'disabled' : ''} data-tip="Turn the group a quarter about its centre [Shift+E]">${icon('rotate')}<span>Turn</span></button></div>
+      <div class="sp-acts grp"><button class="btn primary g-sync" ${me.ready || melee.length < 2 ? 'disabled' : ''} data-tip="Stagger the selected melee squads in depth so they reach the river together: the slowest at the front edge, the fast ones held back.">${icon('sync')}<span>Sync by speed</span></button></div>
       ${spread !== null ? `<p class="sp-gnote ${spread <= 1 ? 'good' : ''}">${spread <= 1 ? `Melee reaches the river together, ${Math.max(...times).toFixed(1)} s in` : `Melee reaches the river <b>${spread.toFixed(1)} s</b> apart (${Math.min(...times).toFixed(1)} to ${Math.max(...times).toFixed(1)} s)`}</p>` : ''}
+      ${fm}
       <div class="sp-sec"><small>March · to the river</small><ul class="sp-glist">${rows
         .map(({ q, m }) => `<li data-id="${q.id}" data-tip="Select only this squad">${crest(q.type, q.type === 'lord' ? lord : null, 'sm')}<span class="gl-n">${esc(unitName(q.type, q.type === 'lord' ? lord : null))}</span><small class="gl-l">${q.type === 'lord' ? '' : `Lv ${q.level}`}</small><small class="gl-s">${m.speed.toFixed(1)} m/s</small><b class="gl-t">${q.type === 'lord' && stance.t !== 'advance' ? STANCE_LABEL[stance.t] : m.river ? `${m.river.sec.toFixed(1)} s` : m.hold ? `hold ${m.hold.sec.toFixed(1)} s` : '–'}</b></li>`)
         .join('')}</ul></div>
-      <p class="sp-hint">Drag one to move them all · right-drag or <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>Shift</kbd>-click add or remove · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</p>`;
+      <p class="sp-hint">Drag one to move them all${able.length ? ` · <kbd>${FORMATION_KEY}</kbd> wide / deep` : ''} · <kbd>Shift</kbd>-click add or remove · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</p>`;
     if (this.panel.dataset.grp === html) return;
     this.panel.dataset.grp = html;
     this.panel.innerHTML = html;
     this.panel.querySelector('.close')!.addEventListener('click', () => this.select(null));
     this.panel.querySelector('.g-sync')?.addEventListener('click', () => this.syncSpeed());
-    this.panel.querySelector('.g-turn')?.addEventListener('click', () => this.turnSelection(-64));
+    this.bindFormSeg(able.map((q) => q.id));
     this.panel.querySelectorAll<HTMLElement>('.sp-glist li').forEach((li) =>
       li.addEventListener('click', () => {
         if (this.picking) return this.pickLead(Number(li.dataset.id));
@@ -736,6 +754,7 @@ export class PlanningScreen {
         <button class="btn danger sell ${armed ? 'armed' : ''}" ${me.ready ? 'disabled' : ''} data-tip="${refund ? 'Refunds 100%: a sale in the round it was deployed is an undo. Items go to your stash.' : 'No refund: this squad was deployed in an earlier round. Items go to your stash.'} Press twice to confirm. [Del]">${icon('sell')}<span>${armed ? 'Confirm' : 'Sell'}</span><em>${refund ? `+${refund}` : '0'}</em></button>
       </div>`;
     } else if (!ghost && me && isLord) actions = this.stanceBlock(sq);
+    if (!ghost && me && canForm(sq.type)) actions += this.formBlock(sq);
     const slots = SLOTS.map((slot) => {
       const it = sq.items[slot];
       const open = slotOpen(sq, slot);
@@ -766,7 +785,7 @@ export class PlanningScreen {
       <details class="sp-sec st-d" ${statsOpen ? 'open' : ''}><summary><span data-tip="Stats of one soldier, after level and items">Stats${!isLord ? ` · squad DPS ${squadDps}` : ''}</span><span class="sp-brief">${brief}</span></summary>${sheet ? sheetStats(sheet) : statBlock(sq.type, sq.level, ownerLord)}</details>
       ${isLord ? `<div class="sp-sec lt"><div class="lt-pass"><small>Passive</small>${esc(LORDS[lord!].passive)}</div><div class="lt-abil"><small>${esc(LORDS[lord!].abilityName)}</small>${esc(LORDS[lord!].abilityText)}</div></div>` : ''}
       ${def ? `<div class="sp-sec ctr-d"><small>Counters</small>${countersBlock(def.id)}</div>` : ''}
-      ${!ghost && me ? `${this.marchLine(sq)}<p class="sp-hint">${this.lockedNow(sq.id) ? 'Locked: turn only' : 'Drag on the field to move'} · <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>Shift</kbd>-click another to group</p>` : ''}`;
+      ${!ghost && me ? `${this.marchLine(sq)}<p class="sp-hint">${this.lockedNow(sq.id) ? 'Locked in place' : 'Drag on the field to move'}${canForm(sq.type) ? ` · <kbd>${FORMATION_KEY}</kbd> wide / deep` : ''} · <kbd>Shift</kbd>-click another to group</p>` : ''}`;
     this.panel.querySelector('.close')!.addEventListener('click', () => this.select(null));
     this.panel.querySelector('.lvl')?.addEventListener('click', () => this.levelUp());
     this.panel.querySelector('.sell')?.addEventListener('click', () => this.sell());
@@ -779,6 +798,7 @@ export class PlanningScreen {
       }),
     );
     this.panel.querySelectorAll<HTMLElement>('.stc-pick [data-id]').forEach((n) => n.addEventListener('click', () => this.pickLead(Number(n.dataset.id))));
+    if (!ghost && me && canForm(sq.type)) this.bindFormSeg([sq.id]);
     // (the event also fires for a table rendered open, so only a change counts: open, or closed again)
     let wasOpen = statsOpen;
     this.panel.querySelector('.st-d')?.addEventListener('toggle', (e) => {
@@ -821,7 +841,10 @@ export class PlanningScreen {
         return `<p class="sp-lock foe stc-intel" data-tip="How this Lord was ordered to fight in the last battle. His orders for the coming battle are hidden, like everything the enemy does now.">${icon(STANCE_ICON[st.kind])}<span>${esc(st.line)}</span></p>`;
       }
       const m = ghostMark(sq, from?.lastMoved, v.round);
-      return m ? `<p class="sp-lock foe ${m}" data-tip="${m === 'moved' ? 'This squad stood somewhere else in the battle before last: its side took Muster to relocate it.' : 'Deployed last round: from now on it stays where it stands unless its side Musters.'}">${icon(m === 'moved' ? 'move' : 'star')}<span>${GHOST_MARK_TEXT[m]}</span></p>` : '';
+      const mark = m ? `<p class="sp-lock foe ${m}" data-tip="${m === 'moved' ? 'This squad stood somewhere else in the battle before last: its side took Muster to relocate it.' : 'Deployed last round: from now on it stays where it stands unless its side Musters.'}">${icon(m === 'moved' ? 'move' : 'star')}<span>${GHOST_MARK_TEXT[m]}</span></p>` : '';
+      // how it stood in the last battle (public, like positions); never this round's
+      const ft = ghostFormationText(sq);
+      return mark + (ft ? `<p class="sp-lock foe fm-intel" data-tip="How this squad stood in the last battle. Its formation for the coming battle is hidden, like everything the enemy does now.">${icon(FORMATION_ICON[formationOf(sq)])}<span>${esc(ft)}</span></p>` : '');
     }
     const rm = this.relocMe();
     if (!rm) return '';
@@ -831,7 +854,7 @@ export class PlanningScreen {
     if (st === 'relocated') return `<p class="sp-lock reloc" data-tip="Moved with a Muster relocation. Drag it back to where it stood (the line marked home) to free the move.">${icon('move')}<span>Relocated · move it back to free the move</span></p>`;
     const c = relocCount(rm, this.round);
     if (c.left > 0) return `<p class="sp-lock open" data-tip="${esc(`Locked in place since round ${sq.deployedRound}. Muster: you may relocate it (${c.left} of ${c.limit} moves left).`)}">${icon('lock')}<span>Locked · Muster: <b>${c.left}/${c.limit}</b> moves left</span></p>`;
-    return `<p class="sp-lock locked" data-tip="${esc(c.limit > 0 ? `All ${c.limit} relocations used: move one back to free a move. Turning is free.` : lockedText(sq))}">${icon('lock')}<span>Locked in place since round ${sq.deployedRound}${c.limit > 0 ? ' · no moves left' : ' · turn only'}</span></p>`;
+    return `<p class="sp-lock locked" data-tip="${esc(c.limit > 0 ? `All ${c.limit} relocations used: move one back to free a move. Its formation is still free to change.` : lockedText(sq))}">${icon('lock')}<span>Locked in place since round ${sq.deployedRound}${c.limit > 0 ? ' · no moves left' : ''}</span></p>`;
   }
 
   /** One line on the squad panel: its march speed and when it reaches the river and the enemy's front. */
@@ -963,6 +986,79 @@ export class PlanningScreen {
     toast(`Your Lord follows ${leadName(sq)}`, 'info', 1600);
   }
 
+  // ---------------------------------------------------------------- formation (DESIGN §3)
+
+  /** The two-way Wide / Deep control (`f` null: a mixed selection, nothing pressed). */
+  private formSeg(f: Formation | null, ready: boolean, label: string): string {
+    const why = ready ? ' You are Ready: un-ready to change it.' : '';
+    const btns = FORMATIONS.map((k) => {
+      const on = f === k;
+      return `<button data-fm="${k}" class="${on ? 'on' : ''}" role="radio" aria-checked="${on}" ${ready ? 'disabled' : ''} data-tip="${esc(formationTip(k) + why)}">${icon(FORMATION_ICON[k])}<span>${FORMATION_LABEL[k]}</span></button>`;
+    }).join('');
+    return `<div class="seg formation" role="radiogroup" aria-label="${esc(label)}">${btns}</div>`;
+  }
+
+  /** The formation section of one squad's panel: the control and what it does in the coming battle. */
+  private formBlock(sq: Squad): string {
+    const f = formationOf(this.shownSquad(sq.id) ?? sq);
+    return `<div class="sp-sec stc fm"><small data-tip="${esc(`For the next battle. ${FORMATION_FREE}.`)}">Formation</small>${this.formSeg(f, !!this.me?.ready, 'Formation')}<p class="stc-line">${icon(FORMATION_ICON[f])}<span>${esc(formationLine(f))}</span></p></div>`;
+  }
+
+  private bindFormSeg(ids: number[]): void {
+    this.panel.querySelectorAll<HTMLButtonElement>('.seg.formation button[data-fm]').forEach((b) =>
+      b.addEventListener('click', () => this.setFormation(ids, b.dataset.fm as Formation)),
+    );
+  }
+
+  /**
+   * Set the formation of my squads `ids` (those that have one): free, also for squads locked in place (it never moves
+   * them), so it does not go through the relocation rule. Shown at once, undoable, snapped back if the server refuses.
+   */
+  private setFormation(ids: readonly number[], f: Formation): boolean {
+    const me = this.me;
+    if (!me) return false;
+    if (me.ready) {
+      this.refuse('You are Ready: un-ready to make changes');
+      return false;
+    }
+    const change = this.squadsShown().filter((q) => ids.includes(q.id) && canForm(q.type) && formationOf(q) !== f);
+    if (!change.length) return false;
+    const before = new Map(change.map((q) => [q.id, formationOf(q)] as const));
+    sound.click();
+    const who = change.length > 1 ? `${change.length} squads` : unitName(change[0]!.type, me.lord);
+    this.pushUndo(`${FORMATION_LABEL[f].toLowerCase()} ${who}`, () => this.applyFormations(new Map([...before].filter(([id]) => this.squad(id)))));
+    this.applyFormations(new Map(change.map((q) => [q.id, f] as const)));
+    return true;
+  }
+
+  /** Show and send formations (no undo entry): one redraw of the army, then the intents. */
+  private applyFormations(want: Map<number, Formation>): boolean {
+    const me = this.me;
+    if (!me || me.ready || !want.size) return false;
+    for (const [id, f] of want) this.pendForm.set(id, f);
+    this.drawArmy();
+    this.renderPanel();
+    for (const [id, f] of want) this.intent(formationIntent(id, f));
+    return true;
+  }
+
+  /** R: flip the selection (see groupTarget); while placing, the squad being placed. */
+  private toggleFormation(): void {
+    const d = this.drag;
+    if (d?.kind === 'place') {
+      if (!canForm(d.unit)) return this.refuse(`${UNITS[d.unit].name}: a squad of one or two has no formation`);
+      d.formation = otherFormation(d.formation);
+      sound.click();
+      this.preview();
+      return;
+    }
+    if (d || !this.me || !this.sel.size) return;
+    const picked = this.squadsShown().filter((q) => this.sel.has(q.id));
+    const f = groupTarget(picked);
+    if (!f) return this.refuse(picked.length === 1 && picked[0]!.type === 'lord' ? 'The Lord has no formation' : 'A squad of one or two has no formation');
+    this.setFormation(picked.map((q) => q.id), f);
+  }
+
   private stashOpen(): boolean {
     return this.stash.classList.contains('open');
   }
@@ -1056,7 +1152,7 @@ export class PlanningScreen {
     const before = new Map<number, Placed>();
     for (const id of targets.keys()) {
       const sq = shown.find((q) => q.id === id);
-      if (sq) before.set(id, { pos: sq.pos, facing: sq.facing });
+      if (sq) before.set(id, { pos: sq.pos });
     }
     // relocation (DESIGN §2): never show or send a state the server refuses (too many locked squads moved)
     const rm = this.relocMe()!;
@@ -1067,13 +1163,7 @@ export class PlanningScreen {
     }
     const intents = planMoves(shown, targets, this.seat, { me: rm, round: this.round });
     if (!intents.length) return false;
-    if (label) {
-      const key = label + ':' + [...before.keys()].sort((a, b) => a - b).join(',');
-      const last = this.undos[this.undos.length - 1];
-      // turning the same squads a few steps in a row is one action to undo
-      if (last && last.key === key && /^turn/.test(label) && performance.now() - last.at < 2500) last.at = performance.now();
-      else this.pushUndo(label, () => this.moveSquads(new Map([...before].filter(([id]) => this.squad(id))), null), key);
-    }
+    if (label) this.pushUndo(label, () => this.moveSquads(new Map([...before].filter(([id]) => this.squad(id))), null));
     for (const [id, t] of targets) if (before.has(id)) this.pend.set(id, t);
     this.drawArmy();
     this.syncRange();
@@ -1202,33 +1292,6 @@ export class PlanningScreen {
     this.select(null, false, group.map((q) => q.id));
   }
 
-  /** Turn the selected group (or squad) a step about its centroid, now. */
-  private turnSelection(steps: number): void {
-    const me = this.me;
-    if (!me || me.ready || !this.sel.size) return;
-    const shown = this.squadsShown();
-    const group = shown.filter((q) => this.sel.has(q.id));
-    if (group.length === 1) {
-      const sq = group[0]!;
-      this.moveSquads(new Map([[sq.id, { pos: sq.pos, facing: (sq.facing + steps + 256) & 255 }]]), 'turn');
-      return;
-    }
-    // a turn never relocates: squads locked in place turn on the spot, the rest turn about their centre
-    const out = groupPlace(group, shown.filter((q) => !this.sel.has(q.id)), this.seat, [0, 0], steps, this.snapStep(), this.turnPins(group.map((q) => q.id)));
-    if (!out) return this.refuse('No room to turn the group here');
-    this.moveSquads(out, 'turn group');
-  }
-
-  /** Squads of `ids` locked in place and still where they stood: a group turn turns them on the spot. */
-  private turnPins(ids: number[]): Set<number> {
-    const rm = this.relocMe();
-    if (!rm) return new Set();
-    return new Set(ids.filter((id) => {
-      const q = rm.squads.find((x) => x.id === id);
-      return !!q && lockState(rm, q, this.round) === 'locked';
-    }));
-  }
-
   /** The formation bar: undo, mirror, sync, timing routes, grid snap. */
   private renderTools(): void {
     const me = this.me;
@@ -1245,7 +1308,7 @@ export class PlanningScreen {
     const last = this.undos[this.undos.length - 1];
     const b = (sel: string) => $<HTMLButtonElement>(bar, sel);
     b('.pt-undo').disabled = !last || me.ready;
-    b('.pt-undo').dataset.tip = last ? `Undo: ${last.label} [Ctrl+Z]` : 'Undo the last move, turn, deploy or equip of this round [Ctrl+Z]';
+    b('.pt-undo').dataset.tip = last ? `Undo: ${last.label} [Ctrl+Z]` : 'Undo the last move, formation, deploy or equip of this round [Ctrl+Z]';
     b('.pt-mirror').disabled = me.ready;
     b('.pt-mirror').dataset.tip = locked
       ? "Mirror left to right what may move: the Lord, this round's squads and relocated ones. Squads locked in place stay."
@@ -1262,8 +1325,8 @@ export class PlanningScreen {
 
   // ---------------------------------------------------------------- march preview
 
-  /** The march of one of my squads (cached by type, level, items and spot). */
-  private march(sq: Pick<Squad, 'type' | 'level' | 'items' | 'pos'>): March {
+  /** The march of one of my squads (cached by type, level, items, formation and spot: a formation may change the speed). */
+  private march(sq: Pick<Squad, 'type' | 'level' | 'items' | 'pos' | 'formation'>): March {
     const me = this.me!;
     const v = this.view!;
     const fk = `${v.round}:${v.terrain.seed}:${me.lord}:${(v.enemy.lastArmy ?? []).map((s) => `${s.type}${s.pos[0]},${s.pos[1]}`).join(';')}`;
@@ -1273,7 +1336,7 @@ export class PlanningScreen {
       this.front = frontLine(this.seat, this.foes);
       this.marchCache.clear();
     }
-    const key = `${sq.type}|${sq.level}|${itemsKey(sq.items)}|${sq.pos[0]},${sq.pos[1]}`;
+    const key = `${sq.type}|${sq.level}|${itemsKey(sq.items)}|${formationOf(sq)}|${sq.pos[0]},${sq.pos[1]}`;
     let m = this.marchCache.get(key);
     if (!m) {
       if (this.marchCache.size > 600) this.marchCache.clear();
@@ -1324,7 +1387,10 @@ export class PlanningScreen {
       const m = this.march({ ...sq, pos });
       const sec = m.river?.sec ?? m.hold?.sec ?? null;
       const badge = badgeOf(sq);
-      if (sec !== null || badge) spec.tags.push({ id: sq.id, pos, text: sec === null ? '' : m.river ? `${sec.toFixed(1)}s` : `hold ${sec.toFixed(1)}s`, hot: hot.has(sq.id), ...(badge ? { badge } : {}) });
+      // a squad not in the default formation carries its formation's small mark at the end of its tag (src/ui/formation.ts)
+      const fm = formationOf(sq);
+      const form = marked(fm) ? { form: fm } : {};
+      if (sec !== null || badge || marked(fm)) spec.tags.push({ id: sq.id, pos, text: sec === null ? '' : m.river ? `${sec.toFixed(1)}s` : `hold ${sec.toFixed(1)}s`, hot: hot.has(sq.id), ...(badge ? { badge } : {}), ...form });
       if (this.routesOn || hot.has(sq.id)) route(m, hot.has(sq.id));
       // a relocated squad: a faint line back to where it stood, so it can be put back (which frees the move)
       const home = badge === 'reloc' ? squadHome(rm, sq.id) : null;
@@ -1334,12 +1400,14 @@ export class PlanningScreen {
     const v = this.view;
     for (const g of v.enemy.lastArmy ?? []) {
       const mark = ghostMark(g, v.enemy.lastMoved, v.round);
-      if (mark) spec.tags.push({ id: g.id, pos: g.pos, text: mark === 'moved' ? 'Moved' : 'New', badge: mark });
+      // a ghost that stood in the other formation in the last battle carries the mark too
+      const gf = formationOf(g);
+      if (mark || marked(gf)) spec.tags.push({ id: g.id, pos: g.pos, text: mark === 'moved' ? 'Moved' : mark === 'new' ? 'New' : '', ...(mark ? { badge: mark } : { foe: true }), ...(marked(gf) ? { form: gf } : {}) });
       // the enemy Lord's orders in the last battle (an advance is no news)
       const gs = g.type === 'lord' ? ghostStanceText(g, v.enemy.lastArmy ?? []) : null;
       if (gs && gs.kind !== 'advance') spec.tags.push({ id: g.id, pos: g.pos, text: gs.short, badge: gs.kind, foe: true });
     }
-    if (d?.kind === 'place' && moving && this.dragSpot) route(this.march({ type: d.unit, level: 1, items: { weapon: null, armor: null, relic: null }, pos: this.dragSpot }), true);
+    if (d?.kind === 'place' && moving && this.dragSpot) route(this.march({ type: d.unit, level: 1, items: { weapon: null, armor: null, relic: null }, pos: this.dragSpot, formation: d.formation }), true);
     const key = JSON.stringify(spec);
     if (key === this.timingKey) return;
     this.timingKey = key;
@@ -1438,24 +1506,7 @@ export class PlanningScreen {
       return;
     }
     const d = this.drag;
-    if (e.button === 2 && d) {
-      // right-drag aims the squad, or turns the group about its centre (and not the camera)
-      e.stopPropagation();
-      if (d.kind === 'group') this.startTurn(d, e);
-      else d.rot = d.pos;
-      this.scene.setInputLocked(true);
-      return;
-    }
-    if (e.button === 2 && !d && e.target === this.scene.canvas && !this.me.ready) {
-      // right-drag on a selected squad of mine turns the selection
-      const hit = this.scene.squadAt(e.clientX, e.clientY);
-      if (hit && !hit.ghost && this.sel.has(hit.id)) {
-        e.stopPropagation();
-        const g = this.groupDrag(hit.id, e, true);
-        if (g) this.startTurn(g, e);
-        return;
-      }
-    }
+    // (squads do not turn: a right-drag is always the camera's)
     if (e.button !== 0) return;
     if (this.picking && e.target === this.scene.canvas) {
       // Follow pick mode: a click on one of my squads picks it; anything else is left to the camera (Esc cancels)
@@ -1493,11 +1544,11 @@ export class PlanningScreen {
       }
       this.scene.setInputLocked(true);
       if (this.sel.size > 1 && this.sel.has(sq.id)) {
-        this.groupDrag(sq.id, e, false);
+        this.groupDrag(sq.id, e);
         return;
       }
       const shown = this.shownSquad(sq.id) ?? sq;
-      this.drag = { kind: 'move', id: sq.id, facing: shown.facing, start: [e.clientX, e.clientY], moved: false, pos: shown.pos, rot: null };
+      this.drag = { kind: 'move', id: sq.id, start: [e.clientX, e.clientY], moved: false, pos: shown.pos };
       return;
     }
     if (hit?.ghost) {
@@ -1519,50 +1570,31 @@ export class PlanningScreen {
     return !!g && inDeployZone(this.seat, g);
   }
 
-  /** Start dragging the selection (`turn`: a right-drag that only turns it). `hitId` is the squad pressed. */
-  private groupDrag(hitId: number, e: PointerEvent, turn: boolean): Extract<Drag, { kind: 'group' }> | null {
+  /** Start dragging the selection. `hitId` is the squad pressed. */
+  private groupDrag(hitId: number, e: PointerEvent): Extract<Drag, { kind: 'group' }> | null {
     const shown = this.squadsShown();
     const ids = shown.filter((q) => this.sel.has(q.id)).map((q) => q.id);
     if (!ids.length) return null;
     const base = new Map<number, Placed>();
-    for (const q of shown) if (this.sel.has(q.id)) base.set(q.id, { pos: q.pos, facing: q.facing });
+    for (const q of shown) if (this.sel.has(q.id)) base.set(q.id, { pos: q.pos });
     const grab = this.scene.groundAt(e.clientX, e.clientY) ?? base.get(hitId)!.pos;
     const rm = this.relocMe()!;
-    const g: Extract<Drag, { kind: 'group' }> = { kind: 'group', ids, start: [e.clientX, e.clientY], grab, moved: false, delta: [0, 0], steps: 0, rot: null, base, out: null, pos: grab, turnOnly: turn, hit: hitId, pinned: pinnedIn(rm, ids, this.round), turnPinned: this.turnPins(ids) };
+    const g: Extract<Drag, { kind: 'group' }> = { kind: 'group', ids, start: [e.clientX, e.clientY], grab, moved: false, delta: [0, 0], base, out: null, pos: grab, hit: hitId, pinned: pinnedIn(rm, ids, this.round) };
     this.drag = g;
     this.scene.setInputLocked(true);
     return g;
   }
 
-  /** The group's centre as it is shown now (moved by the drag so far). */
-  private groupCentre(d: Extract<Drag, { kind: 'group' }>): Vec2 {
-    let x = 0;
-    let y = 0;
-    for (const p of d.base.values()) {
-      x += p.pos[0];
-      y += p.pos[1];
-    }
-    return [x / d.base.size + d.delta[0], y / d.base.size + d.delta[1]];
-  }
-
-  private startTurn(d: Extract<Drag, { kind: 'group' }>, e: PointerEvent): void {
-    const g = this.scene.groundAt(e.clientX, e.clientY);
-    const c = this.groupCentre(d);
-    d.rot = { from: g ? ANG(g[0] - c[0], g[1] - c[1]) : 0, at: d.steps };
-  }
-
-  /** Re-place the dragged group for its current offset and turn, and show it there. */
+  /** Re-place the dragged group for its current offset, and show it there. */
   private placeGroup(d: Extract<Drag, { kind: 'group' }>): void {
     const shown = this.me!.squads;
-    const bodies = d.ids.map((id) => ({ id, type: shown.find((q) => q.id === id)!.type, pos: d.base.get(id)!.pos, facing: d.base.get(id)!.facing }));
+    const bodies = d.ids.map((id) => ({ id, type: shown.find((q) => q.id === id)!.type, pos: d.base.get(id)!.pos }));
     const others = this.squadsShown().filter((q) => !d.base.has(q.id));
-    // relocation (DESIGN §2): a drag leaves locked squads in place (unless the Muster's moves cover them all); a turn
-    // that does not move the group turns them on the spot
-    const turning = d.turnOnly || (d.delta[0] === 0 && d.delta[1] === 0);
-    const pins = turning ? d.turnPinned : d.pinned;
-    d.out = groupPlace(bodies, others, this.seat, d.delta, d.steps, this.snapStep(), pins);
-    const stay = pins.size ? ` · <span class="lockn">${icon('lock')}${pins.size} locked ${turning ? 'turn on the spot' : 'stay in place'}</span>` : '';
-    this.hint.innerHTML = `${d.out ? '' : '<b class="bad">No room for the group here</b> · '}<b>${d.ids.length} squad${d.ids.length > 1 ? 's' : ''}</b>${stay} · <kbd>Q</kbd><kbd>E</kbd> or right-drag turn the group · <kbd>Esc</kbd> cancel`;
+    // relocation (DESIGN §2): a drag leaves locked squads in place (unless the Muster's moves cover them all)
+    const pins = d.pinned;
+    d.out = groupPlace(bodies, others, this.seat, d.delta, this.snapStep(), pins);
+    const stay = pins.size ? ` · <span class="lockn">${icon('lock')}${pins.size} locked stay in place</span>` : '';
+    this.hint.innerHTML = `${d.out ? '' : '<b class="bad">No room for the group here</b> · '}<b>${d.ids.length} squad${d.ids.length > 1 ? 's' : ''}</b>${stay} · <kbd>Esc</kbd> cancel`;
     this.hint.classList.add('on');
     this.drawArmy();
   }
@@ -1592,7 +1624,7 @@ export class PlanningScreen {
       const ro = !!watched || !!hit?.ghost;
       const rm = this.relocMe();
       const lockNo = !ro && hit && rm ? dragRefusal(rm, hit.id, this.round) : null;
-      const hint = this.me?.ready ? 'You are Ready: un-ready to move it' : lockNo ?? (this.sel.size > 1 && hit && this.sel.has(hit.id) ? 'Drag to move the selection · right-drag to turn it' : 'Click to select · Shift-click to add · drag to move');
+      const hint = this.me?.ready ? 'You are Ready: un-ready to move it' : lockNo ?? (this.sel.size > 1 && hit && this.sel.has(hit.id) ? 'Drag to move the selection' : 'Click to select · Shift-click to add · drag to move');
       const mark = hit?.ghost && sq && this.view ? ghostMark(sq, this.view.enemy.lastMoved, this.view.round) : null;
       showTipAt(e.clientX, e.clientY, sq ? squadTooltip(sq, watched ? watched.lord : hit!.ghost ? this.view!.enemy.lord : this.me?.lord ?? null, { ghost: !!hit?.ghost, hint: ro ? (mark ? GHOST_MARK_TEXT[mark] : undefined) : hint, lock: !!lockNo }) : null);
       this.scene.canvas.style.cursor = sq ? (ro ? 'help' : 'grab') : '';
@@ -1601,7 +1633,7 @@ export class PlanningScreen {
     showTipAt(0, 0, null);
     if (d.kind === 'group') {
       if (!d.moved && Math.hypot(e.clientX - d.start[0], e.clientY - d.start[1]) < 6) return;
-      if (!d.moved && !d.turnOnly && !d.rot && d.pinned.size === d.ids.length) {
+      if (!d.moved && d.pinned.size === d.ids.length) {
         // nothing in the selection may move: say why instead of dragging nothing
         const rm = this.relocMe()!;
         const why = dragRefusal(rm, d.hit, this.round) ?? d.ids.map((id) => dragRefusal(rm, id, this.round)).find((x) => x) ?? 'Locked in place';
@@ -1610,37 +1642,25 @@ export class PlanningScreen {
       }
       d.moved = true;
       if (g) {
-        if (d.rot) {
-          const c = this.groupCentre(d);
-          if (Math.hypot(g[0] - c[0], g[1] - c[1]) > 150) d.steps = (d.rot.at + ANG(g[0] - c[0], g[1] - c[1]) - d.rot.from + 512) & 255;
-        } else if (!d.turnOnly) {
-          d.delta = [g[0] - d.grab[0], g[1] - d.grab[1]];
-          d.pos = g;
-        }
+        d.delta = [g[0] - d.grab[0], g[1] - d.grab[1]];
+        d.pos = g;
       }
       return this.placeGroup(d);
     }
-    if (d.rot && g) {
-      // aiming: facing points from the anchor towards the pointer
-      const dx = g[0] - d.rot[0];
-      const dy = g[1] - d.rot[1];
-      if (Math.hypot(dx, dy) > 150) d.facing = ANG(dx, dy);
-    } else {
-      if (d.kind === 'move' && !d.moved && Math.hypot(e.clientX - d.start[0], e.clientY - d.start[1]) < 6) return;
-      if (d.kind === 'move' && !d.moved) {
-        // relocation (DESIGN §2): a squad locked in place is not dragged; it says why (turning it stays free)
-        const rm = this.relocMe();
-        const why = rm ? dragRefusal(rm, d.id, this.round) : null;
-        if (why) {
-          const id = d.id;
-          this.endDrag();
-          this.select(id);
-          return this.refuse(why);
-        }
+    if (d.kind === 'move' && !d.moved && Math.hypot(e.clientX - d.start[0], e.clientY - d.start[1]) < 6) return;
+    if (d.kind === 'move' && !d.moved) {
+      // relocation (DESIGN §2): a squad locked in place is not dragged; it says why (its formation stays free)
+      const rm = this.relocMe();
+      const why = rm ? dragRefusal(rm, d.id, this.round) : null;
+      if (why) {
+        const id = d.id;
+        this.endDrag();
+        this.select(id);
+        return this.refuse(why);
       }
-      if (d.kind === 'move' || this.overCanvas) d.moved = true;
-      if (g) d.pos = inDeployZone(this.seat, g) ? snapPos(g, this.snapStep(), this.seat) : g;
     }
+    if (d.kind === 'move' || this.overCanvas) d.moved = true;
+    if (g) d.pos = inDeployZone(this.seat, g) ? snapPos(g, this.snapStep(), this.seat) : g;
     if (d.kind === 'move') this.scene.setHidden(d.id);
     this.preview();
   }
@@ -1704,10 +1724,13 @@ export class PlanningScreen {
     const valid = !why;
     const pos = at ?? d.pos;
     this.dragSpot = at;
-    this.scene.setPreview({ type, lord: type === 'lord' ? me.lord : null, seat: this.seat, pos, facing: d.facing, valid });
+    // the ghost stands in the formation it will have: a dragged squad its own, a new one wide unless R flipped it
+    const form = d.kind === 'place' ? d.formation : formationOf(this.shownSquad(d.id) ?? this.squad(d.id)!);
+    this.scene.setPreview({ type, lord: type === 'lord' ? me.lord : null, seat: this.seat, pos, formation: form, valid });
     const s = soldierStats(type, lvl, me.lord);
     this.scene.setRange({ pos, range: s.range, minRange: s.minRange, aura: type === 'lord' && me.lord ? lordAuraRing(LORDS[me.lord].ability) : null });
-    this.hint.innerHTML = `${valid ? '' : `<b class="bad">${esc(why ?? '')}</b> · `}<kbd>Q</kbd><kbd>E</kbd> or right-drag turn the squad · <kbd>Esc</kbd> cancel`;
+    const fmHint = d.kind === 'place' && canForm(type) ? `<kbd>${FORMATION_KEY}</kbd> ${FORMATION_LABEL[otherFormation(d.formation)].toLowerCase()} · ` : '';
+    this.hint.innerHTML = `${valid ? '' : `<b class="bad">${esc(why ?? '')}</b> · `}${fmHint}<kbd>Esc</kbd> cancel`;
     this.hint.classList.add('on');
     this.renderTiming();
   }
@@ -1744,34 +1767,22 @@ export class PlanningScreen {
       }
       return;
     }
+    if (e.button !== 0) return;
     if (d.kind === 'group') {
-      if (e.button === 2) {
-        d.rot = null;
-        // a right-drag that only turned the selection ends with the button
-        if (!d.turnOnly) return;
-      } else if (e.button !== 0) return;
       if (!d.moved) {
-        if (!d.turnOnly) {
-          // a click on one squad of the selection selects just that squad
-          sound.click();
-          this.select(d.hit);
-        }
+        // a click on one squad of the selection selects just that squad
+        sound.click();
+        this.select(d.hit);
       } else if (d.out) {
         // end the drag first: while it lasts the group is drawn (and counted) where it would land
         const out = d.out;
         this.endDrag();
-        if (this.moveSquads(out, d.turnOnly || (d.delta[0] === 0 && d.delta[1] === 0) ? 'turn group' : `move ${d.ids.length} squads`)) sound.drop();
+        if (this.moveSquads(out, `move ${d.ids.length} squads`)) sound.drop();
         return;
       } else this.refuse('No room for the group there');
       this.endDrag();
       return;
     }
-    if (e.button === 2) {
-      d.rot = null;
-      if (d.kind === 'place' && !d.fromShop) this.scene.setInputLocked(false);
-      return;
-    }
-    if (e.button !== 0) return;
     const onCanvas = e.target === this.scene.canvas;
     if (d.kind === 'move') {
       if (!d.moved) {
@@ -1784,7 +1795,7 @@ export class PlanningScreen {
         else if (!at) this.refuse('No room there: each squad needs its own ground');
         else {
           sound.drop();
-          this.moveSquads(new Map([[d.id, { pos: at, facing: d.facing }]]), `move ${sq ? unitName(sq.type, this.me?.lord ?? null) : 'squad'}`);
+          this.moveSquads(new Map([[d.id, { pos: at }]]), `move ${sq ? unitName(sq.type, this.me?.lord ?? null) : 'squad'}`);
           this.select(d.id);
         }
       }
@@ -1796,15 +1807,21 @@ export class PlanningScreen {
       // a click on the card: keep the ghost on the pointer until the field is clicked
       d.fromShop = false;
       this.scene.setInputLocked(false);
-      this.hint.innerHTML = `Click your half of the field to deploy ${esc(UNITS[d.unit].name)} · <kbd>Q</kbd><kbd>E</kbd> turn the squad · <kbd>Esc</kbd> cancel`;
+      this.hint.innerHTML = this.placeHint(d.unit, d.formation);
       this.hint.classList.add('on');
       return;
     }
-    if (onCanvas && d.pos) this.deploy(d.unit, d.pos, d.facing);
+    if (onCanvas && d.pos) this.deploy(d.unit, d.pos, d.formation);
     this.endDrag();
   }
 
-  private deploy(u: UnitType, pos: Vec2, facing: number): void {
+  /** The hint while a unit waits to be placed. */
+  private placeHint(u: UnitType, f: Formation): string {
+    return `Click your half of the field to deploy ${esc(UNITS[u].name)}${canForm(u) ? ` · <kbd>${FORMATION_KEY}</kbd> ${FORMATION_LABEL[otherFormation(f)].toLowerCase()}` : ''} · <kbd>Esc</kbd> cancel`;
+  }
+
+  /** Deploy a unit (in the default formation unless R flipped this placement; the intent names only another one). */
+  private deploy(u: UnitType, pos: Vec2, formation: Formation = DEFAULT_FORMATION): void {
     const why = this.blocked(u);
     if (why) {
       sound.error();
@@ -1819,7 +1836,7 @@ export class PlanningScreen {
     sound.deploy();
     playLordLine(this.me?.lord, 'deploy', { delay: 0.15 });
     this.undoDeploy(u);
-    this.intent({ t: 'deploy', unit: u, pos: at, facing });
+    this.intent(marked(formation) && canForm(u) ? { t: 'deploy', unit: u, pos: at, formation } : { t: 'deploy', unit: u, pos: at });
   }
 
   private startPlace(u: UnitType, fromShop: boolean): void {
@@ -1833,7 +1850,7 @@ export class PlanningScreen {
     }
     sound.pick();
     this.select(null);
-    this.drag = { kind: 'place', unit: u, facing: defaultFacing(this.seat), fromShop, moved: false, pos: null, rot: null };
+    this.drag = { kind: 'place', unit: u, formation: DEFAULT_FORMATION, fromShop, moved: false, pos: null };
     this.scene.setInputLocked(fromShop);
     this.shop.querySelectorAll('.ucard').forEach((c) => c.classList.toggle('arming', (c as HTMLElement).dataset.u === u));
   }
@@ -1863,7 +1880,7 @@ export class PlanningScreen {
     if ((e.target as HTMLElement)?.closest?.('input, textarea')) return;
     if (document.querySelector('.rules-veil, .dialog-veil, .report-veil')) return;
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase()) && !e.ctrlKey && !e.metaKey) this.cameraTouched = true;
-    if ((e.key === 'q' || e.key === 'e') && !this.drag && !e.shiftKey) this.cameraTouched = true;
+    if ((e.key === 'q' || e.key === 'e') && !e.shiftKey) this.cameraTouched = true;
     if (!this.me) {
       // spectators: only the camera and deselect
       if (e.key === 'Escape') this.select(null, true);
@@ -1909,21 +1926,10 @@ export class PlanningScreen {
       e.stopPropagation();
       this.cameraTouched = false;
       this.scene.resetCamera?.();
-    } else if ((k === 'q' || k === 'e') && (this.drag || (e.shiftKey && this.sel.size > 0))) {
-      // Q/E turn the squad (or the group, about its centre) only while it is being placed or dragged,
-      // or with Shift on the selection. Otherwise the key is left for the camera, which turns the view.
+    } else if (k === FORMATION_KEY.toLowerCase() && !e.shiftKey) {
+      // R: wide / deep for the selection, or for the squad being placed (Q / E always turn the camera)
       e.stopPropagation();
-      const step = k === 'q' ? TURN_STEP : -TURN_STEP;
-      const d = this.drag;
-      if (d?.kind === 'group') {
-        d.steps = (d.steps + step + 256) & 255;
-        if (d.rot) d.rot.at = (d.rot.at + step + 256) & 255;
-        d.moved = true;
-        this.placeGroup(d);
-      } else if (d) {
-        d.facing = (d.facing + step + 256) & 255;
-        this.preview();
-      } else this.turnSelection(step);
+      this.toggleFormation();
     } else if (k === 't' && !e.shiftKey) {
       e.stopPropagation();
       this.toggleRoutes();
@@ -1940,7 +1946,7 @@ export class PlanningScreen {
         if (this.drag) this.endDrag();
         this.startPlace(u, false);
         this.drag && ((this.drag as { fromShop: boolean }).fromShop = false);
-        this.hint.innerHTML = `Click your half of the field to deploy ${esc(UNITS[u].name)} · <kbd>Q</kbd><kbd>E</kbd> turn the squad · <kbd>Esc</kbd> cancel`;
+        this.hint.innerHTML = this.placeHint(u, DEFAULT_FORMATION);
         this.hint.classList.add('on');
         const g = this.lastPointer && this.scene.groundAt(this.lastPointer.x, this.lastPointer.y);
         if (g && this.drag) {

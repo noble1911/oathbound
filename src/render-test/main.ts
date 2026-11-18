@@ -56,7 +56,7 @@ function allUnitsBattle(seed: number, lords: [LordId, LordId]): MatchState {
       const y = 3700 - Math.floor(k / 5) * 1100;
       const pos: Vec2 = seat === 0 ? [x, y] : mirrorPos([x, y]);
       const skills = q.get('skills') === '1';
-      p.squads.push({ id: s.nextId++, owner: seat, type: u, level: skills ? 5 : 2, pos, facing: seat === 0 ? 64 : 192, items: skills ? skillItems(s, u, undefined, seat + k) : { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
+      p.squads.push({ id: s.nextId++, owner: seat, type: u, level: skills ? 5 : 2, pos, items: skills ? skillItems(s, u, undefined, seat + k) : { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
     });
   }
   s.round = 8;
@@ -74,7 +74,7 @@ function customBattle(seed: number, lords: [LordId, LordId]): MatchState {
       const [type, lvl] = ul.split(':');
       const [x, y] = (at ?? '4000:3000').split(':').map(Number);
       const pos: Vec2 = seat === 0 ? [x, y] : mirrorPos([x, y]);
-      p.squads.push({ id: s.nextId++, owner: seat, type: type as never, level: Number(lvl) || 1, pos, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
+      p.squads.push({ id: s.nextId++, owner: seat, type: type as never, level: Number(lvl) || 1, pos, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
     }
   });
   s.round = 6;

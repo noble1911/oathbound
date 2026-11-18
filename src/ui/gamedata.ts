@@ -1,7 +1,8 @@
 // UI-side readings of the sim's data tables: the counter wheel, deploy weights, level stats, formations for the deploy
 // ghost, item stat totals and comparison deltas. Pure (no DOM), unit-tested in tests/client.test.ts.
-import type { Affix, Item, ItemSlots, LordId, Rarity, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2, WeaponKind, FactionId, WheelClass } from '../sim/types.ts';
-import { UNITS, UNIT_TYPES, formationCols, squadSizeAt, growsBySize } from '../sim/data/units.ts';
+import type { Affix, Formation, Item, ItemSlots, LordId, Rarity, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2, WeaponKind, FactionId, WheelClass } from '../sim/types.ts';
+import { UNITS, UNIT_TYPES, formationGrid, hasFormation, squadSizeAt, growsBySize } from '../sim/data/units.ts';
+import { DEFAULT_FORMATION } from './formation.ts';
 import { WHEEL_NAME, beatsClass, beatenBy } from '../sim/data/wheel.ts';
 import { COUNTER_PCT } from '../sim/constants.ts';
 import { LORDS } from '../sim/data/lords.ts';
@@ -192,45 +193,41 @@ export function costTier(cost: number): number {
 
 // ---------------------------------------------------------------- formation preview
 
-const FACE = (f: number) => (f / 256) * Math.PI * 2;
-
 /**
- * Soldier offsets (cm, field axes) of a squad formation centred on 0,0 facing `facing`. `size` is the squad's
- * soldier count (the sim's squadSize: grown Swarm squads, Warhorn), default the level-1 size.
+ * Soldier offsets (cm, field axes) of a squad of `seat` centred on 0,0, standing as the battle starts it (battle.ts
+ * addSquad): formationGrid(n, formation) with `cols` across the front and `rows` deep, 2 x radius + 50 cm apart, rank 0
+ * nearest the enemy, the last rank short and filled from the left, facing the enemy. Integer maths like the sim's, so
+ * planning draws every soldier exactly where the battle puts it. `size` is the squad's soldier count (the sim's
+ * squadSize: grown Swarm squads, Warhorn), default the level-1 size. Squads without a formation (1 or 2 soldiers, the
+ * Lord) have one grid (formationGrid gives both the same).
  */
-export function formation(t: SquadType, facing: number, lord?: LordId | null, size?: number): Vec2[] {
+export function formation(t: SquadType, seat: Seat, form: Formation = DEFAULT_FORMATION, size?: number): Vec2[] {
   const n = t === 'lord' ? 1 : size ?? UNITS[t].squadSize;
-  const r = t === 'lord' ? 60 : UNITS[t].radius;
-  // the sim's starting formation (battle.ts): what the footprint keeps clear, and where the battle starts it
+  const r = t === 'lord' ? 65 : UNITS[t].radius;
   const gap = r * 2 + 50;
-  const cols = formationCols(n);
-  const rows = Math.ceil(n / cols);
-  const a = FACE(facing);
-  // forward = (cos a, sin a); right = (sin a, -cos a)
-  const fx = Math.cos(a), fy = Math.sin(a);
-  const rx = fy, ry = -fx;
+  const { cols, rows } = formationGrid(n, hasFormation(t) ? form : 'wide');
+  const sg = seat === 0 ? 1 : -1;
   const out: Vec2[] = [];
-  void lord;
-  for (let i = 0; i < n; i++) {
-    const row = Math.floor(i / cols);
-    const inRow = row === rows - 1 ? n - row * cols : cols;
-    const col = i % cols;
-    const side = (col - (inRow - 1) / 2) * gap;
-    const fwd = ((rows - 1) / 2 - row) * gap;
-    out.push([Math.round(side * rx + fwd * fx), Math.round(side * ry + fwd * fy)]);
+  for (let k = 0; k < n; k++) {
+    const c = k % cols;
+    const row = (k - c) / cols;
+    const u = (2 * c - (cols - 1)) * gap; // doubled, to the right of the march
+    const v = (rows - 1 - 2 * row) * gap; // doubled, forward
+    out.push([sg * Math.trunc(u / 2) + 0, sg * Math.trunc(v / 2) + 0]);
   }
   return out;
 }
 
 /** Radius (cm) that covers a squad's formation, for picking and selection rings. */
-export function squadRadius(t: SquadType, size?: number): number {
-  const offs = formation(t, 64, null, size);
+export function squadRadius(t: SquadType, size?: number, form: Formation = DEFAULT_FORMATION): number {
+  const offs = formation(t, 0, form, size);
   let m = 0;
   for (const [x, y] of offs) m = Math.max(m, Math.hypot(x, y));
   const r = t === 'lord' ? 60 : UNITS[t].radius;
   return Math.round(m + r + 60);
 }
 
+/** Squads always face the enemy (the sim's 0..255 binary angle): seat 0 up the field, seat 1 down it. */
 export function defaultFacing(seat: Seat): number {
   return seat === 0 ? 64 : 192;
 }

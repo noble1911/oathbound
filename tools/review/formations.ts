@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { FIELD_W } from '../../src/sim/constants.ts';
 import { simulateBattle } from '../../src/sim/battle.ts';
 import { hash } from '../../src/sim/rng.ts';
-import { UNITS } from '../../src/sim/data/units.ts';
+import { UNITS, hasFormation } from '../../src/sim/data/units.ts';
 import type { LordId, MatchState, Seat, Squad, Vec2 } from '../../src/sim/types.ts';
 import { arg, hard, lordPairs, mean, outcome, own, placeFor, playMatch, pool, relayout, swing } from './lib.ts';
 
@@ -54,7 +54,8 @@ export const VARIANTS: Record<string, V> = {
     const T = (6000 - 3999) / vmin;
     relayout(s, seat, (q) => (melee.includes(q) ? [own(seat, q.pos)[0], Math.max(400, 6000 - T * UNITS[q.type as keyof typeof UNITS].speed)] : null));
   },
-  face90: (s, seat) => { for (const q of s.players[seat].squads) q.facing = (q.facing + 64) & 255; },
+  // (face90, a quarter turn of every squad, went with facing: squads always face the enemy now)
+  allDeep: (s, seat) => { for (const q of s.players[seat].squads) if (hasFormation(q.type)) q.formation = 'deep'; },
   lordFront: map((x) => [x, 3900], false, true),
   lordCorner: map(() => [300, 450], false, true),
   lordFlank: map(() => [7600, 3200], false, true),

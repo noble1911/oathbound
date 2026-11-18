@@ -6,6 +6,7 @@
 // Coordinates arrive in the engine's field frame (already flipped for a seat-1 viewer) as field cm.
 import * as THREE from 'three';
 import type { StanceSpec, TagBadge } from './scene-adapter.ts';
+import type { Formation } from '../sim/types.ts';
 
 /** Your livery on dark (--me-hi in src/style.css): a route, a ring or a tag that belongs to you. */
 const ME_HI = '#94b6f6';
@@ -185,7 +186,7 @@ export class PlanOverlay {
 
   // ---------------------------------------------------------------- routes + labels
 
-  private tags: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge; foe?: boolean }[] = [];
+  private tags: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge; foe?: boolean; form?: Formation }[] = [];
   /** Tag sprites in `tags` order (labels[0..n)), and the camera state their placement was worked out for. */
   private tagCount = 0;
   private clutterKey = '';
@@ -241,14 +242,14 @@ export class PlanOverlay {
   }
 
   /** Plate tags: world anchors (just under each squad's plate) and their text. */
-  setTags(tags: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge; foe?: boolean }[]): void {
+  setTags(tags: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge; foe?: boolean; form?: Formation }[]): void {
     this.tags = tags;
   }
 
   /** Rebuild the label sprites from the current tags, marks and aura label (call after any of them changes). */
   layoutLabels(): void {
     this.used = 0;
-    for (const t of this.tags) this.label(t.pos, t.text, t.hot ? 'hot' : 'tag', TAG_H, 1.18, t.badge, t.foe);
+    for (const t of this.tags) this.label(t.pos, t.text, t.hot ? 'hot' : 'tag', TAG_H, 1.18, t.badge, t.foe, t.form);
     this.tagCount = this.used;
     this.clutterKey = '';
     this.clutterFrame = -1;
@@ -280,7 +281,7 @@ export class PlanOverlay {
     for (let i = this.used; i < this.labels.length; i++) this.labels[i]!.visible = false;
   }
 
-  private label(pos: THREE.Vector3, text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', h: number, cy: number, badge?: TagBadge, foeTag = false): void {
+  private label(pos: THREE.Vector3, text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', h: number, cy: number, badge?: TagBadge, foeTag = false, form?: Formation): void {
     if (this.used >= MAX_LABELS) return;
     let sp = this.labels[this.used];
     if (!sp) {
@@ -298,7 +299,7 @@ export class PlanOverlay {
       this.scene.add(sp);
       this.labels.push(sp);
     }
-    const t = this.tex(text, tone, badge, foeTag);
+    const t = this.tex(text, tone, badge, foeTag, form);
     sp.material = t.mat;
     sp.userData.h = h;
     sp.userData.aspect = t.aspect;
@@ -360,8 +361,8 @@ export class PlanOverlay {
   }
 
   /** One texture per distinct text and tone, kept (seconds labels repeat a lot). */
-  private tex(text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', badge?: TagBadge, foeTag = false): LabelTex {
-    const key = tone + '|' + (badge ?? '') + (foeTag ? '!' : '') + '|' + text;
+  private tex(text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', badge?: TagBadge, foeTag = false, form?: Formation): LabelTex {
+    const key = tone + '|' + (badge ?? '') + (foeTag ? '!' : '') + (form ?? '') + '|' + text;
     let t = this.texCache.get(key);
     if (t) return t;
     if (this.texCache.size > 400) {
@@ -380,7 +381,9 @@ export class PlanOverlay {
     // a badge takes a square at the left of the text (or the whole tag when there is no text)
     const bw = badge ? (text ? 36 : 40) : 0;
     const tw = text ? Math.ceil(ctx.measureText(text).width) + 22 : 0;
-    const w = bw + tw + (badge && text ? -4 : 0);
+    // a squad in the formation that is not the default (src/ui/formation.ts): its small glyph closes the tag, after a hairline
+    const dw = form ? (text || badge ? (form === 'deep' ? 26 : 38) : form === 'deep' ? 32 : 44) : 0;
+    const w = bw + tw + (badge && text ? -4 : 0) + dw;
     c.width = w;
     c.height = H;
     ctx.font = font;
@@ -396,6 +399,14 @@ export class PlanOverlay {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     if (text) ctx.fillText(text, bw + (badge ? -4 : 0) + tw / 2, H / 2 + 1);
+    if (form) {
+      const x0 = w - dw;
+      if (text || badge) {
+        ctx.fillStyle = '#56616f';
+        ctx.fillRect(x0, 9, 2, H - 18);
+      }
+      drawFormation(ctx, form, x0 + dw / 2 + (text || badge ? 1 : 0), H / 2, foe ? FOE_HI : '#b8c2ce');
+    }
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
@@ -468,6 +479,22 @@ function drawBadge(ctx: CanvasRenderingContext2D, b: TagBadge, x: number, cy: nu
     ctx.fill(new Path2D('M12 3l2.6 6 6.4.5-4.9 4.2 1.5 6.3L12 16.6 6.4 20l1.5-6.3L3 9.5 9.4 9z'));
     ctx.globalAlpha = 1;
     path('M12 3l2.6 6 6.4.5-4.9 4.2 1.5 6.3L12 16.6 6.4 20l1.5-6.3L3 9.5 9.4 9z');
+  }
+  ctx.restore();
+}
+
+/**
+ * A formation's mark (src/ui/icons.ts fm_deep / fm_wide without the chevron), centred on (cx, cy): deep two files of
+ * four soldiers, wide two ranks of four.
+ */
+function drawFormation(ctx: CanvasRenderingContext2D, f: Formation, cx: number, cy: number, color: string): void {
+  ctx.save();
+  ctx.fillStyle = color;
+  const [files, ranks] = f === 'deep' ? [2, 4] : [4, 2];
+  for (let r = 0; r < ranks; r++) for (let c = 0; c < files; c++) {
+    ctx.beginPath();
+    ctx.arc(cx + (c - (files - 1) / 2) * 7, cy + (r - (ranks - 1) / 2) * 7.4, 2.7, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 }

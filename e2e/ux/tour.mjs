@@ -131,22 +131,25 @@ try {
   // (reached by scrolling back), so the check is the zone's side edges at mid depth and its back rows at the centre
   check(vis(zone.ml) && vis(zone.mr) && vis(zone.bc), 'default framing: zone side edges (mid depth) and back rows (centre) inside the HUD insets');
   check((await frames(2000)) === 0, 'planning idle 0 fps');
-  // ---- deploy with the hotkey, rotate while placing
+  // ---- deploy with the hotkey, R while placing flips its formation from the default (squads no longer turn)
   const spot = async (pos) => p.evaluate((pos) => window.__ob.app.scene.toScreen(pos, 0), pos);
   let s0 = await state();
   let xy = await spot([2600, 3000]);
   await p.mouse.move(xy.x, xy.y);
   await p.keyboard.press('1');
   await sleep(250);
-  await p.keyboard.press('q');
+  const formable = await p.evaluate(() => { const d = window.__ob.app.screen.drag; return !!d && window.__ob.sim.hasFormation(d.unit); });
+  await p.keyboard.press('r');
   await sleep(250);
   await shot('placing');
   await p.mouse.click(xy.x, xy.y);
   await sleep(700);
   let s1 = await state();
   check(s1.squads === s0.squads + 1, `hotkey 1 + click deploys (${s0.squads} -> ${s1.squads})`);
-  const facing = await p.evaluate(() => window.__ob.app.room.view.you.squads.at(-1).facing);
-  check(facing !== 64, `Q while placing turns the squad (facing ${facing})`);
+  const DF = await p.evaluate(() => window.__ob.sim.DEFAULT_FORMATION);
+  const form = await p.evaluate(() => window.__ob.sim.formationOf(window.__ob.app.room.view.you.squads.at(-1)));
+  check(formable ? form !== DF : form === DF, `R while placing flips the formation from the default ${DF} (${formable ? form : 'no formation'})`);
+  check(await p.evaluate(() => !('facing' in window.__ob.app.room.view.you.squads.at(-1))), 'a squad has no facing any more');
   // Q with nothing held turns the camera, not the selected squad
   await p.mouse.click(xy.x, xy.y);
   await sleep(300);
@@ -157,13 +160,19 @@ try {
   const yaw0 = await p.evaluate(() => window.__ob.app.scene.view.camera.goal.yaw);
   await p.keyboard.down('q'); await sleep(300); await p.keyboard.up('q');
   await sleep(300);
-  const f2 = await p.evaluate(() => window.__ob.app.room.view.you.squads.at(-1).facing);
   const yaw1 = await p.evaluate(() => window.__ob.app.scene.view.camera.goal.yaw);
-  check(f2 === facing && yaw1 !== yaw0, `plain Q turns the camera only (yaw ${yaw0.toFixed(2)} -> ${yaw1.toFixed(2)}, facing ${f2})`);
+  const sqAt = () => p.evaluate(() => { const q = window.__ob.app.room.view.you.squads.at(-1); return { pos: q.pos.join(), formation: window.__ob.sim.formationOf(q) }; });
+  const before = await sqAt();
+  check(yaw1 !== yaw0, `plain Q turns the camera (yaw ${yaw0.toFixed(2)} -> ${yaw1.toFixed(2)})`);
   await p.keyboard.down('Shift'); await p.keyboard.press('q'); await p.keyboard.up('Shift');
   await sleep(400);
-  const f3 = await p.evaluate(() => window.__ob.app.room.view.you.squads.at(-1).facing);
-  check(f3 !== facing, `Shift+Q turns the selected squad (${facing} -> ${f3})`);
+  const after = await sqAt();
+  check(after.pos === before.pos && after.formation === before.formation, 'Shift+Q no longer does anything to the selected squad');
+  if (formable) {
+    await p.keyboard.press('r');
+    await sleep(500);
+    check((await sqAt()).formation === DF, `R on the selected squad flips it back to ${DF}`);
+  }
   await p.keyboard.press('Home');
   await sleep(900);
   const yaw2 = await p.evaluate(() => window.__ob.app.scene.view.camera.goal.yaw);

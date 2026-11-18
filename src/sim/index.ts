@@ -97,9 +97,11 @@ export { itemName, itemLines, itemPower, itemBudget, rollLoot, lootRarity, lootS
 // itemLines(item): ItemLine[]     ARPG tooltip lines (name, base type, implicit, affixes, legendary power, flavour)
 
 export { UNITS, UNIT_TYPES, BASIC_POOL, unitDef, like, squadSizeAt, growsBySize, SWARM_GROWTH_PCT, formationCols } from './data/units.ts';
-// Formation (DESIGN §3): {t:'formation', squad, formation: 'wide' | 'deep'} sets Squad.formation (absent = wide); free, also when locked.
-// formationGrid(n, formation): { cols, rows } — the soldier grid; hasFormation(type) — squads of 3+ soldiers have the choice.
-export { formationGrid, hasFormation, FORMATION_MIN_SIZE, DEEP_SPEED_PCT, DEEP_GUARD_PCT } from './data/units.ts';
+// Formation (DESIGN §3): {t:'formation', squad, formation: 'wide' | 'deep'} sets Squad.formation (absent = deep, DEFAULT_FORMATION); free, also when locked.
+// formationOf(squad): Formation — what it stands in; formationGrid(n, formation): { cols, rows } — the soldier grid;
+// hasFormation(type) — squads of 3+ soldiers have the choice. A wide line takes WIDE_AREA_PCT less from area hits and
+// WIDE_MELEE_PCT more from melee blows aimed at it.
+export { formationGrid, formationOf, hasFormation, DEFAULT_FORMATION, FORMATION_MIN_SIZE, WIDE_AREA_PCT, WIDE_MELEE_PCT } from './data/units.ts';
 // squadSizeAt(type, level): soldiers before items — Swarm squads grow +25% of their base size per level
 export { WHEEL, WHEEL_NAME, WHEEL_WHY, beatsClass, beatenBy, classBeats } from './data/wheel.ts';
 // The counter wheel (DESIGN §3): UnitDef.class / LordDef.class; beatsClass(c) / beatenBy(c); COUNTER_PCT damage to the class beaten
@@ -108,5 +110,5 @@ export { FACTIONS, FACTION_IDS, factionOfLord, factionOfUnit } from './data/fact
 // FACTIONS[id]: { name, short, blurb, identity, colors, lords, units, basic } — the three factions (DESIGN §4b)
 // Lord pick phase: {t:'pickFaction', faction} (optional, changeable) then {t:'pickLord', lord}; a Lord implies its faction.
 export { BASES, AFFIXES, LEGENDARIES, RARITIES, SLOT_UNLOCK_LEVEL } from './data/items.ts';
-export { FIELD_W, FIELD_H, TICK_HZ, TICK_MS, KEYFRAME_TICKS, MAX_BATTLE_TICKS, MARCH_TICKS, COUNTER_PCT, mirrorPos, mirrorFacing } from './constants.ts';
+export { FIELD_W, FIELD_H, TICK_HZ, TICK_MS, KEYFRAME_TICKS, MAX_BATTLE_TICKS, MARCH_TICKS, COUNTER_PCT, mirrorPos } from './constants.ts';
 export { terrainAt, genTerrain } from './terrain.ts';

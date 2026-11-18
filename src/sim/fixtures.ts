@@ -19,7 +19,7 @@ export function bigBattle(seed: number, heavy = false, lords: [LordId, LordId] =
       for (let i = 0; i < n; i++, k++) {
         const x = 700 + (k % 5) * 1600, y = 3600 - Math.floor(k / 5) * 900;
         const pos = seat === 0 ? [x, y] as [number, number] : mirrorPos([x, y]);
-        p.squads.push({ id: s.nextId++, owner: seat, type: u, level: heavy ? 3 : 2, pos, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
+        p.squads.push({ id: s.nextId++, owner: seat, type: u, level: heavy ? 3 : 2, pos, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 0 });
       }
     }
   }

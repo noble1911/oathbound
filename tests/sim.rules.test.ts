@@ -24,7 +24,7 @@ import type { PlayerState } from '../src/sim/types.ts';
 const baseLimit = (p: PlayerState): number => p.deployLimit - DEPLOY_BONUS * Math.min(2, p.squads.reduce((a, q) => a + modsOf(q.items).command, 0));
 
 const squad = (s: MatchState, seat: Seat, type: Squad['type'], pos: [number, number], level = 1): Squad => {
-  const q: Squad = { id: s.nextId++, owner: seat, type, level, pos, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: s.round, spent: type === 'lord' ? 0 : UNITS[type].cost * level };
+  const q: Squad = { id: s.nextId++, owner: seat, type, level, pos, items: { weapon: null, armor: null, relic: null }, deployedRound: s.round, spent: type === 'lord' ? 0 : UNITS[type].cost * level };
   s.players[seat].squads.push(q);
   return q;
 };

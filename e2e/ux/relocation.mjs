@@ -1,5 +1,5 @@
 // Relocation and Muster (DESIGN §2) on the planning screen, offline on ?dev=planning (no server):
-//   - squads from earlier rounds carry a lock and refuse a drag with the reason; turning them is free (and undoable);
+//   - squads from earlier rounds carry a lock and refuse a drag with the reason; their formation is free (and undoable);
 //   - the recruit picker offers Muster; taking it (two presses) shows "Moves left 3/3";
 //   - three relocations, the fourth refused, Undo frees one;
 //   - the enemy's ghosts carry "Moved" / "New" intel marks;
@@ -28,7 +28,7 @@ const shot = (name) => p.screenshot({ path: path.join(SHOTS, `${W}x${H}-${name}.
 const me = () => p.evaluate(() => {
   const { app } = window.__ob;
   const v = app.room.view;
-  return { round: v.round, muster: !!v.you.muster, moveLimit: v.you.moveLimit ?? 0, squads: v.you.squads.map((s) => ({ id: s.id, type: s.type, pos: [...s.pos], facing: s.facing, dr: s.deployedRound, scr: app.scene.toScreen(s.pos, 0) })) };
+  return { round: v.round, muster: !!v.you.muster, moveLimit: v.you.moveLimit ?? 0, squads: v.you.squads.map((s) => ({ id: s.id, type: s.type, pos: [...s.pos], formation: window.__ob.sim.formationOf(s), dr: s.deployedRound, scr: app.scene.toScreen(s.pos, 0) })) };
 });
 const scr = (pos, h = 0) => p.evaluate((pos, h) => window.__ob.app.scene.toScreen(pos, h), pos, h);
 const toasts = () => p.evaluate(() => [...document.querySelectorAll('.toast')].map((t) => t.textContent).join(' | '));
@@ -112,7 +112,7 @@ try {
   await p.mouse.move(q0.scr.x, q0.scr.y - 4);
   await sleep(700);
   const tipText = await p.evaluate(() => document.querySelector('.tip-layer.on')?.textContent ?? '');
-  check(/Locked in place since round \d+\. Turn it freely; take Muster/.test(tipText), 'the hover tooltip explains the lock');
+  check(/Locked in place since round \d+\. Its formation is still free to change; take Muster/.test(tipText), 'the hover tooltip explains the lock');
   await shot('locked-tooltip');
   await drag({ x: q0.scr.x, y: q0.scr.y - 4 }, pick.c);
   m = await me();
@@ -123,17 +123,21 @@ try {
   await sleep(300);
   await shot('locked-panel');
   await clearToasts();
-  // turning it is free, and undoable
-  await p.keyboard.down('Shift');
-  await p.keyboard.press('e');
-  await p.keyboard.up('Shift');
-  await sleep(600);
-  m = await me();
-  let q1 = m.squads.find((q) => q.id === q0.id);
-  check(q1.facing !== q0.facing && q1.pos.join() === q0.pos.join(), `Shift+E turns a locked squad on the spot (facing ${q0.facing} → ${q1.facing})`);
-  await undo();
-  q1 = (await me()).squads.find((q) => q.id === q0.id);
-  check(q1.facing === q0.facing && q1.pos.join() === q0.pos.join(), 'Undo turns it back');
+  // its formation is free, and undoable (R on the selected squad; it never moves)
+  const formable = await p.evaluate((t) => window.__ob.sim.hasFormation(t), q0.type);
+  let q1 = q0;
+  if (formable) {
+    const f0 = q0.formation;
+    await p.keyboard.press('r');
+    await sleep(600);
+    m = await me();
+    q1 = m.squads.find((q) => q.id === q0.id);
+    check(q1.formation !== f0 && q1.pos.join() === q0.pos.join(), `R changes a locked squad's formation in place (${f0} → ${q1.formation})`);
+    check(!/Locked in place/.test(await toasts()), 'and is not refused as a move');
+    await undo();
+    q1 = (await me()).squads.find((q) => q.id === q0.id);
+    check(q1.formation === f0 && q1.pos.join() === q0.pos.join(), 'Undo sets it back');
+  }
   // Mirror leaves the locked squads where they are
   await p.click('.ptools .pt-mirror');
   await sleep(700);

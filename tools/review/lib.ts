@@ -37,7 +37,7 @@ export const world = own; // the mirror is its own inverse
  * Re-place every squad of `seat` at `want(q)` (seat-local frame), in order, through freeSpotNear so the result is
  * always legal. Squads not returned by `want` (null) keep their spot.
  */
-export function relayout(s: MatchState, seat: Seat, want: (q: Squad, i: number) => Vec2 | null, facing?: (q: Squad) => number): void {
+export function relayout(s: MatchState, seat: Seat, want: (q: Squad, i: number) => Vec2 | null): void {
   const p = s.players[seat];
   const placed: Squad[] = [];
   const order = [...p.squads];
@@ -50,7 +50,6 @@ export function relayout(s: MatchState, seat: Seat, want: (q: Squad, i: number) 
     const q = order[i];
     const spot = freeSpotNear(placed, seat, q.type, world(seat, [Math.round(t[0]), Math.round(t[1])]), q.id);
     if (spot) q.pos = spot;
-    if (facing) q.facing = facing(q) & 255;
     placed.push(q);
   }
 }

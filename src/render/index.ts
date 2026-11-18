@@ -19,7 +19,8 @@
 //   (formation outline + facing chevron); no dither. view.setHomeFarEdge(yCm | null) extends the home view to a
 //   far field y (e.g. the ghosts' rearmost squad) while keeping the home pitch; null = enemy zone front edge.
 //   view.showArmy(squads, { ghostOwners: [enemySeat], highlight: { [squadId]: 'selected' } })
-//       squads: ArmySquad[] (sim Squad is compatible: id, owner, type, lord, pos [cm], facing 0..255, level)
+//       squads: ArmySquad[] (sim Squad is compatible: id, owner, type, lord, pos [cm], formation 'wide' | 'deep', level;
+//         squads face the enemy, an optional facing 0..255 turns one for render tests)
 //   view.highlightSquads({ [id]: 'hover' | 'selected' | 'invalid' })
 //   view.pickGround(clientX, clientY) → [xcm, ycm] | null      view.pickSquad(clientX, clientY) → squadId | null
 //   view.fieldToScreen(xcm, ycm, h) / view.squadScreen(squadId) → { x, y } CSS px (labels, HP bars)

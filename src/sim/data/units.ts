@@ -252,21 +252,27 @@ export function growsBySize(type: UnitType): boolean {
  */
 /** Squads with fewer soldiers than this (at Lv1) have no formation choice: one or two bodies are neither a line nor a column. */
 export const FORMATION_MIN_SIZE = 3;
-/** A deep formation marches this much faster... */
-export const DEEP_SPEED_PCT = 15;
-/** ...and takes this much less damage from melee blows. */
-export const DEEP_GUARD_PCT = 15;
+/** The formation of a squad that was given none: the block. */
+export const DEFAULT_FORMATION: Formation = 'deep';
+/** A wide line takes this much LESS damage from area hits (splash, cones, stomps, meteors, skill blasts: every hit not aimed at the soldier)... */
+export const WIDE_AREA_PCT = 40;
+/** ...and this much MORE from melee blows aimed at it: no ranks stand behind the first. */
+export const WIDE_MELEE_PCT = 50;
 /** The formation numbers as the battle reads them (review tooling may change them: setFormationNumbers). */
-export const FORMATION_NUMBERS = { deepSpeed: DEEP_SPEED_PCT, deepGuard: DEEP_GUARD_PCT };
+export const FORMATION_NUMBERS = { wideArea: WIDE_AREA_PCT, wideMelee: WIDE_MELEE_PCT };
 /** Review tooling only (tools/review/orders.ts): try other formation numbers. The game never calls this. */
 export function setFormationNumbers(n: Partial<typeof FORMATION_NUMBERS>): void { Object.assign(FORMATION_NUMBERS, n); }
 export function hasFormation(type: SquadType): boolean {
   return type !== 'lord' && UNITS[type].squadSize >= FORMATION_MIN_SIZE;
 }
+/** The formation a squad stands in: its own choice if it has one, otherwise the default (also for squads without the choice). */
+export function formationOf(sq: { type: SquadType; formation?: Formation }): Formation {
+  return sq.formation === 'wide' && hasFormation(sq.type) ? 'wide' : DEFAULT_FORMATION;
+}
 /**
  * The grid of a squad of `n` soldiers: `cols` soldiers per rank across the front, `rows` ranks deep (the last rank may
- * be short). Wide is a line of one rank (up to 6 soldiers), two (up to 16) or three; deep is a column of one file (up
- * to 3 soldiers), two (up to 8), three (up to 16) or four. battle.ts lays the soldiers out on it, match.ts sizes the
+ * be short). Deep (the default) is a block of one file (up to 3 soldiers), two (up to 8), three (up to 16) or four;
+ * wide is a line of one rank (up to 6 soldiers), two (up to 16) or three. battle.ts lays the soldiers out on it, match.ts sizes the
  * ground footprint from the wide one (the longer), the client draws it.
  */
 export function formationGrid(n: number, formation: Formation): { cols: number; rows: number } {

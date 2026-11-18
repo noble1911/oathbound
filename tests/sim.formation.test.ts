@@ -1,8 +1,8 @@
-// Formation (DESIGN §3): every squad of three or more soldiers stands wide (a line, the default) or deep (a column).
+// Formation (DESIGN §3): every squad of three or more soldiers stands deep (a block, the default) or wide (a line).
 // It replaced facing. Chosen with {t:'formation'} or on deploy, free also for a locked squad, hidden until the battle.
 import { describe, expect, it } from 'vitest';
 import {
-  DEEP_GUARD_PCT, DEEP_SPEED_PCT, UNITS, UNIT_TYPES, applyBattle, applyIntent, botPlan, decodeReplay, forceReady, formationGrid, hasFormation, mirrorPos, newMatch, nextRound,
+  DEFAULT_FORMATION, UNITS, WIDE_AREA_PCT, WIDE_MELEE_PCT, formationOf, UNIT_TYPES, applyBattle, applyIntent, botPlan, decodeReplay, forceReady, formationGrid, hasFormation, mirrorPos, newMatch, nextRound,
   overlappingSquad, replayHash, simulateBattle, squadFootprint, squadLocked, squadSizeAt, viewFor,
 } from '../src/sim/index.ts';
 import { buildStats } from '../src/sim/battle.ts';
@@ -80,36 +80,39 @@ describe('formation: the grid', () => {
 });
 
 describe('formation: the intent', () => {
-  it('defaults to wide, is set on deploy or with {t:"formation"}, and is refused for the Lord and for squads of one or two', () => {
+  it('defaults to deep, is set on deploy or with {t:"formation"}, and is refused for the Lord and for squads of one or two', () => {
     const s = setup(['marshal', 'warden'], [['militia', 'golem', 'wyvern'], ['knights']]);
     const [mil, golem, wyv] = [sq(s, 0, 0), sq(s, 0, 1), sq(s, 0, 2)];
+    expect(DEFAULT_FORMATION).toBe('deep');
     expect(mil.formation).toBeUndefined();
-    expect(applyIntent(s, 0, { t: 'formation', squad: mil.id, formation: 'deep' })).toEqual({ ok: true });
-    expect(mil.formation).toBe('deep');
+    expect(formationOf(mil)).toBe('deep');
     expect(applyIntent(s, 0, { t: 'formation', squad: mil.id, formation: 'wide' })).toEqual({ ok: true });
+    expect(mil.formation).toBe('wide');
+    expect(formationOf(mil)).toBe('wide');
+    expect(applyIntent(s, 0, { t: 'formation', squad: mil.id, formation: 'deep' })).toEqual({ ok: true });
     expect(mil.formation).toBeUndefined();
     expect(hasFormation('golem')).toBe(false);
     expect(hasFormation('wyvern')).toBe(false);
     expect(hasFormation('lord')).toBe(false);
     expect(hasFormation('clerics')).toBe(true);
     for (const q of [golem, wyv, s.players[0].squads[0]]) {
-      expect(applyIntent(s, 0, { t: 'formation', squad: q.id, formation: 'deep' }).ok).toBe(false);
+      expect(applyIntent(s, 0, { t: 'formation', squad: q.id, formation: 'wide' }).ok).toBe(false);
       expect(q.formation).toBeUndefined();
     }
     const bad = (i: unknown): void => { expect(applyIntent(s, 0, i as never).ok).toBe(false); };
     bad({ t: 'formation', squad: mil.id, formation: 'square' });
     bad({ t: 'formation', squad: mil.id });
-    bad({ t: 'formation', squad: 99999, formation: 'deep' });
-    bad({ t: 'formation', squad: sq(s, 1, 0).id, formation: 'deep' });
+    bad({ t: 'formation', squad: 99999, formation: 'wide' });
+    bad({ t: 'formation', squad: sq(s, 1, 0).id, formation: 'wide' });
     bad({ t: 'deploy', unit: 'militia', pos: [1500, 1500], formation: 'square' });
     expect(mil.formation).toBeUndefined();
-    // on deploy; a golem deployed 'deep' is simply a golem
-    expect(applyIntent(s, 0, { t: 'deploy', unit: 'militia', pos: [1500, 1500], formation: 'deep' })).toEqual({ ok: true });
-    expect(s.players[0].squads.at(-1)!.formation).toBe('deep');
-    expect(applyIntent(s, 0, { t: 'deploy', unit: 'golem', pos: [3500, 1500], formation: 'deep' })).toEqual({ ok: true });
+    // on deploy; a golem deployed 'wide' is simply a golem
+    expect(applyIntent(s, 0, { t: 'deploy', unit: 'militia', pos: [1500, 1500], formation: 'wide' })).toEqual({ ok: true });
+    expect(s.players[0].squads.at(-1)!.formation).toBe('wide');
+    expect(applyIntent(s, 0, { t: 'deploy', unit: 'golem', pos: [3500, 1500], formation: 'wide' })).toEqual({ ok: true });
     expect(s.players[0].squads.at(-1)!.formation).toBeUndefined();
     expect(applyIntent(s, 0, { t: 'ready' }).ok).toBe(true);
-    bad({ t: 'formation', squad: mil.id, formation: 'deep' });
+    bad({ t: 'formation', squad: mil.id, formation: 'wide' });
   });
 
   it('is free for a squad that is locked in place, and lasts from round to round', () => {
@@ -121,11 +124,11 @@ describe('formation: the intent', () => {
     expect(squadLocked(q, s.round)).toBe(true);
     const gold = s.players[0].gold;
     expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos: [q.pos[0] + 500, q.pos[1]] }).ok).toBe(false);
-    expect(applyIntent(s, 0, { t: 'formation', squad: q.id, formation: 'deep' })).toEqual({ ok: true });
+    expect(applyIntent(s, 0, { t: 'formation', squad: q.id, formation: 'wide' })).toEqual({ ok: true });
     expect(s.players[0].gold).toBe(gold);
     forceReady(s);
     applyBattle(s, simulateBattle(s, { record: false }).result);
-    if (s.phase === 'results') { nextRound(s); expect(sq(s, 0, 0).formation).toBe('deep'); }
+    if (s.phase === 'results') { nextRound(s); expect(sq(s, 0, 0).formation).toBe('wide'); }
   });
 
   it('facing is gone: the old field on an intent is ignored and squads always face the enemy', () => {
@@ -139,55 +142,49 @@ describe('formation: the intent', () => {
 });
 
 describe('formation: hidden until the battle', () => {
-  it('the enemy sees the formation of the last battle, never this round\'s', () => {
+  it("the enemy sees the formation of the last battle, never this round's", () => {
     const s = setup(['marshal', 'warden'], [['militia'], ['knights', 'berserkers']]);
     const [k, b] = [sq(s, 1, 0), sq(s, 1, 1)];
-    expect(applyIntent(s, 1, { t: 'formation', squad: k.id, formation: 'deep' }).ok).toBe(true);
-    expect(JSON.stringify(viewFor(s, 0).enemy)).not.toMatch(/deep/);
-    expect(JSON.stringify(viewFor(s, null))).not.toMatch(/deep/);
-    expect(viewFor(s, 1).you!.squads.find((q) => q.id === k.id)!.formation).toBe('deep');
+    expect(applyIntent(s, 1, { t: 'formation', squad: k.id, formation: 'wide' }).ok).toBe(true);
+    expect(JSON.stringify(viewFor(s, 0).enemy)).not.toMatch(/"formation"/);
+    expect(JSON.stringify(viewFor(s, null))).not.toMatch(/"formation"/);
+    expect(viewFor(s, 1).you!.squads.find((q) => q.id === k.id)!.formation).toBe('wide');
     forceReady(s);
     applyBattle(s, simulateBattle(s, { record: false }).result);
     nextRound(s);
     const ghosts = viewFor(s, 0).enemy.lastArmy!;
-    expect(ghosts.find((q) => q.id === k.id)!.formation).toBe('deep');
+    expect(ghosts.find((q) => q.id === k.id)!.formation).toBe('wide');
     expect(ghosts.find((q) => q.id === b.id)!.formation).toBeUndefined();
     // this round's change stays hidden
-    expect(applyIntent(s, 1, { t: 'formation', squad: b.id, formation: 'deep' }).ok).toBe(true);
-    expect(applyIntent(s, 1, { t: 'formation', squad: k.id, formation: 'wide' }).ok).toBe(true);
+    expect(applyIntent(s, 1, { t: 'formation', squad: b.id, formation: 'wide' }).ok).toBe(true);
+    expect(applyIntent(s, 1, { t: 'formation', squad: k.id, formation: 'deep' }).ok).toBe(true);
     const again = viewFor(s, 0).enemy.lastArmy!;
-    expect(again.find((q) => q.id === k.id)!.formation).toBe('deep');
+    expect(again.find((q) => q.id === k.id)!.formation).toBe('wide');
     expect(again.find((q) => q.id === b.id)!.formation).toBeUndefined();
   });
 });
 
 describe('formation: what it does in battle', () => {
-  it('deep marches faster and nothing else changes on the sheet; squads without a formation are untouched', () => {
-    const wide = buildStats({ type: 'knights', level: 2, items: NONE }, 'marshal');
-    const deep = buildStats({ type: 'knights', level: 2, items: NONE, formation: 'deep' }, 'marshal');
-    expect(deep.speed).toBe(Math.trunc((wide.speed * (100 + DEEP_SPEED_PCT)) / 100));
-    expect(deep.guard).toBe(DEEP_GUARD_PCT);
-    expect(wide.guard).toBe(0);
-    expect({ ...deep, speed: 0, guard: 0 }).toEqual({ ...wide, speed: 0, guard: 0 });
-    expect(buildStats({ type: 'golem', level: 1, items: NONE, formation: 'deep' }, 'marshal')).toEqual(buildStats({ type: 'golem', level: 1, items: NONE }, 'marshal'));
+  it('wide takes less from area hits and more from melee blows; deep (the default) and squads without a formation are untouched', () => {
+    const deep = buildStats({ type: 'knights', level: 2, items: NONE }, 'marshal');
+    const wide = buildStats({ type: 'knights', level: 2, items: NONE, formation: 'wide' }, 'marshal');
+    expect(deep).toEqual(buildStats({ type: 'knights', level: 2, items: NONE, formation: 'deep' }, 'marshal'));
+    expect(deep.areaTaken).toBe(100);
+    expect(deep.meleeTaken).toBe(100);
+    expect(wide.areaTaken).toBe(100 - WIDE_AREA_PCT);
+    expect(wide.meleeTaken).toBe(100 + WIDE_MELEE_PCT);
+    // no speed or other change
+    expect({ ...wide, areaTaken: 0, meleeTaken: 0 }).toEqual({ ...deep, areaTaken: 0, meleeTaken: 0 });
+    expect(buildStats({ type: 'golem', level: 1, items: NONE, formation: 'wide' }, 'marshal')).toEqual(buildStats({ type: 'golem', level: 1, items: NONE }, 'marshal'));
   });
 
-  it('a deep squad reaches the river first', () => {
-    const s = setup(['marshal', 'warden'], [['knights', 'knights'], ['archers']]);
-    const [a, b] = [sq(s, 0, 0), sq(s, 0, 1)];
-    expect(applyIntent(s, 0, { t: 'formation', squad: b.id, formation: 'deep' }).ok).toBe(true);
-    const d = decodeReplay(simulateBattle(s).replay), n = d.soldierCount;
-    const y = (id: number, f: number): number => { const m = d.replay.soldiers.map((o, k) => (o.side === 0 && o.squad === id ? k : -1)).filter((k) => k >= 0); return m.reduce((acc, k) => acc + d.y[f * n + k], 0) / m.length; };
-    expect(y(b.id, 16) - y(a.id, 16)).toBeGreaterThan(40);
-  });
-
-  it('melee blows hurt a deep squad less; arrows do not care', () => {
+  it('melee blows hurt a wide squad differently from a deep one', () => {
     // one squad of Knights against Berserkers (melee) and against Archers (ranged): damage taken in the first 12 s of contact
     const taken = (foe: UnitType, form: 'wide' | 'deep'): number => {
       const s = setup(['warden', 'warden'], [['knights'], [foe]]);
       for (const seat of [0, 1] as Seat[]) expect(applyIntent(s, seat, { t: 'move', squad: s.players[seat].squads[0].id, pos: at(seat, [7500, 500]) }).ok).toBe(true);
       expect(applyIntent(s, 0, { t: 'formation', squad: sq(s, 0, 0).id, formation: form }).ok).toBe(true);
-      // same speed for both runs, so the comparison is the guard alone
+      // same speed for both runs, so the comparison is the formation alone
       const out = simulateBattle(s);
       return out.result.damageDealt[1];
     };

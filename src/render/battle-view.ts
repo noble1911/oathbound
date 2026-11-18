@@ -15,7 +15,7 @@ import { BattlePlayback, type NumberMode, type PlaybackHooks } from './battle-pl
 import { RangeRing, type RangeRingHandle } from './range-ring.ts';
 import { GhostMarks, type GhostMark } from './ghost-marks.ts';
 import { TEAM_COLORS } from './crowd/archetypes.ts';
-import { UNITS, formationCols } from '../sim/data/units.ts';
+import { UNITS, formationGrid, hasFormation } from '../sim/data/units.ts';
 import { makeTransforms, type BattleSource, type KeepInfo, type ReplaySoldier, type SoldierTransforms, type Terrain } from './battle-source.ts';
 
 export interface BattleViewOptions extends EngineOptions {
@@ -37,8 +37,13 @@ export interface ArmySquad {
   lord?: string | null;
   /** cm */
   pos: [number, number];
-  /** 0..255 binary angle (sim convention). */
+  /**
+   * 0..255 binary angle (sim convention). Squads in the game always face the enemy (the default: 64 for owner 0, 192 for
+   * owner 1); render tests may still turn one.
+   */
   facing?: number;
+  /** How the squad stands (src/sim/data/units.ts formationGrid): 'wide' (a line, the default) or 'deep' (a column). */
+  formation?: 'wide' | 'deep';
   level?: number;
   /** Soldier count (defaults to the unit's squad size). */
   size?: number;
@@ -62,8 +67,8 @@ function squadSize(type: string): number {
   return (UNITS as Record<string, { squadSize: number } | undefined>)[type]?.squadSize ?? SQUAD_SIZE[type] ?? 1;
 }
 /**
- * The sim's starting formation (battle.ts): formationCols(n) columns, rows as far apart as columns, 2 x radius + 50
- * cm between soldiers. Planning draws a squad exactly where its battle will start it, which is also what its
+ * The sim's starting formation (battle.ts): formationGrid(n, formation) (cols across the front, rows deep, the last
+ * rank short and filled from the left), rows as far apart as columns, 2 x radius + 50 cm between soldiers. Planning draws a squad exactly where its battle will start it, which is also what its
  * footprint (match.ts squadFootprint) keeps clear of its neighbours: the older display spacing (up to 5 m between
  * riders, 7 columns for a grown 24-man Swarm squad) drew squads up to half again wider than that ground, so two
  * legally placed squads could stand inside each other. Null for a type the sim does not know (render-test fakes).
@@ -264,7 +269,8 @@ export class BattleView {
       const arch = archetypeFor({ modelId, type, lord: sq.lord ?? undefined });
       const ssp = simSpacing(type);
       const sp = ssp ?? spacing(type) * 100;
-      const cols = n <= 1 ? 1 : ssp !== null ? formationCols(n) : Math.ceil(Math.sqrt(n * 2));
+      const deep = sq.formation === 'deep' && ssp !== null && hasFormation(type as keyof typeof UNITS);
+      const cols = n <= 1 ? 1 : ssp !== null ? formationGrid(n, deep ? 'deep' : 'wide').cols : Math.ceil(Math.sqrt(n * 2));
       const rows = Math.ceil(n / cols);
       // the display-only layout (no sim twin) staggers its rows and packs them a little closer
       const rowSp = ssp !== null ? sp : sp * 0.9;

@@ -19,7 +19,7 @@ import {
   TALON_REACH, TALON_STUN, TALON_THROW,
 } from './data/lords.ts';
 import { ABILITY_CD, SKILLS, SKILL_START_CD, canEquip, classesOf, skillNum } from './data/skills.ts';
-import { FORMATION_NUMBERS, UNITS, formationGrid, growsBySize, hasFormation, squadSizeAt } from './data/units.ts';
+import { FORMATION_NUMBERS, UNITS, formationGrid, formationOf, growsBySize, squadSizeAt } from './data/units.ts';
 import { WHEEL, beatsClass, wheelIndex } from './data/wheel.ts';
 import { FACTION_POWER, LORD_POWER, UNIT_POWER } from './data/balance.ts';
 import { angleOf, idiv, isqrt } from './fixed.ts';
@@ -114,8 +114,8 @@ interface Stats {
   mr: number;
   splash: number;
   radius: number;
-  /** Deep formation: percent taken off melee blows. */
-  guard: number;
+  /** Formation (wide): percent of an area hit, and of a melee blow aimed at the soldier, that is taken (100 = all of it). */
+  areaTaken: number; meleeTaken: number;
   crit: number;
   leech: number;
   thorns: number;
@@ -290,7 +290,7 @@ function hasL(m: ItemMods, l: string): boolean {
 
 /** Battle stats of a squad (per soldier; hp / dmg / heal in centi-HP). Exported for squadSheet (sheet.ts). */
 export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'> & { formation?: Squad['formation'] }, lordOf: LordId | null): Stats {
-  const deep = sq.formation === 'deep' && hasFormation(sq.type);
+  const wide = formationOf(sq) === 'wide';
   // Legendary powers count only on the wheel classes they are built for (legendaryFits).
   const m = modsOf(sq.items, sq.type, lordOf);
   let base;
@@ -341,7 +341,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'> & { forma
   if (hasL(m, 'warhorn') && size <= 2) { hpPct += 35; dmgPct += 35; }
   const ranged = base.range > 400;
   const weapon = base.weapon;
-  let speedPct = 100 + m.move + (hasL(m, 'windrunner') ? 40 : 0) + (lordOf === 'drakerider' ? DRAKE_SPEED_PCT : 0) + (deep ? FORMATION_NUMBERS.deepSpeed : 0);
+  let speedPct = 100 + m.move + (hasL(m, 'windrunner') ? 40 : 0) + (lordOf === 'drakerider' ? DRAKE_SPEED_PCT : 0);
   const windAs = hasL(m, 'windrunner') ? 25 : 0;
   const atk = Math.max(4, idiv(base.attackTicks * 100, 100 + m.as + windAs + (lordOf === 'sultana' ? SULTANA_HASTE_PCT : 0)
     + (lordOf === 'vizier' && base.damageType === 'magic' ? VIZIER_HASTE_PCT : 0)));
@@ -357,7 +357,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'> & { forma
     mr: Math.min(80, base.magicResist + m.mr),
     splash,
     radius,
-    guard: deep ? FORMATION_NUMBERS.deepGuard : 0,
+    areaTaken: wide ? 100 - FORMATION_NUMBERS.wideArea : 100, meleeTaken: wide ? 100 + FORMATION_NUMBERS.wideMelee : 100,
     crit: BASE_CRIT + m.crit,
     leech: lifesteal + m.leech,
     thorns: m.thorns,
@@ -404,7 +404,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'> & { forma
 function skeletonStats(): Stats {
   return {
     hp: SKELETON.hp, dmg: SKELETON.dmg, atk: SKELETON.atk, range: SKELETON.range, minRange: 0, speed: SKELETON.speed, armor: 0, mr: 0, splash: 0,
-    radius: SKELETON.radius, guard: 0, crit: 0, leech: 0, thorns: 0, burn: 0, frost: 0, heal: 0, tags: T_INFANTRY, weapon: 'sword', dmgType: 'physical',
+    radius: SKELETON.radius, areaTaken: 100, meleeTaken: 100, crit: 0, leech: 0, thorns: 0, burn: 0, frost: 0, heal: 0, tags: T_INFANTRY, weapon: 'sword', dmgType: 'physical',
     proj: 'none', wc: SKELETON_WC, beats: wheelIndex(beatsClass('swarm')), slay: {}, ranged: false, canHitAir: false, healer: false, brace: false, charge: false, pierce: false, stomp: false,
     cone: false, slowTurn: false, ignoresArmor: false, crushing: false, backline: false, prefCls: false, raider: false, raise: false, bless: false, regen: 0, holy: 100, undead: true, magicBonus: 0,
     L: new Set(), ilvl: 1, phoenix: false, skills: [],
@@ -537,8 +537,8 @@ class Battle {
       phoenix: stats.phoenix, grave: 0, slotErr: 0, slotErrNext: 0, abilityCd: sq.type === 'lord' ? 100 : 0, summon: false, healTarget: null,
       sourceSquad: sq, stance: ST_ADVANCE, leader: null, t2x: 0, t2y: 0,
     };
-    // Formation: ranks across the march, facing the enemy (wide: a line; deep: a column). See formationGrid.
-    const { cols, rows } = formationGrid(n, sq.formation === 'deep' && hasFormation(sq.type) ? 'deep' : 'wide');
+    // Formation: ranks across the march, facing the enemy (deep: a block; wide: a line). See formationGrid.
+    const { cols, rows } = formationGrid(n, formationOf(sq));
     const spacing = stats.radius * 2 + 50;
     const sg = sideSign(side);
     for (let k = 0; k < n; k++) {
@@ -1072,7 +1072,7 @@ class Battle {
     if (k.radius > 0) {
       this.near(enemy, ix, iy, k.radius, (d) => {
         if (d.spawnTick > t || (fx.ground && d.st.tags & T_FLIER)) return;
-        this.skillHit(a, d, cause, fx, k.mul, k.fx, k.fy);
+        this.skillHit(a, d, cause, fx, idiv(k.mul * d.st.areaTaken, 100), k.fx, k.fy);
       });
     } else if (tg && tg.alive) {
       this.skillHit(a, tg, cause, fx, k.mul, k.fx, k.fy);
@@ -1606,8 +1606,10 @@ class Battle {
     const st = a.st;
     const ranged = !k.melee;
     const crit = !!k.crit;
-    // A deep formation's ranks brace each other against melee blows.
-    if (k.melee && d.st.guard) mul = idiv(mul * (100 - d.st.guard), 100);
+    // Formation: a wide line takes less from hits not aimed at the soldier (splash, cones, pierce, cleave, stomps), more
+    // from a melee blow that is.
+    if (!primary) mul = idiv(mul * d.st.areaTaken, 100);
+    else if (k.melee) mul = idiv(mul * d.st.meleeTaken, 100);
     const r = this.damage(st, primary ? a : null, d, mul, crit, k.hill, ranged, st.dmgType, 0);
     this.credit(d, r.dmg, a, -1, k.cause ?? C_ATTACK, r.mit);
     if (st.leech && a.alive) this.heal(a, idiv(r.dmg * st.leech, 100), a, C_LEECH);
@@ -1653,7 +1655,7 @@ class Battle {
       this.near(enemy, k.ax, k.ay, k.radius, (d) => {
         if (d.spawnTick > t) return;
         if (k.kind === 'ember' && d.st.tags & T_FLIER) return;
-        const r = this.damage(a.st, null, d, 100, false, false, false, magic ? 'magic' : 'physical', k.dmg);
+        const r = this.damage(a.st, null, d, d.st.areaTaken, false, false, false, magic ? 'magic' : 'physical', k.dmg);
         this.credit(d, r.dmg, a, -1, k.kind === 'meteor' ? C_METEOR : k.kind === 'ember' ? C_EMBER : C_SKYFALL, r.mit);
         this.emit(EK.hit, a.i, d.i, Math.ceil(r.dmg / 100), 1 << 3);
       });

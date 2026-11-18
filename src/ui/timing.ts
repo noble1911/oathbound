@@ -1,7 +1,7 @@
 // Planning-side formation maths: the march preview (when each squad reaches the river and the enemy's
-// last-round front line), the "sync by speed" helper, group placement (drag / rotate / mirror) and the
+// last-round front line), the "sync by speed" helper, group placement (drag / mirror) and the
 // ordering of the move intents that carry it out. Everything that decides a march is read from the sim
-// (src/sim: unit stats through buildStats, the flow field, terrain speed factors, the macro targeting
+// (src/sim: unit stats through buildStats, formation included (a deep squad marches faster), the flow field, terrain speed factors, the macro targeting
 // bias), so the preview follows the battle's own rules instead of a copy of its numbers.
 //
 // The march is the sim's squad-anchor walk (BattleSim.squadPass) replayed for one squad against a
@@ -11,7 +11,7 @@ import { AGGRO, T_FLIER, buildStats } from '../sim/battle.ts';
 import { FIELD_H, FIELD_W, TICK_HZ } from '../sim/constants.ts';
 import { deployZone, freeSpotNear, overlappingSquad, squadFootprint } from '../sim/match.ts';
 import { DIRS, MOVE_PCT, RIVER_Y0, RIVER_Y1, cellOf, navFor } from '../sim/terrain.ts';
-import type { Intent, LordId, Seat, Squad, SquadType, Terrain, Vec2 } from '../sim/types.ts';
+import type { Formation, Intent, LordId, Seat, Squad, SquadType, Terrain, Vec2 } from '../sim/types.ts';
 import { goesHome, moveAllowed, type RelocMe } from './relocation.ts';
 
 /** What the march needs to know about one enemy squad (as it stood last round). */
@@ -43,7 +43,8 @@ export interface March {
   flier: boolean;
 }
 
-export type MarchSquad = Pick<Squad, 'type' | 'level' | 'items' | 'pos'>;
+/** What a march reads of a squad: its stats (type, level, items, and formation: deep marches faster) and its spot. */
+export type MarchSquad = Pick<Squad, 'type' | 'level' | 'items' | 'pos'> & { formation?: Formation };
 
 /** The longest march the preview follows (s). */
 const MAX_SEC = 45;
@@ -165,16 +166,16 @@ export function snapPos(p: Vec2, step: number, seat: Seat): Vec2 {
   return [one(p[0], z.x0, z.x1), one(p[1], z.y0, z.y1)];
 }
 
+/** Where a squad is put (squads always face the enemy; how they stand is their formation, never changed by a move). */
 export interface Placed {
   pos: Vec2;
-  facing: number;
 }
 
-type Body = Pick<Squad, 'id' | 'type' | 'pos' | 'facing'>;
+type Body = Pick<Squad, 'id' | 'type' | 'pos'>;
 
 /** A phantom squad standing on a target (for overlap checks against spots already handed out). */
 function phantom(id: number, type: SquadType, pos: Vec2): Squad {
-  return { id, owner: 0, type, level: 1, pos, facing: 0, items: { weapon: null, armor: null, relic: null }, deployedRound: 0, spent: 0 };
+  return { id, owner: 0, type, level: 1, pos, items: { weapon: null, armor: null, relic: null }, deployedRound: 0, spent: 0 };
 }
 
 /**
@@ -196,41 +197,25 @@ export function settle(order: readonly Body[], want: Map<number, Placed>, others
       if (!near) return null;
       pos = near;
     }
-    out.set(b.id, { pos, facing: w.facing & 255 });
+    out.set(b.id, { pos });
     taken.push(phantom(b.id, b.type, pos));
   }
   return out;
 }
 
 /**
- * A group moved by `delta` and turned `steps` (0..255 binary angle) about its centroid: relative
- * positions kept, clamped so every centre stays in the deploy zone, snapped, and settled clear of
- * the squads outside the group.
+ * A group moved by `delta`: relative positions kept, clamped so every centre stays in the deploy zone, snapped, and
+ * settled clear of the squads outside the group.
  */
-export function groupPlace(all: readonly Body[], others: readonly Squad[], seat: Seat, delta: Vec2, steps: number, snap: number, pinned?: ReadonlySet<number>): Map<number, Placed> | null {
+export function groupPlace(all: readonly Body[], others: readonly Squad[], seat: Seat, delta: Vec2, snap: number, pinned?: ReadonlySet<number>): Map<number, Placed> | null {
   if (!all.length) return new Map();
-  // pinned squads (locked in place, DESIGN §2) only turn on the spot: exactly where they stand, never snapped or nudged
+  // pinned squads (locked in place, DESIGN §2) stay exactly where they stand, never snapped or nudged
   const stay = pinned?.size ? all.filter((b) => pinned.has(b.id)) : [];
   const group = stay.length ? all.filter((b) => !pinned!.has(b.id)) : all;
-  const kept = new Map<number, Placed>(stay.map((b) => [b.id, { pos: [b.pos[0], b.pos[1]] as Vec2, facing: (b.facing + steps) & 255 }]));
+  const kept = new Map<number, Placed>(stay.map((b) => [b.id, { pos: [b.pos[0], b.pos[1]] as Vec2 }]));
   if (!group.length) return kept;
   others = stay.length ? [...others, ...stay.map((b) => phantom(b.id, b.type, b.pos))] : others;
-  let cx = 0;
-  let cy = 0;
-  for (const b of group) {
-    cx += b.pos[0];
-    cy += b.pos[1];
-  }
-  cx /= group.length;
-  cy /= group.length;
-  const a = (steps / 256) * Math.PI * 2;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  const raw = group.map((b) => {
-    const ox = b.pos[0] - cx;
-    const oy = b.pos[1] - cy;
-    return [cx + delta[0] + ox * c - oy * s, cy + delta[1] + ox * s + oy * c] as Vec2;
-  });
+  const raw = group.map((b) => [b.pos[0] + delta[0], b.pos[1] + delta[1]] as Vec2);
   // clamp the whole group into the zone (keeps the shape while it fits)
   const z = deployZone(seat);
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -246,7 +231,7 @@ export function groupPlace(all: readonly Body[], others: readonly Squad[], seat:
   const want = new Map<number, Placed>();
   group.forEach((b, i) => {
     const p = raw[i]!;
-    want.set(b.id, { pos: snapPos([Math.round(p[0] + sx), Math.round(p[1] + sy)], snap, seat), facing: (b.facing + steps) & 255 });
+    want.set(b.id, { pos: snapPos([Math.round(p[0] + sx), Math.round(p[1] + sy)], snap, seat) });
   });
   // settle the group's leading edge first, so the squads that move into new ground keep their spots
   const fwd = seat === 0 ? 1 : -1;
@@ -261,7 +246,7 @@ export function groupPlace(all: readonly Body[], others: readonly Squad[], seat:
 export function mirrorPlace(squads: readonly Body[], seat: Seat): Map<number, Placed> {
   const z = deployZone(seat);
   const out = new Map<number, Placed>();
-  for (const s of squads) out.set(s.id, { pos: [z.x0 + z.x1 - s.pos[0], s.pos[1]], facing: (128 - s.facing) & 255 });
+  for (const s of squads) out.set(s.id, { pos: [z.x0 + z.x1 - s.pos[0], s.pos[1]] });
   return out;
 }
 
@@ -271,7 +256,7 @@ export function mirrorPlace(squads: readonly Body[], seat: Seat): Map<number, Pl
  * new spots (settled clear of everything else) and the shared river time.
  */
 export function syncBySpeed(
-  group: readonly (Body & Pick<Squad, 'level' | 'items'>)[],
+  group: readonly (Body & Pick<Squad, 'level' | 'items' | 'formation'>)[],
   others: readonly Squad[],
   seat: Seat,
   lord: LordId | null,
@@ -315,7 +300,7 @@ export function syncBySpeed(
         y = lo;
       }
     }
-    want.set(b.id, { pos: snapPos([b.pos[0], y], snap, seat), facing: b.facing });
+    want.set(b.id, { pos: snapPos([b.pos[0], y], snap, seat) });
   });
   // front squads settle first: they hold the line, the held-back ones fit around them
   const order = [...group].sort((p, q) => (want.get(q.id)!.pos[1] - want.get(p.id)!.pos[1]) * fwd || p.id - q.id);
@@ -333,7 +318,7 @@ export function planMoves(squads: readonly Squad[], targets: Map<number, Placed>
   const byId = new Map(cur.map((s) => [s.id, s]));
   const left = [...targets.entries()].filter(([id, t]) => {
     const s = byId.get(id);
-    return s && (s.pos[0] !== t.pos[0] || s.pos[1] !== t.pos[1] || s.facing !== t.facing);
+    return s && (s.pos[0] !== t.pos[0] || s.pos[1] !== t.pos[1]);
   });
   // relocation (DESIGN §2): a locked squad moves only while a relocation is left at that step, so the moves that send a
   // relocated squad home (freeing one) go first, and a locked squad is parked aside only when that is legal too
@@ -348,8 +333,7 @@ export function planMoves(squads: readonly Squad[], targets: Map<number, Placed>
       const [id, t] = left.splice(i, 1)[0]!;
       const s = byId.get(id)!;
       s.pos = [t.pos[0], t.pos[1]];
-      s.facing = t.facing;
-      out.push({ t: 'move', squad: id, pos: s.pos, facing: t.facing });
+      out.push({ t: 'move', squad: id, pos: s.pos });
       continue;
     }
     // every remaining squad is blocked by another one that still has to move: park the first aside,
@@ -365,7 +349,7 @@ export function planMoves(squads: readonly Squad[], targets: Map<number, Placed>
     const park = freeSpotNear(blockers, seat, s.type, s.pos, id) ?? freeSpotNear(cur, seat, s.type, s.pos, id);
     if (!park) break;
     s.pos = park;
-    out.push({ t: 'move', squad: id, pos: park, facing: s.facing });
+    out.push({ t: 'move', squad: id, pos: park });
   }
   return out;
 }

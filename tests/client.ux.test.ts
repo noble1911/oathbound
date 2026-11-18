@@ -18,7 +18,7 @@ const item = (over: Partial<Item> = {}): Item => ({
   implicit: { id: 'vicious', value: 10 }, affixes: [], legendary: null, ...over,
 });
 const squad = (id: number, type: Squad['type'], level = 1, items: Partial<Squad['items']> = {}): Squad => ({
-  id, owner: 0, type, level, pos: [4000, 2000], facing: 64, items: { weapon: null, armor: null, relic: null, ...items }, deployedRound: 1, spent: 100,
+  id, owner: 0, type, level, pos: [4000, 2000], items: { weapon: null, armor: null, relic: null, ...items }, deployedRound: 1, spent: 100,
 });
 
 describe('viewer-relative flip (seat 1 sees its own army blue, at the bottom)', () => {

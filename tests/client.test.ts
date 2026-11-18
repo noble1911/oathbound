@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { compareItems, counters, effectiveStats, formation, itemStats, soldierStats, squadRadius, slotOpen, wheelText, deployRefusal, levelGainText, rarityRank } from '../src/ui/gamedata.ts';
 import { niceError } from '../src/ui/hud.ts';
 import { LocalMatch } from '../src/ui/local.ts';
-import type { Item, LordId, Replay, Seat, Squad } from '../src/sim/types.ts';
+import type { Item, LordId, Replay, Seat, Squad, UnitType } from '../src/sim/types.ts';
 import { buildStats } from '../src/sim/battle.ts';
 import { sheetOf } from '../src/sim/sheet.ts';
 import { TICK_HZ } from '../src/sim/constants.ts';
@@ -12,6 +12,9 @@ import { LORDS } from '../src/sim/data/lords.ts';
 import { squadTooltip, unitTooltip } from '../src/ui/units.ts';
 import type { RoomView } from '../src/net/protocol.ts';
 import { UNITS, UNIT_TYPES } from '../src/sim/data/units.ts';
+import { applyIntent, newMatch } from '../src/sim/match.ts';
+import { decodeReplay, mirrorPos, simulateBattle } from '../src/sim/index.ts';
+import { formationOf } from '../src/ui/formation.ts';
 import { SLOT_UNLOCK_LEVEL } from '../src/sim/data/items.ts';
 
 const item = (over: Partial<Item> = {}): Item => ({
@@ -39,17 +42,48 @@ describe('unit readings', () => {
     expect(levelGainText('militia', 1)).toBe('+3 soldiers');
     expect(levelGainText('knights', 1)).toMatch(/life/);
   });
-  it('formation has one offset per soldier, centred, and turns with facing', () => {
+  it('formation has one offset per soldier, centred; wide is a line, deep a column, mirrored for seat 1', () => {
     for (const u of UNIT_TYPES) {
-      const f = formation(u, 64);
+      const f = formation(u, 0);
       expect(f.length).toBe(UNITS[u].squadSize);
       const cx = f.reduce((a, p) => a + p[0], 0) / f.length;
-      expect(Math.abs(cx)).toBeLessThan(5);
+      expect(Math.abs(cx)).toBeLessThan(UNITS[u].radius * 2 + 50);
     }
-    const a = formation('militia', 64);
-    const b = formation('militia', 0);
-    expect(Math.max(...a.map((p) => Math.abs(p[0])))).toBeCloseTo(Math.max(...b.map((p) => Math.abs(p[1]))), -1);
+    const span = (f: [number, number][], i: 0 | 1) => Math.max(...f.map((p) => p[i])) - Math.min(...f.map((p) => p[i]));
+    const wide = formation('militia', 0, 'wide'), deep = formation('militia', 0, 'deep');
+    expect(span(wide, 0)).toBeGreaterThan(span(wide, 1));
+    expect(span(deep, 1)).toBeGreaterThan(span(deep, 0));
+    // the front rank is nearest the enemy: up the field for seat 0, down it for seat 1
+    expect(formation('militia', 1, 'deep')).toEqual(deep.map(([x, y]) => [0 - x + 0, 0 - y + 0]));
+    expect(deep[0]![1]).toBeGreaterThan(0);
+    // one or two soldiers (and the Lord) have no formation: deep is ignored
+    expect(formation('ballista', 0, 'deep')).toEqual(formation('ballista', 0, 'wide'));
     expect(squadRadius('militia')).toBeGreaterThan(squadRadius('lord'));
+  });
+
+  it('planning draws every soldier exactly where the battle starts it, wide and deep, both seats (no jump at the hand-over)', () => {
+    const s = newMatch(31, ['marshal', 'warden']);
+    const types: UnitType[] = ['militia', 'knights', 'archers', 'berserkers'];
+    for (const seat of [0, 1] as Seat[]) {
+      const p = s.players[seat];
+      p.gold = 9000;
+      p.deployLimit = 99;
+      for (const u of types) if (!p.unlocked.includes(u)) p.unlocked.push(u);
+      types.forEach((u, i) => {
+        const pos: [number, number] = [1500 + i * 1700, 3300];
+        expect(applyIntent(s, seat, { t: 'deploy', unit: u, pos: seat === 0 ? pos : mirrorPos(pos), formation: i % 2 ? 'deep' : 'wide' })).toEqual({ ok: true });
+      });
+    }
+    const d = decodeReplay(simulateBattle(s).replay);
+    for (const seat of [0, 1] as Seat[]) for (const q of s.players[seat].squads) {
+      const mem = d.replay.soldiers.map((o, k) => (o.side === seat && o.squad === q.id ? k : -1)).filter((k) => k >= 0);
+      const offs = formation(q.type, seat, formationOf(q), mem.length);
+      expect(offs.length).toBe(mem.length);
+      mem.forEach((k, i) => {
+        expect(d.x[k]).toBe(q.pos[0] + offs[i]![0]);
+        expect(d.y[k]).toBe(q.pos[1] + offs[i]![1]);
+      });
+    }
   });
   it('shown stats are the battle stats of the sim (power multipliers, damage scale, levels, Lord passive)', () => {
     const none = { weapon: null, armor: null, relic: null };

@@ -166,7 +166,7 @@ describe('mirror symmetry (seat fairness)', () => {
         const p = s.players[seat];
         armies[seat].forEach((u, k) => {
           const x = 900 + (k % 5) * 1500, y = 3500 - Math.floor(k / 5) * 1300;
-          p.squads.push({ id: s.nextId++, owner: seat, type: u, level: 4, pos: seat === 0 ? [x, y] : [FIELD_W - 1 - x, FIELD_H - 1 - y], facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 400 });
+          p.squads.push({ id: s.nextId++, owner: seat, type: u, level: 4, pos: seat === 0 ? [x, y] : [FIELD_W - 1 - x, FIELD_H - 1 - y], items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 400 });
         });
         for (const q of p.squads) {
           for (const k of SKILL_IDS) {
@@ -213,7 +213,7 @@ describe('mirror symmetry (seat fairness)', () => {
         p.squads[0].pos = seat === 0 ? lp : [FIELD_W - 1 - lp[0], FIELD_H - 1 - lp[1]];
         armies[seat].forEach((u, k) => {
           const x = 1500 + (k % 3) * 2200, y = 3800 - Math.floor(k / 3) * 1200;
-          p.squads.push({ id: s.nextId++, owner: seat, type: u, level: 2, pos: seat === 0 ? [x, y] : [FIELD_W - 1 - x, FIELD_H - 1 - y], facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 300 });
+          p.squads.push({ id: s.nextId++, owner: seat, type: u, level: 2, pos: seat === 0 ? [x, y] : [FIELD_W - 1 - x, FIELD_H - 1 - y], items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: 300 });
         });
       }
       checkMirror(s);

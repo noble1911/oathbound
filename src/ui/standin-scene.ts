@@ -3,13 +3,15 @@
 // an RTS camera and a battle director) until the render agent's engine is mapped in.
 //
 // World axes: X = (x - 4000) / 100 m, Z = (6000 - y) / 100 m, so seat 0's Keep (y = 0) sits at
-// +Z, nearest the default camera. A field facing f (0..255, 0 = +x, 64 = +y) is rotation.y = f·2π/256.
+// +Z, nearest the default camera. A field facing f (0..255, 0 = +x, 64 = +y) is rotation.y = f·2π/256. In planning every
+// squad faces the enemy and stands in its formation (gamedata.ts formation(): the sim's own layout, wide or deep).
 import * as THREE from 'three';
 import type { DecodedReplay, ReplayEvent, Seat, SoldierTransforms, SquadType, Terrain, Vec2 } from '../sim/types.ts';
 import { FIELD_H, FIELD_W, KEYFRAME_TICKS } from '../sim/constants.ts';
 import { UNITS } from '../sim/data/units.ts';
 import type { CameraMode, PlaybackHandle, PreviewSpec, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual, StanceSpec } from './scene-adapter.ts';
-import { formation, squadRadius } from './gamedata.ts';
+import { defaultFacing, formation, squadRadius } from './gamedata.ts';
+import { squadFootprint } from '../sim/match.ts';
 import { RARITY_CSS } from './gamedata.ts';
 
 const OWN = new THREE.Color('#4f9dff');
@@ -488,7 +490,7 @@ export class StandInScene implements SceneAdapter {
     const test = (list: SquadVisual[], ghost: boolean) => {
       for (const s of list) {
         const d = Math.hypot(s.pos[0] - g[0], s.pos[1] - g[1]);
-        if (d < squadRadius(s.type, s.size) && d < bd) {
+        if (d < squadRadius(s.type, s.size, s.formation) && d < bd) {
           bd = d;
           best = { id: s.id, ghost };
         }
@@ -530,8 +532,8 @@ export class StandInScene implements SceneAdapter {
 
   private placeSquad(inst: Instances, s: SquadVisual, color: THREE.Color): void {
     const lk = look(s.type);
-    const yaw = (s.facing / 256) * TWO_PI;
-    for (const [dx, dy] of formation(s.type, s.facing, s.lord, s.size)) inst.add(s.pos[0] + dx, s.pos[1] + dy, yaw, lk, color);
+    const yaw = (defaultFacing(s.owner) / 256) * TWO_PI;
+    for (const [dx, dy] of formation(s.type, s.owner, s.formation, s.size)) inst.add(s.pos[0] + dx, s.pos[1] + dy, yaw, lk, color);
   }
 
   private drawArmy(): void {
@@ -544,7 +546,7 @@ export class StandInScene implements SceneAdapter {
       if (s.level >= 3) c.offsetHSL(0, 0, 0.08);
       this.placeSquad(this.solid, s, c);
       if (s.rarity && s.rarity !== 'common' && na < 40) {
-        const r = squadRadius(s.type, s.size) / 100;
+        const r = squadRadius(s.type, s.size, s.formation) / 100;
         m.compose(new THREE.Vector3(wx(s.pos[0]), 0, wz(s.pos[1])), new THREE.Quaternion(), new THREE.Vector3(r, 1, r));
         this.auras.setMatrixAt(na, m);
         this.auras.setColorAt(na, new THREE.Color(RARITY_CSS[s.rarity]));
@@ -567,7 +569,7 @@ export class StandInScene implements SceneAdapter {
   setPreview(p: PreviewSpec | null): void {
     this.wake();
     this.preview.begin();
-    if (p) this.placeSquad(this.preview, { id: -1, type: p.type, lord: p.lord, owner: p.seat, pos: p.pos, facing: p.facing, level: 1 }, p.valid ? GOOD : BAD);
+    if (p) this.placeSquad(this.preview, { id: -1, type: p.type, lord: p.lord, owner: p.seat, pos: p.pos, formation: p.formation, level: 1 }, p.valid ? GOOD : BAD);
     this.preview.end();
   }
 
@@ -580,7 +582,8 @@ export class StandInScene implements SceneAdapter {
     const put = (ring: THREE.Mesh, s: SquadVisual | null) => {
       ring.visible = !!s && this.mode === 'planning';
       if (!s) return;
-      const r = squadRadius(s.type, s.size) / 100;
+      // the squad's ground (match.ts squadFootprint): the same circle wide or deep, what its neighbours keep clear of
+      const r = squadFootprint(s.type) / 100;
       ring.scale.set(r, 1, r);
       ring.position.set(wx(s.pos[0]), 0.08, wz(s.pos[1]));
     };

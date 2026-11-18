@@ -74,8 +74,8 @@ describe('relocation: squads from earlier rounds are locked', () => {
     const q = olds(s, 0)[0];
     const pos: Vec2 = [q.pos[0], q.pos[1]];
     expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos })).toEqual({ ok: true }); // a move to where it stands is no move
-    expect(applyIntent(s, 0, { t: 'formation', squad: q.id, formation: 'deep' })).toEqual({ ok: true });
-    expect(q.formation).toBe('deep');
+    expect(applyIntent(s, 0, { t: 'formation', squad: q.id, formation: 'wide' })).toEqual({ ok: true });
+    expect(q.formation).toBe('wide');
     expect(q.pos).toEqual(pos);
     expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos: [pos[0] + 1, pos[1]] }).ok).toBe(false);
     expect(relocatedSquads(s.players[0], s.round)).toEqual([]);

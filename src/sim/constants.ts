@@ -20,9 +20,6 @@ export const GRID_H = FIELD_H / CELL;
 export function mirrorPos(p: Vec2): Vec2 {
   return [FIELD_W - 1 - p[0], FIELD_H - 1 - p[1]];
 }
-export function mirrorFacing(f: number): number {
-  return (f + 128) & 255;
-}
 
 /**
  * The counter wheel (DESIGN §3, data/wheel.ts): a unit deals COUNTER_PCT percent damage to a unit of the class its own

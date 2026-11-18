@@ -10,7 +10,7 @@
 // Screenshots (png) go to SHOTS (default docs/reviews/shots-2026-11-18/stance-formation): stance-<name>-<W>.png.
 //   npx vite --port 5241 &   BASE=http://127.0.0.1:5241/ W=1366 H=768 node e2e/ux/stance.mjs [cases...]
 //   SCENE=standin ... runs it on the stand-in renderer. Cases (default all, in order): control hold follow intel layout ready.
-// More planning controls of the Lord / squad panel (the formation toggle) add a case to CASES below.
+// The squad panel's formation toggle (Wide / Deep) has its own script next to this one: e2e/ux/formation.mjs.
 import { launch, sleep, waitFor } from '../qa/lib.mjs';
 import fs from 'node:fs';
 import path from 'node:path';

@@ -47,7 +47,6 @@ const P: Record<string, string> = {
   heart: '<path d="M12 20s-8-5-8-11a4 4 0 018-1 4 4 0 018 1c0 6-8 11-8 11z" />',
   shield: '<path d="M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z" />',
   move: '<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" />',
-  rotate: '<path d="M20 12a8 8 0 11-3-6.2M20 4v5h-5" />',
   up: '<path d="M12 19V5M5 12l7-7 7 7" />',
   sell: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />',
   close: '<path d="M6 6l12 12M18 6L6 18" />',
@@ -71,6 +70,9 @@ const P: Record<string, string> = {
   st_advance: '<path d="M6 12.5l6-6 6 6M6 19l6-6 6 6" />',
   st_hold: '<path d="M11 18V3.5" /><path d="M11 4.5h7l-2.2 2.7L18 10h-7z" fill="currentColor" fill-opacity=".3" /><path d="M3.5 19c0-1.5 3.4-2.6 7.5-2.6s7.5 1.1 7.5 2.6-3.4 2.6-7.5 2.6-7.5-1.1-7.5-2.6z" stroke-dasharray="2.2 2" />',
   st_follow: '<rect x="7" y="2.5" width="10" height="6" rx="1" fill="currentColor" fill-opacity=".3" /><path d="M12 10.5v5" stroke-dasharray="1.8 1.8" /><circle cx="12" cy="19" r="2.6" /><path d="M9 13.5l3 2.2 3-2.2" />',
+  // a squad's formation (src/ui/formation.ts): a line two ranks deep, or a block two files wide (soldiers as dots); the chevron is the front
+  fm_wide: '<path d="M8.5 6.5L12 4l3.5 2.5" /><g fill="currentColor" stroke="none"><circle cx="4" cy="11.5" r="2.1" /><circle cx="9.33" cy="11.5" r="2.1" /><circle cx="14.67" cy="11.5" r="2.1" /><circle cx="20" cy="11.5" r="2.1" /><circle cx="4" cy="17.5" r="2.1" /><circle cx="9.33" cy="17.5" r="2.1" /><circle cx="14.67" cy="17.5" r="2.1" /><circle cx="20" cy="17.5" r="2.1" /></g>',
+  fm_deep: '<path d="M9 4.5L12 2l3 2.5" /><g fill="currentColor" stroke="none"><circle cx="9.5" cy="8" r="2.1" /><circle cx="14.5" cy="8" r="2.1" /><circle cx="9.5" cy="12.5" r="2.1" /><circle cx="14.5" cy="12.5" r="2.1" /><circle cx="9.5" cy="17" r="2.1" /><circle cx="14.5" cy="17" r="2.1" /><circle cx="9.5" cy="21.5" r="2.1" /><circle cx="14.5" cy="21.5" r="2.1" /></g>',
   // the counter wheel's eight classes (cls_<WheelClass>): flat carved stamps, one idea each
   cls_swarm: '<circle cx="6" cy="8.5" r="2" /><circle cx="12" cy="6" r="2" /><circle cx="18" cy="8.5" r="2" /><path d="M2.5 20v-4.5a3.5 3.5 0 017 0M8.5 20v-7a3.5 3.5 0 017 0v7M14.5 15.5a3.5 3.5 0 017 0V20" />',
   cls_giant: '<path d="M10 3h4v3h-4z" /><path d="M6 21v-5H4V9.5L7 6.5h10l3 3V16h-2v5M9 21v-4h6v4M9 10v3M15 10v3" />',

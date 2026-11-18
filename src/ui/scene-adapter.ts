@@ -2,10 +2,10 @@
 // returns the stand-in renderer (src/ui/standin-scene.ts) until the render agent's engine
 // (src/render/) exposes the same needs, at which point the mapping lives here.
 //
-// Coordinates are always field centimetres (see src/sim/types.ts): x in 0..8000, y in 0..12000,
-// facing as a 0..255 binary angle. The adapter turns the camera so the viewer's own Keep is at the
+// Coordinates are always field centimetres (see src/sim/types.ts): x in 0..8000, y in 0..12000.
+// Squads always face the enemy; how they stand is their formation (wide or deep). The adapter turns the camera so the viewer's own Keep is at the
 // bottom of the screen (`setPerspective`).
-import type { DecodedReplay, LordId, Rarity, ReplayEvent, Seat, SkillEvent, SquadType, Terrain, Vec2, FactionId } from '../sim/types.ts';
+import type { DecodedReplay, Formation, LordId, Rarity, ReplayEvent, Seat, SkillEvent, SquadType, Terrain, Vec2, FactionId } from '../sim/types.ts';
 
 export type SceneMode = 'title' | 'lobby' | 'lordPick' | 'planning' | 'battle' | 'results';
 export type CameraMode = 'director' | 'free';
@@ -17,7 +17,8 @@ export interface SquadVisual {
   lord?: LordId | null;
   owner: Seat;
   pos: Vec2;
-  facing: number;
+  /** How it stands (src/sim/data/units.ts formationGrid). The screens always set it (src/ui/formation.ts formationOf). Always facing the enemy. */
+  formation?: Formation;
   level: number;
   /** Soldiers in the squad (grown Swarm squads, Warhorn); default the unit's level-1 squad size. */
   size?: number;
@@ -30,7 +31,8 @@ export interface PreviewSpec {
   lord?: LordId | null;
   seat: Seat;
   pos: Vec2;
-  facing: number;
+  /** The formation the ghost stands in (a deploy from the shop: DEFAULT_FORMATION unless R flipped it). */
+  formation?: Formation;
   valid: boolean;
 }
 
@@ -71,8 +73,12 @@ export interface StanceSpec {
 
 /** The planning march preview (src/ui/timing.ts): plate tags, and route lines with their time marks. */
 export interface TimingSpec {
-  /** A small seconds tag under a squad's plate (`pos` is the squad's field position). */
-  tags: { id: number; pos: Vec2; text: string; hot?: boolean; badge?: TagBadge; foe?: boolean }[];
+  /**
+   * A small seconds tag under a squad's plate (`pos` is the squad's field position). `form`: the squad stands in the
+   * formation that is not the default (src/ui/formation.ts marked); its small glyph (a block or a line) closes the
+   * tag, so it reads without selecting the squad.
+   */
+  tags: { id: number; pos: Vec2; text: string; hot?: boolean; badge?: TagBadge; foe?: boolean; form?: Formation }[];
   /** Field-cm polylines; `marks` are labels along them (the river, the enemy front). */
   routes: { pts: Vec2[]; hot?: boolean; marks: { pos: Vec2; text: string; dim?: boolean }[] }[];
 }

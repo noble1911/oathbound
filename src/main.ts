@@ -12,7 +12,8 @@ import type { Intent, LordId, Replay, Seat, UnitType } from './sim/types.ts';
 import { Net, type NetStatus } from './net/client.ts';
 import type { AiLevel, BattleClock, ClientMsg, RoomView } from './net/protocol.ts';
 import { LORDS } from './sim/data/lords.ts';
-import { UNITS } from './sim/data/units.ts';
+import { UNITS, hasFormation } from './sim/data/units.ts';
+import { DEFAULT_FORMATION, formationOf } from './ui/formation.ts';
 import { itemName } from './sim/loot.ts';
 import { sound } from './audio.ts';
 import { playLordLine, voice } from './audio/voice.ts';
@@ -591,4 +592,4 @@ void app.init().then(() => {
 });
 
 // for browser tests
-(window as unknown as { __ob: unknown }).__ob = { app, sound, ui, titleBattle: () => TitleBattle.current };
+(window as unknown as { __ob: unknown }).__ob = { app, sound, ui, titleBattle: () => TitleBattle.current, sim: { hasFormation, formationOf, DEFAULT_FORMATION } };

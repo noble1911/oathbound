@@ -13,13 +13,13 @@
 // mirror), so "my army is blue and at the bottom" holds for both seats. Everything crossing this
 // seam is mapped (`in*` towards the engine, `out*` back); the screens only ever see sim coordinates.
 import * as THREE from 'three';
-import type { DecodedReplay, FactionId, ReplayEvent, Seat, SkillEvent, Terrain, Vec2 } from '../sim/types.ts';
+import type { DecodedReplay, FactionId, Formation, ReplayEvent, Seat, SkillEvent, Terrain, Vec2 } from '../sim/types.ts';
 import { sampleReplay, makeTransforms } from '../sim/index.ts';
 import { BattleView, replaySource, type ArmySquad } from '../render/index.ts';
 import type { BackdropHandle, BackdropOptions, CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual, StanceSpec, TagBadge, TimingSpec } from './scene-adapter.ts';
 import { squadFootprint } from '../sim/match.ts';
 import { PlanOverlay } from './plan-overlay.ts';
-import { flipFacing, flipPos, flippedSource } from './flip.ts';
+import { flipPos, flippedSource } from './flip.ts';
 
 const PREVIEW_ID = -77;
 /** Menu backdrops (the results orbit) draw at most this often. */
@@ -89,9 +89,6 @@ export class EngineScene implements SceneAdapter {
 
   private inPos(p: Vec2): Vec2 {
     return this.flip ? flipPos(p) : p;
-  }
-  private inFacing(f: number): number {
-    return this.flip ? flipFacing(f) : f;
   }
   private inSeat(s: Seat): Seat {
     return this.flip ? ((1 - s) as Seat) : s;
@@ -394,7 +391,7 @@ export class EngineScene implements SceneAdapter {
    */
   private layoutTags(): void {
     const tags = this.timing?.tags ?? [];
-    const out: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge; foe?: boolean }[] = [];
+    const out: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge; foe?: boolean; form?: Formation }[] = [];
     if (tags.length && this.mode === 'planning' && !this.view.battle) {
       const acc = new Map<number, { x: number; y: number; z: number; n: number; top: number }>();
       for (const s of this.view.units.slots) {
@@ -418,7 +415,7 @@ export class EngineScene implements SceneAdapter {
           const z = 60 - p[1] / 100;
           v = new THREE.Vector3(x, this.view.field.heightAt(x, z) + 2.5, z);
         }
-        out.push({ pos: v, text: t.text, hot: !!t.hot, badge: t.badge, foe: t.foe });
+        out.push({ pos: v, text: t.text, hot: !!t.hot, badge: t.badge, foe: t.foe, form: t.form });
       }
     }
     this.overlay.setTags(out);
@@ -453,11 +450,12 @@ export class EngineScene implements SceneAdapter {
       this.pending = false;
       if (this.view.battle) return;
       const list: ArmySquad[] = [];
-      const add = (s: SquadVisual) => list.push({ id: s.id, owner: this.inSeat(s.owner), type: s.type, lord: s.lord ?? null, pos: this.inPos([s.pos[0], s.pos[1]]), facing: this.inFacing(s.facing), level: s.level, size: s.size });
+      // every squad faces the enemy and stands in its formation (the engine lays the soldiers out like the sim)
+      const add = (s: SquadVisual) => list.push({ id: s.id, owner: this.inSeat(s.owner), type: s.type, lord: s.lord ?? null, pos: this.inPos([s.pos[0], s.pos[1]]), formation: s.formation, level: s.level, size: s.size });
       for (const s of this.army) if (s.id !== this.hidden) add(s);
       for (const s of this.ghosts ?? []) add(s);
       const p = this.preview;
-      if (p) add({ id: PREVIEW_ID, type: p.type, lord: p.lord, owner: p.seat, pos: p.pos, facing: p.facing, level: 1 });
+      if (p) add({ id: PREVIEW_ID, type: p.type, lord: p.lord, owner: p.seat, pos: p.pos, formation: p.formation, level: 1 });
       const ghostOwners = this.ghosts?.length ? [this.inSeat(this.ghosts[0]!.owner)] : [];
       this.view.showArmy(list, { ghostOwners, highlight: this.highlights() });
       // the overlays that sit on squads follow where they are drawn now

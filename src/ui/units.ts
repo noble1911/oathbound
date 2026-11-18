@@ -249,7 +249,7 @@ export function squadTooltip(sq: Squad, lord: LordId | null, opts: { ghost?: boo
   const items = SLOTS.map((s) => sq.items[s]).filter(Boolean);
   const s = effectiveStats(sq, lord);
   return `<div class="sqtip ${opts.ghost ? 'ghost' : ''}">
-    <div class="utip-h">${crest(sq.type, lord, 'sm')}<div><b>${esc(name)}</b><small>${opts.ghost ? 'Enemy · last round · ' : ''}Level ${sq.level}${sq.type !== 'lord' ? ` · ${s.size} soldiers` : ''}</small></div></div>
+    <div class="utip-h">${crest(sq.type, lord, 'sm')}<div><b>${esc(name)}</b><small>${opts.ghost ? 'Enemy · last round · ' : ''}Level ${sq.level}${sq.type !== 'lord' ? ` · ${s.size} soldiers${marked(formationOf(sq)) ? `, ${FORMATION_LABEL[formationOf(sq)].toLowerCase()}` : ''}` : ''}</small></div></div>
     ${classLine(sq.type, lord, true)}
     <div class="sqtip-st"><span>${icon('heart')}${s.hp}</span><span>${icon('sword')}${s.dps.toFixed(1)} dps</span><span>${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + ' m' : 'melee'}</span></div>
     ${items.length ? `<div class="sqtip-items">${items.map((it) => `<span style="color:${RARITY_CSS[it!.rarity]}">${esc(itemShort(it!))}</span>`).join('')}</div>` : ''}
@@ -258,6 +258,7 @@ export function squadTooltip(sq: Squad, lord: LordId | null, opts: { ghost?: boo
 }
 
 import { itemName } from '../sim/loot.ts';
+import { FORMATION_LABEL, formationOf, marked } from './formation.ts';
 function itemShort(it: Parameters<typeof itemName>[0]): string {
   return itemName(it);
 }

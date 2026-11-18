@@ -31,13 +31,13 @@ export function relocCount(me: RelocMe, round: number): { used: number; limit: n
 
 /** The lock line of a squad (tooltips, the panel, refusals). */
 export function lockedText(sq: Pick<Squad, 'deployedRound'>): string {
-  return `Locked in place since round ${sq.deployedRound}. Turn it freely; take Muster instead of a unit unlock to relocate up to ${MUSTER_MOVES} squads.`;
+  return `Locked in place since round ${sq.deployedRound}. Its formation is still free to change; take Muster instead of a unit unlock to relocate up to ${MUSTER_MOVES} squads.`;
 }
 export function usedUpText(limit: number): string {
   return `All ${limit} relocations used: move one back to free a move`;
 }
 
-/** Why this squad may not be dragged to a new spot now, or null (turning on the spot is always allowed). */
+/** Why this squad may not be dragged to a new spot now, or null (its formation may always change: src/ui/formation.ts). */
 export function dragRefusal(me: RelocMe, id: number, round: number): string | null {
   const sq = me.squads.find((q) => q.id === id);
   if (!sq) return null;
@@ -49,7 +49,7 @@ export function dragRefusal(me: RelocMe, id: number, round: number): string | nu
 }
 
 /**
- * Squads of `ids` that must stay where they stand when the group is moved or turned about its centre: the locked ones
+ * Squads of `ids` that must stay where they stand when the group is moved: the locked ones
  * that are still at home, unless all of them fit in the relocations left (then the whole group moves).
  */
 export function pinnedIn(me: RelocMe, ids: Iterable<number>, round: number): Set<number> {

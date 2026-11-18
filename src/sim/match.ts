@@ -271,7 +271,7 @@ function setLord(s: MatchState, seat: Seat, lord: LordId): void {
   p.faction = LORDS[lord].faction;
   if (lord === 'warden' || lord === 'ossuary') { p.keepMax = KEEP_HP + (lord === 'warden' ? WARDEN_KEEP_BONUS : OSSUARY_KEEP_BONUS); p.keepHp = p.keepMax; }
   const pos: Vec2 = seat === 0 ? [3999, 1200] : mirrorPos([3999, 1200]);
-  p.squads = [{ id: s.nextId++, owner: seat, type: 'lord', level: 1, pos, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 0, spent: 0 }];
+  p.squads = [{ id: s.nextId++, owner: seat, type: 'lord', level: 1, pos, items: { weapon: null, armor: null, relic: null }, deployedRound: 0, spent: 0 }];
 }
 
 function startMatch(s: MatchState): void {
@@ -446,9 +446,9 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       p.deploysUsed += deployWeight(intent.unit);
       const sq: Squad = {
         id: s.nextId++, owner: seat, type: intent.unit, level: 1, pos: [intent.pos[0], intent.pos[1]],
-        facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: s.round, spent: def.cost,
+        items: { weapon: null, armor: null, relic: null }, deployedRound: s.round, spent: def.cost,
       };
-      if (intent.formation === 'deep' && hasFormation(intent.unit)) sq.formation = 'deep';
+      if (intent.formation === 'wide' && hasFormation(intent.unit)) sq.formation = 'wide';
       p.squads.push(sq);
       return OK;
     }
@@ -458,7 +458,7 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       if (intent.formation !== 'wide' && intent.formation !== 'deep') return err('unknown formation');
       if (!hasFormation(sq.type)) return err(sq.type === 'lord' ? 'the Lord has no formation' : 'a squad of one or two has no formation');
       // Free, also for a squad locked in place: the footprint is the same for both formations.
-      if (intent.formation === 'deep') sq.formation = 'deep'; else delete sq.formation;
+      if (intent.formation === 'wide') sq.formation = 'wide'; else delete sq.formation;
       return OK;
     }
     case 'move': {
@@ -742,5 +742,5 @@ export function lordStance(p: Pick<PlayerState, 'squads'>): LordStance {
 
 /** Mirror a squad list to the other seat (tests, bots). */
 export function mirrorSquads(squads: Squad[], to: Seat): Squad[] {
-  return squads.map((q) => ({ ...clone(q), owner: to, pos: mirrorPos(q.pos), facing: to === 0 ? 64 : 192 }));
+  return squads.map((q) => ({ ...clone(q), owner: to, pos: mirrorPos(q.pos) }));
 }

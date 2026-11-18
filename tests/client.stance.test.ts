@@ -11,7 +11,7 @@ import { RANGED_LEASH_PLUS, followSpot, followable, ghostStanceText, sameStance,
 
 const items = { weapon: null, armor: null, relic: null };
 function sq(id: number, type: UnitType | 'lord', pos: Vec2, stance?: LordStance, owner: Seat = 0): Squad {
-  return { id, owner, type, level: 1, pos, facing: 64, items: { ...items }, deployedRound: 1, spent: type === 'lord' ? 0 : UNITS[type].cost, ...(stance ? { stance } : {}) };
+  return { id, owner, type, level: 1, pos, items: { ...items }, deployedRound: 1, spent: type === 'lord' ? 0 : UNITS[type].cost, ...(stance ? { stance } : {}) };
 }
 const army = (st?: LordStance): Squad[] => [sq(1, 'lord', [4000, 1200], st), sq(10, 'knights', [3000, 3400]), sq(11, 'archers', [5000, 2600])];
 

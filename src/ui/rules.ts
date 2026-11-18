@@ -15,6 +15,7 @@ import { LORDS, LORD_ROLE, LORD_ROLES, LORD_ROLE_NAME } from '../sim/data/lords.
 import { TICK_HZ } from '../sim/constants.ts';
 import { FOLLOW_BEHIND, HOLD_LEASH, HOLD_WATCH } from '../sim/battle.ts';
 import { RANGED_LEASH_PLUS } from './stance.ts';
+import { FORMATION_KEY, formationRules } from './formation.ts';
 import { sound } from '../audio.ts';
 import { $, el, esc, store } from './dom.ts';
 import { icon } from './icons.ts';
@@ -241,10 +242,11 @@ function page(id: TabId): string {
           <li><b>Follow</b>: pick one of your squads. He stays <b>${FOLLOW_BEHIND / 100} m behind it</b>, towards your Keep, and fights what comes within <b>${HOLD_LEASH / 100} m</b> of that spot (a ranged Lord: his range + ${RANGED_LEASH_PLUS / 100} m). If the squad falls, he advances; if you sell it, his orders go back to Advance.</li>
           <li>The enemy sees your Lord's orders only as they were in the <b>last</b> battle, on his ghost, as you see theirs.</li>
         </ul>
+        ${formationRules()}
         <h3>Relocation and Muster</h3>
         <p class="lead">A squad deployed in an earlier round is <b>locked in place</b>: it fights where it stood. Your Lord and the squads you deploy this round move freely until the battle.</p>
         <ul class="rl-list">
-          <li>Turning a locked squad on the spot is always free (right-drag, or <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd>). A lock marks it on the field.</li>
+          <li>A locked squad's <b>formation</b> (wide or deep) is always free to change. A lock marks it on the field.</li>
           <li><b>Muster</b> is offered every round from round 2 <b>instead of</b> that round's unit unlock: take it and you may relocate up to <b>${MUSTER_MOVES} locked squads</b> that round. A relocated squad can be moved again, and putting it back where it stood gives the move back. Once every unit type is unlocked, Muster costs nothing.</li>
           <li>A relic <b>of the March</b> gives one relocation every round without Muster (up to ${MARCH_CAP} from several); Muster adds its ${MUSTER_MOVES} on top.</li>
           <li>The enemy plays by the same rule: <b>enemy squads stay where they stand unless they Muster</b>. Ghosts that stood somewhere else in the battle before are marked <i>Moved</i>, and squads new last round <i>New</i>.</li>
@@ -336,13 +338,14 @@ function page(id: TabId): string {
       return `<h3>Controls</h3>
         <dl class="keys big">
           <dt><kbd>1</kbd>–<kbd>9</kbd> <kbd>0</kbd> <kbd>-</kbd></dt><dd>Pick a unit from the shop, then click your half of the field</dd>
-          <dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>Turn the camera. While placing or dragging a squad (or with <kbd>Shift</kbd> on a selected squad): turn the squad</dd>
+          <dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>Turn the camera</dd>
+          <dt><kbd>${FORMATION_KEY}</kbd></dt><dd>Formation of the selected squads: wide or deep (while placing one: the squad you place)</dd>
           <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Pan the camera (also drag; wheel zooms; right-drag turns)</dd>
           <dt><kbd>Home</kbd></dt><dd>Reset the camera</dd>
           <dt><kbd>Space</kbd></dt><dd>Ready / un-ready</dd>
           <dt><kbd>Tab</kbd></dt><dd>Select your next squad (<kbd>Shift</kbd>+<kbd>Tab</kbd>: the previous one)</dd>
-          <dt>Drag on your ground</dt><dd>Box-select squads (<kbd>Shift</kbd>-click adds or removes one; <kbd>Ctrl</kbd>+<kbd>A</kbd> all). Drag one of them to move the group (squads locked in place stay, unless your Muster moves cover them all); right-drag or <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turns it</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt><dd>Undo the last move, turn, deploy or equip of this round</dd>
+          <dt>Drag on your ground</dt><dd>Box-select squads (<kbd>Shift</kbd>-click adds or removes one; <kbd>Ctrl</kbd>+<kbd>A</kbd> all). Drag one of them to move the group (squads locked in place stay, unless your Muster moves cover them all)</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt><dd>Undo the last move, formation, deploy or equip of this round</dd>
           <dt><kbd>T</kbd> <kbd>G</kbd></dt><dd>March routes and timings · placement grid snap</dd>
           <dt><kbd>U</kbd></dt><dd>Level up the selected squad</dd>
           <dt><kbd>Del</kbd></dt><dd>Sell the selected squad (press twice)</dd>

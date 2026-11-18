@@ -167,7 +167,7 @@ try {
       for (let i = 0; i < 4; i++) {
         const st = await p.evaluate(() => { const me = window.__ob.app.room.view.you; return { left: me.deployLimit - me.deploysUsed, gold: me.gold, n: me.squads.length }; });
         if (st.left <= 0 || st.gold < 100) break;
-        await intent(p, { t: 'deploy', unit: 'militia', pos: [1400 + st.n * 1100, 3000], facing: 64 });
+        await intent(p, { t: 'deploy', unit: 'militia', pos: [1400 + st.n * 1100, 3000] });
         await sleep(500);
         await note();
       }
@@ -287,7 +287,7 @@ try {
       for (const p of [a, b]) {
         await p.evaluate(() => { const me = window.__ob.app.room.view.you; for (let i = 0; i < me.draftPicks; i++) window.__ob.app.backend.intent({ t: 'draft', unit: me.draftOptions[i] }); if (me.lootOffer) window.__ob.app.backend.intent({ t: 'pickLoot', index: 0 }); });
         await sleep(500);
-        await p.evaluate(() => { const { app } = window.__ob; const me = app.room.view.you; const u = [...me.unlocked][0]; const y = app.room.view.seat === 0 ? 3000 : 9000; app.backend.intent({ t: 'deploy', unit: u, pos: [1500 + me.squads.length * 1200, y], facing: app.room.view.seat === 0 ? 64 : 192 }); });
+        await p.evaluate(() => { const { app } = window.__ob; const me = app.room.view.you; const u = [...me.unlocked][0]; const y = app.room.view.seat === 0 ? 3000 : 9000; app.backend.intent({ t: 'deploy', unit: u, pos: [1500 + me.squads.length * 1200, y] }); });
         await sleep(400);
         await intent(p, { t: 'ready' });
       }
