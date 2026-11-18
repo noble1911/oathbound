@@ -125,7 +125,8 @@ try {
   check(sp.sides.length === 2 && sp.sides.every((x) => x.lord && /4,\d{3}\s*\/\s*4,\d{3}/.test(x.hp)), 'spectator top bar: both Lords and both Keeps at full life');
   // ---- battle
   await a.keyboard.press('Space');
-  await b.click('.ready-btn');
+  // (the planning rail re-renders when the other seat readies: click whichever Ready button is in the document now)
+  await b.evaluate(() => document.querySelector('.ready-btn')?.click());
   check(await waitFor(a, () => !!document.querySelector('.battle')), 'battle');
   await waitFor(b, () => !!document.querySelector('.battle'));
   await waitFor(s, () => !!document.querySelector('.battle'));

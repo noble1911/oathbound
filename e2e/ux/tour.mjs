@@ -226,6 +226,10 @@ try {
   await shot('results');
   check(inView(await rect('.res-card')), 'results card on screen');
   check((await p.$$('.res-hints li')).length >= 1 && (await p.$$('.rt-row')).length >= 3, 'results explain the round (hints + per-squad table)');
+  // the field keeps the full rate while the results screen makes its entrance (RESULTS_ENTRANCE, 3 s, in
+  // src/ui/engine-scene.ts) and while the battle's last effects play out (END_SETTLE, up to 6 s, in
+  // src/render/battle-view.ts); the idle budget is measured once both are over
+  await sleep(6500);
   const fr = await frames(3000);
   check(fr <= 10.5, `results backdrop ${fr} fps (<= 10)`);
 
