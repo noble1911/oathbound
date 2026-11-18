@@ -10,7 +10,7 @@ import { modsOf, rollLoot } from './loot.ts';
 import { genTerrain } from './terrain.ts';
 import type {
   BattleEnd, BattleResult, Comeback, EnemyView, Intent, IntentResult, Item, LordId, MatchState, PlayerState, PlayerView, RoundOutcome, RoundSummary, Seat, Slot,
-  FactionId, Squad, SquadType, UnitClass, UnitType, Vec2,
+  FactionId, LordStance, Squad, SquadType, UnitClass, UnitType, Vec2,
 } from './types.ts';
 
 export const START_GOLD = 300;
@@ -469,11 +469,26 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       if (intent.facing !== undefined) sq.facing = intent.facing;
       return OK;
     }
+    case 'stance': {
+      const lordSq = p.squads.find((q) => q.type === 'lord');
+      if (!lordSq) return err('no Lord');
+      if (intent.stance === 'advance') { delete lordSq.stance; return OK; }
+      if (intent.stance === 'hold') { lordSq.stance = { t: 'hold' }; return OK; }
+      if (intent.stance !== 'follow') return err('unknown stance');
+      if (!Number.isInteger(intent.squad)) return err('follow needs a squad');
+      const lead = p.squads.find((q) => q.id === intent.squad);
+      if (!lead) return err('no such squad');
+      if (lead.type === 'lord') return err('the Lord cannot follow himself');
+      lordSq.stance = { t: 'follow', squad: lead.id };
+      return OK;
+    }
     case 'sell': {
       const i = p.squads.findIndex((q) => q.id === intent.squad);
       if (i < 0) return err('no such squad');
       const sq = p.squads[i];
       if (sq.type === 'lord') return err('cannot sell the Lord');
+      // A Lord told to follow this squad goes back to advancing.
+      for (const q of p.squads) if (q.stance?.t === 'follow' && q.stance.squad === sq.id) delete q.stance;
       p.gold += sellRefund(sq, s.round);
       if (sq.deployedRound === s.round) p.deploysUsed = Math.max(0, p.deploysUsed - deployWeight(sq.type));
       for (const slot of ['weapon', 'armor', 'relic'] as Slot[]) if (sq.items[slot]) p.stash.push(sq.items[slot]!);
@@ -707,6 +722,13 @@ export function roundOutcomeText(r: Pick<RoundSummary, 'winner' | 'end' | 'score
         detail: seat === null ? `${outcome === 'won' ? "Red's" : "Blue's"} army was routed.` : outcome === 'won' ? 'The enemy army was routed.' : 'Your army was routed.',
       };
   }
+}
+
+/** The Lord's stance for the coming battle ('advance' unless he was told otherwise). */
+export function lordStance(p: Pick<PlayerState, 'squads'>): LordStance {
+  const st = p.squads.find((q) => q.type === 'lord')?.stance;
+  if (st?.t === 'follow' && !p.squads.some((q) => q.id === st.squad && q.type !== 'lord')) return { t: 'advance' };
+  return st ?? { t: 'advance' };
 }
 
 /** Mirror a squad list to the other seat (tests, bots). */

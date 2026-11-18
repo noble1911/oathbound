@@ -2,7 +2,7 @@
 // play out as the exact mirror image — same winner (swapped), same keep damage, and every soldier's position (mirrored)
 // and HP identical on every keyframe.
 import { describe, expect, it } from 'vitest';
-import { applyBattle, botPlan, decodeReplay, newMatch, nextRound, simulateBattle } from '../src/sim/index.ts';
+import { applyBattle, applyIntent, botPlan, decodeReplay, newMatch, nextRound, simulateBattle } from '../src/sim/index.ts';
 import { mirrorSquads } from '../src/sim/match.ts';
 import type { BotStrategy, DecodedReplay, LordId, MatchState, Seat } from '../src/sim/types.ts';
 import { FIELD_H, FIELD_W } from '../src/sim/constants.ts';
@@ -98,6 +98,38 @@ describe('mirror symmetry (seat fairness)', () => {
       while (s.phase === 'planning' && rounds < 8) {
         botPlan(s, 0, strats[0], 1);
         botPlan(s, 1, strats[1], 2);
+        checkMirror(s);
+        applyBattle(s, simulateBattle(s, { record: false }).result);
+        rounds++;
+        if ((s.phase as string) !== 'results') break;
+        nextRound(s);
+      }
+      expect(rounds).toBeGreaterThan(2);
+    }, 60_000);
+  }
+
+  // Lord stances (hold, follow a squad) are part of the battle's input: they must mirror like everything else.
+  const stanceCases: [number, [LordId, LordId], [string, string]][] = [
+    [31, ['marshal', 'archmage'], ['hold', 'follow']], [32, ['drakerider', 'rajah'], ['follow', 'hold']], [33, ['rocrider', 'warden'], ['follow', 'follow']],
+    [34, ['lich', 'sultana'], ['hold', 'hold']], [35, ['skylady', 'ossuary'], ['follow', 'advance']], [36, ['vizier', 'deathknight'], ['hold', 'follow']],
+  ];
+  for (const [seed, lords, stances] of stanceCases) {
+    it(`seed ${seed}: ${lords.join(' vs ')} with the Lords on ${stances.join(' / ')} mirrors exactly every round`, () => {
+      const s = newMatch(seed, lords);
+      let rounds = 0;
+      while (s.phase === 'planning' && rounds < 6) {
+        botPlan(s, 0, 'hard', 1);
+        botPlan(s, 1, 'normal', 2);
+        for (const seat of [0, 1] as Seat[]) {
+          const p = s.players[seat];
+          expect(applyIntent(s, seat, { t: 'unready' }).ok).toBe(true);
+          // follow a different squad each round (the first, then the last, ...)
+          const others = p.squads.filter((q) => q.type !== 'lord');
+          const lead = others[rounds % 2 ? others.length - 1 : 0];
+          const st = stances[seat] as 'hold' | 'follow' | 'advance';
+          if (st !== 'follow' || lead) expect(applyIntent(s, seat, { t: 'stance', stance: st, squad: lead?.id })).toEqual({ ok: true });
+          expect(applyIntent(s, seat, { t: 'ready' }).ok).toBe(true);
+        }
         checkMirror(s);
         applyBattle(s, simulateBattle(s, { record: false }).result);
         rounds++;

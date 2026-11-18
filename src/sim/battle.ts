@@ -53,6 +53,12 @@ const CRIT_MULT = 150;
 const LEVEL_HP = LEVEL_HP_PCT;
 const LEVEL_DMG = LEVEL_DMG_PCT;
 const AGGRO = 1400;
+/** Lord stances (LordStance in types.ts): a Lord told to hold or to follow is tethered to a spot. He chases only what
+ *  stands within HOLD_LEASH of it (a ranged Lord: his range + 3 m) and walks back to it. */
+const ST_ADVANCE = 0, ST_HOLD = 1, ST_FOLLOW = 2;
+export const HOLD_LEASH = 1400;
+/** A following Lord's spot: this far behind the centre of the squad he follows, towards his own Keep. */
+export const FOLLOW_BEHIND = 600;
 const BUCKET = 400;
 const BW = FIELD_W / BUCKET, BH = FIELD_H / BUCKET;
 /** Skeletons raised in battle (Grave Acolytes, the Lich-Priest, Gravebloom): 120 life, 16 damage a blow. */
@@ -174,6 +180,10 @@ interface BSquad {
   summon: boolean;
   healTarget: BSquad | null;
   sourceSquad: Squad | null;
+  /** Lord stance (ST_*), the squad a following Lord follows, and the tether spot in doubled-centred coordinates. */
+  stance: number;
+  leader: BSquad | null;
+  t2x: number; t2y: number;
 }
 
 interface Sol {
@@ -487,6 +497,18 @@ class Battle {
       const p = st.players[seat];
       p.squads.forEach((sq, idx) => this.addSquad(sq, seat, idx, p.lord));
     }
+    // Lord stances. 'follow' names a squad of the same army; one that is not there means 'advance'.
+    for (const b of this.squads) {
+      const want = b.type === 'lord' ? b.sourceSquad?.stance : undefined;
+      if (!want || want.t === 'advance') continue;
+      if (want.t === 'hold') {
+        b.stance = ST_HOLD;
+        b.t2x = 2 * b.ax - (FIELD_W - 1); b.t2y = 2 * b.ay - (FIELD_H - 1);
+      } else if (want.t === 'follow') {
+        const lead = this.sideSquads[b.side].find((o) => o !== b && o.id === want.squad && o.type !== 'lord') ?? null;
+        if (lead) { b.stance = ST_FOLLOW; b.leader = lead; }
+      }
+    }
   }
 
   stageOf(seat: Seat, hp: number): number {
@@ -506,7 +528,7 @@ class Battle {
       side, sideIdx: idx, id: sq.id, type: sq.type, lord: sq.type === 'lord' ? lord : null, level: sq.level, st: stats, sols: [],
       ax: sq.pos[0], ay: sq.pos[1], facing: sq.facing & 255, engaged: false, engagedNext: false, macro: null, c2x: 0, c2y: 0, alive: n,
       phoenix: stats.phoenix, grave: 0, slotErr: 0, slotErrNext: 0, abilityCd: sq.type === 'lord' ? 100 : 0, summon: false, healTarget: null,
-      sourceSquad: sq,
+      sourceSquad: sq, stance: ST_ADVANCE, leader: null, t2x: 0, t2y: 0,
     };
     // Formation: rows across the facing direction.
     const cols = formationCols(n);
@@ -644,6 +666,24 @@ class Battle {
       b.slotErr = b.slotErrNext;
       b.slotErrNext = 0;
     }
+    // Lord stances: a holding Lord is released when no other squad of his is left, a following one when the squad he
+    // follows has fallen; from then on he advances like any squad, from where he stands.
+    for (const b of this.squads) {
+      if (b.stance === ST_ADVANCE || !b.alive) continue;
+      let free: boolean;
+      if (b.stance === ST_HOLD) {
+        free = true;
+        for (const a of this.sideSquads[b.side]) if (a !== b && !a.summon && a.alive) { free = false; break; }
+      } else {
+        const lead = b.leader!;
+        free = !lead.alive;
+        if (!free) { b.t2x = lead.c2x; b.t2y = lead.c2y - sideSign(b.side) * 2 * FOLLOW_BEHIND; }
+      }
+      if (free) {
+        b.stance = ST_ADVANCE;
+        b.ax = b.sols[0].x; b.ay = b.sols[0].y;
+      }
+    }
     if (this.t % 10 === 0) {
       for (const b of this.squads) {
         if (!b.alive) continue;
@@ -675,7 +715,7 @@ class Battle {
     }
     // Move formation anchors (until engaged).
     for (const b of this.squads) {
-      if (!b.alive || b.engaged || b.summon) continue;
+      if (!b.alive || b.engaged || b.summon || b.stance !== ST_ADVANCE) continue;
       if (b.slotErr > 250 * b.alive) continue; // let stragglers catch up
       let tx: number, ty: number;
       const flier = (b.st.tags & T_FLIER) !== 0;
@@ -1296,12 +1336,21 @@ class Battle {
       const taunter = s.tauntUntil > t ? s.tauntBy : null;
       if (taunter && taunter.alive && this.canHit(s, taunter)) s.target = taunter;
       else if (!tgt || !this.canHit(s, tgt) || (t + s.key) % 6 === 0) {
-        const r = st.ranged ? st.range + 300 : AGGRO + (b.engaged ? 800 : 0) + (st.raider ? 1200 : 0);
+        const r = st.ranged ? st.range + 300 : AGGRO + (b.engaged && b.stance === ST_ADVANCE ? 800 : 0) + (st.raider ? 1200 : 0);
         s.target = this.findTarget(s, r);
       }
       let vx = 0, vy = 0;
       const sp = this.groundSpeed(st.speed, s.x, s.y, flier, slow);
-      const e = s.target;
+      let e = s.target;
+      // A Lord told to hold or to follow strikes what is in reach, but leaves his spot only for what is within the leash of it.
+      if (e && b.stance !== ST_ADVANCE) {
+        const dx = e.x - s.x, dy = e.y - s.y, reach = this.reach(s, e);
+        if (dx * dx + dy * dy > reach * reach) {
+          const lx = 2 * e.x - (FIELD_W - 1) - b.t2x, ly = 2 * e.y - (FIELD_H - 1) - b.t2y;
+          const leash = 2 * (st.ranged ? st.range + 300 : HOLD_LEASH);
+          if (lx * lx + ly * ly > leash * leash) e = null;
+        }
+      }
       if (e) {
         b.engagedNext = true;
         const dx = e.x - s.x, dy = e.y - s.y, d2 = dx * dx + dy * dy;
@@ -1317,7 +1366,12 @@ class Battle {
       } else {
         // Formation / advance. Goals are expressed as deltas (dx, dy) so no absolute rounding is involved.
         let dx: number, dy: number;
-        if (!b.engaged) { dx = b.ax + s.ox - s.x; dy = b.ay + s.oy - s.y; }
+        if (b.stance !== ST_ADVANCE) {
+          // Back to the post (hold) or to the spot behind the squad he follows.
+          const s2y = 2 * s.y - (FIELD_H - 1);
+          dx = idiv(b.t2x - (2 * s.x - (FIELD_W - 1)), 2); dy = idiv(b.t2y - s2y, 2);
+          if (!flier && this.acrossRiver2(s2y, b.t2y)) { const f = this.flowDir(s.side, s.x, s.y); dx = f[0]; dy = f[1]; }
+        } else if (!b.engaged) { dx = b.ax + s.ox - s.x; dy = b.ay + s.oy - s.y; }
         else if (b.macro) {
           dx = idiv(b.macro.c2x - (2 * s.x - (FIELD_W - 1)), 2); dy = idiv(b.macro.c2y - (2 * s.y - (FIELD_H - 1)), 2);
           if (!flier && this.acrossRiver2(2 * s.y - (FIELD_H - 1), b.macro.c2y)) { const f = this.flowDir(s.side, s.x, s.y); dx = f[0]; dy = f[1]; }
@@ -1326,7 +1380,7 @@ class Battle {
           dx = f[0] * 3; dy = f[1] * 3;
         }
         const d2 = dx * dx + dy * dy;
-        if (!b.engaged) b.slotErrNext += isqrt(d2);
+        if (!b.engaged && b.stance === ST_ADVANCE) b.slotErrNext += isqrt(d2);
         if (d2 > 900) {
           const d = isqrt(d2);
           const cap = b.engaged ? sp : idiv(sp * 130, 100);
@@ -1911,7 +1965,7 @@ class Battle {
         row: this.squads.length, skills: [],
         side, sideIdx: 100 + kb.sideIdx, id: kb.id, type: 'skeleton', lord: null, level: 1, st: skeletonStats(), sols: [], ax: victim.x, ay: victim.y,
         facing: side === 0 ? 64 : 192, engaged: true, engagedNext: true, macro: null, c2x: 0, c2y: 0, alive: 0, phoenix: false, grave: 0,
-        slotErr: 0, slotErrNext: 0, abilityCd: 0, summon: true, healTarget: null, sourceSquad: null,
+        slotErr: 0, slotErrNext: 0, abilityCd: 0, summon: true, healTarget: null, sourceSquad: null, stance: ST_ADVANCE, leader: null, t2x: 0, t2y: 0,
       };
       this.squads.push(sk);
       this.sideSquads[side].push(sk);

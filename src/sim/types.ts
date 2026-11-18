@@ -285,7 +285,22 @@ export interface Squad {
   deployedRound: number;
   /** Gold spent on this squad (deploy + level-ups); used for selling and stats. */
   spent: number;
+  /** The Lord squad only: how the Lord behaves in the coming battle (absent = 'advance'). See LordStance. */
+  stance?: LordStance;
 }
+
+/**
+ * The Lord's orders for the battle, chosen in planning ({t:'stance'}) and kept from round to round (DESIGN §4):
+ *  - 'advance' (the default): he marches on the nearest enemy squad like any squad.
+ *  - 'hold': he guards the spot he was placed on. He fights what comes within HOLD_LEASH of it (a ranged Lord: his
+ *    range + 3 m) and walks back; he joins the battle only once no other squad of his army is left.
+ *  - 'follow': he stays FOLLOW_BEHIND behind own squad `squad` (towards his own Keep) and fights what comes within
+ *    the same leash of that spot. When the squad falls he advances.
+ * It lives on the Lord's Squad, so the enemy sees it exactly like positions: as it was in the last battle
+ * (EnemyView.lastArmy), never this round's.
+ */
+export type LordStance = { t: 'advance' } | { t: 'hold' } | { t: 'follow'; squad: number };
+export type LordStanceKind = LordStance['t'];
 
 export interface PlayerState {
   seat: Seat;
@@ -446,6 +461,11 @@ export type Intent =
    * (PlayerState.moveLimit; see relocationsLeft in match.ts). Moving it back to where it stood gives the move back.
    */
   | { t: 'move'; squad: number; pos: Vec2; facing?: number }
+  /**
+   * The Lord's battle stance (LordStance): 'advance', 'hold', or 'follow' with the id of an own squad (not the Lord).
+   * Free, any number of times while planning. Selling the followed squad puts him back on 'advance'.
+   */
+  | { t: 'stance'; stance: LordStanceKind; squad?: number }
   | { t: 'sell'; squad: number }
   | { t: 'levelUp'; squad: number }
   | { t: 'pickLoot'; index: number }
