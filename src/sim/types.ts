@@ -178,7 +178,7 @@ export type BaseId =
   | 'bone_charm' | 'sun_medallion' | 'oath_ring' | 'war_banner';
 export type AffixId =
   | 'keen' | 'vicious' | 'haste' | 'leech' | 'stalwart' | 'warding' | 'fleet' | 'thorns'
-  | 'slaying' | 'embers' | 'frost' | 'farreach' | 'phoenix' | 'command' | 'plated';
+  | 'slaying' | 'embers' | 'frost' | 'farreach' | 'phoenix' | 'command' | 'plated' | 'marching';
 export type LegendaryId =
   | 'stormcaller' | 'kingsbane' | 'undying_oath' | 'ember_crown' | 'mirror_aegis' | 'warhorn'
   | 'gravebloom' | 'bloodthirst' | 'earthshaker' | 'frostheart' | 'lifebinder' | 'hydra_volley'
@@ -324,7 +324,8 @@ export interface PlayerState {
   lastArmy: Squad[] | null;
   /**
    * Relocation (DESIGN §2). Squads deployed in an earlier round are locked in place; `moveLimit` is how many of them
-   * may be relocated this round: 0, or MUSTER_MOVES once Muster is taken. Optional on states saved before the rule.
+   * may be relocated this round: one per 'of the March' relic worn when the round began (at most MARCH_CAP), plus
+   * MUSTER_MOVES once Muster is taken. Optional on states saved before the rule.
    */
   moveLimit?: number;
   /** May this player still take Muster this round ({t:'muster'}) instead of the round's unit unlock? */

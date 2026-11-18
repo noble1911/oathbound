@@ -99,7 +99,7 @@ export function warhornSoldiers(type: SquadType): number {
 const P100 = (id: AffixId): number => Math.round(AFFIXES[id].power * 100);
 
 /**
- * Scale an item's variable lines so that its itemPower is its budget: flags (phoenix, command),
+ * Scale an item's variable lines so that its itemPower is its budget: flags (phoenix, command, marching),
  * the legendary power and the skill are counted first, and the implicit and affixes share what is left in
  * proportion to their rolls (so the rolls still decide which line is big). Integer maths.
  */
@@ -276,7 +276,7 @@ export function itemPower(item: Item): number {
 
 export interface ItemMods {
   dmg: number; hp: number; as: number; crit: number; leech: number; mr: number; move: number; thorns: number;
-  armor: number; burn: number; frost: number; range: number; phoenix: boolean; command: number;
+  armor: number; burn: number; frost: number; range: number; phoenix: boolean; command: number; march: number;
   slay: Partial<Record<Tag, number>>;
   legend: Set<string>;
   ilvl: number;
@@ -284,7 +284,7 @@ export interface ItemMods {
   skills: { id: SkillId; ilvl: number }[];
 }
 export function emptyMods(): ItemMods {
-  return { dmg: 0, hp: 0, as: 0, crit: 0, leech: 0, mr: 0, move: 0, thorns: 0, armor: 0, burn: 0, frost: 0, range: 0, phoenix: false, command: 0, slay: {}, legend: new Set(), ilvl: 1, skills: [] };
+  return { dmg: 0, hp: 0, as: 0, crit: 0, leech: 0, mr: 0, move: 0, thorns: 0, armor: 0, burn: 0, frost: 0, range: 0, phoenix: false, command: 0, march: 0, slay: {}, legend: new Set(), ilvl: 1, skills: [] };
 }
 /**
  * The summed modifiers of a squad's items. With the squad's `type` (and `lord` for the Lord squad) a legendary power
@@ -311,6 +311,7 @@ export function modsOf(slots: ItemSlots, type?: SquadType, lord?: LordId | null)
         case 'farreach': m.range += a.value; break;
         case 'phoenix': m.phoenix = true; break;
         case 'command': m.command += 1; break;
+        case 'marching': m.march += 1; break;
         case 'plated': m.armor += a.value; break;
       }
     }

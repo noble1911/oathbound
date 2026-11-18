@@ -786,6 +786,7 @@ function itemFit(item: Item, q: Squad, threats: Threat[], lord: LordId | null): 
       case 'frost': m = 0.8 + 1.5 * share((tagShare.mounted ?? 0) + (tagShare.flier ?? 0)); break;
       case 'phoenix': m = MANY(t) <= 2 ? 2 : MANY(t) <= 4 ? 1.2 : 0.5; break;
       case 'command': m = 1; break;
+      case 'marching': m = 1; break;
     }
     fit += base * m;
   }

@@ -270,7 +270,7 @@ export function compareItems(next: Item, cur: Item | null): Delta[] {
   for (const k of keys) {
     const d = (a.get(k) ?? 0) - (b.get(k) ?? 0);
     if (d === 0) continue;
-    const flag = ['phoenix', 'command'].includes(k.split(':')[0]!);
+    const flag = ['phoenix', 'command', 'marching'].includes(k.split(':')[0]!);
     if (flag) out.push({ text: (d > 0 ? 'Gains: ' : 'Loses: ') + statText(k, Math.abs(a.get(k) || b.get(k) || 1)), good: d > 0 });
     else out.push({ text: statText(k, d).replace(/^(?=\d)/, d > 0 ? '+' : ''), good: d > 0 });
   }

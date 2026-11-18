@@ -1,5 +1,5 @@
 // Experiment 3: whole matches of a Hard variant against the shipped Hard bot, every Lord pairing, from both seats.
-//   node tools/review/matches.ts --seeds 10 --variants static,flip,oracle,...
+//   node tools/review/matches.ts --seeds 10 --variants static,flip,oracle,... [--opp wide]
 // Placement variants: how much re-forming, intel and formation quality are worth over a match.
 // Economy variants: banking, wide (no level-ups), tall (one deployment a round).
 import { isMainThread } from 'node:worker_threads';
@@ -68,11 +68,13 @@ export const VARIANTS: Record<string, Planner> = {
   lateLevel4: (s, seat) => H(s, seat, { noLevel: s.round < 4 }),
 };
 
-interface Job { seed: number; lords: [LordId, LordId]; v: string; seat: Seat }
+interface Job { seed: number; lords: [LordId, LordId]; v: string; seat: Seat; opp?: string }
 interface Res { win: number; rounds: number; keep: number; roundsWon: number; roundsPlayed: number }
 
 export function work(j: Job): Res {
-  const plan: [Planner, Planner] = j.seat === 0 ? [VARIANTS[j.v], hard] : [hard, VARIANTS[j.v]];
+  // --opp wide: the opponent is another variant instead of the shipped Hard (tall against wide, head to head)
+  const other = j.opp ? VARIANTS[j.opp] : hard;
+  const plan: [Planner, Planner] = j.seat === 0 ? [VARIANTS[j.v], other] : [other, VARIANTS[j.v]];
   // the oracle plans after its opponent
   const order: [Planner, Planner] = plan;
   const wrapped: [Planner, Planner] = j.v === 'oracle'
@@ -90,11 +92,11 @@ async function main(): Promise<void> {
   const jobs: Job[] = [];
   for (const v of vs) {
     let seed = Number(arg('seed0', '9000'));
-    for (let k = 0; k < seeds; k++) for (const lords of lordPairs()) { for (const seat of [0, 1] as Seat[]) jobs.push({ seed, lords, v, seat }); seed++; }
+    for (let k = 0; k < seeds; k++) for (const lords of lordPairs()) { for (const seat of [0, 1] as Seat[]) jobs.push({ seed, lords, v, seat, opp: arg('opp', '') || undefined }); seed++; }
   }
   const t0 = performance.now();
   const res = await pool<Job, Res>(new URL(import.meta.url), jobs);
-  console.log(`${jobs.length} matches (${((performance.now() - t0) / 1000).toFixed(0)} s). Each variant plays the shipped Hard bot, all 30 Lord pairings, both seats, same seeds.`);
+  console.log(`${jobs.length} matches (${((performance.now() - t0) / 1000).toFixed(0)} s). Each variant plays ${arg('opp', '') ? `the '${arg('opp', '')}' variant` : 'the shipped Hard bot'}, all Lord pairings, both seats, same seeds.`);
   console.log('variant    | match win % (±95%) | round win % | avg rounds | keep margin');
   for (const v of vs) {
     const rs = res.filter((_, i) => jobs[i].v === v);

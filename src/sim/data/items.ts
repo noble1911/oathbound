@@ -98,6 +98,8 @@ export const AFFIXES: Record<AffixId, AffixDef> = {
   leech: { id: 'leech', kind: 'suffix', name: 'of the Leech', slots: ['relic'], lo: 4, hi: 8, growth: 5, text: '{v}% of damage dealt is returned as life', weight: 9, power: 1.0 },
   frost: { id: 'frost', kind: 'suffix', name: 'of Frost', slots: ['relic'], lo: 15, hi: 25, growth: 2, text: 'Attacks slow the target by {v}% for 2 seconds', weight: 7, power: 0.5 },
   command: { id: 'command', kind: 'suffix', name: 'of Command', slots: ['relic'], lo: 1, hi: 1, growth: 0, text: '+2 deploy points next round', weight: 3, rareOnly: true, power: 10, fixed: true },
+  // Relocation (DESIGN §2): the squad wearing it lets one locked squad be relocated each round (at most MARCH_CAP in all).
+  marching: { id: 'marching', kind: 'suffix', name: 'of the March', slots: ['relic'], lo: 1, hi: 1, growth: 0, text: 'Relocate 1 squad from an earlier round, every round', weight: 3, rareOnly: true, power: 8, fixed: true },
 };
 export const AFFIX_IDS = Object.keys(AFFIXES) as AffixId[];
 

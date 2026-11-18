@@ -2,10 +2,12 @@
 // unlock) relocates up to three, selling an older squad refunds nothing, and the "moved" intel is public information.
 import { describe, expect, it } from 'vitest';
 import {
-  MUSTER_MOVES, LOCKED_ERROR, applyBattle, applyIntent, botPlan, canMuster, forceReady, mirrorPos, newMatch, nextRound, relocatedSquads, relocationsLeft,
+  MUSTER_MOVES, MARCH_CAP, LOCKED_ERROR, applyBattle, applyIntent, botPlan, canMuster, forceReady, mirrorPos, newMatch, nextRound, relocatedSquads, relocationsLeft,
   simulateBattle, squadLocked, viewFor, UNITS,
 } from '../src/sim/index.ts';
-import type { BotStrategy, LordId, MatchState, Seat, Squad, UnitType, Vec2 } from '../src/sim/types.ts';
+import { rollItem } from '../src/sim/loot.ts';
+import { Rng } from '../src/sim/rng.ts';
+import type { BotStrategy, Item, LordId, MatchState, Seat, Squad, UnitType, Vec2 } from '../src/sim/types.ts';
 
 /** Fight the planned round and open the next planning phase. */
 function fight(s: MatchState): void {
@@ -204,6 +206,43 @@ describe('Muster', () => {
   });
 });
 
+describe("the 'of the March' relic", () => {
+  const relic = (id: number): Item => ({ id, base: 'war_banner', slot: 'relic', rarity: 'rare', ilvl: 5, implicit: { id: 'fleet', value: 6 }, affixes: [{ id: 'marching', value: 1 }], legendary: null });
+  it('gives one relocation a round without Muster, at most MARCH_CAP, and Muster adds its three on top', () => {
+    const s = lockedMatch(5);
+    const p = s.players[0];
+    p.squads[0].items.relic = relic(9001); // worn by the Lord
+    fight(s);
+    expect(p.moveLimit).toBe(1);
+    expect(p.muster).toBe(false);
+    const sq = olds(s, 0);
+    expect(applyIntent(s, 0, { t: 'move', squad: sq[0].id, pos: [1500, 900] })).toEqual({ ok: true });
+    const r = applyIntent(s, 0, { t: 'move', squad: sq[1].id, pos: [3000, 900] });
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toContain('relocations');
+    expect(applyIntent(s, 0, { t: 'muster' })).toEqual({ ok: true });
+    expect(p.moveLimit).toBe(1 + MUSTER_MOVES);
+    expect(relocationsLeft(p, s.round)).toBe(MUSTER_MOVES);
+    // three relics are still two moves; the other seat, without one, has none
+    for (const [i, q] of sq.slice(0, 2).entries()) { q.level = 3; q.items.relic = relic(9002 + i); }
+    fight(s);
+    expect(p.moveLimit).toBe(MARCH_CAP);
+    expect(s.players[1].moveLimit).toBe(0);
+  });
+  it('rolls only on rare or better relics', () => {
+    const rng = new Rng(5);
+    let seen = 0, id = 1;
+    for (let i = 0; i < 3000; i++) {
+      const it = rollItem(rng, id++, 1 + (i % 10), (['magic', 'rare', 'legendary'] as const)[i % 3]);
+      if (![it.implicit, ...it.affixes].some((a) => a.id === 'marching')) continue;
+      seen++;
+      expect(it.slot).toBe('relic');
+      expect(['rare', 'legendary']).toContain(it.rarity);
+    }
+    expect(seen).toBeGreaterThan(0);
+  });
+});
+
 describe('selling is not a way round the lock', () => {
   it('a squad sold in its own round refunds everything; an older squad refunds nothing and gives no deploy points back', () => {
     const s = lockedMatch(2);
@@ -309,9 +348,10 @@ describe('bots obey the lock', () => {
           botPlan(s, 1, 'hard', 2);
           for (const p of s.players) {
             const moved = p.squads.filter((q) => home.has(q.id) && (home.get(q.id)![0] !== q.pos[0] || home.get(q.id)![1] !== q.pos[1]));
-            expect(moved.length).toBeLessThanOrEqual(p.muster ? MUSTER_MOVES : 0);
+            expect(moved.length).toBeLessThanOrEqual(p.moveLimit ?? 0);
+            expect(p.moveLimit).toBeLessThanOrEqual((p.muster ? MUSTER_MOVES : 0) + MARCH_CAP);
             expect(moved.map((q) => q.id)).toEqual(relocatedSquads(p, s.round));
-            if (p.muster) { musters++; relocations += moved.length; expect(moved.length).toBeGreaterThan(0); }
+            if (p.muster) { musters++; relocations += moved.length; }
             expect(p.ready).toBe(true);
           }
           applyBattle(s, simulateBattle(s, { record: false }).result);

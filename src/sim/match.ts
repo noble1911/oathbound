@@ -89,6 +89,8 @@ export function sellRefund(sq: Squad, round: number): number {
 
 /** How many squads from earlier rounds Muster lets a player relocate, in the round it is taken. */
 export const MUSTER_MOVES = 3;
+/** Each 'of the March' relic worn at the start of a round allows one relocation that round, Muster or not: at most this many. */
+export const MARCH_CAP = 2;
 /**
  * Is `sq` locked in place this round? Squads deployed in an earlier round are; the Lord and this round's squads are
  * not. A locked squad may still turn on the spot, and may be relocated only with a relocation (Muster).
@@ -111,7 +113,7 @@ export function relocatedSquads(p: Pick<PlayerState, 'squads' | 'lastArmy'>, rou
   }
   return out;
 }
-/** Relocations `p` may still make this round (0 without Muster). */
+/** Relocations `p` may still make this round (0 without Muster or an 'of the March' relic). */
 export function relocationsLeft(p: Pick<PlayerState, 'squads' | 'lastArmy' | 'moveLimit'>, round: number): number {
   return Math.max(0, (p.moveLimit ?? 0) - relocatedSquads(p, round).length);
 }
@@ -460,7 +462,7 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
         const home = squadHome(p, sq.id);
         const back = !!home && home[0] === intent.pos[0] && home[1] === intent.pos[1];
         const away = !!home && (home[0] !== sq.pos[0] || home[1] !== sq.pos[1]);
-        if (!back && !away && relocationsLeft(p, s.round) <= 0) return err(p.muster ? `all ${p.moveLimit} relocations of this Muster are used: move a squad back to free one` : LOCKED_ERROR);
+        if (!back && !away && relocationsLeft(p, s.round) <= 0) return err((p.moveLimit ?? 0) > 0 ? `all ${p.moveLimit} relocations of this round are used: move a squad back to free one` : LOCKED_ERROR);
       }
       if (overlappingSquad(p.squads, sq.type, intent.pos, sq.id)) return err('overlaps another squad: each squad needs its own ground');
       sq.pos = [intent.pos[0], intent.pos[1]];
@@ -623,15 +625,15 @@ export function nextRound(s: MatchState): void {
   for (const p of s.players) {
     resolveDraft(p);
     p.gold += income(s.round);
-    let command = 0;
-    for (const sq of p.squads) command += modsOf(sq.items).command;
+    let command = 0, march = 0;
+    for (const sq of p.squads) { const m = modsOf(sq.items); command += m.command; march += m.march; }
     p.deployLimit = deployLimitFor(p, Math.min(2, command));
     p.deploysUsed = 0;
     p.ready = false;
     rollDraft(s, p);
     // Muster is offered instead of the round's unlock (also once nothing is left to unlock: then it costs nothing).
     p.muster = false;
-    p.moveLimit = 0;
+    p.moveLimit = Math.min(MARCH_CAP, march);
     p.musterOffer = true;
   }
 }
