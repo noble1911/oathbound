@@ -24,6 +24,8 @@ import { flipFacing, flipPos, flippedSource } from './flip.ts';
 const PREVIEW_ID = -77;
 /** Menu backdrops (the results orbit) draw at most this often. */
 const BACKDROP_FPS = 10;
+/** Seconds the results / match-over screens keep the full frame rate while they come up (their CSS entrance). */
+const RESULTS_ENTRANCE = 3;
 
 export class EngineScene implements SceneAdapter {
   readonly kind = 'engine' as const;
@@ -176,6 +178,8 @@ export class EngineScene implements SceneAdapter {
       else {
         if ('backdropFps' in eng) eng.backdropFps = BACKDROP_FPS;
         this.view.setCameraMode('orbit');
+        // the card makes its entrance over a field still moving at the battle's rate; the backdrop cap comes after
+        if (was !== 'results') this.view.holdFullRate(RESULTS_ENTRANCE);
       }
     } else if (m === 'planning') {
       this.view.setPlanning({ visible: this.zoneSeat !== null, seat: this.zoneSeat !== null ? this.inSeat(this.zoneSeat) : 0, grid: !!this.preview });

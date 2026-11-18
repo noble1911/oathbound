@@ -77,6 +77,9 @@ function spacing(type: string): number {
   return SPACING[type] ?? (like ? SPACING[like] : undefined) ?? 1.5;
 }
 
+/** Seconds after a battle ends that it keeps the full frame rate while its last effects play out. */
+const END_SETTLE = 6;
+
 export class BattleView {
   readonly engine: Engine;
   readonly camera: CameraRig;
@@ -99,6 +102,10 @@ export class BattleView {
     return this.units.assets.loads;
   }
   private lastFrame = 0;
+  /** Engine time at which the current playback ended (null while it plays, or without one). */
+  private endedAt: number | null = null;
+  /** Engine time until which a backdrop still draws at the full rate (holdFullRate: a screen's entrance). */
+  private fullUntil = 0;
 
   constructor(container: HTMLElement, opts: BattleViewOptions = {}) {
     this.engine = new Engine(container, opts);
@@ -532,6 +539,16 @@ export class BattleView {
   setQuality(t: QualityTier | 'auto'): void {
     this.engine.setQuality(t);
   }
+  /**
+   * A screen comes up over the field (results, match over): keep the full frame rate for `sec` seconds while it
+   * makes its entrance, then fall to the backdrop cap. Without it the field behind the incoming card drops from the
+   * battle's rate to the backdrop's at once, a visible stutter.
+   */
+  holdFullRate(sec: number): void {
+    this.fullUntil = this.engine.time + sec;
+    this.engine.wake();
+  }
+
   /** Battery saver: low tier, DPR 1, 30 fps cap (stored). */
   setBatterySaver(on: boolean): void {
     this.engine.setBatterySaver(on);
@@ -579,10 +596,20 @@ export class BattleView {
     else this.plates.hide();
     if (pb && pb.playing && !pb.ended) this.engine.markShadows(); // units move: shadow maps redraw
     for (const e of this.rings) if (e.squad !== null) this.placeRing(e);
-    // a finished battle is a backdrop (results screen): lingering fires / smoke draw at <= 30 fps
-    this.engine.backdrop = this.camera.mode === 'orbit' || (!!pb && pb.ended && !this.camera.busy);
-    const speed = pb ? (pb.playing ? pb.speed : 0) : 1;
-    if (this.vfx.update(dt * speed)) this.engine.wake();
+    // a paused battle holds its effects; a finished one lets them play out in real time, whatever the playback
+    // speed was and even once the battle screen has let go of it (the match-over / results screens come up while
+    // the last Keep's dust is still in the air: it must keep moving, not freeze)
+    const speed = pb ? (pb.ended ? 1 : pb.playing ? pb.speed : 0) : 1;
+    const vfxBusy = this.vfx.update(dt * speed);
+    if (vfxBusy) this.engine.wake();
+    // a finished battle is a backdrop (results screen): lingering fires / smoke draw at the backdrop cap. Not while
+    // the end itself is still in the air: the last blow often fells a Keep on the final tick, and its collapse (dust
+    // waves, debris, the shock ring) would otherwise play at the backdrop rate (10 fps after a results screen), the
+    // stutter right before the match-over screen. Full rate until the one-shot effects are done (<= END_SETTLE s).
+    if (pb && pb.ended) this.endedAt ??= now;
+    else this.endedAt = null;
+    const settling = (this.endedAt !== null && vfxBusy && now - this.endedAt < END_SETTLE) || now < this.fullUntil;
+    this.engine.backdrop = !settling && (this.camera.mode === 'orbit' || (!!pb && pb.ended && !this.camera.busy));
     if (this.field.update(dt)) {
       this.engine.markShadows();
       this.engine.wake();

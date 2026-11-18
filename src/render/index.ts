@@ -83,6 +83,9 @@
 //   view.setBatterySaver(true)  → low tier (no post/AO/DOF/bloom), DPR 1, 30 fps cap   (stored 'oathbound.render.batterySaver')
 //   view.setFpsCap(0 | 30 | 60) → battle frame cap (0 = display refresh)            (stored 'oathbound.render.fpsCap')
 //   Orbit backdrops (title / loot) cap at 30 fps; optional ambient idle animation ≤ 10 fps (idleFps).
+//   A finished battle is a backdrop too, but only once its last effects (a Keep's collapse) have played out, at full
+//   rate and real-time speed (≤ 6 s). view.holdFullRate(sec): a screen coming up over the field keeps the full rate
+//   for its entrance before the backdrop cap applies (engine-scene: the results / match-over screens, 3 s).
 //   Shadow maps redraw only when the camera or a caster moved. Auto tier: strong discrete GPU → high,
 //   unknown → medium, integrated / mobile → low (ultra is opt-in); the frame probe only lowers it.
 //
