@@ -9,7 +9,7 @@ import { UNITS } from '../sim/data/units.ts';
 import { SLOT_UNLOCK_LEVEL, LEGENDARY_EVERY } from '../sim/data/items.ts';
 import { lootSchedule } from '../sim/loot.ts';
 import type { Rarity } from '../sim/types.ts';
-import { ARMY_CAP, BASE_DEPLOY_LIMIT, DEPLOY_BONUS, deployPointsText, KEEP_HP, LEVEL_COST_PCT, MAX_SQUAD_LEVEL, START_GOLD, deployZone, income } from '../sim/match.ts';
+import { ARMY_CAP, BASE_DEPLOY_LIMIT, DEPLOY_BONUS, deployPointsText, KEEP_HP, LEVEL_COST_PCT, MAX_SQUAD_LEVEL, MARCH_CAP, MUSTER_MOVES, START_GOLD, deployZone, income } from '../sim/match.ts';
 import { RIVER_Y0 } from '../sim/terrain.ts';
 import { LORDS, LORD_ROLE, LORD_ROLES, LORD_ROLE_NAME } from '../sim/data/lords.ts';
 import { TICK_HZ } from '../sim/constants.ts';
@@ -223,13 +223,22 @@ function page(id: TabId): string {
           <div class="rl-step"><i>1</i><b>Plan</b><p>Both commanders plan in secret, at the same time. Deploy up to <b>${deployText().n}</b> a round on your half${deployLimit() ? '' : ` (${marshalBonus()})`}: a 100-gold squad costs 1, a 150 to 300-gold one 2, a 400-gold one 3. Level squads up, equip loot. Press <kbd>Space</kbd> when ready.</p></div>
           <div class="rl-step"><i>2</i><b>Battle</b><p>The armies fight on their own: no orders. A battle ends when one army is wiped out, or after <b>1:30</b>.</p></div>
           <div class="rl-step"><i>3</i><b>Siege</b><p>The winner's <b>surviving squads march on the enemy Keep</b>. Costlier and higher-level survivors hit harder, and later rounds add more. A narrow win adds less than a clear one.</p></div>
-          <div class="rl-step"><i>4</i><b>Spoils</b><p>Pick <b>1 item of 3</b> and unlock <b>a new unit type</b>. Then plan again.</p></div>
+          <div class="rl-step"><i>4</i><b>Spoils</b><p>Pick <b>1 item of 3</b> and unlock <b>a new unit type</b> (or Muster instead). Then plan again.</p></div>
         </div>
         <ul class="rl-list">
           <li><b>Your army is permanent.</b> Every squad returns at full strength next round, where you placed it.</li>
           <li><b>You see where the enemy stood <i>last</i> round</b> (the red ghosts on the far half, always shown from round 2), never what they are doing now. Counter it.</li>
           <li>If time runs out, both sides deal only <b>half</b> Keep damage from what still stands.</li>
           <li>Your <b>Lord</b> is a hero on the field with a passive, an ability that fires by itself, and three item slots. If the Lord falls, they are back next round.</li>
+        </ul>
+        <h3>Relocation and Muster</h3>
+        <p class="lead">A squad deployed in an earlier round is <b>locked in place</b>: it fights where it stood. Your Lord and the squads you deploy this round move freely until the battle.</p>
+        <ul class="rl-list">
+          <li>Turning a locked squad on the spot is always free (right-drag, or <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd>). A lock marks it on the field.</li>
+          <li><b>Muster</b> is offered every round from round 2 <b>instead of</b> that round's unit unlock: take it and you may relocate up to <b>${MUSTER_MOVES} locked squads</b> that round. A relocated squad can be moved again, and putting it back where it stood gives the move back. Once every unit type is unlocked, Muster costs nothing.</li>
+          <li>A relic <b>of the March</b> gives one relocation every round without Muster (up to ${MARCH_CAP} from several); Muster adds its ${MUSTER_MOVES} on top.</li>
+          <li>The enemy plays by the same rule: <b>enemy squads stay where they stand unless they Muster</b>. Ghosts that stood somewhere else in the battle before are marked <i>Moved</i>, and squads new last round <i>New</i>.</li>
+          <li>Selling a squad from an earlier round refunds nothing, so a locked squad cannot be sold and bought again somewhere else for free.</li>
         </ul>`;
     case 'factions':
       return factionsPage();
@@ -322,7 +331,7 @@ function page(id: TabId): string {
           <dt><kbd>Home</kbd></dt><dd>Reset the camera</dd>
           <dt><kbd>Space</kbd></dt><dd>Ready / un-ready</dd>
           <dt><kbd>Tab</kbd></dt><dd>Select your next squad (<kbd>Shift</kbd>+<kbd>Tab</kbd>: the previous one)</dd>
-          <dt>Drag on your ground</dt><dd>Box-select squads (<kbd>Shift</kbd>-click adds or removes one; <kbd>Ctrl</kbd>+<kbd>A</kbd> all). Drag one of them to move the group; right-drag or <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turns it</dd>
+          <dt>Drag on your ground</dt><dd>Box-select squads (<kbd>Shift</kbd>-click adds or removes one; <kbd>Ctrl</kbd>+<kbd>A</kbd> all). Drag one of them to move the group (squads locked in place stay, unless your Muster moves cover them all); right-drag or <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turns it</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt><dd>Undo the last move, turn, deploy or equip of this round</dd>
           <dt><kbd>T</kbd> <kbd>G</kbd></dt><dd>March routes and timings · placement grid snap</dd>
           <dt><kbd>U</kbd></dt><dd>Level up the selected squad</dd>

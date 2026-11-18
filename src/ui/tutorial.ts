@@ -12,7 +12,7 @@ import type { RoomView } from '../net/protocol.ts';
 import type { UnitType } from '../sim/types.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
-import { deployPointsText, deployWeight, levelUpCost, MAX_SQUAD_LEVEL } from '../sim/match.ts';
+import { deployPointsText, deployWeight, levelUpCost, MAX_SQUAD_LEVEL, MUSTER_MOVES, squadLocked } from '../sim/match.ts';
 import { sound } from '../audio.ts';
 import { $, el, store } from './dom.ts';
 import { icon } from './icons.ts';
@@ -34,7 +34,7 @@ interface Step {
 }
 
 /** The numbered steps of the guided match ("n / 13"); anything else is an unnumbered reminder. */
-const MAIN = ['lord', 'draft1', 'deploy', 'deploys', 'ready', 'battle', 'results', 'draft2', 'loot', 'equip', 'level', 'timing', 'ghosts', 'finish'];
+const MAIN = ['lord', 'draft1', 'deploy', 'deploys', 'ready', 'battle', 'results', 'draft2', 'loot', 'equip', 'level', 'locked', 'timing', 'ghosts', 'finish'];
 /** Taught once: these do not come back in later rounds. */
 const ONCE = new Set(['battle', 'results']);
 const MODALS = '.modal, .reveal, .dialog-veil, .rules-veil, .report-veil';
@@ -100,7 +100,9 @@ export class Coach {
       const first = (v?.round ?? 1) <= 1;
       return first
         ? { id: 'draft1', slot: 'modal', target: '.dcard', title: 'Raise your companies', text: `Unlock <b>${me?.draftPicks ?? 2} more unit types</b> for the whole match. Hover a card to see what it beats and what beats it. A front line plus something ranged is a sound start.` }
-        : { id: 'draft2', slot: 'modal', target: '.dcard', title: 'New recruits', text: `Every round you unlock <b>one more unit type</b>. Each card shows its class on the <b>counter wheel</b>, what it beats (${COUNTER_TEXT} damage) and what it fears: pick the class that beats what the enemy fielded last round. The whole wheel is in the codex, <kbd>F1</kbd>.` };
+        : has('.mcard')
+          ? { id: 'draft2', slot: 'modal', target: '.dcard, .mcard', title: 'New recruits, or Muster', text: `Every round you unlock <b>one more unit type</b>: each card shows what it beats (${COUNTER_TEXT} damage) and what it fears. Or take <b>Muster</b> instead (under the cards): your squads from earlier rounds are locked in place, and Muster lets you relocate up to <b>${MUSTER_MOVES}</b> of them this round.` }
+          : { id: 'draft2', slot: 'modal', target: '.dcard', title: 'New recruits', text: `Every round you unlock <b>one more unit type</b>. Each card shows its class on the <b>counter wheel</b>, what it beats (${COUNTER_TEXT} damage) and what it fears: pick the class that beats what the enemy fielded last round. The whole wheel is in the codex, <kbd>F1</kbd>.` };
     }
     if (has('.modal.loot')) return { id: 'loot', slot: 'modal', title: 'Spoils of War', text: 'After every round you claim <b>one item</b>. It works on every soldier of the squad that carries it. The three are equal in power: a weapon for offence, an armor for defence, a relic for utility. <b>Suits</b> names the squad it helps most; a greyed line does nothing there.' };
     if (has('.planning') && me) {
@@ -133,11 +135,14 @@ export class Coach {
       if (up && teach) return levelStep();
       if (canDeploy) return { id: 'deploys', slot: shopSlot, target: '.deploy-badge', title: `${deployPointsText(left)} deploy point${left === 1 ? '' : 's'} left`, text: `You have <b>${deployPointsText(me.deployLimit)} deploy points</b> this round: a 100-gold squad costs 1, a 150 to 300-gold squad 2, a 400-gold one 3. Put tough units in front and archers or mages behind them. <b>Your army is permanent</b>: it comes back every round.` };
       if (up) return levelStep();
-      // two melee squads of different speeds: time to teach the stagger
-      const melee = army.map((s) => UNITS[s.type as UnitType]).filter((d) => d && d.range <= 400 && !d.tags.includes('flier'));
+      // squads from earlier rounds are locked in place (DESIGN §2): said once, the first time there are some
+      if (round >= 2 && army.some((s) => squadLocked(s, round)) && !this.seen.has('locked-done'))
+        return { id: 'locked', target: '.lock-n', title: 'Locked in place', text: `Your squads from last round are <b>locked in place</b>: drag only this round's squads and your Lord. Turning a locked squad is free (<kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd>). To move up to ${MUSTER_MOVES} of them, take <b>Muster</b> instead of a unit unlock.` };
+      // two melee squads that may still move, of different speeds: time to teach the stagger
+      const melee = army.filter((s) => !squadLocked(s, round) || (me.moveLimit ?? 0) > 0).map((s) => UNITS[s.type as UnitType]).filter((d) => d && d.range <= 400 && !d.tags.includes('flier'));
       if (round >= 2 && new Set(melee.map((d) => d.speed)).size >= 2 && !this.seen.has('timing-done'))
         return { id: 'timing', target: '.pt-sync', title: 'Time the charge', text: 'The seconds under each plate are when that squad reaches the river. <b>Slow tanks in front, fast units held back</b>, so they all hit together instead of one by one. Press <b>Sync</b> to stagger your melee squads by speed, or <kbd>T</kbd> to see every route.' };
-      if (round >= 2 && v?.enemy.lastArmy && !this.seen.has('ghosts-done')) return { id: 'ghosts', target: '.r-ghost', title: 'Know your enemy', text: 'The <b>red ghosts</b> on the far half show where the enemy stood last round. They are always shown from round 2; you never see what the enemy does now. Hover one to read it, plan against it, then press Ready.' };
+      if (round >= 2 && v?.enemy.lastArmy && !this.seen.has('ghosts-done')) return { id: 'ghosts', target: '.r-ghost', title: 'Know your enemy', text: 'The <b>red ghosts</b> on the far half show where the enemy stood last round. They are always shown from round 2; you never see what the enemy does now. Enemy squads stay where they stand unless they Muster. Hover one to read it, plan against it, then press Ready.' };
       return { id: 'ready', target: '.ready-btn', title: 'Ready', text: 'Happy with your army? Press <b>Ready</b> <kbd>Space</kbd>. The battle starts when both commanders are ready.' };
     }
     if (has('.battle')) {
@@ -224,6 +229,7 @@ export class Coach {
       sound.hover();
       if (s.id === 'ghosts') setTimeout(() => this.seen.add('ghosts-done'), 12000);
       if (s.id === 'timing') setTimeout(() => this.seen.add('timing-done'), 14000);
+      if (s.id === 'locked') setTimeout(() => this.seen.add('locked-done'), 12000);
     } else {
       // the same step, live numbers
       if ($(this.root, '.coach-t').textContent !== s.title) $(this.root, '.coach-t').textContent = s.title;
