@@ -28,12 +28,12 @@ import { LORDS, LORD_IDS } from './data/lords.ts';
 import { AFFIXES, LEGENDARY_POWER, SLOT_UNLOCK_LEVEL } from './data/items.ts';
 import { SKILLS, UNIT_CLASS, canEquip } from './data/skills.ts';
 import { beatenBy, classBeats } from './data/wheel.ts';
-import { UNITS } from './data/units.ts';
+import { UNITS, formationOf, hasFormation } from './data/units.ts';
 import { itemPower, legendaryFits, wheelClassOf } from './loot.ts';
 import { beatsClass } from './data/wheel.ts';
 import { ARMY_CAP, MAX_SQUAD_LEVEL, MUSTER_MOVES, applyIntent, canMuster, income, deployWeight, deployZone, freeSpotNear, levelUpCost, relocationsLeft, slotOpen, squadFootprint, squadHome, squadLocked, viewFor } from './match.ts';
 import { hash } from './rng.ts';
-import type { BotStrategy, Item, KingdomUnit, LordId, MatchState, PlayerState, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2, WheelClass } from './types.ts';
+import type { BotStrategy, Formation, Item, KingdomUnit, LordId, MatchState, PlayerState, Seat, Slot, Squad, SquadType, Tag, UnitType, Vec2, WheelClass } from './types.ts';
 
 /**
  * Every faction's units are understood through the Kingdom unit they play like (UnitDef.like): the preference and
@@ -371,10 +371,12 @@ export interface BotKnobs {
   noMuster: boolean;
   /** Leave the Lord on his default stance (advance). */
   noStance: boolean;
+  /** Leave every squad in its default formation (deep). */
+  noFormation: boolean;
 }
 const KNOBS: { base: BotKnobs; x: BotKnobs } = {
-  base: { musterMin: 6000, musterEdge: 1.15, musterAfterLoss: true, relocateMin: 800, staggerRef: 9, levelBias: 0.5, noMuster: false, noStance: false },
-  x: { musterMin: 6000, musterEdge: 1.15, musterAfterLoss: true, relocateMin: 800, staggerRef: 9, levelBias: 0.5, noMuster: false, noStance: false },
+  base: { musterMin: 6000, musterEdge: 1.15, musterAfterLoss: true, relocateMin: 800, staggerRef: 9, levelBias: 0.5, noMuster: false, noStance: false, noFormation: false },
+  x: { musterMin: 6000, musterEdge: 1.15, musterAfterLoss: true, relocateMin: 800, staggerRef: 9, levelBias: 0.5, noMuster: false, noStance: false, noFormation: false },
 };
 /** Set the experimental knobs of 'hardx' (review tooling only; the game never calls this). */
 export function setBotKnobs(k: Partial<BotKnobs>): void { Object.assign(KNOBS.x, KNOBS.base, k); }
@@ -572,6 +574,7 @@ function planClassic(s: MatchState, seat: Seat, strat: BotStrategy, salt: number
   }
   // 6. The Lord's orders for the battle (he holds where he stands: this planner places him once).
   lordOrders(s, seat, KN, false);
+  formations(s, seat, KN, threats);
   applyIntent(s, seat, { t: 'ready' });
 }
 
@@ -958,6 +961,36 @@ function lordOrders(s: MatchState, seat: Seat, KN: BotKnobs, hard: boolean): voi
   if (lordSq.stance) applyIntent(s, seat, { t: 'stance', stance: 'advance' });
 }
 
+// ---------------------------------------------------------------- formations
+
+/** A melee squad forms a wide line when at least this share of the enemy's last army (by gold) deals area damage. */
+const WIDE_VS_SPLASH = 0.35;
+/** A ranged squad stands in a wide line (it is rarely struck in melee) unless at least this share of the enemy raids (cavalry and fliers). */
+const DEEP_VS_RAIDERS = 0.3;
+
+/**
+ * Formations (Formation in types.ts), read off the enemy's last army: a wide line takes less from splash and more from
+ * melee blows. Against a Hard that leaves every squad deep this wins 54% (tools/review/orders.ts, docs/BALANCE.md);
+ * every squad wide whatever the enemy fields wins 51%.
+ */
+function formations(s: MatchState, seat: Seat, KN: BotKnobs, threats: Threat[]): void {
+  if (KN.noFormation) return;
+  let all = 0, splash = 0, raid = 0;
+  for (const e of threats) {
+    if (e.type === 'lord') continue;
+    all += e.value;
+    if (UNITS[e.type].splash > 0) splash += e.value;
+    if (e.body.class === 'cavalry' || e.tags.includes('flier')) raid += e.value;
+  }
+  for (const q of units(s.players[seat].squads)) {
+    if (!hasFormation(q.type)) continue;
+    const def = UNITS[q.type as UnitType];
+    const melee = def.range <= 400 && !def.traits.includes('healer');
+    const want: Formation = melee ? (all > 0 && splash >= all * WIDE_VS_SPLASH ? 'wide' : 'deep') : all > 0 && raid >= all * DEEP_VS_RAIDERS ? 'deep' : 'wide';
+    if (formationOf(q) !== want) applyIntent(s, seat, { t: 'formation', squad: q.id, formation: want });
+  }
+}
+
 function planHard(s: MatchState, seat: Seat, salt: number, strat: BotStrategy = 'hard'): void {
   const v = viewFor(s, seat);
   const p = s.players[seat];
@@ -1015,8 +1048,9 @@ function planHard(s: MatchState, seat: Seat, salt: number, strat: BotStrategy = 
   //    it, and after a Muster so do the three locked squads that stand furthest from theirs.
   hardEquip(s, seat, threats);
   applyLayout(s, seat, hardLayout(p, threats, KN.staggerRef), KN.relocateMin);
-  // 7. The Lord's orders for the battle.
+  // 7. The Lord's orders for the battle, and the squads' formations.
   lordOrders(s, seat, KN, true);
+  formations(s, seat, KN, threats);
   applyIntent(s, seat, { t: 'ready' });
 }
 

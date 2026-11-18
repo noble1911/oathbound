@@ -10,12 +10,12 @@ import { isMainThread } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import { applyIntent, freeSpotNear, lordStance } from '../../src/sim/match.ts';
 import { FIELD_W, mirrorPos } from '../../src/sim/constants.ts';
-import { UNITS } from '../../src/sim/data/units.ts';
+import { UNITS, setFormationNumbers } from '../../src/sim/data/units.ts';
 import { LORD_IDS } from '../../src/sim/data/lords.ts';
 import type { LordId, MatchState, Seat, Squad } from '../../src/sim/types.ts';
 import { arg, botPlanX, ci, KNOB, playMatch, pool, type Planner } from './lib.ts';
 
-interface Job { seed: number; lords: [LordId, LordId]; probe: string; probeSeat: Seat; strat: string; usage: boolean; against?: string }
+interface Job { nums?: { wideArea?: number; wideMelee?: number }; seed: number; lords: [LordId, LordId]; probe: string; probeSeat: Seat; strat: string; usage: boolean; against?: string }
 interface Use { lord: LordId; stance: string; round: number; forms: [string, string][] }
 interface R { win: number; uses: Use[] }
 
@@ -37,7 +37,7 @@ function override(s: MatchState, seat: Seat, what: string): void {
   const lord = p.squads.find((q) => q.type === 'lord')!;
   const follow = (q: Squad | null): void => { applyIntent(s, seat, q ? { t: 'stance', stance: 'follow', squad: q.id } : { t: 'stance', stance: 'advance' }); };
   for (const w of what.split('+')) {
-    if (w === 'default') { applyIntent(s, seat, { t: 'stance', stance: 'advance' }); for (const q of us) setFormation(s, seat, q, 'wide'); }
+    if (w === 'default') { applyIntent(s, seat, { t: 'stance', stance: 'advance' }); for (const q of us) setFormation(s, seat, q, 'deep'); }
     else if (w === 'advance') applyIntent(s, seat, { t: 'stance', stance: 'advance' });
     else if (w === 'hold') applyIntent(s, seat, { t: 'stance', stance: 'hold' });
     else if (w.startsWith('holdat')) {
@@ -64,16 +64,41 @@ function override(s: MatchState, seat: Seat, what: string): void {
     else if (w === 'ranged') follow(dearest(us.filter((q) => !isMelee(q))));
     else if (w === 'near') follow(us.reduce<Squad | null>((a, q) => { const d = (o: Squad): number => (o.pos[0] - lord.pos[0]) ** 2 + (o.pos[1] - lord.pos[1]) ** 2; return !a || d(q) < d(a) ? q : a; }, null));
     else if (w === 'wide' || w === 'deep') for (const q of us) setFormation(s, seat, q, w);
+    else if (w.startsWith('smart')) {
+      // melee squads stand deep unless at least N% of the enemy's last army (by gold) splashes; ranged squads stand wide
+      const foe = (s.players[1 - seat].lastArmy ?? []).filter((q) => q.type !== 'lord');
+      const all = foe.reduce((a, q) => a + q.spent, 0);
+      const splash = foe.filter((q) => UNITS[q.type as 'militia'].splash > 0).reduce((a, q) => a + q.spent, 0);
+      const deep = all === 0 || splash * 100 < all * Number(w.slice(5));
+      for (const q of us) setFormation(s, seat, q, deep ? 'deep' : 'wide');
+    }
+    else if (w.startsWith('msmart') || w.startsWith('rsmart')) {
+      // as smart, but only the melee (msmart) or only the ranged (rsmart) squads ever go wide
+      const foe = (s.players[1 - seat].lastArmy ?? []).filter((q) => q.type !== 'lord');
+      const all = foe.reduce((a, q) => a + q.spent, 0);
+      const splash = foe.filter((q) => UNITS[q.type as 'militia'].splash > 0).reduce((a, q) => a + q.spent, 0);
+      const deep = all === 0 || splash * 100 < all * Number(w.slice(6));
+      for (const q of us) setFormation(s, seat, q, deep || isMelee(q) !== w.startsWith('m') ? 'deep' : 'wide');
+    }
+    else if (w.startsWith('combo')) {
+      // melee squads go wide when 35% of the enemy's gold splashes; ranged squads stand wide unless N% of it raids (cavalry, fliers)
+      const foe = (s.players[1 - seat].lastArmy ?? []).filter((q) => q.type !== 'lord');
+      const all = foe.reduce((a, q) => a + q.spent, 0);
+      const splash = foe.filter((q) => UNITS[q.type as 'militia'].splash > 0).reduce((a, q) => a + q.spent, 0);
+      const raid = foe.filter((q) => UNITS[q.type as 'militia'].class === 'cavalry' || UNITS[q.type as 'militia'].tags.includes('flier')).reduce((a, q) => a + q.spent, 0);
+      for (const q of us) setFormation(s, seat, q, isMelee(q) ? (all > 0 && splash * 100 >= all * 35 ? 'wide' : 'deep') : (all > 0 && raid * 100 >= all * Number(w.slice(5)) ? 'deep' : 'wide'));
+    }
     else if (w === 'deepmelee') for (const q of us) setFormation(s, seat, q, isMelee(q) ? 'deep' : 'wide');
     else if (w === 'deepranged') for (const q of us) setFormation(s, seat, q, isMelee(q) ? 'wide' : 'deep');
     else if (w === 'stancedefault') applyIntent(s, seat, { t: 'stance', stance: 'advance' });
-    else if (w === 'formdefault') for (const q of us) setFormation(s, seat, q, 'wide');
+    else if (w === 'formdefault') for (const q of us) setFormation(s, seat, q, 'deep');
     else throw new Error(`unknown override ${w}`);
   }
   applyIntent(s, seat, { t: 'ready' });
 }
 
 export function work(j: Job): R {
+  if (j.nums) setFormationNumbers(j.nums);
   const uses: Use[] = [];
   const mk = (seat: Seat): Planner => (s: MatchState) => {
     KNOB.noLevel = false; KNOB.noLayout = false;
@@ -125,7 +150,7 @@ async function main(): Promise<void> {
   for (const probe of probes) {
     let seed = seed0;
     for (let k = 0; k < seeds; k++) for (const a of lords) for (const b of LORD_IDS) if (a !== b) for (const probeSeat of [0, 1] as Seat[]) {
-      jobs.push({ seed: seed++, lords: probeSeat === 0 ? [a, b] : [b, a], probe, probeSeat, strat, usage: false, against: arg('against', 'default') });
+      jobs.push({ seed: seed++, lords: probeSeat === 0 ? [a, b] : [b, a], probe, probeSeat, strat, usage: false, against: arg('against', 'default'), nums: arg('nums', '') ? JSON.parse(arg('nums', '')) : undefined });
     }
   }
   const res = await pool<Job, R>(new URL(import.meta.url), jobs);
