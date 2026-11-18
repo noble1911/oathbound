@@ -5,9 +5,12 @@
 //
 // Coordinates arrive in the engine's field frame (already flipped for a seat-1 viewer) as field cm.
 import * as THREE from 'three';
+import type { TagBadge } from './scene-adapter.ts';
 
 /** Your livery on dark (--me-hi in src/style.css): a route, a ring or a tag that belongs to you. */
 const ME_HI = '#94b6f6';
+/** The enemy's livery on dark (--foe-hi): the intel marks on its ghosts. */
+const FOE_HI = '#f4a097';
 const MAX_RINGS = 24;
 /** Route ribbon capacity (segments over all routes). */
 const MAX_SEGS = 1600;
@@ -109,7 +112,7 @@ export class PlanOverlay {
 
   // ---------------------------------------------------------------- routes + labels
 
-  private tags: { pos: THREE.Vector3; text: string; hot: boolean }[] = [];
+  private tags: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge }[] = [];
   /** Tag sprites in `tags` order (labels[0..n)), and the camera state their placement was worked out for. */
   private tagCount = 0;
   private clutterKey = '';
@@ -165,14 +168,14 @@ export class PlanOverlay {
   }
 
   /** Plate tags: world anchors (just under each squad's plate) and their text. */
-  setTags(tags: { pos: THREE.Vector3; text: string; hot: boolean }[]): void {
+  setTags(tags: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge }[]): void {
     this.tags = tags;
   }
 
   /** Rebuild the label sprites from the current tags, marks and aura label (call after any of them changes). */
   layoutLabels(): void {
     this.used = 0;
-    for (const t of this.tags) this.label(t.pos, t.text, t.hot ? 'hot' : 'tag', TAG_H, 1.18);
+    for (const t of this.tags) this.label(t.pos, t.text, t.hot ? 'hot' : 'tag', TAG_H, 1.18, t.badge);
     this.tagCount = this.used;
     this.clutterKey = '';
     this.clutterFrame = -1;
@@ -195,7 +198,7 @@ export class PlanOverlay {
     for (let i = this.used; i < this.labels.length; i++) this.labels[i]!.visible = false;
   }
 
-  private label(pos: THREE.Vector3, text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', h: number, cy: number): void {
+  private label(pos: THREE.Vector3, text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', h: number, cy: number, badge?: TagBadge): void {
     if (this.used >= MAX_LABELS) return;
     let sp = this.labels[this.used];
     if (!sp) {
@@ -213,7 +216,7 @@ export class PlanOverlay {
       this.scene.add(sp);
       this.labels.push(sp);
     }
-    const t = this.tex(text, tone);
+    const t = this.tex(text, tone, badge);
     sp.material = t.mat;
     sp.userData.h = h;
     sp.userData.aspect = t.aspect;
@@ -275,8 +278,8 @@ export class PlanOverlay {
   }
 
   /** One texture per distinct text and tone, kept (seconds labels repeat a lot). */
-  private tex(text: string, tone: 'tag' | 'hot' | 'mark' | 'dim'): LabelTex {
-    const key = tone + '|' + text;
+  private tex(text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', badge?: TagBadge): LabelTex {
+    const key = tone + '|' + (badge ?? '') + '|' + text;
     let t = this.texCache.get(key);
     if (t) return t;
     if (this.texCache.size > 400) {
@@ -291,20 +294,26 @@ export class PlanOverlay {
     const ctx = c.getContext('2d')!;
     const font = `700 ${tone === 'tag' || tone === 'hot' ? 30 : 28}px "Source Sans 3", "Segoe UI", sans-serif`;
     ctx.font = font;
-    const w = Math.ceil(ctx.measureText(text).width) + 22;
+    const foe = badge === 'moved' || badge === 'new';
+    // a badge takes a square at the left of the text (or the whole tag when there is no text)
+    const bw = badge ? (text ? 36 : 40) : 0;
+    const tw = text ? Math.ceil(ctx.measureText(text).width) + 22 : 0;
+    const w = bw + tw + (badge && text ? -4 : 0);
     c.width = w;
     c.height = H;
     ctx.font = font;
-    // a small iron plate (--iron-800), a slate hairline, steel text; the hot ones (being moved) in your livery
+    // a small iron plate (--iron-800), a slate hairline, steel text; the hot ones (being moved) in your livery, the
+    // intel marks on enemy ghosts in theirs
     ctx.fillStyle = 'rgba(21, 25, 32, 0.86)';
     ctx.fillRect(1, 1, w - 2, H - 2);
-    ctx.strokeStyle = tone === 'hot' ? ME_HI : '#56616f';
+    ctx.strokeStyle = tone === 'hot' ? ME_HI : foe ? FOE_HI : badge === 'reloc' || badge === 'open' ? ME_HI : '#56616f';
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, w - 2, H - 2);
-    ctx.fillStyle = tone === 'dim' ? '#b8c2ce' : tone === 'hot' ? '#ffffff' : '#e8ebef';
+    if (badge) drawBadge(ctx, badge, text ? 7 : 6, H / 2, badge === 'lock' ? '#b8c2ce' : foe ? FOE_HI : ME_HI);
+    ctx.fillStyle = tone === 'dim' ? '#b8c2ce' : tone === 'hot' ? '#ffffff' : foe ? FOE_HI : '#e8ebef';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, w / 2, H / 2 + 1);
+    if (text) ctx.fillText(text, bw + (badge ? -4 : 0) + tw / 2, H / 2 + 1);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
@@ -327,4 +336,40 @@ export class PlanOverlay {
       (m.material as THREE.Material).dispose();
     }
   }
+}
+
+/**
+ * A 24-unit line glyph in the style of src/ui/icons.ts (2-unit strokes, round joins), drawn into a label at (x, cy)
+ * scaled to the label: a padlock (shut, or open when a Muster relocation may move the squad), the relocation arrow,
+ * and the two intel marks on enemy ghosts (moved: a footprint arrow; new: a small star).
+ */
+function drawBadge(ctx: CanvasRenderingContext2D, b: TagBadge, x: number, cy: number, color: string): void {
+  const k = 1.15;
+  ctx.save();
+  ctx.translate(x, cy - 12 * k);
+  ctx.scale(k, k);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const path = (d: string) => ctx.stroke(new Path2D(d));
+  if (b === 'lock' || b === 'open') {
+    ctx.globalAlpha = 0.3;
+    ctx.fill(new Path2D('M5 11h14v10H5z'));
+    ctx.globalAlpha = 1;
+    path('M5 11h14v10H5z');
+    path(b === 'lock' ? 'M8 11V8a4 4 0 018 0v3' : 'M8 11V7a4 4 0 017.6-1.6');
+    path('M12 15v2');
+  } else if (b === 'reloc' || b === 'moved') {
+    path('M4 18c3-8 8-11 15-11');
+    path('M15 3l4 4-4 4');
+    ctx.fill(new Path2D('M4 18m-2.2 0a2.2 2.2 0 104.4 0a2.2 2.2 0 10-4.4 0'));
+  } else {
+    ctx.globalAlpha = 0.3;
+    ctx.fill(new Path2D('M12 3l2.6 6 6.4.5-4.9 4.2 1.5 6.3L12 16.6 6.4 20l1.5-6.3L3 9.5 9.4 9z'));
+    ctx.globalAlpha = 1;
+    path('M12 3l2.6 6 6.4.5-4.9 4.2 1.5 6.3L12 16.6 6.4 20l1.5-6.3L3 9.5 9.4 9z');
+  }
+  ctx.restore();
 }

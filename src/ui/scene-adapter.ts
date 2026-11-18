@@ -44,10 +44,17 @@ export interface RangeSpec {
   aura?: { radius: number; label: string } | null;
 }
 
+/**
+ * A small mark drawn at the left of a plate tag (relocation, DESIGN §2): `lock` locked in place, `open` locked but a
+ * Muster relocation may move it, `reloc` relocated this round; on an enemy ghost `moved` (stood elsewhere the battle
+ * before) or `new` (new last round). A tag with a badge may have empty text.
+ */
+export type TagBadge = 'lock' | 'open' | 'reloc' | 'moved' | 'new';
+
 /** The planning march preview (src/ui/timing.ts): plate tags, and route lines with their time marks. */
 export interface TimingSpec {
   /** A small seconds tag under a squad's plate (`pos` is the squad's field position). */
-  tags: { id: number; pos: Vec2; text: string; hot?: boolean }[];
+  tags: { id: number; pos: Vec2; text: string; hot?: boolean; badge?: TagBadge }[];
   /** Field-cm polylines; `marks` are labels along them (the river, the enemy front). */
   routes: { pts: Vec2[]; hot?: boolean; marks: { pos: Vec2; text: string; dim?: boolean }[] }[];
 }

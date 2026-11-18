@@ -244,7 +244,7 @@ export function lordTooltip(lord: LordId, level = 1): string {
 }
 
 /** Compact tooltip for a squad on the field (own or ghost). `lord` = its owner's Lord (the stats include its passive and the squad's items). */
-export function squadTooltip(sq: Squad, lord: LordId | null, opts: { ghost?: boolean; hint?: string } = {}): string {
+export function squadTooltip(sq: Squad, lord: LordId | null, opts: { ghost?: boolean; hint?: string; lock?: boolean } = {}): string {
   const name = unitName(sq.type, lord);
   const items = SLOTS.map((s) => sq.items[s]).filter(Boolean);
   const s = effectiveStats(sq, lord);
@@ -253,7 +253,7 @@ export function squadTooltip(sq: Squad, lord: LordId | null, opts: { ghost?: boo
     ${classLine(sq.type, lord, true)}
     <div class="sqtip-st"><span>${icon('heart')}${s.hp}</span><span>${icon('sword')}${s.dps.toFixed(1)} dps</span><span>${icon('bow')}${s.range >= 400 ? (s.range / 100).toFixed(0) + ' m' : 'melee'}</span></div>
     ${items.length ? `<div class="sqtip-items">${items.map((it) => `<span style="color:${RARITY_CSS[it!.rarity]}">${esc(itemShort(it!))}</span>`).join('')}</div>` : ''}
-    ${opts.hint ? `<div class="it-hint">${esc(opts.hint)}</div>` : ''}
+    ${opts.hint ? `<div class="it-hint${opts.lock ? ' lock' : ''}">${opts.lock ? icon('lock') : ''}${esc(opts.hint)}</div>` : ''}
   </div>`;
 }
 

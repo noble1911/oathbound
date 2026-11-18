@@ -1520,3 +1520,46 @@ body.tab-hidden *, body.tab-hidden *::before, body.tab-hidden *::after { animati
   .coach-target, .notice.draft-n { animation: none; }
   .title-art { transition: none; }
 }
+
+/* ------------------------------------------------------------ relocation and Muster (DESIGN §2)
+   Squads from earlier rounds are locked in place; Muster (instead of a unit unlock) relocates up to three.
+   Iron and slate like the rest of the planning HUD; your livery (--me-hi) marks what a Muster lets move,
+   the enemy's (--foe-hi) the intel on its ghosts. */
+.notice.lock-n { cursor: default; }
+.notice.lock-n:hover { border-image-source: url('/ui/kit/btn-steel.webp'); }
+.notice.lock-n .ico { color: var(--steel-300); }
+.notice.lock-n.moves .ico { color: var(--me-hi); }
+.notice.lock-n em { font-style: normal; color: var(--me-hi); }
+.notice.lock-n.none em, .notice.lock-n.none .ico { color: var(--steel-300); }
+.planning.is-ready .notice.lock-n { opacity: 0.6; }
+.notice.muster-n .ico { color: var(--me-hi); }
+.sp-lock { display: flex; align-items: center; gap: 0.4rem; margin: 0; padding: 0.3rem 0.5rem; border: 1px solid var(--rule); border-left-width: 3px; background: var(--well); font-size: 0.8rem; color: var(--muted); }
+.sp-lock .ico { flex: none; width: 1rem; height: 1rem; color: var(--steel-300); }
+.sp-lock b { color: var(--me-hi); }
+.sp-lock.locked { border-left-color: var(--steel-300); color: var(--steel-100); }
+.sp-lock.open, .sp-lock.reloc { border-left-color: var(--me-hi); color: var(--steel-100); }
+.sp-lock.open .ico, .sp-lock.reloc .ico { color: var(--me-hi); }
+.sp-lock.free { border-color: transparent; background: none; padding: 0 0.1rem; color: var(--dim); }
+.sp-lock.free .ico { color: var(--dim); }
+.sp-lock.foe { border-left-color: var(--foe-hi); color: var(--steel-100); }
+.sp-lock.foe .ico { color: var(--foe-hi); }
+.it-hint.lock { display: flex; align-items: flex-start; gap: 0.35rem; color: var(--steel-200); font-style: normal; text-align: left; }
+.it-hint.lock .ico { flex: none; width: 0.95rem; height: 0.95rem; margin-top: 0.05rem; color: var(--steel-300); }
+.phint .lockn { color: var(--steel-200); }
+.phint .lockn .ico { width: 0.9rem; height: 0.9rem; margin-right: 0.2rem; vertical-align: -0.12rem; }
+/* the Muster choice in the recruit picker: not a unit card (no crest, no frame), a plain plate in the footer */
+.draft-or { display: flex; align-items: center; gap: 0.6rem; min-width: 0; flex: 0 1 36rem; }
+.draft-or > em { font: italic 400 1.05rem var(--serif); color: var(--steel-300); }
+.mcard { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.6rem; min-width: 0; padding: 0.15rem 0.3rem; border: solid transparent; border-width: 0.5rem 0.75rem; border-image: url('/ui/kit/btn-steel.webp') 26 46 fill / 0.5rem 0.75rem; background: none; color: var(--steel-100); text-align: left; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.55)); cursor: pointer; }
+.mcard:hover { border-image-source: url('/ui/kit/btn-steel-hover.webp'); }
+.mcard > .ico { width: 1.7rem; height: 1.7rem; color: var(--me-hi); }
+.mcard > span { min-width: 0; }
+.mcard b { display: block; font: 500 1.1rem/1.1 var(--serif); color: #fff; }
+.mcard small { display: block; font-size: 0.76rem; line-height: 1.25; color: var(--steel-200); }
+.mcard .mc-go { padding: 0.3rem 0.6rem; border: 1px solid var(--slate-400); background: var(--iron-800); font: 700 0.68rem var(--sans); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: var(--steel-100); }
+.mcard.armed .mc-go { border-color: var(--me-hi); background: var(--me-deep); color: #fff; }
+.mcard.armed { outline: 1px solid var(--me-hi); outline-offset: 0.3rem; }
+.mcard.chosen { outline: 2px solid var(--good); outline-offset: 0.35rem; }
+@media (max-width: 900px) { .draft-or > em { display: none; } .mcard small { font-size: 0.7rem; } }
+/* on a wide screen the choice is one line high, no taller than the Later button: the recruit grid keeps its height */
+@media (min-width: 1200px) { .draft-or { flex-basis: 48rem; } .mcard > span { display: flex; align-items: baseline; gap: 0.6rem; } .mcard small { white-space: nowrap; } }

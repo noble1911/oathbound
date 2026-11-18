@@ -18,6 +18,7 @@ import type { WheelClass } from '../sim/types.ts';
 import { WHEEL, WHEEL_NAME, WHEEL_WHY } from '../sim/data/wheel.ts';
 import { COUNTER_TEXT } from './gamedata.ts';
 import { tip } from './dom.ts';
+import { canMuster, MUSTER_MOVES } from '../sim/match.ts';
 
 /**
  * Where an item would do the most good right now (bestFit: the biggest usefulness gain among squads
@@ -158,6 +159,14 @@ export function draftCols(n: number): number {
 }
 
 /**
+ * What the recruit picker shows: the options, the picks and whether Muster is offered instead (DESIGN §2). The
+ * picker is rebuilt when this changes.
+ */
+export function draftKey(me: PlayerState, round: number): string {
+  return me.draftOptions.join(',') + ':' + me.draftPicks + ':' + (canMuster(me, round) ? 'm' : '');
+}
+
+/**
  * "Recruit a new unit type": a free choice of any eligible unit (both commanders get the same
  * options). A grid of unit cards sorted by class, each with its role, cost and what it beats and
  * fears. If planning ends first the sim takes the first option, which is marked on its card.
@@ -166,9 +175,12 @@ export class DraftModal {
   readonly root: HTMLElement;
   key: string;
 
-  /** `fresh`: the draft just appeared (not reopened from the notice): sting + "New recruits!" ribbon. */
-  constructor(host: HTMLElement, me: PlayerState, round: number, onPick: (u: UnitType) => void, onClose: () => void, fresh = false) {
-    this.key = me.draftOptions.join(',') + ':' + me.draftPicks;
+  /**
+   * `fresh`: the draft just appeared (not reopened from the notice): sting + "New recruits!" ribbon. `onMuster`: Muster
+   * is offered instead of the unlock (DESIGN §2); it takes two presses, because it gives up this round's new unit type.
+   */
+  constructor(host: HTMLElement, me: PlayerState, round: number, onPick: (u: UnitType) => void, onClose: () => void, fresh = false, onMuster: (() => void) | null = null) {
+    this.key = draftKey(me, round);
     const n = me.draftPicks;
     const fallback = me.draftOptions[0];
     const card = (u: UnitType): string => {
@@ -191,13 +203,13 @@ export class DraftModal {
     const healers = fac ? FACTIONS[fac].units.some((u) => UNITS[u].traits.includes('healer')) : true;
     this.root = el(`<div class="modal draft${fresh ? ' fresh' : ''}" data-n="${opts.length}">
       ${fresh ? '<div class="draft-ribbon">New recruits!</div>' : ''}
-      <header class="loot-head"><small class="eyebrow">${fac ? `${esc(FACTIONS[fac].name)} · ` : ''}${round <= 1 ? 'Muster' : `Round ${round}`}</small>
+      <header class="loot-head"><small class="eyebrow">${fac ? `${esc(FACTIONS[fac].name)} · ` : ''}${round <= 1 ? 'Opening recruits' : `Round ${round}`}</small>
         <h2>Recruit a new unit type</h2>
         <p>Choose <b>any ${n > 1 ? n : 'one'}</b> of these ${opts.length}. ${n > 1 ? 'They join' : 'It joins'} your shop for the whole match. <span class="loot-same">Your opponent has the same choice.</span></p>
       </header>
       <div class="draft-row" style="--cols:${draftCols(opts.length)}">${opts.map(card).join('')}</div>
       <div class="draft-have"><small>Already yours</small>${me.unlocked.map((u) => `<span class="uchip">${crest(u, null, 'sm')}${esc(UNITS[u].name)}</span>`).join('')}</div>
-      <footer class="loot-foot"><button class="btn later">Later</button><small class="muted">${fallback ? `If planning ends first, <b>${esc(UNITS[fallback].name)}</b> is recruited for you.` : ''}${healers ? '' : ` The ${esc(FACTIONS[fac!].short)} has <b>no healers</b>: its fallen rise instead.`}</small></footer>
+      <footer class="loot-foot"><button class="btn later">Later</button>${onMuster ? `<div class="draft-or"><em>or</em><button class="mcard" data-tip="Your squads from earlier rounds are locked in place. Muster lets you move up to ${MUSTER_MOVES} of them this round; moving one back frees its move. You get no new unit type this round.">${icon('move')}<span><b>Muster</b><small>Instead of a new unit type this round: relocate up to ${MUSTER_MOVES} squads from earlier rounds</small></span><i class="mc-go">Muster</i></button></div>` : ''}<small class="muted">${fallback ? `If planning ends first, <b>${esc(UNITS[fallback].name)}</b> is recruited for you.` : ''}${healers ? '' : ` The ${esc(FACTIONS[fac!].short)} has <b>no healers</b>: its fallen rise instead.`}</small></footer>
     </div>`);
     host.appendChild(this.root);
     if (fresh) sound.draft();
@@ -216,9 +228,35 @@ export class DraftModal {
       sound.click();
       onClose();
     });
+    const m = this.root.querySelector<HTMLElement>('.mcard');
+    if (m && onMuster) {
+      m.addEventListener('pointerenter', () => sound.hover());
+      m.addEventListener('click', () => {
+        // the first press arms it (it forfeits this round's unlock), the second within a few seconds takes it
+        if (!this.musterArmed || this.musterArmed < performance.now()) {
+          this.musterArmed = performance.now() + 4000;
+          sound.click();
+          m.classList.add('armed');
+          $(m, '.mc-go').textContent = 'Confirm';
+          clearTimeout(this.disarm);
+          this.disarm = setTimeout(() => {
+            this.musterArmed = 0;
+            m.classList.remove('armed');
+            $(m, '.mc-go').textContent = 'Muster';
+          }, 4000);
+          return;
+        }
+        clearTimeout(this.disarm);
+        m.classList.add('chosen');
+        onMuster();
+      });
+    }
   }
+  private musterArmed = 0;
+  private disarm: ReturnType<typeof setTimeout> | undefined;
 
   dispose(): void {
+    clearTimeout(this.disarm);
     this.root.remove();
   }
 }

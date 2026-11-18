@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import type { DecodedReplay, FactionId, ReplayEvent, Seat, SkillEvent, Terrain, Vec2 } from '../sim/types.ts';
 import { sampleReplay, makeTransforms } from '../sim/index.ts';
 import { BattleView, replaySource, type ArmySquad } from '../render/index.ts';
-import type { BackdropHandle, BackdropOptions, CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual, TimingSpec } from './scene-adapter.ts';
+import type { BackdropHandle, BackdropOptions, CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual, TagBadge, TimingSpec } from './scene-adapter.ts';
 import { squadFootprint } from '../sim/match.ts';
 import { PlanOverlay } from './plan-overlay.ts';
 import { flipFacing, flipPos, flippedSource } from './flip.ts';
@@ -377,7 +377,7 @@ export class EngineScene implements SceneAdapter {
    */
   private layoutTags(): void {
     const tags = this.timing?.tags ?? [];
-    const out: { pos: THREE.Vector3; text: string; hot: boolean }[] = [];
+    const out: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge }[] = [];
     if (tags.length && this.mode === 'planning' && !this.view.battle) {
       const acc = new Map<number, { x: number; y: number; z: number; n: number; top: number }>();
       for (const s of this.view.units.slots) {
@@ -401,7 +401,7 @@ export class EngineScene implements SceneAdapter {
           const z = 60 - p[1] / 100;
           v = new THREE.Vector3(x, this.view.field.heightAt(x, z) + 2.5, z);
         }
-        out.push({ pos: v, text: t.text, hot: !!t.hot });
+        out.push({ pos: v, text: t.text, hot: !!t.hot, badge: t.badge });
       }
     }
     this.overlay.setTags(out);

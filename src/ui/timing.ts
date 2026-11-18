@@ -12,6 +12,7 @@ import { FIELD_H, FIELD_W, TICK_HZ } from '../sim/constants.ts';
 import { deployZone, freeSpotNear, overlappingSquad, squadFootprint } from '../sim/match.ts';
 import { DIRS, MOVE_PCT, RIVER_Y0, RIVER_Y1, cellOf, navFor } from '../sim/terrain.ts';
 import type { Intent, LordId, Seat, Squad, SquadType, Terrain, Vec2 } from '../sim/types.ts';
+import { goesHome, moveAllowed, type RelocMe } from './relocation.ts';
 
 /** What the march needs to know about one enemy squad (as it stood last round). */
 export interface MarchFoe {
@@ -206,8 +207,14 @@ export function settle(order: readonly Body[], want: Map<number, Placed>, others
  * positions kept, clamped so every centre stays in the deploy zone, snapped, and settled clear of
  * the squads outside the group.
  */
-export function groupPlace(group: readonly Body[], others: readonly Squad[], seat: Seat, delta: Vec2, steps: number, snap: number): Map<number, Placed> | null {
-  if (!group.length) return new Map();
+export function groupPlace(all: readonly Body[], others: readonly Squad[], seat: Seat, delta: Vec2, steps: number, snap: number, pinned?: ReadonlySet<number>): Map<number, Placed> | null {
+  if (!all.length) return new Map();
+  // pinned squads (locked in place, DESIGN §2) only turn on the spot: exactly where they stand, never snapped or nudged
+  const stay = pinned?.size ? all.filter((b) => pinned.has(b.id)) : [];
+  const group = stay.length ? all.filter((b) => !pinned!.has(b.id)) : all;
+  const kept = new Map<number, Placed>(stay.map((b) => [b.id, { pos: [b.pos[0], b.pos[1]] as Vec2, facing: (b.facing + steps) & 255 }]));
+  if (!group.length) return kept;
+  others = stay.length ? [...others, ...stay.map((b) => phantom(b.id, b.type, b.pos))] : others;
   let cx = 0;
   let cy = 0;
   for (const b of group) {
@@ -244,7 +251,10 @@ export function groupPlace(group: readonly Body[], others: readonly Squad[], sea
   // settle the group's leading edge first, so the squads that move into new ground keep their spots
   const fwd = seat === 0 ? 1 : -1;
   const order = [...group].sort((p, q) => (want.get(q.id)!.pos[1] - want.get(p.id)!.pos[1]) * fwd || p.id - q.id);
-  return settle(order, want, others, seat);
+  const out = settle(order, want, others, seat);
+  if (!out) return null;
+  for (const [id, p] of kept) out.set(id, p);
+  return out;
 }
 
 /** Every squad mirrored left-right inside the deploy zone (the zone is symmetric about its centre line). */
@@ -318,17 +328,22 @@ export function syncBySpeed(
  * (no squad ever overlaps another in between). A squad whose spot is still held by one that has not
  * moved yet waits; a cycle (two squads swapping, a mirror) is broken by parking one on free ground first.
  */
-export function planMoves(squads: readonly Squad[], targets: Map<number, Placed>, seat: Seat): Intent[] {
+export function planMoves(squads: readonly Squad[], targets: Map<number, Placed>, seat: Seat, reloc?: RelocRule): Intent[] {
   const cur = squads.map((s) => ({ ...s, pos: [s.pos[0], s.pos[1]] as Vec2 }));
   const byId = new Map(cur.map((s) => [s.id, s]));
   const left = [...targets.entries()].filter(([id, t]) => {
     const s = byId.get(id);
     return s && (s.pos[0] !== t.pos[0] || s.pos[1] !== t.pos[1] || s.facing !== t.facing);
   });
+  // relocation (DESIGN §2): a locked squad moves only while a relocation is left at that step, so the moves that send a
+  // relocated squad home (freeing one) go first, and a locked squad is parked aside only when that is legal too
+  const me = reloc ? { ...reloc.me, squads: cur } : null;
+  const ok = (id: number, to: Vec2) => !me || moveAllowed(me, id, to, reloc!.round);
+  if (me) left.sort(([a, ta], [b, tb]) => Number(goesHome(me, b, tb.pos, reloc!.round)) - Number(goesHome(me, a, ta.pos, reloc!.round)));
   const out: Intent[] = [];
   let guard = left.length * 3 + 8;
   while (left.length && guard-- > 0) {
-    const i = left.findIndex(([id, t]) => !overlappingSquad(cur, byId.get(id)!.type, t.pos, id));
+    const i = left.findIndex(([id, t]) => ok(id, t.pos) && !overlappingSquad(cur, byId.get(id)!.type, t.pos, id));
     if (i >= 0) {
       const [id, t] = left.splice(i, 1)[0]!;
       const s = byId.get(id)!;
@@ -339,7 +354,12 @@ export function planMoves(squads: readonly Squad[], targets: Map<number, Placed>
     }
     // every remaining squad is blocked by another one that still has to move: park the first aside,
     // on ground that is free now and that no remaining target needs
-    const [id] = left[0]!;
+    const parkable = left.find(([oid]) => {
+      const o = byId.get(oid)!;
+      return ok(oid, [o.pos[0] + 1, o.pos[1]]);
+    });
+    if (!parkable) break;
+    const [id] = parkable;
     const s = byId.get(id)!;
     const blockers = [...cur, ...left.map(([oid, t]) => phantom(-1 - oid, byId.get(oid)!.type, t.pos))];
     const park = freeSpotNear(blockers, seat, s.type, s.pos, id) ?? freeSpotNear(cur, seat, s.type, s.pos, id);
@@ -348,6 +368,12 @@ export function planMoves(squads: readonly Squad[], targets: Map<number, Placed>
     out.push({ t: 'move', squad: id, pos: park, facing: s.facing });
   }
   return out;
+}
+
+/** The relocation rule planMoves follows: my player state (last battle's army, the Muster) and the round. */
+export interface RelocRule {
+  me: Omit<RelocMe, 'squads'>;
+  round: number;
 }
 
 /** A stable key for a squad's equipment (the march speed reads its items). */

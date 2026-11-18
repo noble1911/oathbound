@@ -11,7 +11,7 @@ import { factionOfLord } from '../sim/data/factions.ts';
 import type { RoomView } from '../net/protocol.ts';
 import { UNITS } from '../sim/data/units.ts';
 import { LORDS, lordAuraRing } from '../sim/data/lords.ts';
-import { deployPointsText, inDeployZone, levelUpCost, sellRefund, ARMY_CAP, MAX_SQUAD_LEVEL, LORD_XP_LEVELS, MAX_LORD_LEVEL, overlappingSquad, freeSpotNear } from '../sim/match.ts';
+import { deployPointsText, inDeployZone, levelUpCost, sellRefund, ARMY_CAP, MAX_SQUAD_LEVEL, LORD_XP_LEVELS, MAX_LORD_LEVEL, overlappingSquad, freeSpotNear, canMuster, squadHome, squadLocked, MUSTER_MOVES } from '../sim/match.ts';
 import { SLOT_UNLOCK_LEVEL } from '../sim/data/items.ts';
 import { sound } from '../audio.ts';
 import { playLordLine } from '../audio/voice.ts';
@@ -26,9 +26,10 @@ import { squadSize } from '../sim/battle.ts';
 import { squadSkills } from '../sim/data/skills.ts';
 import { defaultFacing, deployRefusal, effectiveStats, levelGainText, rarityRank, SHOP_KEYS, SLOT_LABEL, SLOTS, slotOpen, soldierStats, unitName, allItems } from './gamedata.ts';
 import { niceError, TopBar } from './hud.ts';
-import { DraftModal, LootModal } from './loot.ts';
-import { frontLine, groupPlace, itemsKey, marchFoes, marchOf, mirrorPlace, planMoves, snapPos, syncBySpeed, type March, type MarchFoe, type Placed } from './timing.ts';
-import type { TimingSpec } from './scene-adapter.ts';
+import { DraftModal, LootModal, draftKey } from './loot.ts';
+import { frontLine, groupPlace, itemsKey, marchFoes, marchOf, mirrorPlace, planMoves, settle, snapPos, syncBySpeed, type March, type MarchFoe, type Placed } from './timing.ts';
+import type { TagBadge, TimingSpec } from './scene-adapter.ts';
+import { dragRefusal, ghostMark, GHOST_MARK_TEXT, lockedText, lockState, mirrorable, pinnedIn, relocCount, relocSource, targetsRefusal, type RelocMe } from './relocation.ts';
 
 type Drag =
   | { kind: 'place'; unit: UnitType; facing: number; fromShop: boolean; moved: boolean; pos: Vec2 | null; rot: Vec2 | null }
@@ -38,7 +39,7 @@ type Drag =
    * moved, `steps` how far it has turned about its centroid (right-drag or Q/E). `base` is where each
    * squad stood when the drag began; `out` the settled spots shown while dragging.
    */
-  | { kind: 'group'; ids: number[]; start: [number, number]; grab: Vec2; moved: boolean; delta: Vec2; steps: number; rot: { from: number; at: number } | null; base: Map<number, Placed>; out: Map<number, Placed> | null; pos: Vec2 | null; turnOnly: boolean; hit: number };
+  | { kind: 'group'; ids: number[]; start: [number, number]; grab: Vec2; moved: boolean; delta: Vec2; steps: number; rot: { from: number; at: number } | null; base: Map<number, Placed>; out: Map<number, Placed> | null; pos: Vec2 | null; turnOnly: boolean; hit: number; pinned: Set<number>; turnPinned: Set<number> };
 
 /** One undoable planning action: `undo` sends the intents that revert it (false: nothing left to revert). */
 interface UndoEntry {
@@ -52,7 +53,7 @@ const UNDO_MAX = 24;
 /** Group turn per Q/E press (binary angle: 16 = 22.5 degrees). */
 const TURN_STEP = 16;
 
-const GHOST_TIP = 'The red ghosts on the far half are where the enemy army stood in the last battle. You never see what they are doing now. Hover or click one to read it.';
+const GHOST_TIP = 'The red ghosts on the far half are where the enemy army stood in the last battle. You never see what they are doing now. Enemy squads stay where they stand unless they Muster. Hover or click one to read it.';
 const GHOST_TIP_NONE = 'From round 2 you always see where the enemy army stood in the last battle.';
 
 const ANG = (dx: number, dy: number) => Math.round(((Math.atan2(dy, dx) / (Math.PI * 2)) * 256 + 256)) & 255;
@@ -140,7 +141,7 @@ export class PlanningScreen {
       <aside class="sqpanel panel"></aside>
       <div class="ptools" role="toolbar" aria-label="Formation">
         <button class="btn pt pt-undo" disabled>${icon('undo')}<small>Undo</small></button>
-        <button class="btn pt pt-mirror" data-tip="Mirror your whole formation left to right">${icon('mirror')}<small>Mirror</small></button>
+        <button class="btn pt pt-mirror" data-tip="Mirror your formation left to right">${icon('mirror')}<small>Mirror</small></button>
         <button class="btn pt pt-sync">${icon('sync')}<small>Sync</small></button>
         <button class="btn pt pt-timing" aria-pressed="false" data-tip="March routes: every squad's path, with the seconds to the river and to where the enemy's front stood last round [T]. The seconds under each plate are always on.">${icon('route')}<small>Routes</small></button>
         <button class="btn pt pt-snap" aria-pressed="false">${icon('grid')}<small>Snap</small></button>
@@ -273,7 +274,7 @@ export class PlanningScreen {
       return;
     }
     if (this.draft && (me.draftPicks === 0 || !me.draftOptions.length)) this.closeDraft();
-    else if (this.draft && this.draft.key !== me.draftOptions.join(',') + ':' + me.draftPicks) this.openDraft();
+    else if (this.draft && this.draft.key !== draftKey(me, this.round)) this.openDraft();
     const lk = me.lootOffer ? me.lootOffer.map((i) => i.id).join(',') : '';
     if (lk && lk !== this.lootSeen && !this.draft) {
       this.lootSeen = lk;
@@ -298,7 +299,7 @@ export class PlanningScreen {
   openDraft(fresh = false): void {
     const me = this.me;
     if (!me || !me.draftPicks || !me.draftOptions.length) return;
-    const key = me.draftOptions.join(',') + ':' + me.draftPicks;
+    const key = draftKey(me, this.round);
     // the same draft re-rendered (a snapshot update) is not news
     const news = fresh || (this.draft === null && this.draftAnnounced !== key);
     this.draftAnnounced = key;
@@ -306,7 +307,16 @@ export class PlanningScreen {
     this.draft = new DraftModal(this.root, me, this.round, (u) => {
       this.intent({ t: 'draft', unit: u });
       toast(`${UNITS[u].name} unlocked`, 'good');
-    }, () => this.closeDraft(), news);
+    }, () => this.closeDraft(), news, canMuster(me, this.round) ? () => this.takeMuster() : null);
+  }
+
+  /** Muster (DESIGN §2), instead of the round's unit unlock: relocations for this round's locked squads. */
+  private takeMuster(): void {
+    const me = this.me;
+    if (!me || !canMuster(me, this.round)) return this.refuse(me?.muster ? 'Muster is already called this round' : 'Muster is not on offer now');
+    sound.horn();
+    this.intent({ t: 'muster' });
+    toast(`Muster: relocate up to ${MUSTER_MOVES} of your locked squads this round`, 'good', 2600);
   }
   private draftAnnounced = '';
   private closeDraft(): void {
@@ -368,6 +378,12 @@ export class PlanningScreen {
     return id === null ? null : (this.squadsShown().find((s) => s.id === id) ?? null);
   }
 
+  /** Me for the relocation rule (src/ui/relocation.ts): my squads where they are shown, pending moves included. */
+  private relocMe(): RelocMe | null {
+    const me = this.me;
+    return me ? { lastArmy: me.lastArmy, moveLimit: me.moveLimit, muster: me.muster, squads: this.squadsShown() } : null;
+  }
+
   private drawArmy(): void {
     const v = this.view;
     if (!v) return;
@@ -382,6 +398,7 @@ export class PlanningScreen {
     this.syncSelection();
     this.renderTiming();
     this.renderTools();
+    this.renderNotices();
   }
 
   private syncSelection(): void {
@@ -424,6 +441,26 @@ export class PlanningScreen {
     $(badge, 'b').textContent = deployPointsText(left);
     $(badge, 'span').textContent = `of ${deployPointsText(me.deployLimit)} this round`;
     badge.classList.toggle('none', left === 0);
+  }
+
+  /**
+   * The relocation notice at the head of the notices (DESIGN §2): how many squads are locked in place, or, while
+   * relocations are available (Muster, relics "of the March"), "Moves left N/M". Empty while nothing of mine is locked.
+   */
+  private lockNotice(): string {
+    const me = this.me;
+    const rm = this.relocMe();
+    if (!me || !rm) return '';
+    const locked = me.squads.filter((q) => squadLocked(q, this.round)).length;
+    const moves = (me.moveLimit ?? 0) > 0;
+    if (!locked && !moves) return '';
+    const c = relocCount(rm, this.round);
+    const tipText = moves
+      ? `${relocSource(me)}: relocate up to ${c.limit} of your squads from earlier rounds this round (${c.used} used). Moving one back to where it stood frees its move. This round's squads and the Lord move freely.`
+      : `Squads deployed in earlier rounds stay where they stand: drag only this round's squads and the Lord. Turning a locked squad is free. Take Muster instead of a unit unlock to relocate up to ${MUSTER_MOVES}.`;
+    return moves
+      ? `<div class="notice lock-n moves${c.left ? '' : ' none'}" data-tip="${esc(tipText)}">${icon('move')}<span><b>Moves left <em>${c.left}/${c.limit}</em></b><small>${esc(relocSource(me))} · relocate locked squads</small></span></div>`
+      : `<div class="notice lock-n" data-tip="${esc(tipText)}">${icon('lock')}<span><b>${locked} locked in place</b><small>Turn freely · Muster to relocate</small></span></div>`;
   }
 
   /** Why a unit can't be deployed right now, or null. */
@@ -538,8 +575,12 @@ export class PlanningScreen {
     let h = '';
     if (me?.lootOffer && !this.loot)
       h += `<button class="notice loot-n r-${me.lootOffer.reduce((b, i) => (rarityRank(i.rarity) > rarityRank(b) ? i.rarity : b), 'common' as Item['rarity'])}">${icon('bag')}<span><b>Spoils of War</b><small>Choose 1 of ${me.lootOffer.length}</small></span></button>`;
+    const muster = !!me && canMuster(me, this.round);
+    h += this.lockNotice();
     if (me && me.draftPicks > 0 && me.draftOptions.length && !this.draft)
-      h += `<button class="notice draft-n">${icon('squads')}<span><b>New recruits!</b><small>Unlock ${me.draftPicks} unit type${me.draftPicks > 1 ? 's' : ''}</small></span></button>`;
+      h += `<button class="notice draft-n">${icon('squads')}<span><b>New recruits!</b><small>${muster ? 'Unlock a unit type, or Muster' : `Unlock ${me.draftPicks} unit type${me.draftPicks > 1 ? 's' : ''}`}</small></span></button>`;
+    else if (me && muster && !me.draftOptions.length)
+      h += `<button class="notice muster-n" data-tip="Relocate up to ${MUSTER_MOVES} of your squads from earlier rounds this round. Nothing is left to unlock, so it costs nothing.">${icon('move')}<span><b>Muster</b><small>Free: nothing left to unlock</small></span></button>`;
     if (this.onReport && this.round > 1)
       h += `<button class="notice report-n" ${this.reportHint ? `data-tip="${esc(this.reportHint)}"` : ''}>${icon('chart')}<span><b>Battle report</b><small>Round ${this.round - 1}: what happened</small></span></button>`;
     if (this.notices.dataset.h === h) return;
@@ -548,6 +589,7 @@ export class PlanningScreen {
     this.notices.querySelector('.report-n')?.addEventListener('click', () => (sound.click(), this.onReport?.()));
     this.notices.querySelector('.loot-n')?.addEventListener('click', () => (sound.click(), this.openLoot()));
     this.notices.querySelector('.draft-n')?.addEventListener('click', () => (sound.click(), this.openDraft()));
+    this.notices.querySelector('.muster-n')?.addEventListener('click', () => this.takeMuster());
   }
 
   private squad(id: number | null): Squad | null {
@@ -701,12 +743,13 @@ export class PlanningScreen {
     const scroll = this.panel.scrollTop;
     this.panel.innerHTML = `
       <header class="sp-h">${crest(sq.type, lord, 'lg')}<div class="sp-t"><small>${watched ? `${esc(this.names[sq.owner === this.seat ? 0 : 1])} · last round` : ghost ? 'Enemy · last round' : sub}</small><b>${esc(name)}</b>${lvl}</div><button class="icon close" data-tip="Deselect [Esc]">${icon('close')}</button></header>
+      ${this.lockLine(sq, ghost, watched)}
       ${actions}
       <div class="sp-row"><div class="sp-sec"><small>Equipment</small><div class="sp-slots">${slots}</div></div>${skills.length ? `<div class="sp-sec sk-d"><small>Abilities</small><div class="sp-skills">${skillChips(skills, worn)}</div></div>` : ''}${def?.traits?.includes('healer') ? '<p class="sp-note">Healers never attack: damage, critical and leech lines do nothing here. Life, haste and range still help.</p>' : ''}</div>
       <details class="sp-sec st-d" ${statsOpen ? 'open' : ''}><summary><span data-tip="Stats of one soldier, after level and items">Stats${!isLord ? ` · squad DPS ${squadDps}` : ''}</span><span class="sp-brief">${brief}</span></summary>${sheet ? sheetStats(sheet) : statBlock(sq.type, sq.level, ownerLord)}</details>
       ${isLord ? `<div class="sp-sec lt"><div class="lt-pass"><small>Passive</small>${esc(LORDS[lord!].passive)}</div><div class="lt-abil"><small>${esc(LORDS[lord!].abilityName)}</small>${esc(LORDS[lord!].abilityText)}</div></div>` : ''}
       ${def ? `<div class="sp-sec ctr-d"><small>Counters</small>${countersBlock(def.id)}</div>` : ''}
-      ${!ghost && me ? `${this.marchLine(sq)}<p class="sp-hint">Drag on the field to move · <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>Shift</kbd>-click another to group</p>` : ''}`;
+      ${!ghost && me ? `${this.marchLine(sq)}<p class="sp-hint">${this.lockedNow(sq.id) ? 'Locked: turn only' : 'Drag on the field to move'} · <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>Shift</kbd>-click another to group</p>` : ''}`;
     this.panel.querySelector('.close')!.addEventListener('click', () => this.select(null));
     this.panel.querySelector('.lvl')?.addEventListener('click', () => this.levelUp());
     this.panel.querySelector('.sell')?.addEventListener('click', () => this.sell());
@@ -729,6 +772,35 @@ export class PlanningScreen {
       const it = sq.items[slot];
       if (it) tip(slotEl, () => itemTooltip(it, { hint: ghost || !me ? undefined : 'Drag to another squad or to the stash', on: { type: sq.type, lord } }));
     });
+  }
+
+  /** Is my squad `id` locked so that a drag would be refused now (no relocation for it)? */
+  private lockedNow(id: number): boolean {
+    const rm = this.relocMe();
+    return !!rm && dragRefusal(rm, id, this.round) !== null;
+  }
+
+  /**
+   * The relocation line on the squad panel (DESIGN §2): locked in place, movable with a Muster relocation, relocated,
+   * or free this round; on an enemy ghost, the intel marks (moved since the round before, new last round).
+   */
+  private lockLine(sq: Squad, ghost: boolean, watched: { sq: Squad; lord: LordId | null } | null): string {
+    const v = this.view;
+    if (!v) return '';
+    if (ghost || watched) {
+      const from = watched ? (v.enemies ?? []).find((e) => e.seat === sq.owner) : v.enemy;
+      const m = ghostMark(sq, from?.lastMoved, v.round);
+      return m ? `<p class="sp-lock foe ${m}" data-tip="${m === 'moved' ? 'This squad stood somewhere else in the battle before last: its side took Muster to relocate it.' : 'Deployed last round: from now on it stays where it stands unless its side Musters.'}">${icon(m === 'moved' ? 'move' : 'star')}<span>${GHOST_MARK_TEXT[m]}</span></p>` : '';
+    }
+    const rm = this.relocMe();
+    if (!rm) return '';
+    const shown = rm.squads.find((q) => q.id === sq.id) ?? sq;
+    const st = lockState(rm, shown, this.round);
+    if (st === 'free') return sq.type === 'lord' ? '' : `<p class="sp-lock free" data-tip="Squads deployed this round move freely until the battle. From next round on it is locked in place.">${icon('move')}<span>Free to move this round</span></p>`;
+    if (st === 'relocated') return `<p class="sp-lock reloc" data-tip="Moved with a Muster relocation. Drag it back to where it stood (the line marked home) to free the move.">${icon('move')}<span>Relocated · move it back to free the move</span></p>`;
+    const c = relocCount(rm, this.round);
+    if (c.left > 0) return `<p class="sp-lock open" data-tip="${esc(`Locked in place since round ${sq.deployedRound}. Muster: you may relocate it (${c.left} of ${c.limit} moves left).`)}">${icon('lock')}<span>Locked · Muster: <b>${c.left}/${c.limit}</b> moves left</span></p>`;
+    return `<p class="sp-lock locked" data-tip="${esc(c.limit > 0 ? `All ${c.limit} relocations used: move one back to free a move. Turning is free.` : lockedText(sq))}">${icon('lock')}<span>Locked in place since round ${sq.deployedRound}${c.limit > 0 ? ' · no moves left' : ' · turn only'}</span></p>`;
   }
 
   /** One line on the squad panel: its march speed and when it reaches the river and the enemy's front. */
@@ -870,7 +942,14 @@ export class PlanningScreen {
       const sq = shown.find((q) => q.id === id);
       if (sq) before.set(id, { pos: sq.pos, facing: sq.facing });
     }
-    const intents = planMoves(shown, targets, this.seat);
+    // relocation (DESIGN §2): never show or send a state the server refuses (too many locked squads moved)
+    const rm = this.relocMe()!;
+    const no = targetsRefusal(rm, targets, this.round);
+    if (no) {
+      this.refuse(no);
+      return false;
+    }
+    const intents = planMoves(shown, targets, this.seat, { me: rm, round: this.round });
     if (!intents.length) return false;
     if (label) {
       const key = label + ':' + [...before.keys()].sort((a, b) => a - b).join(',');
@@ -941,16 +1020,32 @@ export class PlanningScreen {
     });
   }
 
-  /** Mirror the whole army left-right inside the zone. */
+  /**
+   * Mirror the army left-right inside the zone: what may move (the Lord, this round's squads and relocated ones).
+   * Squads locked in place stay where they are, and the mirrored ones settle around them.
+   */
   private mirror(): void {
     const me = this.me;
     if (!me || me.ready) return;
     if (this.drag) this.endDrag();
     const shown = this.squadsShown();
     if (!shown.length) return;
-    if (this.moveSquads(mirrorPlace(shown, this.seat), 'mirror formation')) {
+    const rm = this.relocMe()!;
+    const free = mirrorable(rm, this.round);
+    const stay = shown.length - free.length;
+    if (stay && !free.some((q) => q.type !== 'lord')) return this.refuse(`Nothing to mirror: your squads from earlier rounds are locked in place. Take Muster instead of a unit unlock to relocate up to ${MUSTER_MOVES}.`);
+    let out = mirrorPlace(free, this.seat);
+    if (stay) {
+      const ids = new Set(free.map((q) => q.id));
+      const fwd = this.seat === 0 ? 1 : -1;
+      const order = [...free].sort((p, q) => (q.pos[1] - p.pos[1]) * fwd || p.id - q.id);
+      const settled = settle(order, out, shown.filter((q) => !ids.has(q.id)), this.seat);
+      if (!settled) return this.refuse('No room to mirror around the locked squads');
+      out = settled;
+    }
+    if (this.moveSquads(out, 'mirror formation')) {
       sound.drop();
-      toast('Formation mirrored', 'info', 1200);
+      toast(stay ? `Mirrored ${free.length} squad${free.length === 1 ? '' : 's'}; ${stay} locked in place stay${stay === 1 ? 's' : ''}` : 'Formation mirrored', 'info', stay ? 2200 : 1200);
     }
   }
 
@@ -966,8 +1061,16 @@ export class PlanningScreen {
     const shown = this.squadsShown();
     const melee = (sq: Squad) => sq.type !== 'lord' && !this.march(sq).ranged;
     const picked = this.sel.size >= 2 ? shown.filter((q) => this.sel.has(q.id)) : shown;
-    const group = picked.filter(melee);
-    if (group.length < 2) return this.refuse(this.sel.size >= 2 ? 'Sync needs two or more melee squads in the selection' : 'Sync needs two or more melee squads');
+    // relocation (DESIGN §2): squads locked in place keep their spot unless the Muster's moves cover all of them
+    const all = picked.filter(melee);
+    const rm = this.relocMe()!;
+    const pin = pinnedIn(rm, all.map((q) => q.id), this.round);
+    const group = all.filter((q) => !pin.has(q.id));
+    if (group.length < 2) {
+      const left = relocCount(rm, this.round).left;
+      if (all.length >= 2 && pin.size) return this.refuse(`Sync needs two or more melee squads free to move: ${pin.size} ${pin.size === 1 ? 'is' : 'are'} locked in place${(me.moveLimit ?? 0) > 0 ? ` and ${left} relocation${left === 1 ? ' is' : 's are'} left` : ` (take Muster instead of a unit unlock to relocate up to ${MUSTER_MOVES})`}`);
+      return this.refuse(this.sel.size >= 2 ? 'Sync needs two or more melee squads in the selection' : 'Sync needs two or more melee squads');
+    }
     const ids = new Set(group.map((q) => q.id));
     const r = syncBySpeed(group, shown.filter((q) => !ids.has(q.id)), this.seat, me.lord, v.terrain, this.foes, this.snapStep());
     if (!r) return this.refuse('No room to stagger them');
@@ -977,8 +1080,9 @@ export class PlanningScreen {
     }
     sound.drop();
     const late = r.early.map((x) => `${unitName(group.find((q) => q.id === x.id)!.type, me.lord)} (${x.sec.toFixed(1)} s early)`);
-    if (late.length) toast(`Staggered for the river at ${r.sec.toFixed(1)} s. Too fast to hold back far enough: ${late.join(', ')}. Keep them on the back edge.`, 'info', 3600);
-    else toast(`${group.length} melee squads now reach the river together, ${r.sec.toFixed(1)} s in`, 'good', 2200);
+    const kept = pin.size ? ` ${pin.size} locked in place kept ${pin.size === 1 ? 'its spot' : 'their spots'}.` : '';
+    if (late.length) toast(`Staggered for the river at ${r.sec.toFixed(1)} s. Too fast to hold back far enough: ${late.join(', ')}. Keep them on the back edge.${kept}`, 'info', 3600);
+    else toast(`${group.length} melee squads now reach the river together, ${r.sec.toFixed(1)} s in.${kept}`, pin.size ? 'info' : 'good', pin.size ? 3000 : 2200);
     this.select(null, false, group.map((q) => q.id));
   }
 
@@ -993,9 +1097,20 @@ export class PlanningScreen {
       this.moveSquads(new Map([[sq.id, { pos: sq.pos, facing: (sq.facing + steps + 256) & 255 }]]), 'turn');
       return;
     }
-    const out = groupPlace(group, shown.filter((q) => !this.sel.has(q.id)), this.seat, [0, 0], steps, this.snapStep());
+    // a turn never relocates: squads locked in place turn on the spot, the rest turn about their centre
+    const out = groupPlace(group, shown.filter((q) => !this.sel.has(q.id)), this.seat, [0, 0], steps, this.snapStep(), this.turnPins(group.map((q) => q.id)));
     if (!out) return this.refuse('No room to turn the group here');
     this.moveSquads(out, 'turn group');
+  }
+
+  /** Squads of `ids` locked in place and still where they stood: a group turn turns them on the spot. */
+  private turnPins(ids: number[]): Set<number> {
+    const rm = this.relocMe();
+    if (!rm) return new Set();
+    return new Set(ids.filter((id) => {
+      const q = rm.squads.find((x) => x.id === id);
+      return !!q && lockState(rm, q, this.round) === 'locked';
+    }));
   }
 
   /** The formation bar: undo, mirror, sync, timing routes, grid snap. */
@@ -1007,7 +1122,8 @@ export class PlanningScreen {
       return;
     }
     const snap = this.snapStep();
-    const key = [this.undos.length, this.undos[this.undos.length - 1]?.label, me.ready, this.routesOn, snap, this.sel.size].join('|');
+    const locked = me.squads.some((q) => squadLocked(q, this.round));
+    const key = [this.undos.length, this.undos[this.undos.length - 1]?.label, me.ready, this.routesOn, snap, this.sel.size, locked].join('|');
     if (bar.dataset.key === key) return;
     bar.dataset.key = key;
     const last = this.undos[this.undos.length - 1];
@@ -1015,8 +1131,11 @@ export class PlanningScreen {
     b('.pt-undo').disabled = !last || me.ready;
     b('.pt-undo').dataset.tip = last ? `Undo: ${last.label} [Ctrl+Z]` : 'Undo the last move, turn, deploy or equip of this round [Ctrl+Z]';
     b('.pt-mirror').disabled = me.ready;
+    b('.pt-mirror').dataset.tip = locked
+      ? "Mirror left to right what may move: the Lord, this round's squads and relocated ones. Squads locked in place stay."
+      : 'Mirror your whole formation left to right';
     b('.pt-sync').disabled = me.ready;
-    b('.pt-sync').dataset.tip = `Sync by speed: stagger ${this.sel.size >= 2 ? 'the selected' : 'all your'} melee squads in depth so they reach the river together. The slowest stands at the front edge; the fast ones are held back.`;
+    b('.pt-sync').dataset.tip = `Sync by speed: stagger ${this.sel.size >= 2 ? 'the selected' : 'all your'} melee squads in depth so they reach the river together. The slowest stands at the front edge; the fast ones are held back.${locked ? ' Squads locked in place keep their spots unless your Muster moves cover them all.' : ''}`;
     b('.pt-timing').classList.toggle('on', this.routesOn);
     b('.pt-timing').setAttribute('aria-pressed', String(this.routesOn));
     b('.pt-snap').classList.toggle('on', !!snap);
@@ -1068,14 +1187,31 @@ export class PlanningScreen {
       else if (m.hold) marks.push({ pos: m.hold.pos, text: `in range ${m.hold.sec.toFixed(1)}s`, dim: true });
       spec.routes.push({ pts: m.pts, hot: isHot, marks });
     };
+    // relocation (DESIGN §2): a mark at the left of each tag: locked in place, movable with a Muster move, relocated
+    const rm = this.relocMe()!;
+    const left = relocCount(rm, this.round).left;
+    const badgeOf = (sq: Squad): TagBadge | undefined => {
+      const st = lockState(rm, sq, this.round);
+      return st === 'relocated' ? 'reloc' : st === 'locked' ? (left > 0 ? 'open' : 'lock') : undefined;
+    };
     for (const sq of shown) {
       // the single squad being dragged is drawn as the preview, where it would land
       const pos = d?.kind === 'move' && d.id === sq.id && d.moved ? this.dragSpot : sq.pos;
       if (!pos) continue;
       const m = this.march({ ...sq, pos });
       const sec = m.river?.sec ?? m.hold?.sec ?? null;
-      if (sec !== null) spec.tags.push({ id: sq.id, pos, text: m.river ? `${sec.toFixed(1)}s` : `hold ${sec.toFixed(1)}s`, hot: hot.has(sq.id) });
+      const badge = badgeOf(sq);
+      if (sec !== null || badge) spec.tags.push({ id: sq.id, pos, text: sec === null ? '' : m.river ? `${sec.toFixed(1)}s` : `hold ${sec.toFixed(1)}s`, hot: hot.has(sq.id), ...(badge ? { badge } : {}) });
       if (this.routesOn || hot.has(sq.id)) route(m, hot.has(sq.id));
+      // a relocated squad: a faint line back to where it stood, so it can be put back (which frees the move)
+      const home = badge === 'reloc' ? squadHome(rm, sq.id) : null;
+      if (home) spec.routes.push({ pts: [home, pos], marks: [{ pos: home, text: 'home', dim: true }] });
+    }
+    // enemy intel on the ghosts: moved since the round before, or new last round
+    const v = this.view;
+    for (const g of v.enemy.lastArmy ?? []) {
+      const mark = ghostMark(g, v.enemy.lastMoved, v.round);
+      if (mark) spec.tags.push({ id: g.id, pos: g.pos, text: mark === 'moved' ? 'Moved' : 'New', badge: mark });
     }
     if (d?.kind === 'place' && moving && this.dragSpot) route(this.march({ type: d.unit, level: 1, items: { weapon: null, armor: null, relic: null }, pos: this.dragSpot }), true);
     const key = JSON.stringify(spec);
@@ -1238,7 +1374,8 @@ export class PlanningScreen {
     const base = new Map<number, Placed>();
     for (const q of shown) if (this.sel.has(q.id)) base.set(q.id, { pos: q.pos, facing: q.facing });
     const grab = this.scene.groundAt(e.clientX, e.clientY) ?? base.get(hitId)!.pos;
-    const g: Extract<Drag, { kind: 'group' }> = { kind: 'group', ids, start: [e.clientX, e.clientY], grab, moved: false, delta: [0, 0], steps: 0, rot: null, base, out: null, pos: grab, turnOnly: turn, hit: hitId };
+    const rm = this.relocMe()!;
+    const g: Extract<Drag, { kind: 'group' }> = { kind: 'group', ids, start: [e.clientX, e.clientY], grab, moved: false, delta: [0, 0], steps: 0, rot: null, base, out: null, pos: grab, turnOnly: turn, hit: hitId, pinned: pinnedIn(rm, ids, this.round), turnPinned: this.turnPins(ids) };
     this.drag = g;
     this.scene.setInputLocked(true);
     return g;
@@ -1266,8 +1403,13 @@ export class PlanningScreen {
     const shown = this.me!.squads;
     const bodies = d.ids.map((id) => ({ id, type: shown.find((q) => q.id === id)!.type, pos: d.base.get(id)!.pos, facing: d.base.get(id)!.facing }));
     const others = this.squadsShown().filter((q) => !d.base.has(q.id));
-    d.out = groupPlace(bodies, others, this.seat, d.delta, d.steps, this.snapStep());
-    this.hint.innerHTML = `${d.out ? '' : '<b class="bad">No room for the group here</b> · '}<b>${d.ids.length} squad${d.ids.length > 1 ? 's' : ''}</b> · <kbd>Q</kbd><kbd>E</kbd> or right-drag turn the group · <kbd>Esc</kbd> cancel`;
+    // relocation (DESIGN §2): a drag leaves locked squads in place (unless the Muster's moves cover them all); a turn
+    // that does not move the group turns them on the spot
+    const turning = d.turnOnly || (d.delta[0] === 0 && d.delta[1] === 0);
+    const pins = turning ? d.turnPinned : d.pinned;
+    d.out = groupPlace(bodies, others, this.seat, d.delta, d.steps, this.snapStep(), pins);
+    const stay = pins.size ? ` · <span class="lockn">${icon('lock')}${pins.size} locked ${turning ? 'turn on the spot' : 'stay in place'}</span>` : '';
+    this.hint.innerHTML = `${d.out ? '' : '<b class="bad">No room for the group here</b> · '}<b>${d.ids.length} squad${d.ids.length > 1 ? 's' : ''}</b>${stay} · <kbd>Q</kbd><kbd>E</kbd> or right-drag turn the group · <kbd>Esc</kbd> cancel`;
     this.hint.classList.add('on');
     this.drawArmy();
   }
@@ -1295,14 +1437,24 @@ export class PlanningScreen {
       const watched = !this.me && hit ? this.shown(hit.id) : null;
       const sq = watched ? watched.sq : hit ? (hit.ghost ? this.ghost(hit.id) : this.squad(hit.id)) : null;
       const ro = !!watched || !!hit?.ghost;
-      const hint = this.me?.ready ? 'You are Ready: un-ready to move it' : this.sel.size > 1 && hit && this.sel.has(hit.id) ? 'Drag to move the selection · right-drag to turn it' : 'Click to select · Shift-click to add · drag to move';
-      showTipAt(e.clientX, e.clientY, sq ? squadTooltip(sq, watched ? watched.lord : hit!.ghost ? this.view!.enemy.lord : this.me?.lord ?? null, { ghost: !!hit?.ghost, hint: ro ? undefined : hint }) : null);
+      const rm = this.relocMe();
+      const lockNo = !ro && hit && rm ? dragRefusal(rm, hit.id, this.round) : null;
+      const hint = this.me?.ready ? 'You are Ready: un-ready to move it' : lockNo ?? (this.sel.size > 1 && hit && this.sel.has(hit.id) ? 'Drag to move the selection · right-drag to turn it' : 'Click to select · Shift-click to add · drag to move');
+      const mark = hit?.ghost && sq && this.view ? ghostMark(sq, this.view.enemy.lastMoved, this.view.round) : null;
+      showTipAt(e.clientX, e.clientY, sq ? squadTooltip(sq, watched ? watched.lord : hit!.ghost ? this.view!.enemy.lord : this.me?.lord ?? null, { ghost: !!hit?.ghost, hint: ro ? (mark ? GHOST_MARK_TEXT[mark] : undefined) : hint, lock: !!lockNo }) : null);
       this.scene.canvas.style.cursor = sq ? (ro ? 'help' : 'grab') : '';
       return;
     }
     showTipAt(0, 0, null);
     if (d.kind === 'group') {
       if (!d.moved && Math.hypot(e.clientX - d.start[0], e.clientY - d.start[1]) < 6) return;
+      if (!d.moved && !d.turnOnly && !d.rot && d.pinned.size === d.ids.length) {
+        // nothing in the selection may move: say why instead of dragging nothing
+        const rm = this.relocMe()!;
+        const why = dragRefusal(rm, d.hit, this.round) ?? d.ids.map((id) => dragRefusal(rm, id, this.round)).find((x) => x) ?? 'Locked in place';
+        this.endDrag();
+        return this.refuse(why);
+      }
       d.moved = true;
       if (g) {
         if (d.rot) {
@@ -1322,6 +1474,17 @@ export class PlanningScreen {
       if (Math.hypot(dx, dy) > 150) d.facing = ANG(dx, dy);
     } else {
       if (d.kind === 'move' && !d.moved && Math.hypot(e.clientX - d.start[0], e.clientY - d.start[1]) < 6) return;
+      if (d.kind === 'move' && !d.moved) {
+        // relocation (DESIGN §2): a squad locked in place is not dragged; it says why (turning it stays free)
+        const rm = this.relocMe();
+        const why = rm ? dragRefusal(rm, d.id, this.round) : null;
+        if (why) {
+          const id = d.id;
+          this.endDrag();
+          this.select(id);
+          return this.refuse(why);
+        }
+      }
       if (d.kind === 'move' || this.overCanvas) d.moved = true;
       if (g) d.pos = inDeployZone(this.seat, g) ? snapPos(g, this.snapStep(), this.seat) : g;
     }
