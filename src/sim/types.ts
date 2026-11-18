@@ -278,8 +278,13 @@ export interface Squad {
   level: number;
   /** Squad centre, cm. */
   pos: Vec2;
-  /** 0..255, see header. */
+  /**
+   * @deprecated Squads no longer turn: every squad faces the enemy (64 for seat 0, 192 for seat 1), and the sim never
+   * reads this. Kept so older clients and saved states still type-check; the formation choice replaced it.
+   */
   facing: number;
+  /** Wide (the default; absent) or deep: see Formation. Only squads of FORMATION_MIN_SIZE or more soldiers have the choice. */
+  formation?: Formation;
   items: ItemSlots;
   /** Round in which it was deployed (0 = the Lord). Until that round's battle it may be moved and sold back freely; afterwards it is locked in place and refunds nothing. */
   deployedRound: number;
@@ -299,6 +304,19 @@ export interface Squad {
  * It lives on the Lord's Squad, so the enemy sees it exactly like positions: as it was in the last battle
  * (EnemyView.lastArmy), never this round's.
  */
+/**
+ * A squad's formation for the battle, chosen in planning ({t:'formation'}, or on deploy) and kept from round to round
+ * (DESIGN §3). Free at any time, also for a squad that is locked in place: it changes how the squad stands, not where.
+ *  - 'wide' (the default): a line, one to three ranks deep. Every soldier reaches the enemy at once, and a line is thin:
+ *    a splash catches few of them.
+ *  - 'deep': a column, one to four files wide. It marches DEEP_SPEED_PCT faster and its ranks brace each other
+ *    (DEEP_GUARD_PCT less damage from melee blows), but it is packed: a splash catches most of it, and only its head
+ *    fights at first.
+ * Squads of one or two soldiers (and the Lord) have no formation. Like positions, the enemy sees it as it was in the
+ * last battle (EnemyView.lastArmy).
+ */
+export type Formation = 'wide' | 'deep';
+
 export type LordStance = { t: 'advance' } | { t: 'hold' } | { t: 'follow'; squad: number };
 export type LordStanceKind = LordStance['t'];
 
@@ -454,13 +472,15 @@ export type Intent =
    * earlier rounds, this round only. Refused once the round's unlock is spent (or in round 1: nothing is locked yet).
    */
   | { t: 'muster' }
-  | { t: 'deploy'; unit: UnitType; pos: Vec2; facing?: number }
+  | { t: 'deploy'; unit: UnitType; pos: Vec2; formation?: Formation; /** @deprecated ignored */ facing?: number }
   /**
-   * Move and/or turn a squad. The Lord and squads deployed this round move freely. A squad from an earlier round is
-   * locked: it may only turn on the spot (same `pos`, new `facing`) unless a relocation is left this round
-   * (PlayerState.moveLimit; see relocationsLeft in match.ts). Moving it back to where it stood gives the move back.
+   * Move a squad. The Lord and squads deployed this round move freely. A squad from an earlier round is locked unless
+   * a relocation is left this round (PlayerState.moveLimit; see relocationsLeft in match.ts). Moving it back to where
+   * it stood gives the move back.
    */
-  | { t: 'move'; squad: number; pos: Vec2; facing?: number }
+  | { t: 'move'; squad: number; pos: Vec2; /** @deprecated ignored */ facing?: number }
+  /** Set a squad's formation (Formation). Free, any number of times, also for a locked squad. Refused for the Lord and for squads of one or two. */
+  | { t: 'formation'; squad: number; formation: Formation }
   /**
    * The Lord's battle stance (LordStance): 'advance', 'hold', or 'follow' with the id of an own squad (not the Lord).
    * Free, any number of times while planning. Selling the followed squad puts him back on 'advance'.

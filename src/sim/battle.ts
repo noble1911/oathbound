@@ -19,10 +19,10 @@ import {
   TALON_REACH, TALON_STUN, TALON_THROW,
 } from './data/lords.ts';
 import { ABILITY_CD, SKILLS, SKILL_START_CD, canEquip, classesOf, skillNum } from './data/skills.ts';
-import { UNITS, formationCols, growsBySize, squadSizeAt } from './data/units.ts';
+import { FORMATION_NUMBERS, UNITS, formationGrid, growsBySize, hasFormation, squadSizeAt } from './data/units.ts';
 import { WHEEL, beatsClass, wheelIndex } from './data/wheel.ts';
 import { FACTION_POWER, LORD_POWER, UNIT_POWER } from './data/balance.ts';
-import { angleOf, icos, idiv, isin, isqrt } from './fixed.ts';
+import { angleOf, idiv, isqrt } from './fixed.ts';
 import { modsOf, warhornSoldiers, type ItemMods } from './loot.ts';
 import { LEVEL_DMG_PCT, LEVEL_HP_PCT, keepDamageOf } from './match.ts';
 import {
@@ -114,6 +114,8 @@ interface Stats {
   mr: number;
   splash: number;
   radius: number;
+  /** Deep formation: percent taken off melee blows. */
+  guard: number;
   crit: number;
   leech: number;
   thorns: number;
@@ -287,7 +289,8 @@ function hasL(m: ItemMods, l: string): boolean {
 }
 
 /** Battle stats of a squad (per soldier; hp / dmg / heal in centi-HP). Exported for squadSheet (sheet.ts). */
-export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: LordId | null): Stats {
+export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'> & { formation?: Squad['formation'] }, lordOf: LordId | null): Stats {
+  const deep = sq.formation === 'deep' && hasFormation(sq.type);
   // Legendary powers count only on the wheel classes they are built for (legendaryFits).
   const m = modsOf(sq.items, sq.type, lordOf);
   let base;
@@ -338,7 +341,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
   if (hasL(m, 'warhorn') && size <= 2) { hpPct += 35; dmgPct += 35; }
   const ranged = base.range > 400;
   const weapon = base.weapon;
-  let speedPct = 100 + m.move + (hasL(m, 'windrunner') ? 40 : 0) + (lordOf === 'drakerider' ? DRAKE_SPEED_PCT : 0);
+  let speedPct = 100 + m.move + (hasL(m, 'windrunner') ? 40 : 0) + (lordOf === 'drakerider' ? DRAKE_SPEED_PCT : 0) + (deep ? FORMATION_NUMBERS.deepSpeed : 0);
   const windAs = hasL(m, 'windrunner') ? 25 : 0;
   const atk = Math.max(4, idiv(base.attackTicks * 100, 100 + m.as + windAs + (lordOf === 'sultana' ? SULTANA_HASTE_PCT : 0)
     + (lordOf === 'vizier' && base.damageType === 'magic' ? VIZIER_HASTE_PCT : 0)));
@@ -354,6 +357,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
     mr: Math.min(80, base.magicResist + m.mr),
     splash,
     radius,
+    guard: deep ? FORMATION_NUMBERS.deepGuard : 0,
     crit: BASE_CRIT + m.crit,
     leech: lifesteal + m.leech,
     thorns: m.thorns,
@@ -400,7 +404,7 @@ export function buildStats(sq: Pick<Squad, 'type' | 'level' | 'items'>, lordOf: 
 function skeletonStats(): Stats {
   return {
     hp: SKELETON.hp, dmg: SKELETON.dmg, atk: SKELETON.atk, range: SKELETON.range, minRange: 0, speed: SKELETON.speed, armor: 0, mr: 0, splash: 0,
-    radius: SKELETON.radius, crit: 0, leech: 0, thorns: 0, burn: 0, frost: 0, heal: 0, tags: T_INFANTRY, weapon: 'sword', dmgType: 'physical',
+    radius: SKELETON.radius, guard: 0, crit: 0, leech: 0, thorns: 0, burn: 0, frost: 0, heal: 0, tags: T_INFANTRY, weapon: 'sword', dmgType: 'physical',
     proj: 'none', wc: SKELETON_WC, beats: wheelIndex(beatsClass('swarm')), slay: {}, ranged: false, canHitAir: false, healer: false, brace: false, charge: false, pierce: false, stomp: false,
     cone: false, slowTurn: false, ignoresArmor: false, crushing: false, backline: false, prefCls: false, raider: false, raise: false, bless: false, regen: 0, holy: 100, undead: true, magicBonus: 0,
     L: new Set(), ilvl: 1, phoenix: false, skills: [],
@@ -529,21 +533,19 @@ class Battle {
     const b: BSquad = {
       row: this.squads.length, skills: stats.skills.map((k) => ({ id: k.id, ilvl: k.ilvl, cd: SKILL_START_CD })),
       side, sideIdx: idx, id: sq.id, type: sq.type, lord: sq.type === 'lord' ? lord : null, level: sq.level, st: stats, sols: [],
-      ax: sq.pos[0], ay: sq.pos[1], facing: sq.facing & 255, engaged: false, engagedNext: false, macro: null, c2x: 0, c2y: 0, alive: n,
+      ax: sq.pos[0], ay: sq.pos[1], facing: side === 0 ? 64 : 192, engaged: false, engagedNext: false, macro: null, c2x: 0, c2y: 0, alive: n,
       phoenix: stats.phoenix, grave: 0, slotErr: 0, slotErrNext: 0, abilityCd: sq.type === 'lord' ? 100 : 0, summon: false, healTarget: null,
       sourceSquad: sq, stance: ST_ADVANCE, leader: null, t2x: 0, t2y: 0,
     };
-    // Formation: rows across the facing direction.
-    const cols = formationCols(n);
+    // Formation: ranks across the march, facing the enemy (wide: a line; deep: a column). See formationGrid.
+    const { cols, rows } = formationGrid(n, sq.formation === 'deep' && hasFormation(sq.type) ? 'deep' : 'wide');
     const spacing = stats.radius * 2 + 50;
-    const rows = Math.ceil(n / cols);
-    const fx = icos(b.facing), fy = isin(b.facing); // forward
-    const rx = fy, ry = -fx; // right
+    const sg = sideSign(side);
     for (let k = 0; k < n; k++) {
       const c = k % cols, r = (k - c) / cols;
-      const u = (2 * c - (cols - 1)) * spacing; // doubled units
-      const v = ((rows - 1) - 2 * r) * spacing;
-      const ox = idiv(u * rx + v * fx, 8192), oy = idiv(u * ry + v * fy, 8192);
+      const u = (2 * c - (cols - 1)) * spacing; // doubled units, to the right of the march
+      const v = ((rows - 1) - 2 * r) * spacing; // forward
+      const ox = sg * idiv(u, 2), oy = sg * idiv(v, 2);
       this.addSol(b, k, ox, oy, clampX(b.ax + ox), clampY(b.ay + oy), stats, 0, false);
     }
     this.squads.push(b);
@@ -1604,6 +1606,8 @@ class Battle {
     const st = a.st;
     const ranged = !k.melee;
     const crit = !!k.crit;
+    // A deep formation's ranks brace each other against melee blows.
+    if (k.melee && d.st.guard) mul = idiv(mul * (100 - d.st.guard), 100);
     const r = this.damage(st, primary ? a : null, d, mul, crit, k.hill, ranged, st.dmgType, 0);
     this.credit(d, r.dmg, a, -1, k.cause ?? C_ATTACK, r.mit);
     if (st.leech && a.alive) this.heal(a, idiv(r.dmg * st.leech, 100), a, C_LEECH);

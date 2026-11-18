@@ -140,7 +140,7 @@ describe('match rules', () => {
     expect(applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [z0.x0 - 1, 2000] }).ok).toBe(false);
     expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [4000, 2000] }).ok).toBe(false); // seat 1 in seat 0's zone
     expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [4000, z1.y0] }).ok).toBe(true);
-    expect(applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [4000, 2000], facing: 300 }).ok).toBe(false);
+    expect(applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [4000, 2000], formation: 'square' } as never).ok).toBe(false);
     expect(applyIntent(s, 0, { t: 'deploy', unit: 'berserkers', pos: [4000, 2000] }).ok).toBe(true);
     expect(p0.gold).toBe(150);
     expect(applyIntent(s, 0, { t: 'deploy', unit: 'knights', pos: [3000, 2000] }).ok).toBe(false); // gold
@@ -150,7 +150,7 @@ describe('match rules', () => {
     expect(r).toEqual({ ok: false, error: 'deployment limit reached' });
     // The Marshal gets 6 points: Militia weigh 1 each, so six in all, and then a Cavalier (2) no longer fits.
     s.players[1].gold = 10000;
-    for (let i = 0; i < 4; i++) expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [1000 + i * 1000, 9000] }).ok).toBe(true);
+    for (let i = 0; i < 4; i++) expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [1000 + i * 1200, 9000] }).ok).toBe(true);
     expect(s.players[1].deploysUsed).toBe(5);
     expect(applyIntent(s, 1, { t: 'deploy', unit: 'cavaliers', pos: [2000, 10500] })).toEqual({ ok: false, error: 'not enough deploy points left for that unit' });
     expect(applyIntent(s, 1, { t: 'deploy', unit: 'militia', pos: [5500, 10500] }).ok).toBe(true);

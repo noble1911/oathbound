@@ -97,6 +97,9 @@ export { itemName, itemLines, itemPower, itemBudget, rollLoot, lootRarity, lootS
 // itemLines(item): ItemLine[]     ARPG tooltip lines (name, base type, implicit, affixes, legendary power, flavour)
 
 export { UNITS, UNIT_TYPES, BASIC_POOL, unitDef, like, squadSizeAt, growsBySize, SWARM_GROWTH_PCT, formationCols } from './data/units.ts';
+// Formation (DESIGN §3): {t:'formation', squad, formation: 'wide' | 'deep'} sets Squad.formation (absent = wide); free, also when locked.
+// formationGrid(n, formation): { cols, rows } — the soldier grid; hasFormation(type) — squads of 3+ soldiers have the choice.
+export { formationGrid, hasFormation, FORMATION_MIN_SIZE, DEEP_SPEED_PCT, DEEP_GUARD_PCT } from './data/units.ts';
 // squadSizeAt(type, level): soldiers before items — Swarm squads grow +25% of their base size per level
 export { WHEEL, WHEEL_NAME, WHEEL_WHY, beatsClass, beatenBy, classBeats } from './data/wheel.ts';
 // The counter wheel (DESIGN §3): UnitDef.class / LordDef.class; beatsClass(c) / beatenBy(c); COUNTER_PCT damage to the class beaten

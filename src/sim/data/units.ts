@@ -4,7 +4,7 @@
 // Three factions share this table (DESIGN §4b). Every unit has a `class` on the counter wheel (data/wheel.ts, DESIGN §3):
 // that is the one counter rule, there are no per-unit damage bonuses against tags. Every unit also names the Kingdom unit
 // it plays `like` (its battlefield role, for the bots' formations); `basic` units can be unlocked in round 1.
-import type { KingdomUnit, UnitDef, UnitType } from '../types.ts';
+import type { Formation, KingdomUnit, SquadType, UnitDef, UnitType } from '../types.ts';
 
 type Opt = 'minRound' | 'heal' | 'lifesteal' | 'minRange' | 'splash' | 'traits' | 'magicResist' | 'armor' | 'faction' | 'like' | 'basic' | 'burn' | 'slow' | 'regen';
 type Row = Omit<UnitDef, 'id' | 'modelId' | Opt> & Partial<Pick<UnitDef, Opt>>;
@@ -250,6 +250,32 @@ export function growsBySize(type: UnitType): boolean {
  * Columns of a squad formation of `n` soldiers (battle.ts lays soldiers out in rows of this many; match.ts sizes the
  * ground footprint from it). Grown Swarm squads (17+ soldiers) widen to 5 or 6 columns instead of growing ever deeper.
  */
+/** Squads with fewer soldiers than this (at Lv1) have no formation choice: one or two bodies are neither a line nor a column. */
+export const FORMATION_MIN_SIZE = 3;
+/** A deep formation marches this much faster... */
+export const DEEP_SPEED_PCT = 15;
+/** ...and takes this much less damage from melee blows. */
+export const DEEP_GUARD_PCT = 15;
+/** The formation numbers as the battle reads them (review tooling may change them: setFormationNumbers). */
+export const FORMATION_NUMBERS = { deepSpeed: DEEP_SPEED_PCT, deepGuard: DEEP_GUARD_PCT };
+/** Review tooling only (tools/review/orders.ts): try other formation numbers. The game never calls this. */
+export function setFormationNumbers(n: Partial<typeof FORMATION_NUMBERS>): void { Object.assign(FORMATION_NUMBERS, n); }
+export function hasFormation(type: SquadType): boolean {
+  return type !== 'lord' && UNITS[type].squadSize >= FORMATION_MIN_SIZE;
+}
+/**
+ * The grid of a squad of `n` soldiers: `cols` soldiers per rank across the front, `rows` ranks deep (the last rank may
+ * be short). Wide is a line of one rank (up to 6 soldiers), two (up to 16) or three; deep is a column of one file (up
+ * to 3 soldiers), two (up to 8), three (up to 16) or four. battle.ts lays the soldiers out on it, match.ts sizes the
+ * ground footprint from the wide one (the longer), the client draws it.
+ */
+export function formationGrid(n: number, formation: Formation): { cols: number; rows: number } {
+  if (n <= 2) return { cols: Math.max(1, n), rows: 1 };
+  const cols = formation === 'deep' ? (n <= 3 ? 1 : n <= 8 ? 2 : n <= 16 ? 3 : 4) : Math.ceil(n / (n <= 6 ? 1 : n <= 16 ? 2 : 3));
+  return { cols, rows: Math.ceil(n / cols) };
+}
+
+/** @deprecated The square-ish grid used before formations (kept for the client's stand-in crowds). Use formationGrid. */
 export function formationCols(n: number): number {
   return n <= 1 ? 1 : n <= 4 ? 2 : n <= 6 ? 3 : n <= 16 ? 4 : n <= 25 ? 5 : 6;
 }

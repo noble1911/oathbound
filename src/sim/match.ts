@@ -1,11 +1,11 @@
 // Match rules (DESIGN §1, §2, §4, §5): lords, economy, unlock drafts, deployment limits, level-ups, loot and items,
 // intent validation, the hidden-information view, and applying battle results.
-import { FIELD_H, FIELD_W, mirrorPos, mirrorFacing } from './constants.ts';
+import { FIELD_H, FIELD_W, mirrorPos } from './constants.ts';
 import { SLOT_UNLOCK_LEVEL } from './data/items.ts';
 import { canEquip, classError, classesOf } from './data/skills.ts';
 import { FACTIONS, FACTION_IDS } from './data/factions.ts';
 import { LORDS, LORD_IDS, OSSUARY_KEEP_BONUS } from './data/lords.ts';
-import { UNITS, formationCols, squadSizeAt } from './data/units.ts';
+import { UNITS, formationGrid, hasFormation, squadSizeAt } from './data/units.ts';
 import { modsOf, rollLoot } from './loot.ts';
 import { genTerrain } from './terrain.ts';
 import type {
@@ -201,17 +201,17 @@ function newPlayer(seat: Seat): PlayerState {
 /**
  * Ground radius (cm) a squad's formation covers: the half-extent of its soldier grid plus a body radius.
  * Two squads of one player may not overlap: centres must be at least footprint(a) + footprint(b) apart.
- * Mirrors the formation in battle.ts (cols by squad size, spacing = 2 x radius + 50).
+ * Mirrors the formation in battle.ts (formationGrid, spacing = 2 x radius + 50). It is one circle per unit type, sized
+ * for the wide line (the longer of the two formations), so changing a squad's formation never makes it overlap.
  */
 export function squadFootprint(type: SquadType): number {
   // A Swarm squad grows as it levels (squadSizeAt): it reserves the ground of its largest size, so a level-up never
   // makes it overlap a neighbour.
   const n = type === 'lord' ? 1 : squadSizeAt(type, MAX_SQUAD_LEVEL);
   const radius = type === 'lord' ? 65 : UNITS[type].radius;
-  const cols = formationCols(n);
-  const rows = Math.ceil(n / cols);
+  const wide = formationGrid(n, 'wide'), deep = formationGrid(n, 'deep');
   const spacing = radius * 2 + 50;
-  return Math.trunc((Math.max(cols, rows) - 1) * spacing / 2) + radius;
+  return Math.trunc((Math.max(wide.cols, wide.rows, deep.rows) - 1) * spacing / 2) + radius;
 }
 
 /** The squad of `squads` (other than `ignoreId`) whose footprint a `type` squad at `pos` would overlap, if any. */
@@ -377,7 +377,7 @@ export function concede(s: MatchState, seat: Seat): IntentResult {
   return OK;
 }
 
-const validFacing = (f: unknown): boolean => f === undefined || (Number.isInteger(f) && (f as number) >= 0 && (f as number) <= 255);
+const validFormation = (f: unknown): boolean => f === undefined || f === 'wide' || f === 'deep';
 
 /** Validate and apply one intent for `seat`. Mutates `s` only when the result is ok. */
 export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentResult {
@@ -437,26 +437,36 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       if (!p.unlocked.includes(intent.unit)) return err('unit not unlocked');
       if (p.faction && def.faction !== p.faction) return err('that unit belongs to another faction');
       if (!Array.isArray(intent.pos) || !inDeployZone(seat, intent.pos)) return err('outside deploy zone');
-      if (!validFacing(intent.facing)) return err('bad facing');
+      if (!validFormation(intent.formation)) return err('unknown formation');
       if (p.deploysUsed + deployWeight(intent.unit) > p.deployLimit) return err(p.deploysUsed >= p.deployLimit ? 'deployment limit reached' : 'not enough deploy points left for that unit');
       if (p.squads.filter((q) => q.type !== 'lord').length >= ARMY_CAP) return err('army cap reached');
       if (p.gold < def.cost) return err('not enough gold');
       if (overlappingSquad(p.squads, intent.unit, intent.pos)) return err('overlaps another squad: each squad needs its own ground');
       p.gold -= def.cost;
       p.deploysUsed += deployWeight(intent.unit);
-      p.squads.push({
+      const sq: Squad = {
         id: s.nextId++, owner: seat, type: intent.unit, level: 1, pos: [intent.pos[0], intent.pos[1]],
-        facing: intent.facing ?? (seat === 0 ? 64 : 192), items: { weapon: null, armor: null, relic: null }, deployedRound: s.round, spent: def.cost,
-      });
+        facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: s.round, spent: def.cost,
+      };
+      if (intent.formation === 'deep' && hasFormation(intent.unit)) sq.formation = 'deep';
+      p.squads.push(sq);
+      return OK;
+    }
+    case 'formation': {
+      const sq = p.squads.find((q) => q.id === intent.squad);
+      if (!sq) return err('no such squad');
+      if (intent.formation !== 'wide' && intent.formation !== 'deep') return err('unknown formation');
+      if (!hasFormation(sq.type)) return err(sq.type === 'lord' ? 'the Lord has no formation' : 'a squad of one or two has no formation');
+      // Free, also for a squad locked in place: the footprint is the same for both formations.
+      if (intent.formation === 'deep') sq.formation = 'deep'; else delete sq.formation;
       return OK;
     }
     case 'move': {
       const sq = p.squads.find((q) => q.id === intent.squad);
       if (!sq) return err('no such squad');
       if (!Array.isArray(intent.pos) || !inDeployZone(seat, intent.pos)) return err('outside deploy zone');
-      if (!validFacing(intent.facing)) return err('bad facing');
       const stays = intent.pos[0] === sq.pos[0] && intent.pos[1] === sq.pos[1];
-      // Relocation: a squad from an earlier round only turns on the spot, unless a relocation is left (Muster). Going
+      // Relocation: a squad from an earlier round stays where it is, unless a relocation is left (Muster). Going
       // back to where it stood, or moving a squad that is already relocated again, uses no further relocation.
       if (!stays && squadLocked(sq, s.round)) {
         const home = squadHome(p, sq.id);
@@ -466,7 +476,6 @@ export function applyIntent(s: MatchState, seat: Seat, intent: Intent): IntentRe
       }
       if (overlappingSquad(p.squads, sq.type, intent.pos, sq.id)) return err('overlaps another squad: each squad needs its own ground');
       sq.pos = [intent.pos[0], intent.pos[1]];
-      if (intent.facing !== undefined) sq.facing = intent.facing;
       return OK;
     }
     case 'stance': {
@@ -733,5 +742,5 @@ export function lordStance(p: Pick<PlayerState, 'squads'>): LordStance {
 
 /** Mirror a squad list to the other seat (tests, bots). */
 export function mirrorSquads(squads: Squad[], to: Seat): Squad[] {
-  return squads.map((q) => ({ ...clone(q), owner: to, pos: mirrorPos(q.pos), facing: mirrorFacing(q.facing) }));
+  return squads.map((q) => ({ ...clone(q), owner: to, pos: mirrorPos(q.pos), facing: to === 0 ? 64 : 192 }));
 }

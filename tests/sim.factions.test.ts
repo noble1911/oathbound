@@ -25,7 +25,7 @@ function arena(mine: Spec[], theirs: Spec[], lords: [LordId, LordId], lordsFight
     if (!lordsFight) p.squads[0].pos = seat === 0 ? [300, 500] : [7699, 11499];
     for (const [unit, level, pos] of seat === 0 ? mine : theirs) {
       const at: Vec2 = seat === 0 ? pos : [7999 - pos[0], 11999 - pos[1]];
-      p.squads.push({ id: s.nextId++, owner: seat, type: unit, level, pos: at, facing: seat === 0 ? 64 : 192, items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: UNITS[unit].cost * level });
+      p.squads.push({ id: s.nextId++, owner: seat, type: unit, level, pos: at, facing: seat === 0 ? 64 : 192, formation: 'deep', items: { weapon: null, armor: null, relic: null }, deployedRound: 1, spent: UNITS[unit].cost * level });
     }
   }
   return s;
@@ -240,7 +240,7 @@ describe('faction mechanics', () => {
   });
 
   it('Ashen: the Corpse Catapult spreads plague', () => {
-    const d = run(arena([['corpse_catapult', 2, [4000, 1500]], ['grave_knight', 2, [4000, 3900]]], [['militia', 1, [4000, 3900]], ['militia', 1, [4600, 3900]]], ['lich', 'warden']));
+    const d = run(arena([['corpse_catapult', 2, [4000, 1500]], ['grave_knight', 2, [4000, 3900]]], [['berserkers', 2, [4000, 3900]], ['berserkers', 2, [4900, 3900]]], ['lich', 'warden']));
     const q = squadStatsAt(d, d.replay.ticks).squads.find((x) => x.type === 'corpse_catapult')!;
     expect(q.byCause.burn ?? 0).toBeGreaterThan(0);
     // the debuff window is an event: a 'burn' when the plague takes hold of a soldier, from the catapult, for 3 s,

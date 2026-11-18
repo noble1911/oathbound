@@ -46,13 +46,12 @@ describe('relocation: squads from earlier rounds are locked', () => {
     const q = s.players[0].squads[1];
     expect(squadLocked(q, s.round)).toBe(false);
     expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos: [5000, 2500] })).toEqual({ ok: true });
-    expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos: [2000, 2000], facing: 10 })).toEqual({ ok: true });
+    expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos: [2000, 2000] })).toEqual({ ok: true });
     fight(s);
     expect(squadLocked(q, s.round)).toBe(true);
     const r = applyIntent(s, 0, { t: 'move', squad: q.id, pos: [5000, 2500] });
     expect(r).toEqual({ ok: false, error: LOCKED_ERROR });
     expect(q.pos).toEqual([2000, 2000]);
-    expect(q.facing).toBe(10);
   });
 
   it('the Lord always moves, and a squad bought this round moves beside locked ones', () => {
@@ -61,31 +60,31 @@ describe('relocation: squads from earlier rounds are locked', () => {
     const lord = p.squads[0];
     expect(squadLocked(lord, s.round)).toBe(false);
     expect(applyIntent(s, 0, { t: 'move', squad: lord.id, pos: [4000, 800] })).toEqual({ ok: true });
-    expect(applyIntent(s, 0, { t: 'move', squad: lord.id, pos: [700, 900] })).toEqual({ ok: true });
+    expect(applyIntent(s, 0, { t: 'move', squad: lord.id, pos: [700, 600] })).toEqual({ ok: true });
     p.deployLimit = 99;
-    expect(applyIntent(s, 0, { t: 'deploy', unit: p.unlocked[0], pos: [4000, 900] }).ok).toBe(true);
+    expect(applyIntent(s, 0, { t: 'deploy', unit: p.unlocked[0], pos: [4000, 600] }).ok).toBe(true);
     const fresh = p.squads[p.squads.length - 1];
     expect(applyIntent(s, 0, { t: 'move', squad: fresh.id, pos: [4000, 1000] })).toEqual({ ok: true });
     expect(relocatedSquads(p, s.round)).toEqual([]);
     expect(relocationsLeft(p, s.round)).toBe(0);
   });
 
-  it('turning on the spot is free for a locked squad; a turn that also moves is refused', () => {
+  it('a change of formation is free for a locked squad; a move of one centimetre is refused', () => {
     const s = lockedMatch();
     const q = olds(s, 0)[0];
     const pos: Vec2 = [q.pos[0], q.pos[1]];
-    expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos, facing: 100 })).toEqual({ ok: true });
-    expect(q.facing).toBe(100);
+    expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos })).toEqual({ ok: true }); // a move to where it stands is no move
+    expect(applyIntent(s, 0, { t: 'formation', squad: q.id, formation: 'deep' })).toEqual({ ok: true });
+    expect(q.formation).toBe('deep');
     expect(q.pos).toEqual(pos);
-    expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos: [pos[0] + 1, pos[1]], facing: 30 }).ok).toBe(false);
-    expect(q.facing).toBe(100);
+    expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos: [pos[0] + 1, pos[1]] }).ok).toBe(false);
     expect(relocatedSquads(s.players[0], s.round)).toEqual([]);
   });
 
   it('the lock holds for both seats alike', () => {
     const s = lockedMatch();
     for (const seat of [0, 1] as Seat[]) {
-      for (const q of olds(s, seat)) expect(applyIntent(s, seat, { t: 'move', squad: q.id, pos: at(seat, [4000, 900]) })).toEqual({ ok: false, error: LOCKED_ERROR });
+      for (const q of olds(s, seat)) expect(applyIntent(s, seat, { t: 'move', squad: q.id, pos: at(seat, [4000, 600]) })).toEqual({ ok: false, error: LOCKED_ERROR });
     }
   });
 });
@@ -137,7 +136,7 @@ describe('Muster', () => {
     expect(applyIntent(s, 0, { t: 'muster' }).ok).toBe(true);
     const sq = olds(s, 0);
     expect(sq.length).toBe(5);
-    const to: Vec2[] = [[1500, 900], [3000, 900], [5000, 900], [6500, 900]];
+    const to: Vec2[] = [[1500, 600], [3000, 600], [5000, 600], [6500, 600]];
     for (let i = 0; i < 3; i++) {
       expect(relocationsLeft(p, s.round)).toBe(3 - i);
       expect(applyIntent(s, 0, { t: 'move', squad: sq[i].id, pos: to[i] })).toEqual({ ok: true });
@@ -155,15 +154,15 @@ describe('Muster', () => {
     const p = s.players[0];
     applyIntent(s, 0, { t: 'muster' });
     const sq = olds(s, 0);
-    for (let i = 0; i < 3; i++) expect(applyIntent(s, 0, { t: 'move', squad: sq[i].id, pos: [1500 + 1500 * i, 900] }).ok).toBe(true);
+    for (let i = 0; i < 3; i++) expect(applyIntent(s, 0, { t: 'move', squad: sq[i].id, pos: [1500 + 1500 * i, 600] }).ok).toBe(true);
     // again and again: still one relocation
-    expect(applyIntent(s, 0, { t: 'move', squad: sq[0].id, pos: [1500, 1000] })).toEqual({ ok: true });
-    expect(applyIntent(s, 0, { t: 'move', squad: sq[0].id, pos: [1600, 1000] })).toEqual({ ok: true });
+    expect(applyIntent(s, 0, { t: 'move', squad: sq[0].id, pos: [1500, 500] })).toEqual({ ok: true });
+    expect(applyIntent(s, 0, { t: 'move', squad: sq[0].id, pos: [1600, 500] })).toEqual({ ok: true });
     expect(relocationsLeft(p, s.round)).toBe(0);
     // home again: the relocation is free for another squad
     expect(applyIntent(s, 0, { t: 'move', squad: sq[0].id, pos: SPOTS[0] })).toEqual({ ok: true });
     expect(relocationsLeft(p, s.round)).toBe(1);
-    expect(applyIntent(s, 0, { t: 'move', squad: sq[4].id, pos: [6500, 900] })).toEqual({ ok: true });
+    expect(applyIntent(s, 0, { t: 'move', squad: sq[4].id, pos: [6500, 600] })).toEqual({ ok: true });
     expect(applyIntent(s, 0, { t: 'move', squad: sq[0].id, pos: [1500, 1000] }).ok).toBe(false);
     // with no relocation left a squad at home can still go nowhere, but going home is always allowed
     expect(applyIntent(s, 0, { t: 'move', squad: sq[1].id, pos: SPOTS[1] })).toEqual({ ok: true });
@@ -174,10 +173,10 @@ describe('Muster', () => {
     const s = lockedMatch(4);
     applyIntent(s, 0, { t: 'muster' });
     const q = olds(s, 0)[0];
-    expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos: [4000, 900] }).ok).toBe(true);
+    expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos: [4000, 600] }).ok).toBe(true);
     fight(s);
     expect(s.players[0].moveLimit).toBe(0);
-    expect(q.pos).toEqual([4000, 900]);
+    expect(q.pos).toEqual([4000, 600]);
     expect(applyIntent(s, 0, { t: 'move', squad: q.id, pos: [4000, 1000] })).toEqual({ ok: false, error: LOCKED_ERROR });
     expect(relocatedSquads(s.players[0], s.round)).toEqual([]); // home is now the new spot
   });
@@ -216,8 +215,8 @@ describe("the 'of the March' relic", () => {
     expect(p.moveLimit).toBe(1);
     expect(p.muster).toBe(false);
     const sq = olds(s, 0);
-    expect(applyIntent(s, 0, { t: 'move', squad: sq[0].id, pos: [1500, 900] })).toEqual({ ok: true });
-    const r = applyIntent(s, 0, { t: 'move', squad: sq[1].id, pos: [3000, 900] });
+    expect(applyIntent(s, 0, { t: 'move', squad: sq[0].id, pos: [1500, 600] })).toEqual({ ok: true });
+    const r = applyIntent(s, 0, { t: 'move', squad: sq[1].id, pos: [3000, 600] });
     expect(r.ok).toBe(false);
     expect((r as { error: string }).error).toContain('relocations');
     expect(applyIntent(s, 0, { t: 'muster' })).toEqual({ ok: true });
@@ -252,7 +251,7 @@ describe('selling is not a way round the lock', () => {
     p.deployLimit = 4;
     expect(applyIntent(s, 0, { t: 'levelUp', squad: old.id }).ok).toBe(true);
     const unit = p.unlocked.find((u) => UNITS[u].cost <= 200)!;
-    expect(applyIntent(s, 0, { t: 'deploy', unit, pos: [4000, 900] }).ok).toBe(true);
+    expect(applyIntent(s, 0, { t: 'deploy', unit, pos: [4000, 600] }).ok).toBe(true);
     const fresh = p.squads[p.squads.length - 1];
     expect(applyIntent(s, 0, { t: 'levelUp', squad: fresh.id }).ok).toBe(true);
     const used = p.deploysUsed;
@@ -279,7 +278,7 @@ describe('selling is not a way round the lock', () => {
     p.deployLimit = 4;
     const gold = p.gold;
     applyIntent(s, 0, { t: 'sell', squad: old.id });
-    expect(applyIntent(s, 0, { t: 'deploy', unit: old.type as UnitType, pos: [4000, 900] }).ok).toBe(true);
+    expect(applyIntent(s, 0, { t: 'deploy', unit: old.type as UnitType, pos: [4000, 600] }).ok).toBe(true);
     const again = p.squads[p.squads.length - 1];
     expect(p.gold).toBe(gold - UNITS[old.type as UnitType].cost);
     expect(again.level).toBe(1);
@@ -295,9 +294,9 @@ describe('intel: which enemy squads moved', () => {
     const e = s.players[1];
     applyIntent(s, 1, { t: 'muster' });
     const sq = olds(s, 1);
-    expect(applyIntent(s, 1, { t: 'move', squad: sq[1].id, pos: at(1, [4000, 900]) }).ok).toBe(true);
+    expect(applyIntent(s, 1, { t: 'move', squad: sq[1].id, pos: at(1, [4000, 600]) }).ok).toBe(true);
     expect(applyIntent(s, 1, { t: 'move', squad: e.squads[0].id, pos: at(1, [700, 700]) }).ok).toBe(true); // the Lord
-    expect(applyIntent(s, 1, { t: 'move', squad: sq[2].id, pos: [sq[2].pos[0], sq[2].pos[1]], facing: 7 }).ok).toBe(true); // a turn is not a move
+    expect(applyIntent(s, 1, { t: 'move', squad: sq[2].id, pos: [sq[2].pos[0], sq[2].pos[1]] }).ok).toBe(true); // a move to where it stands is not a move
     e.deployLimit = 99;
     expect(applyIntent(s, 1, { t: 'deploy', unit: e.unlocked[0], pos: at(1, [4000, 2400]) }).ok).toBe(true);
     // hidden until the battle: the view still shows last round's army and no moves
@@ -319,7 +318,7 @@ describe('intel: which enemy squads moved', () => {
     const keys = Object.keys(before.enemy).sort();
     expect(keys).toEqual(['faction', 'keepHp', 'keepMax', 'lastArmy', 'lastMoved', 'lord', 'ready', 'seat']);
     expect(applyIntent(s, 1, { t: 'muster' }).ok).toBe(true);
-    for (const [i, q] of olds(s, 1).slice(0, 3).entries()) expect(applyIntent(s, 1, { t: 'move', squad: q.id, pos: at(1, [1500 + 1500 * i, 900]) }).ok).toBe(true);
+    for (const [i, q] of olds(s, 1).slice(0, 3).entries()) expect(applyIntent(s, 1, { t: 'move', squad: q.id, pos: at(1, [1500 + 1500 * i, 600]) }).ok).toBe(true);
     const after = viewFor(s, 0);
     expect(after).toEqual(before);
     const json = JSON.stringify(after.enemy);
@@ -368,8 +367,8 @@ describe('bots obey the lock', () => {
   it('the move rule itself is seat-symmetric: mirrored intents get the same answers', () => {
     const s = lockedMatch(5, ['marshal', 'marshal']);
     const script: { t: 'muster' | 'move'; i?: number; pos?: Vec2 }[] = [
-      { t: 'move', i: 0, pos: [1500, 900] }, { t: 'muster' }, { t: 'move', i: 0, pos: [1500, 900] }, { t: 'move', i: 1, pos: [3000, 900] },
-      { t: 'move', i: 2, pos: [5000, 900] }, { t: 'move', i: 3, pos: [6500, 900] }, { t: 'move', i: 0, pos: SPOTS[0] }, { t: 'move', i: 3, pos: [6500, 900] },
+      { t: 'move', i: 0, pos: [1500, 600] }, { t: 'muster' }, { t: 'move', i: 0, pos: [1500, 600] }, { t: 'move', i: 1, pos: [3000, 600] },
+      { t: 'move', i: 2, pos: [5000, 600] }, { t: 'move', i: 3, pos: [6500, 600] }, { t: 'move', i: 0, pos: SPOTS[0] }, { t: 'move', i: 3, pos: [6500, 600] },
     ];
     const answers: boolean[][] = [[], []];
     for (const seat of [0, 1] as Seat[]) {

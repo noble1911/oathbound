@@ -56,7 +56,6 @@ describe('locked squads', () => {
     expect(out.get(11)!.pos).toEqual(at(s, 11).pos);
     expect(out.get(10)!.facing).toBe(128);
     for (const r of send(s, out)) expect(r).toEqual({ ok: true });
-    expect(at(s, 10).facing).toBe(128);
   });
 
   it('a group drag moves only what may move unless the relocations cover every locked squad', () => {
