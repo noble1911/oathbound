@@ -1,6 +1,6 @@
 # Oathbound v2: balance report
 
-The gated numbers come from `node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 4100000`: Hard
+The gated numbers come from `node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 6100000`: Hard
 against Hard and Normal against Normal (12 Lords, 7920 matches each) and the classic tournament of the six bot
 strategies (10 224 matches). Every entry plays every other entry from both seats. `--full` prints the whole report per
 field: the match-length histogram, the margin of victory, and the per-unit and per-legendary tables.
@@ -11,7 +11,218 @@ To re-tune:
 
 Both rewrite `src/sim/data/balance.ts`. Run one tuner at a time.
 
-## Current report: relocation, Muster and the relic slot at Lv2 (2026-11-18)
+## Current report: Lord stance and formations (2026-11-18)
+
+Two features, built and balanced one after the other (`docs/reviews/GAMEPLAY-2026-11-16.md`, `POSITIONING-AND-ECONOMY.md`
+#7 and #8; DESIGN §3 "Formation", §4 "Stance"):
+
+1. **Lord stance.** Advance (the default, the old behaviour), Hold, or Follow an own squad.
+2. **Formation.** Every squad of three or more stands deep (the default block) or wide (a line). It replaced rotation.
+
+Gate runs: `node tools/tournament.ts --fields hard:60,normal:60,classic:2 --full --seed0 5100000` (the same seeds for
+every "before" and "after" column; no tuner saw them), and `--seed0 6100000` for the final column.
+
+### Gates
+
+| Gate | Before both (last report's numbers) | Stance, untuned | Stance, re-tuned | + Formation, untuned | **Final (`--seed0 6100000`)** | Target |
+|---|---|---|---|---|---|---|
+| **Hard**: seat 0 | 50.4 | 50.6 | 50.3 | 50.3 | **49.7** | < 52 |
+| Kingdom / Ashen / Caliphate | 48.5 / 50.3 / 51.2 | 54.0 / 50.2 / 45.8 ⚠ | 52.1 / 49.3 / 48.5 | 47.3 / 53.3 / 49.4 | **47.7 / 52.3 / 50.1** | 46–54 |
+| Lords | 47.1 to 52.7 | 42.4 (ossuary) to 65.5 (drakerider) ⚠ | 47.2 to 54.8 (skylady) | 39.2 (vizier) to 61.4 (deathknight) ⚠ | **45.5 (archmage) to 54.5 (ossuary)** | 45–55 |
+| Units | 41.1 to 57.0 | 41.8 to 61.2 ⚠ | 40.6 to 60.5 (dragon) ⚠ | 39.6 (knights) ⚠ to 58.4 | **41.2 (knights) to 58.6 (wraith_rider)** | 40–60 |
+| Legendaries | 45.3 to 57.3 | 45.0 to 58.0 | 45.0 to 56.5 | 44.3 to 55.3 | **46.0 to 56.5** | 40–60 |
+| Rounds / past 12 | 8.68 / 0.0% | 8.72 / 0.0% | 8.76 / 0.0% | 8.70 / 0.0% | **8.73 / 0.0%** | 8–11, < 5% |
+| **Normal**: seat 0 | 49.5 | 49.9 | 50.2 | 50.1 | **49.9** | < 52 |
+| Kingdom / Ashen / Caliphate | 48.9 / 48.6 / 52.5 | 46.5 / 50.4 / 53.1 | 48.8 / 48.5 / 52.7 | 51.6 / 46.5 / 51.9 | **50.8 / 49.9 / 49.3** | 46–54 |
+| Lords | 43.6 (lich) ⚠ to 55.0 | 42.3 ⚠ to 60.0 ⚠ | 43.9 (skylady) ⚠ to 53.6 | 37.8 (skylady) ⚠ to 61.4 (marshal) ⚠ | **47.3 to 55.5 (archmage) ⚠** | 45–55 |
+| Units | 43.1 to 59.2 | 39.1 ⚠ to 58.9 | 42.1 to 59.6 | 43.1 to 59.8 | **40.6 (spear_levy) to 59.6 (mages)** | 40–60 |
+| Legendaries | 42.0 to 57.8 | 42.0 to 58.7 | 42.6 to 55.5 | 43.5 to 58.4 | **42.5 to 59.2** | 40–60 |
+| Rounds / past 12 | 8.83 / 0.9% | 8.82 / 0.7% | 8.85 / 0.7% | 8.81 / 0.7% | **8.85 / 0.6%** | 8–11, < 5% |
+| **Classic**: seat 0 | 49.6 | 50.2 | 49.2 | 49.7 | **49.9** | < 52 |
+| Kingdom / Ashen / Caliphate | 49.7 / 47.3 / 53.0 | 47.4 / 49.1 / 53.5 | 50.2 / 46.4 / 53.5 | 50.2 / 48.7 / 51.2 | **50.2 / 47.5 / 52.4** | 46–54 |
+| Lords | 44.2 (drakerider) ⚠ to 55.2 (sultana) ⚠ | 45.8 to 55.7 ⚠ | 42.0 (drakerider) ⚠ to 58.0 (sultana) ⚠ | 41.2 (skylady) ⚠ to 60.5 (sultana) ⚠ | **42.5 (skylady) ⚠ to 57.1 (vizier) ⚠; warden 56.4 ⚠** | 45–55 |
+| Units | 42.0 to 59.3 | 40.7 to 59.6 | 41.8 to 58.2 | 41.0 to 57.7 | **42.0 (skeleton) to 59.8 (knights)** | 40–60 |
+| Legendaries | 44.5 to 55.4 | 44.9 to 56.2 | 44.1 to 55.5 | 42.4 to 57.7 | **42.8 to 58.6** | 40–60 |
+| Rounds / past 12 | 8.85 / 1.3% | 8.87 / 1.3% | 8.88 / 1.2% | 8.85 / 0.9% | **8.89 / 1.1%** | 8–11, < 5% |
+
+Lord share of army damage in the final run: 14.8% / 17.1% / 17.6% (target <= 25%).
+
+**Hard against Hard meets every gate.** Normal misses one by half a point (Archmage 55.5). The tournament field misses
+three Lords: Skylady 42.5, Grand Vizier 57.1, Warden 56.4. Eight hand steps earlier the same rules read, on
+`--seed0 5100000`: Hard Vizier 43.8; Normal Rajah 42.3, Sultana 56.7, Warden 56.1, Skylady 44.0; Classic Sultana 56.4.
+The weaker planners' Lord gates are noisier than they were, and the reserves that hold them are now large (see Open).
+
+| Other gate | Stance only | Final | Target |
+|---|---|---|---|
+| Hard beats Normal (`--strats easy,normal,hard --seeds 4 --seed0 5400000`) | 85% | **84%** | ~80%+ |
+| Normal beats Easy | 91% | **91%** | ~90% |
+| Hard beats Easy | 98% | 98% | |
+| `tall` against `wide` (`matches.ts --variants tall --opp wide --seeds 4`) | 46.8 ± 3.0 | **49.6 ± 3.0** | 45–55 |
+| `wide` / `tall` against shipped Hard | 39.6 / 43.4 | 43.8 / 51.7 | reported |
+| Average squad level at match end, Hard / Normal (`muster.ts --seeds 4`) | 2.12 / 1.80 | **2.12 / 1.80** | > 1.5 |
+
+The ladder, tall/wide, level, usage and "does the choice matter" numbers of the final rules were run before the last
+eight hand steps of reserves and Lord power (those steps move single Lords, not these totals).
+
+### Lord stance: rules, and what was measured
+
+Rules (DESIGN §4): `{t:'stance'}` sets `Squad.stance` on the Lord's squad. It is free, lasts from round to round, and
+the enemy sees it as it was in the last battle. Follow keeps him 6 m behind the squad's centre, with a 14 m leash (a
+ranged Lord: his range + 3 m), until the squad falls.
+
+**Hold was changed after measuring it.** As first built (he guards his post until the rest of his army is dead), a
+Hard that always holds won **30%** against a Hard on Advance, and no Lord gained from it at any post. He is now
+released by the first enemy within **25 m** of the post (`HOLD_WATCH`), or when no other squad of his is left: a
+reserve who joins once the enemy has come to him.
+
+`node tools/review/orders.ts --seeds 6 --probe ...`: a Hard whose stance is overridden, against a Hard that leaves
+every Lord on Advance (132 matches a cell, ±8.5; the last report's numbers, the shipped Hold):
+
+| Lord | Hold where the bot puts him | Hold at the front edge (38 m) | Follow the dearest melee squad | Follow the dearest ranged squad |
+|---|---|---|---|---|
+| marshal | 24 | 38 | 46 | 38 |
+| archmage | 34 | 49 | 47 | **56** |
+| warden | 31 | 42 | 52 | 30 |
+| skylady | 49 | 61 | **64** | 54 |
+| lich | 42 | 50 | 54 | 45 |
+| sultana | 27 | 47 | 49 | 32 |
+| deathknight | 29 | 46 | 47 | 22 |
+| ossuary | 34 | 59 (48.8 ± 3.3 over 880 matches) | 48 | 27 |
+| drakerider | 61 | 67 | **70** | 67 |
+| vizier | 29 | 42 | 44 | 46 |
+| rajah | 35 | 52 (46.1 ± 3.3 over 880 matches) | 41 | 39 |
+| rocrider | 46 | 55 | **64** | 57 |
+| all | 36.6 | 50.6 | 52.2 | 42.6 |
+
+- A flying Lord on Advance reaches the enemy long before her army. Following a squad fixes that (61–70%).
+- The melee Lords with auras gain nothing from following: Advance already takes them to the fight.
+- Hold at the front edge is even on average, and a small loss for every ground Lord once the sample is large. Holding
+  only when the enemy fields raiders (30% or 50% of its gold), as a guard for the backline, read 48.8% and 53.9%
+  against 53.8% for the same bot without it.
+- At Normal, which places the Lord once, behind the army, following loses for the Skylady (44%) and the Archmage
+  (43%) and is even for the Drake Rider. Only the Roc Rider gains (55%).
+
+**What the bots do** (`lordOrders` in `src/sim/bot.ts`): Hard puts the Skylady, the Drake Rider and the Roc Rider on
+Follow (the dearest melee squad on the ground) and the Archmage on Follow (her dearest ranged squad). Normal and the
+tournament strategies put only the Roc Rider on Follow. Nobody holds. Easy never touches the stance.
+
+Usage (`orders.ts --usage --seeds 4`, share of planning turns): **Hard: Advance 68.6%, Hold 0.0%, Follow 31.4%**
+(Skylady, Drake Rider and Roc Rider 100% Follow, Archmage 71.5%, the other eight Lords 100% Advance). Normal: Advance
+92.0%, Follow 8.0%. Easy: Advance 100%.
+
+### Formation: rules, and what was measured
+
+Rules (DESIGN §3): `{t:'formation'}`, or `formation` on deploy. It is free at any time, also for a locked squad
+(rotation was free, and the footprint is one circle per unit for both formations). Deep is the default and changes
+nothing. Wide takes **40% less** from area hits and **50% more** from melee blows aimed at it. Facing is gone from
+the intents, the squad and the bots. Replays hold soldier frames only, so `REPLAY_VERSION` stays 3 and old replays
+still decode.
+
+How the rule was arrived at. Each line is `orders.ts`: a Hard with every squad set one way against a Hard with every
+squad set the other, 800 to 1600 matches.
+
+| Rule tried | Result |
+|---|---|
+| Geometry only, or with small numbers: a line against a block of the same men | 49.9% (noise, as rotation was) |
+| Wide as the default; deep marches 15% faster and takes 15% less from melee | Deep for every melee squad wins 55–56%, and going wide against splash never pays (51%). A default thin line also moved every Lord by up to 10 points (Archmage 40, Vizier 39, Death Knight 61): splash stops working |
+| Deep default; wide takes 20% more from melee, nothing else | Wide loses (42.7%), also against armies that are half splash (47%) |
+| Deep default; wide −30% area, +15% melee | Wide for everything wins 59.8%: dominant |
+| Deep default; wide −20% area, +20% or +30% melee | Wide 52.0 / 49.9; reading the enemy adds only 1 point |
+| **Deep default; wide −40% area, +50% melee (shipped)** | Wide for everything 51–53%; **reading the enemy 54.5%** |
+
+**What the bots do** (`formations` in `src/sim/bot.ts`), from the enemy's last army: a melee squad forms a wide line
+when 35% of the enemy's gold deals area damage; a ranged squad stands wide unless 30% of it raids (cavalry and
+fliers). Hard, Normal and the tournament strategies share the rule. Easy keeps every squad deep.
+
+Usage (`orders.ts --usage --seeds 4`, per squad per planning turn, counting squads that have no choice): **Hard:
+deep 53.3%, wide 46.7%**; Normal: deep 58.9%, wide 41.1%; Easy: deep 100%. Share standing wide at Hard, by unit:
+clerics 83%, mages 82%, militia 78%, sun_priest 77%, djinn_binder 73%, grave_acolyte 71%, skeleton 70%, pegasus 70%,
+berserkers 60%, spear_levy 59%, archers 58%, camel_archer 57%, grave_knight 55%, knights 51%, bone_archer 50%,
+cavaliers 46%, pikemen 44%, scimitar 44%, wraith_rider 43%, mamluk 27%.
+
+### Does the choice matter?
+
+`orders.ts --seeds 10 --against auto` (2640 matches a column, ±1.9): a Hard with one or both choices left at the
+default, against the shipped Hard, under the final rules.
+
+| A Hard that... | Win rate against shipped Hard | Aim |
+|---|---|---|
+| ...is the shipped Hard (control) | 50.8 | 50 |
+| ...leaves the Lord on Advance | **47.3** | 42–48 |
+| ...leaves every squad deep | **44.2** | 42–48 |
+| ...does both | **38.7** | not set; the two add up |
+
+With stances alone, before formations existed, the Hard on Advance won 45.3 (the shipped Hard 54.7 ± 1.9).
+
+### What changed
+
+**Rules** (`src/sim/types.ts`, `match.ts`, `battle.ts`, `data/units.ts`): `LordStance`, `{t:'stance'}`,
+`lordStance`, `HOLD_WATCH` 2500, `HOLD_LEASH` 1400, `FOLLOW_BEHIND` 600; `Formation`, `{t:'formation'}`,
+`formationGrid`, `formationOf`, `hasFormation`, `DEFAULT_FORMATION`, `WIDE_AREA_PCT` 40, `WIDE_MELEE_PCT` 50.
+`Squad.facing` and `facing` on the intents are removed. `squadFootprint` is sized for the wide line: Knights 145 →
+315 cm, Militia 325 → 535 cm.
+
+**Numbers** (`src/sim/data/balance.ts`). After the stance: `--fields hard:24 --tune 5 --tune-what lords,factions`,
+two steps of Lords over all three fields, the reserves, and seven hand steps. After formations: the same Lords and
+factions run, `--tune 2 --tune-what units` over the three fields, two more Lord steps, one reserve step per field,
+and twelve hand steps. The Lord-power tuner may now go down to 25 (it stopped at 40).
+- `FACTION_POWER`: kingdom 915 → 908, ashen 1010 → 1001, caliphate 1091 → 1100.
+- `LORD_POWER`: marshal 148 → 161, archmage 57 → 69, warden 131 → 133, skylady 49 → 42, lich 86 → 88, sultana 165 →
+  150, deathknight 144 → 135, ossuary 77 → 75, drakerider 97 → 89, vizier 70 → 94, rajah 106 → 103, rocrider 71 → 58.
+  The flying Lords pay for what following is worth to them; the two splash casters are paid back for wide lines.
+- `UNIT_POWER`: militia 152 → 150, berserkers 147 → 146, archers 76 → 74, knights 119 → 122, cavaliers 163 → 161,
+  mages 78 → 76, clerics 170 → 169, pegasus 149 → 146, ballista 107 → 105, trebuchet 90 → 92, dragon 69 → 68,
+  skeleton 169 → 170, grave_knight 126 → 127, bone_archer 85 → 86, wraith_rider 90 → 88, spear_levy 132 → 135,
+  scimitar 121 → 123, camel_archer 107 → 109, mamluk 136 → 134, sun_priest 135 → 134, war_elephant 88 → 86,
+  sand_golem 104 → 103.
+- `NORMAL_RESERVE`: marshal 333 → 428, archmage 177 → 226, warden 217 → 325, skylady 83 → 0, lich 230 → 250, sultana
+  420 → 540, deathknight 328 → 369, ossuary 208 → 240, drakerider 272 → 221, vizier 20 → 190, rajah 250 → 350,
+  rocrider 295 → 331 (mean 28.9%; it was 23.6%).
+- `CLASSIC_RESERVE`: marshal 170 → 362, archmage 247 → 307, warden 111 → 246, skylady 0, lich 327 → 368, sultana
+  450 → 540, deathknight 345 → 400, ossuary 286 → 369, drakerider 274 → 277, vizier 55 → 260, rajah 310 → 393,
+  rocrider 123 → 204 (mean 31.1%; it was 22.5%).
+
+### Chaos
+
+`chaos.ts --seeds 2` (2310 battles, final rules): the round result flips when a whole army is shifted by 1 cm / 10 cm
+/ 1 m / 3 m, or one squad by 1 m, in **10.9% / 11.0% / 13.9% / 17.8% / 8.2%** of battles (last report: 10.5 / 11.7 /
+14.4 / 18.4 / 8.4); close wipes 22.4 / 21.8 / 27.5 / 31.5 / 16.4; close stalls and timeouts 21.5 / 21.1 / 24.4 /
+26.5 / 16.3. Unchanged within noise.
+
+### Tried and rejected
+
+| Change | Result |
+|---|---|
+| Hold as "guard the post until the army is dead" | 30% against Advance |
+| Hold released at 35 m instead of 25 m | 53.9% at the front edge, but it is then Advance with a three-second delay |
+| Hard's Ossuary Warden on Hold at the front edge | 48.8 ± 3.3; in a full gate run he dropped to 42.4 |
+| Hold when the enemy fields raiders | No better than without |
+| Normal's Skylady and Archmage on Follow | 44% and 43% |
+| The formation rules above the shipped one | See the table under Formation |
+| A third step of the reserve tuner | Oscillates on the one-third cliff again (Roc Rider 33% at Normal, twice) |
+
+### Open
+
+- **The Skylady in weaker hands.** Following is worth 12–15 points to the Skylady as Hard plays her and nothing as
+  Normal or the tournament strategies do, so her power is set by Hard (49 → 42) and she reads 47.5 at Normal and
+  42.5 in the tournament field with a reserve of 0. The reserve tuner answers by making everyone else keep more: the
+  mean reserve rose from 23% to about 30%, the Sultana's is 54%, and several Lords sit just beside the one-third
+  cliff. This lever is at its end. Better fixes: teach Normal to place and follow with the fliers as Hard does, or
+  give the weaker planners a second per-Lord lever.
+- **Hold is not a winning order for any bot.** The rule works (a reserve who waits for the enemy), but no heuristic
+  tried made it pay, so Hard never uses it. If it should be a strong option it needs a benefit of its own.
+- **Both choices together are worth 11 points** (38.7% for a Hard that uses neither). Each alone is inside the
+  42–48 aim. Whether the sum is too much is a design call.
+- **Footprints are large for a deep block.** The ring is sized for the wide line, so squads stand about 10 m apart
+  in either formation and seven Swarm squads fill the front row. A late 16-squad army of Swarm units is tight.
+- **Wide is taken in 47% of squad-turns.** Ranged squads stand wide unless raiders come. That is right by the
+  numbers, but it is close to a default for them.
+- **Gates near the edge:** Hard Archmage 45.5 and Knights 41.2; Normal Archmage 55.5 and Spear Levy 40.6; the
+  tournament field as listed under Gates.
+- The commit that first added formations to the sim describes the first rule tried (wide the default, deep faster).
+  The rule that shipped is the one in this report and in DESIGN §3.
+
+## Previous report: relocation, Muster and the relic slot at Lv2 (2026-11-18)
 
 Two features went in together and were balanced together (`docs/reviews/GAMEPLAY-2026-11-16.md` "Relocation",
 `docs/reviews/POSITIONING-AND-ECONOMY.md` #3 and #5; DESIGN §2):

@@ -100,16 +100,16 @@ which units to unlock, what to deploy and where, which item to take and who wear
   (`LEVEL_COST_PCT`; a Lv5 squad costs 2.6× its price in all). Each level gives +25% HP and +20% damage, and Lv2 opens
   the relic slot. **Swarm squads level by adding soldiers instead** (`squadSizeAt`, `SWARM_GROWTH_PCT` = 25): each
   level adds 25% of the base squad size, rounded down (Militia 12 → 15 → 18 → 21 → 24; Skeletons and Levy 10 → 12 → 15
-  → 17 → 20), with no per-soldier gain. A grown squad widens its formation (`formationCols`: 5 columns from 17
-  soldiers), and its ground footprint is always that of its Lv5 size, so a level-up never makes it overlap. Levelling is a real alternative to recruiting: a new squad is more raw power, a level is cheaper,
+  → 17 → 20), with no per-soldier gain. A grown squad adds a file or a rank (`formationGrid`), and its
+  ground footprint is always that of its Lv5 size, so a level-up never makes it overlap. Levelling is a real alternative to recruiting: a new squad is more raw power, a level is cheaper,
   needs no deployment and no army slot, and makes a squad's items count for more.
 - **Selling** in the round a squad was deployed is an undo: it refunds everything spent on it (its cost and any
   level-ups). A squad deployed in an earlier round refunds nothing.
 - **Relocation (Mechabellum-style; `squadLocked`, `relocationsLeft` in `src/sim/match.ts`).**
   - **Locked:** a squad deployed in an earlier round is locked in place. The server refuses a move of it.
-  - **Free:** the Lord, every round; a squad bought this round, until the battle starts; and **turning** any squad on
-    the spot (a move to the same position with a new facing). Facing turns the formation's rows; it measures as noise
-    (docs/reviews/POSITIONING-AND-ECONOMY.md §1), so it is not worth a rule.
+  - **Free:** the Lord, every round; a squad bought this round, until the battle starts; and any squad's **formation**
+    (§3: wide or deep), which changes how it stands, not where. Squads no longer turn: rotation measured as noise
+    (docs/reviews/POSITIONING-AND-ECONOMY.md §1) and was removed; every squad faces the enemy.
   - **No free moves.** A round has 0 relocations.
   - **Muster** (`{t:'muster'}`) is taken **instead of that round's unit unlock**: it allows **3 relocations**
     (`MUSTER_MOVES`) of locked squads that round. A relocated squad may be moved again as often as you like, and moving
@@ -121,8 +121,9 @@ which units to unlock, what to deploy and where, which item to take and who wear
   - **Selling is not a way round it:** an older squad refunds nothing, so selling and rebuying it costs the full price,
     deploy points, its levels and (until re-equipped) its items.
   - The rule is the same for both seats (`tests/sim.relocation.test.ts`).
-- Squads may not overlap: each has a ground footprint (its formation's half-extent plus a body radius,
-  `squadFootprint`), and a deploy or move onto another of your squads is refused ("overlaps another squad").
+- Squads may not overlap: each has a ground footprint (`squadFootprint`: one circle per unit, the half-length of its
+  wide line at Lv5 size plus a body radius, so a change of formation or a level-up never makes it overlap), and a deploy
+  or move onto another of your squads is refused ("overlaps another squad").
 
 ## 3. Units (squads)
 
@@ -150,6 +151,22 @@ A squad is N identical soldiers with shared orders. Each soldier has its own HP 
 | Wyvern Riders | 2 | Air | heavy air | axe | 300 | flier + Large; melee vs ground and air |
 | Dragon | 1 | Air | late game | fire breath | 500 | flier + Large; cone AoE; unlockable from round 5 only |
 
+- **Formation (`Formation`, `{t:'formation'}`, `formationGrid` / `formationOf` in `src/sim/data/units.ts`).** Every squad
+  of three or more soldiers stands in one of two formations. It replaced rotation (facing), is chosen per squad in
+  planning or on deploy, is **free at any time, also for a squad locked in place** (rotation was free too, and the
+  footprint is the same for both), and lasts from round to round. Squads of one or two (and the Lord) have none.
+  - **Deep** (the default): a block, one file wide for up to 3 soldiers, two for up to 8, three for up to 16, then
+    four. It is the squad exactly as its numbers describe it: a player who never touches the control changes nothing.
+  - **Wide:** a line of one rank for up to 6 soldiers, two for up to 16, then three. Spread out, it takes
+    **40% less** damage from every hit that was not aimed at the soldier (`WIDE_AREA_PCT`: splash, cones, piercing
+    bolts, cleaves, stomps, meteors and skill blasts). With no ranks behind the first, it takes **50% more** from melee
+    blows aimed at it (`WIDE_MELEE_PCT`).
+  - So it is a read of the enemy army: wide against mages, siege, giants and dragons; deep against a melee line or a
+    cavalry charge; an archer line stands wide until raiders come for it.
+  - The geometry alone decides nothing in this sim (a line against a column of the same men measures as noise, like
+    rotation did), which is why the trade-off is two explicit numbers. Both were set by measurement (`docs/BALANCE.md`).
+  - **Hidden like positions:** the enemy sees each squad's formation as it stood in the last battle
+    (`EnemyView.lastArmy`), never this round's. Nothing is rolled; the seats mirror (`tests/sim.formation.test.ts`).
 - **The counter wheel (the one counter rule).** Every unit (`UnitDef.class`) and every Lord (`LordDef.class`) belongs
   to exactly one of 8 classes. Each class beats the next one around the ring and is beaten by the one before it:
   **Swarm → Giant → Line → Cavalry → Ranged → Air → Siege → Magic → Swarm** (`src/sim/data/wheel.ts`). A unit deals
