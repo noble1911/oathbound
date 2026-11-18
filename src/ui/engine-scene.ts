@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import type { DecodedReplay, FactionId, ReplayEvent, Seat, SkillEvent, Terrain, Vec2 } from '../sim/types.ts';
 import { sampleReplay, makeTransforms } from '../sim/index.ts';
 import { BattleView, replaySource, type ArmySquad } from '../render/index.ts';
-import type { BackdropHandle, BackdropOptions, CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual, TagBadge, TimingSpec } from './scene-adapter.ts';
+import type { BackdropHandle, BackdropOptions, CameraMode, PlaybackHandle, PreviewSpec, QualityChoice, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual, StanceSpec, TagBadge, TimingSpec } from './scene-adapter.ts';
 import { squadFootprint } from '../sim/match.ts';
 import { PlanOverlay } from './plan-overlay.ts';
 import { flipFacing, flipPos, flippedSource } from './flip.ts';
@@ -192,6 +192,7 @@ export class EngineScene implements SceneAdapter {
       this.setRange(null);
       this.setSelection([]);
       this.setTiming(null);
+      this.setStance(null);
     }
     this.view.engine.wake();
   }
@@ -374,6 +375,18 @@ export class EngineScene implements SceneAdapter {
     this.view.engine.wake();
   }
 
+  private stance: string | null = null;
+
+  /** My Lord's stance markers (src/ui/stance.ts); drawn only when they change. */
+  setStance(st: StanceSpec | null): void {
+    const key = st ? JSON.stringify(st) : null;
+    if (key === this.stance) return;
+    this.stance = key;
+    this.overlay.setStance(st ? { ...st, lord: this.inPos(st.lord), post: this.inPos(st.post), lead: st.lead ? this.inPos(st.lead) : undefined } : null);
+    this.overlay.layoutLabels();
+    this.view.engine.wake();
+  }
+
   /**
    * Plate tags hang just under each squad's plate: the plate floats over the centroid of the squad's
    * models (src/render/plates.ts), so the tag does too once the models are placed; until then (and for
@@ -381,7 +394,7 @@ export class EngineScene implements SceneAdapter {
    */
   private layoutTags(): void {
     const tags = this.timing?.tags ?? [];
-    const out: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge }[] = [];
+    const out: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge; foe?: boolean }[] = [];
     if (tags.length && this.mode === 'planning' && !this.view.battle) {
       const acc = new Map<number, { x: number; y: number; z: number; n: number; top: number }>();
       for (const s of this.view.units.slots) {
@@ -405,7 +418,7 @@ export class EngineScene implements SceneAdapter {
           const z = 60 - p[1] / 100;
           v = new THREE.Vector3(x, this.view.field.heightAt(x, z) + 2.5, z);
         }
-        out.push({ pos: v, text: t.text, hot: !!t.hot, badge: t.badge });
+        out.push({ pos: v, text: t.text, hot: !!t.hot, badge: t.badge, foe: t.foe });
       }
     }
     this.overlay.setTags(out);

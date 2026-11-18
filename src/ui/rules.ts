@@ -13,6 +13,8 @@ import { ARMY_CAP, BASE_DEPLOY_LIMIT, DEPLOY_BONUS, deployPointsText, KEEP_HP, L
 import { RIVER_Y0 } from '../sim/terrain.ts';
 import { LORDS, LORD_ROLE, LORD_ROLES, LORD_ROLE_NAME } from '../sim/data/lords.ts';
 import { TICK_HZ } from '../sim/constants.ts';
+import { FOLLOW_BEHIND, HOLD_LEASH, HOLD_WATCH } from '../sim/battle.ts';
+import { RANGED_LEASH_PLUS } from './stance.ts';
 import { sound } from '../audio.ts';
 import { $, el, esc, store } from './dom.ts';
 import { icon } from './icons.ts';
@@ -230,6 +232,14 @@ function page(id: TabId): string {
           <li><b>You see where the enemy stood <i>last</i> round</b> (the red ghosts on the far half, always shown from round 2), never what they are doing now. Counter it.</li>
           <li>If time runs out, both sides deal only <b>half</b> Keep damage from what still stands.</li>
           <li>Your <b>Lord</b> is a hero on the field with a passive, an ability that fires by itself, and three item slots. If the Lord falls, they are back next round.</li>
+        </ul>
+        <h3>Your Lord's orders</h3>
+        <p class="lead">Select your Lord in planning to choose how he fights the coming battle. Orders are free, can be changed until you are Ready, and stay from round to round.</p>
+        <ul class="rl-list">
+          <li><b>Advance</b> (the default): he marches on the nearest enemy squad, like any squad.</li>
+          <li><b>Hold</b>: he waits on the spot you put him on until an enemy comes within <b>${HOLD_WATCH / 100} m</b> of it, or until no other squad of yours is left. Then he fights as usual. A ring on the field shows the watch.</li>
+          <li><b>Follow</b>: pick one of your squads. He stays <b>${FOLLOW_BEHIND / 100} m behind it</b>, towards your Keep, and fights what comes within <b>${HOLD_LEASH / 100} m</b> of that spot (a ranged Lord: his range + ${RANGED_LEASH_PLUS / 100} m). If the squad falls, he advances; if you sell it, his orders go back to Advance.</li>
+          <li>The enemy sees your Lord's orders only as they were in the <b>last</b> battle, on his ghost, as you see theirs.</li>
         </ul>
         <h3>Relocation and Muster</h3>
         <p class="lead">A squad deployed in an earlier round is <b>locked in place</b>: it fights where it stood. Your Lord and the squads you deploy this round move freely until the battle.</p>

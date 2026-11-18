@@ -67,6 +67,10 @@ const P: Record<string, string> = {
   mirror: '<path d="M12 3v18" stroke-dasharray="2 2.4" /><path d="M9 7l-6 5 6 5zM15 7l6 5-6 5z" fill="currentColor" fill-opacity=".3" />',
   route: '<circle cx="6" cy="19" r="2" /><path d="M7.6 17.6c4-3.6-1.6-6.6 3-10.2 2.4-1.9 5.4-2.4 8.4-3.4" stroke-dasharray="2.4 2.2" /><path d="M16 3l3.4 1-1.2 3.2" />',
   sync: '<path d="M20 3v18" /><path d="M3 7h12M7 12h8M10 17h5" /><path d="M13 5l2 2-2 2M13 10l2 2-2 2M13 15l2 2-2 2" />',
+  // the Lord's battle stance (src/ui/stance.ts): march on, guard a post, keep behind a squad
+  st_advance: '<path d="M6 12.5l6-6 6 6M6 19l6-6 6 6" />',
+  st_hold: '<path d="M11 18V3.5" /><path d="M11 4.5h7l-2.2 2.7L18 10h-7z" fill="currentColor" fill-opacity=".3" /><path d="M3.5 19c0-1.5 3.4-2.6 7.5-2.6s7.5 1.1 7.5 2.6-3.4 2.6-7.5 2.6-7.5-1.1-7.5-2.6z" stroke-dasharray="2.2 2" />',
+  st_follow: '<rect x="7" y="2.5" width="10" height="6" rx="1" fill="currentColor" fill-opacity=".3" /><path d="M12 10.5v5" stroke-dasharray="1.8 1.8" /><circle cx="12" cy="19" r="2.6" /><path d="M9 13.5l3 2.2 3-2.2" />',
   // the counter wheel's eight classes (cls_<WheelClass>): flat carved stamps, one idea each
   cls_swarm: '<circle cx="6" cy="8.5" r="2" /><circle cx="12" cy="6" r="2" /><circle cx="18" cy="8.5" r="2" /><path d="M2.5 20v-4.5a3.5 3.5 0 017 0M8.5 20v-7a3.5 3.5 0 017 0v7M14.5 15.5a3.5 3.5 0 017 0V20" />',
   cls_giant: '<path d="M10 3h4v3h-4z" /><path d="M6 21v-5H4V9.5L7 6.5h10l3 3V16h-2v5M9 21v-4h6v4M9 10v3M15 10v3" />',

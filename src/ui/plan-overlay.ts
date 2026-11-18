@@ -1,11 +1,11 @@
 // Planning overlays drawn in the engine's scene (src/ui/engine-scene.ts owns one): footprint rings
-// under the selected squads, the Lord's aura ring, the march routes and the seconds labels (plate tags
-// and route marks). Everything is built once and only rewritten when the UI hands over new data, so an
+// under the selected squads, the Lord's aura ring, the march routes, the seconds labels (plate tags
+// and route marks) and the Lord's stance (a dashed watch ring round his post, or a tether to the squad he follows). Everything is built once and only rewritten when the UI hands over new data, so an
 // idle planning screen still draws nothing: the caller wakes the engine after each change.
 //
 // Coordinates arrive in the engine's field frame (already flipped for a seat-1 viewer) as field cm.
 import * as THREE from 'three';
-import type { TagBadge } from './scene-adapter.ts';
+import type { StanceSpec, TagBadge } from './scene-adapter.ts';
 
 /** Your livery on dark (--me-hi in src/style.css): a route, a ring or a tag that belongs to you. */
 const ME_HI = '#94b6f6';
@@ -43,6 +43,12 @@ export class PlanOverlay {
   private aura: THREE.Mesh;
   private auraFill: THREE.Mesh;
   private routes: THREE.Mesh;
+  /** The Lord's stance: the dashed ring (hold: watch; follow: leash), the post mark (ring + dot) and the tether ribbon. */
+  private stRing: THREE.Mesh;
+  private stPost: THREE.Mesh;
+  private stDot: THREE.Mesh;
+  private stTether: THREE.Mesh;
+  private stance: StanceSpec | null = null;
   private routePos: Float32Array;
   private routeCol: Float32Array;
   private labels: THREE.Sprite[] = [];
@@ -82,7 +88,74 @@ export class PlanOverlay {
     this.routes.renderOrder = 8;
     this.routes.frustumCulled = false;
     this.routes.visible = false;
-    scene.add(this.rings, this.aura, this.auraFill, this.routes);
+    // stance: a unit dashed ring (scaled to the leash), a small post ring and dot, and a tether ribbon rebuilt on change
+    this.stRing = new THREE.Mesh(flat(dashedRing(0.988, 1, 64, 0.55)), mat(0.7));
+    this.stPost = new THREE.Mesh(flat(new THREE.RingGeometry(0.72, 1, 40)), mat(0.9));
+    this.stDot = new THREE.Mesh(flat(new THREE.CircleGeometry(0.32, 20)), mat(0.9));
+    this.stTether = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: ME_HI, transparent: true, opacity: 0.85, depthWrite: false, depthTest: false, side: THREE.DoubleSide }));
+    for (const m of [this.stRing, this.stPost, this.stDot, this.stTether]) {
+      m.renderOrder = 9;
+      m.visible = false;
+      m.frustumCulled = false;
+    }
+    scene.add(this.rings, this.aura, this.auraFill, this.routes, this.stRing, this.stPost, this.stDot, this.stTether);
+  }
+
+  // ---------------------------------------------------------------- the Lord's stance
+
+  /** My Lord's stance markers (engine-frame field cm), or null. Call layoutLabels() after: its label is one of them. */
+  setStance(st: StanceSpec | null): void {
+    this.stance = st;
+    for (const m of [this.stRing, this.stPost, this.stDot, this.stTether]) m.visible = false;
+    if (!st) return;
+    const bright = st.focus ? 1 : 0.62;
+    const px = wx(st.post[0]), pz = wz(st.post[1]);
+    const py = this.heightAt(px, pz) + 0.15;
+    // hold: the watch ring always (faint unless he is selected); follow: its leash ring only while he is selected
+    if (st.kind === 'hold' || st.focus) {
+      const r = st.leash / 100;
+      this.stRing.position.set(px, py, pz);
+      this.stRing.scale.set(r, 1, r);
+      (this.stRing.material as THREE.MeshBasicMaterial).opacity = (st.kind === 'hold' ? 0.75 : 0.5) * bright;
+      this.stRing.visible = true;
+    }
+    if (st.kind === 'follow') {
+      const k = 1.1;
+      this.stPost.position.set(px, py + 0.01, pz);
+      this.stPost.scale.set(k, 1, k);
+      this.stDot.position.set(px, py + 0.02, pz);
+      (this.stPost.material as THREE.MeshBasicMaterial).opacity = 0.9 * bright;
+      (this.stDot.material as THREE.MeshBasicMaterial).opacity = 0.9 * bright;
+      this.stPost.visible = this.stDot.visible = true;
+    }
+    // the tether: dashed from the Lord to his spot, then a solid line on to the squad he follows
+    const pts: number[] = [];
+    const seg = (a: readonly number[], b: readonly number[], dash: boolean, from: number, to: number) => {
+      const x0 = wx(a[0]), z0 = wz(a[1]), x1 = wx(b[0]), z1 = wz(b[1]);
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      if (len < from + to + 0.5) return;
+      const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
+      const nx = -uz * 0.13, nz = ux * 0.13;
+      const step = dash ? 1.1 : len;
+      for (let t = from; t < len - to; t += step) {
+        const t1 = Math.min(len - to, t + (dash ? 0.65 : len));
+        const ax = x0 + ux * t, az = z0 + uz * t, bx = x0 + ux * t1, bz = z0 + uz * t1;
+        const ay = this.heightAt(ax, az) + 0.14, by = this.heightAt(bx, bz) + 0.14;
+        pts.push(ax - nx, ay, az - nz, ax + nx, ay, az + nz, bx + nx, by, bz + nz, ax - nx, ay, az - nz, bx + nx, by, bz + nz, bx - nx, by, bz - nz);
+      }
+    };
+    if (st.kind === 'follow') {
+      seg(st.lord, st.post, true, 1.2, 1.2);
+      if (st.lead) seg(st.post, st.lead, false, 1.2, 1.5);
+    }
+    if (pts.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      this.stTether.geometry.dispose();
+      this.stTether.geometry = g;
+      (this.stTether.material as THREE.MeshBasicMaterial).opacity = 0.85 * bright;
+      this.stTether.visible = true;
+    }
   }
 
   // ---------------------------------------------------------------- selection rings
@@ -112,7 +185,7 @@ export class PlanOverlay {
 
   // ---------------------------------------------------------------- routes + labels
 
-  private tags: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge }[] = [];
+  private tags: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge; foe?: boolean }[] = [];
   /** Tag sprites in `tags` order (labels[0..n)), and the camera state their placement was worked out for. */
   private tagCount = 0;
   private clutterKey = '';
@@ -168,14 +241,14 @@ export class PlanOverlay {
   }
 
   /** Plate tags: world anchors (just under each squad's plate) and their text. */
-  setTags(tags: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge }[]): void {
+  setTags(tags: { pos: THREE.Vector3; text: string; hot: boolean; badge?: TagBadge; foe?: boolean }[]): void {
     this.tags = tags;
   }
 
   /** Rebuild the label sprites from the current tags, marks and aura label (call after any of them changes). */
   layoutLabels(): void {
     this.used = 0;
-    for (const t of this.tags) this.label(t.pos, t.text, t.hot ? 'hot' : 'tag', TAG_H, 1.18, t.badge);
+    for (const t of this.tags) this.label(t.pos, t.text, t.hot ? 'hot' : 'tag', TAG_H, 1.18, t.badge, t.foe);
     this.tagCount = this.used;
     this.clutterKey = '';
     this.clutterFrame = -1;
@@ -195,10 +268,19 @@ export class PlanOverlay {
       const ex = x - r;
       this.label(new THREE.Vector3(ex, this.heightAt(ex, z) + 0.3, z), `${a.label} · ${Math.round(a.radius / 100)} m`, 'mark', MARK_H, 0.5);
     }
+    const st = this.stance;
+    if (st) {
+      // hold: the name on the ring's far-left edge (the aura's sits on its left edge, the near edge under the shop);
+      // follow: just in front of the spot he will stand on
+      const k = st.kind === 'hold' ? (st.leash / 100) * Math.SQRT1_2 : 0;
+      const x = wx(st.post[0]) - k;
+      const z = wz(st.post[1]) + (st.kind === 'hold' ? -k : 1.8);
+      this.label(new THREE.Vector3(x, this.heightAt(x, z) + 0.3, z), st.label, 'mark', MARK_H, 0.5, st.kind);
+    }
     for (let i = this.used; i < this.labels.length; i++) this.labels[i]!.visible = false;
   }
 
-  private label(pos: THREE.Vector3, text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', h: number, cy: number, badge?: TagBadge): void {
+  private label(pos: THREE.Vector3, text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', h: number, cy: number, badge?: TagBadge, foeTag = false): void {
     if (this.used >= MAX_LABELS) return;
     let sp = this.labels[this.used];
     if (!sp) {
@@ -216,7 +298,7 @@ export class PlanOverlay {
       this.scene.add(sp);
       this.labels.push(sp);
     }
-    const t = this.tex(text, tone, badge);
+    const t = this.tex(text, tone, badge, foeTag);
     sp.material = t.mat;
     sp.userData.h = h;
     sp.userData.aspect = t.aspect;
@@ -278,8 +360,8 @@ export class PlanOverlay {
   }
 
   /** One texture per distinct text and tone, kept (seconds labels repeat a lot). */
-  private tex(text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', badge?: TagBadge): LabelTex {
-    const key = tone + '|' + (badge ?? '') + '|' + text;
+  private tex(text: string, tone: 'tag' | 'hot' | 'mark' | 'dim', badge?: TagBadge, foeTag = false): LabelTex {
+    const key = tone + '|' + (badge ?? '') + (foeTag ? '!' : '') + '|' + text;
     let t = this.texCache.get(key);
     if (t) return t;
     if (this.texCache.size > 400) {
@@ -294,7 +376,7 @@ export class PlanOverlay {
     const ctx = c.getContext('2d')!;
     const font = `700 ${tone === 'tag' || tone === 'hot' ? 30 : 28}px "Source Sans 3", "Segoe UI", sans-serif`;
     ctx.font = font;
-    const foe = badge === 'moved' || badge === 'new';
+    const foe = foeTag || badge === 'moved' || badge === 'new';
     // a badge takes a square at the left of the text (or the whole tag when there is no text)
     const bw = badge ? (text ? 36 : 40) : 0;
     const tw = text ? Math.ceil(ctx.measureText(text).width) + 22 : 0;
@@ -306,7 +388,7 @@ export class PlanOverlay {
     // intel marks on enemy ghosts in theirs
     ctx.fillStyle = 'rgba(21, 25, 32, 0.86)';
     ctx.fillRect(1, 1, w - 2, H - 2);
-    ctx.strokeStyle = tone === 'hot' ? ME_HI : foe ? FOE_HI : badge === 'reloc' || badge === 'open' ? ME_HI : '#56616f';
+    ctx.strokeStyle = tone === 'hot' ? ME_HI : foe ? FOE_HI : badge === 'reloc' || badge === 'open' || badge === 'hold' || badge === 'follow' ? ME_HI : '#56616f';
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, w - 2, H - 2);
     if (badge) drawBadge(ctx, badge, text ? 7 : 6, H / 2, badge === 'lock' ? '#b8c2ce' : foe ? FOE_HI : ME_HI);
@@ -330,7 +412,7 @@ export class PlanOverlay {
     }
     this.texCache.clear();
     for (const sp of this.labels) this.scene.remove(sp);
-    for (const m of [this.rings, this.aura, this.auraFill, this.routes]) {
+    for (const m of [this.rings, this.aura, this.auraFill, this.routes, this.stRing, this.stPost, this.stDot, this.stTether]) {
       this.scene.remove(m);
       m.geometry.dispose();
       (m.material as THREE.Material).dispose();
@@ -361,6 +443,22 @@ function drawBadge(ctx: CanvasRenderingContext2D, b: TagBadge, x: number, cy: nu
     path('M5 11h14v10H5z');
     path(b === 'lock' ? 'M8 11V8a4 4 0 018 0v3' : 'M8 11V7a4 4 0 017.6-1.6');
     path('M12 15v2');
+  } else if (b === 'hold') {
+    // src/ui/icons.ts st_hold: a planted standard on its ground
+    path('M11 18V3.5');
+    ctx.globalAlpha = 0.3;
+    ctx.fill(new Path2D('M11 4.5h7l-2.2 2.7L18 10h-7z'));
+    ctx.globalAlpha = 1;
+    path('M11 4.5h7l-2.2 2.7L18 10h-7z');
+    path('M3.5 19c0-1.5 3.4-2.6 7.5-2.6s7.5 1.1 7.5 2.6-3.4 2.6-7.5 2.6-7.5-1.1-7.5-2.6z');
+  } else if (b === 'follow') {
+    // st_follow: a squad ahead, the Lord behind it on a tether
+    ctx.globalAlpha = 0.3;
+    ctx.fill(new Path2D('M8 2.5h8a1 1 0 011 1v4a1 1 0 01-1 1H8a1 1 0 01-1-1v-4a1 1 0 011-1z'));
+    ctx.globalAlpha = 1;
+    path('M8 2.5h8a1 1 0 011 1v4a1 1 0 01-1 1H8a1 1 0 01-1-1v-4a1 1 0 011-1z');
+    path('M12 10.5v5');
+    path('M12 19m-2.6 0a2.6 2.6 0 105.2 0a2.6 2.6 0 10-5.2 0');
   } else if (b === 'reloc' || b === 'moved') {
     path('M4 18c3-8 8-11 15-11');
     path('M15 3l4 4-4 4');
@@ -372,4 +470,28 @@ function drawBadge(ctx: CanvasRenderingContext2D, b: TagBadge, x: number, cy: nu
     path('M12 3l2.6 6 6.4.5-4.9 4.2 1.5 6.3L12 16.6 6.4 20l1.5-6.3L3 9.5 9.4 9z');
   }
   ctx.restore();
+}
+
+/** A flat ring of `n` dashes (unit radius, in the XY plane like RingGeometry), each `fill` of its step long. */
+function dashedRing(inner: number, outer: number, n: number, fill: number): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const SUB = 4;
+  for (let d = 0; d < n; d++) {
+    const a0 = (d / n) * Math.PI * 2;
+    const a1 = a0 + ((Math.PI * 2) / n) * fill;
+    const base = pos.length / 3;
+    for (let i = 0; i <= SUB; i++) {
+      const a = a0 + ((a1 - a0) * i) / SUB;
+      pos.push(Math.cos(a) * inner, Math.sin(a) * inner, 0, Math.cos(a) * outer, Math.sin(a) * outer, 0);
+      if (i < SUB) {
+        const k = base + i * 2;
+        idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  return g;
 }

@@ -93,7 +93,7 @@ export class Coach {
     const armor = SLOT_UNLOCK_LEVEL.armor;
     if (has('.lordpick')) {
       if (has('.lordpick.has-pick')) return null;
-      return { id: 'lord', slot: 'foot', target: '.lcard[data-lord="marshal"]', title: 'Choose your Lord', text: 'The three banners are the <b>factions</b>, each with its own units and four Lords; gold, loot and rules are the same for all. We start with the Kingdom. Your Lord fights on the field and brings <b>two signature units</b>, a passive and an ability that fires by itself. <b>Marshal Aldric</b> is a forgiving first pick: he deploys an extra squad every round.' };
+      return { id: 'lord', slot: 'foot', target: '.lcard[data-lord="marshal"]', title: 'Choose your Lord', text: 'The three banners are the <b>factions</b>, each with its own units and four Lords; gold, loot and rules are the same for all. We start with the Kingdom. Your Lord fights on the field and brings <b>two signature units</b>, a passive and an ability that fires by itself. <b>Marshal Aldric</b> is a forgiving first pick: he deploys an extra squad every round. In planning, click him to give his orders: <b>Advance</b>, <b>Hold</b> his post or <b>Follow</b> a squad.' };
     }
     if (has('.reveal')) return null;
     if (has('.modal.draft')) {

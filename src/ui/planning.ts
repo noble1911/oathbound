@@ -6,7 +6,7 @@
 // or dragging (Shift+Q/E for the selected squad; otherwise Q/E turn the camera), U level up, Del
 // sell (press twice), Home reset the camera, Esc cancel. Spectators get a read-only version: both
 // Keeps, both last-round armies, no shop, no deploy badge.
-import type { Intent, Item, LordId, PlayerState, PlayerView, Seat, Slot, Squad, UnitType, Vec2 } from '../sim/types.ts';
+import type { Intent, Item, LordId, LordStance, PlayerState, PlayerView, Seat, Slot, Squad, UnitType, Vec2 } from '../sim/types.ts';
 import { factionOfLord } from '../sim/data/factions.ts';
 import type { RoomView } from '../net/protocol.ts';
 import { UNITS } from '../sim/data/units.ts';
@@ -30,6 +30,7 @@ import { DraftModal, LootModal, draftKey } from './loot.ts';
 import { frontLine, groupPlace, itemsKey, marchFoes, marchOf, mirrorPlace, planMoves, settle, snapPos, syncBySpeed, type March, type MarchFoe, type Placed } from './timing.ts';
 import type { TagBadge, TimingSpec } from './scene-adapter.ts';
 import { dragRefusal, ghostMark, GHOST_MARK_TEXT, lockedText, lockState, mirrorable, pinnedIn, relocCount, relocSource, targetsRefusal, type RelocMe } from './relocation.ts';
+import { followable, ghostStanceText, leadName, sameStance, shownStance, stanceIntent, stanceLeash, stanceLine, stanceMarker, stanceTip, STANCE_ICON, STANCE_KINDS, STANCE_LABEL } from './stance.ts';
 
 type Drag =
   | { kind: 'place'; unit: UnitType; facing: number; fromShop: boolean; moved: boolean; pos: Vec2 | null; rot: Vec2 | null }
@@ -117,6 +118,10 @@ export class PlanningScreen {
   private names: [string, string] = ['You', 'Rival'];
   /** Auto-opened modals (draft, loot) wait until this time: the VS reveal plays first. */
   private modalsAt = 0;
+  /** The Lord's stance just sent and not yet in a snapshot (shown at once; dropped if the server refuses it). */
+  private pendStance: LordStance | null = null;
+  /** Follow pick mode: the next click on one of my squads (field or list) is the squad the Lord follows. */
+  private picking = false;
   /** A sell waiting for its second press: [squad id, expiry]. */
   private sellArmed: { id: number; until: number } | null = null;
   /** Opens last round's battle report (set by the app when there is one). */
@@ -199,7 +204,11 @@ export class PlanningScreen {
       this.pend.clear();
       this.undos = [];
       if (this.sel.size > 1) this.sel.clear();
+      this.pendStance = null;
+      this.endPick();
     }
+    if (this.pendStance && this.me && sameStance(shownStance(this.me.squads, null), this.pendStance)) this.pendStance = null;
+    if (this.me?.ready) this.endPick();
     for (const [id, p] of this.pend) {
       const sq = this.me?.squads.find((s) => s.id === id);
       if (!sq || (sq.pos[0] === p.pos[0] && sq.pos[1] === p.pos[1] && sq.facing === p.facing)) this.pend.delete(id);
@@ -339,6 +348,10 @@ export class PlanningScreen {
     const last = this.undos[this.undos.length - 1];
     if (last && performance.now() - last.at < 1500) this.undos.pop();
     this.pend.clear();
+    if (this.pendStance) {
+      this.pendStance = null;
+      this.renderPanel();
+    }
     this.refuse(e);
     this.syncRange();
   }
@@ -566,6 +579,7 @@ export class PlanningScreen {
       sound.ready();
       playLordLine(me.lord, 'ready');
       this.cancelDrag();
+      this.endPick();
       this.intent({ t: 'ready' });
     }
   }
@@ -614,6 +628,7 @@ export class PlanningScreen {
 
   /** Select one squad (`ghost`: one of the enemy's last-round army), several of mine (`many`), or none. */
   private select(id: number | null, ghost = false, many?: number[]): void {
+    if (this.picking && (ghost || many || id === null || this.squad(id)?.type !== 'lord')) this.endPick();
     if (ghost) {
       this.ghostSel = id;
       this.sel.clear();
@@ -652,12 +667,13 @@ export class PlanningScreen {
     const times = melee.map((r) => r.m.river?.sec).filter((x): x is number => x !== undefined);
     const spread = times.length >= 2 ? Math.max(...times) - Math.min(...times) : null;
     const lord = me.lord;
+    const stance = this.stanceNow();
     const html = `
       <header class="sp-h"><div class="sp-t"><small>Selection</small><b>${rows.length} squads</b><span class="sp-gsum">${melee.length} melee · ${rows.length - melee.length} ranged or Lord</span></div><button class="icon close" data-tip="Deselect [Esc]">${icon('close')}</button></header>
       <div class="sp-acts grp"><button class="btn primary g-sync" ${me.ready || melee.length < 2 ? 'disabled' : ''} data-tip="Stagger the selected melee squads in depth so they reach the river together: the slowest at the front edge, the fast ones held back.">${icon('sync')}<span>Sync by speed</span></button><button class="btn g-turn" ${me.ready ? 'disabled' : ''} data-tip="Turn the group a quarter about its centre [Shift+E]">${icon('rotate')}<span>Turn</span></button></div>
       ${spread !== null ? `<p class="sp-gnote ${spread <= 1 ? 'good' : ''}">${spread <= 1 ? `Melee reaches the river together, ${Math.max(...times).toFixed(1)} s in` : `Melee reaches the river <b>${spread.toFixed(1)} s</b> apart (${Math.min(...times).toFixed(1)} to ${Math.max(...times).toFixed(1)} s)`}</p>` : ''}
       <div class="sp-sec"><small>March · to the river</small><ul class="sp-glist">${rows
-        .map(({ q, m }) => `<li data-id="${q.id}" data-tip="Select only this squad">${crest(q.type, q.type === 'lord' ? lord : null, 'sm')}<span class="gl-n">${esc(unitName(q.type, q.type === 'lord' ? lord : null))}</span><small class="gl-l">${q.type === 'lord' ? '' : `Lv ${q.level}`}</small><small class="gl-s">${m.speed.toFixed(1)} m/s</small><b class="gl-t">${m.river ? `${m.river.sec.toFixed(1)} s` : m.hold ? `hold ${m.hold.sec.toFixed(1)} s` : '–'}</b></li>`)
+        .map(({ q, m }) => `<li data-id="${q.id}" data-tip="Select only this squad">${crest(q.type, q.type === 'lord' ? lord : null, 'sm')}<span class="gl-n">${esc(unitName(q.type, q.type === 'lord' ? lord : null))}</span><small class="gl-l">${q.type === 'lord' ? '' : `Lv ${q.level}`}</small><small class="gl-s">${m.speed.toFixed(1)} m/s</small><b class="gl-t">${q.type === 'lord' && stance.t !== 'advance' ? STANCE_LABEL[stance.t] : m.river ? `${m.river.sec.toFixed(1)} s` : m.hold ? `hold ${m.hold.sec.toFixed(1)} s` : '–'}</b></li>`)
         .join('')}</ul></div>
       <p class="sp-hint">Drag one to move them all · right-drag or <kbd>Shift</kbd>+<kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>Shift</kbd>-click add or remove · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</p>`;
     if (this.panel.dataset.grp === html) return;
@@ -668,6 +684,7 @@ export class PlanningScreen {
     this.panel.querySelector('.g-turn')?.addEventListener('click', () => this.turnSelection(-64));
     this.panel.querySelectorAll<HTMLElement>('.sp-glist li').forEach((li) =>
       li.addEventListener('click', () => {
+        if (this.picking) return this.pickLead(Number(li.dataset.id));
         sound.click();
         this.select(Number(li.dataset.id));
       }),
@@ -718,7 +735,7 @@ export class PlanningScreen {
           ${icon('up')}<span>${maxed ? 'Max level' : `Level ${sq.level + 1}`}</span>${maxed ? '' : `<em>${icon('gold')}${cost}</em>`}</button>
         <button class="btn danger sell ${armed ? 'armed' : ''}" ${me.ready ? 'disabled' : ''} data-tip="${refund ? 'Refunds 100%: a sale in the round it was deployed is an undo. Items go to your stash.' : 'No refund: this squad was deployed in an earlier round. Items go to your stash.'} Press twice to confirm. [Del]">${icon('sell')}<span>${armed ? 'Confirm' : 'Sell'}</span><em>${refund ? `+${refund}` : '0'}</em></button>
       </div>`;
-    }
+    } else if (!ghost && me && isLord) actions = this.stanceBlock(sq);
     const slots = SLOTS.map((slot) => {
       const it = sq.items[slot];
       const open = slotOpen(sq, slot);
@@ -753,6 +770,15 @@ export class PlanningScreen {
     this.panel.querySelector('.close')!.addEventListener('click', () => this.select(null));
     this.panel.querySelector('.lvl')?.addEventListener('click', () => this.levelUp());
     this.panel.querySelector('.sell')?.addEventListener('click', () => this.sell());
+    this.panel.querySelectorAll<HTMLButtonElement>('.stance button[data-st]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const k = b.dataset.st as LordStance['t'];
+        if (k === 'follow') return this.picking ? this.endPick(true) : this.startPick();
+        this.endPick();
+        this.setStance({ t: k } as LordStance);
+      }),
+    );
+    this.panel.querySelectorAll<HTMLElement>('.stc-pick [data-id]').forEach((n) => n.addEventListener('click', () => this.pickLead(Number(n.dataset.id))));
     // (the event also fires for a table rendered open, so only a change counts: open, or closed again)
     let wasOpen = statsOpen;
     this.panel.querySelector('.st-d')?.addEventListener('toggle', (e) => {
@@ -789,6 +815,11 @@ export class PlanningScreen {
     if (!v) return '';
     if (ghost || watched) {
       const from = watched ? (v.enemies ?? []).find((e) => e.seat === sq.owner) : v.enemy;
+      if (sq.type === 'lord') {
+        // his orders in the last battle (public, like positions); never this round's
+        const st = ghostStanceText(sq, from?.lastArmy ?? []);
+        return `<p class="sp-lock foe stc-intel" data-tip="How this Lord was ordered to fight in the last battle. His orders for the coming battle are hidden, like everything the enemy does now.">${icon(STANCE_ICON[st.kind])}<span>${esc(st.line)}</span></p>`;
+      }
       const m = ghostMark(sq, from?.lastMoved, v.round);
       return m ? `<p class="sp-lock foe ${m}" data-tip="${m === 'moved' ? 'This squad stood somewhere else in the battle before last: its side took Muster to relocate it.' : 'Deployed last round: from now on it stays where it stands unless its side Musters.'}">${icon(m === 'moved' ? 'move' : 'star')}<span>${GHOST_MARK_TEXT[m]}</span></p>` : '';
     }
@@ -807,6 +838,14 @@ export class PlanningScreen {
   private marchLine(sq: Squad): string {
     if (!this.view) return '';
     const m = this.march(this.shownSquad(sq.id) ?? sq);
+    const st = sq.type === 'lord' ? this.stanceNow() : null;
+    if (st && st.t !== 'advance') {
+      // he does not march on his own: hold stays put, follow arrives with his squad
+      const lead = st.t === 'follow' ? this.shownSquad(st.squad) : null;
+      const lm = lead ? this.march(lead) : null;
+      const body = st.t === 'hold' ? `${m.speed.toFixed(1)} m/s · waits at his post until an enemy comes near` : `${m.speed.toFixed(1)} m/s · arrives with ${esc(lead ? leadName(lead) : 'his squad')}${lm?.river ? `, river <b>${lm.river.sec.toFixed(1)} s</b>` : ''}`;
+      return `<p class="sp-march" data-tip="A Lord told to hold or to follow does not march off at the start: he waits at his post until the enemy comes near, or keeps behind the squad he follows (its march is his).">${icon('route')}<span>${body}</span></p>`;
+    }
     const parts = [`${m.speed.toFixed(1)} m/s${m.flier ? ', flies' : ''}`];
     if (m.river) parts.push(`river <b>${m.river.sec.toFixed(1)} s</b>`);
     if (m.front) parts.push(`their front ${m.front.sec.toFixed(1)} s`);
@@ -845,6 +884,83 @@ export class PlanningScreen {
     sound.coin();
     this.intent({ t: 'sell', squad: sq.id });
     this.select(null);
+  }
+
+  // ---------------------------------------------------------------- the Lord's stance (DESIGN §4)
+
+  /** My Lord's stance as shown: the one just sent wins over the snapshot's. */
+  private stanceNow(): LordStance {
+    return shownStance(this.me?.squads ?? [], this.pendStance);
+  }
+
+  /** The three-way control on the Lord's panel, with a line saying what he will do (and the squads to pick from). */
+  private stanceBlock(lordSq: Squad): string {
+    const me = this.me!;
+    const st = this.stanceNow();
+    const leash = stanceLeash(lordSq, me.lord);
+    const off = me.ready ? 'disabled' : '';
+    const why = me.ready ? ' You are Ready: un-ready to change his orders.' : '';
+    const btns = STANCE_KINDS.map((k) => {
+      const on = this.picking ? k === 'follow' : st.t === k;
+      return `<button data-st="${k}" class="${on ? 'on' : ''}${this.picking && k === 'follow' ? ' picking' : ''}" role="radio" aria-checked="${on}" ${off} data-tip="${esc(stanceTip(k, leash) + why)}">${icon(STANCE_ICON[k])}<span>${STANCE_LABEL[k]}</span></button>`;
+    }).join('');
+    let line: string;
+    if (this.picking) {
+      const list = followable(this.squadsShown());
+      line = `<p class="stc-line pick">Click the squad he should follow, on the field or here · <kbd>Esc</kbd> cancels</p>${list.length ? `<div class="stc-pick">${list.map((q) => `<button class="uchip" data-id="${q.id}" data-tip="Follow this squad">${crest(q.type, null, 'sm')}<span>${esc(leadName(q))}</span></button>`).join('')}</div>` : ''}`;
+    } else line = `<p class="stc-line">${icon(STANCE_ICON[st.t])}<span>${esc(stanceLine(st, this.squadsShown(), leash))}</span></p>`;
+    return `<div class="sp-sec stc"><small>Orders · next battle</small><div class="seg stance" role="radiogroup" aria-label="The Lord's orders">${btns}</div>${line}</div>`;
+  }
+
+  /** Send a new stance (free, undoable). */
+  private setStance(st: LordStance, undoable = true): boolean {
+    const me = this.me;
+    if (!me) return false;
+    if (me.ready) {
+      this.refuse('You are Ready: un-ready to make changes');
+      return false;
+    }
+    const before = this.stanceNow();
+    if (sameStance(before, st)) return false;
+    sound.click();
+    if (undoable) this.pushUndo(`Lord's orders: ${STANCE_LABEL[st.t]}`, () => this.setStance(before, false));
+    this.pendStance = st;
+    this.intent(stanceIntent(st));
+    this.renderPanel();
+    this.renderTiming();
+    return true;
+  }
+
+  private startPick(): void {
+    const me = this.me;
+    if (!me || me.ready) return;
+    if (!followable(me.squads).length) return this.refuse('Deploy a squad first: the Lord follows one of your squads');
+    sound.click();
+    this.picking = true;
+    this.root.classList.add('picking-lead');
+    this.hint.innerHTML = `Click the squad your Lord should follow · <kbd>Esc</kbd> cancel`;
+    this.hint.classList.add('on');
+    this.renderPanel();
+  }
+
+  /** Leave Follow pick mode (`announce`: the player cancelled it). */
+  private endPick(announce = false): void {
+    if (!this.picking) return;
+    this.picking = false;
+    this.root.classList.remove('picking-lead');
+    if (!this.drag) this.hint.classList.remove('on');
+    if (announce) sound.click();
+    this.renderPanel();
+  }
+
+  /** The squad picked in Follow pick mode. */
+  private pickLead(id: number): void {
+    const sq = this.squad(id);
+    if (!sq) return;
+    if (sq.type === 'lord') return this.refuse('Pick one of your squads, not the Lord himself');
+    this.endPick();
+    this.setStance({ t: 'follow', squad: id });
+    toast(`Your Lord follows ${leadName(sq)}`, 'info', 1600);
   }
 
   private stashOpen(): boolean {
@@ -1173,6 +1289,7 @@ export class PlanningScreen {
    * Sent to the scene only when something it shows changed.
    */
   private renderTiming(): void {
+    this.renderStance();
     const me = this.me;
     if (!me || !this.view || !this.scene.setTiming) return;
     const d = this.drag;
@@ -1194,10 +1311,16 @@ export class PlanningScreen {
       const st = lockState(rm, sq, this.round);
       return st === 'relocated' ? 'reloc' : st === 'locked' ? (left > 0 ? 'open' : 'lock') : undefined;
     };
+    const stance = this.stanceNow();
     for (const sq of shown) {
       // the single squad being dragged is drawn as the preview, where it would land
       const pos = d?.kind === 'move' && d.id === sq.id && d.moved ? this.dragSpot : sq.pos;
       if (!pos) continue;
+      // a Lord told to hold or follow does not march on his own: his tag names his orders instead of a time
+      if (sq.type === 'lord' && stance.t !== 'advance') {
+        spec.tags.push({ id: sq.id, pos, text: STANCE_LABEL[stance.t], hot: hot.has(sq.id), badge: stance.t });
+        continue;
+      }
       const m = this.march({ ...sq, pos });
       const sec = m.river?.sec ?? m.hold?.sec ?? null;
       const badge = badgeOf(sq);
@@ -1212,6 +1335,9 @@ export class PlanningScreen {
     for (const g of v.enemy.lastArmy ?? []) {
       const mark = ghostMark(g, v.enemy.lastMoved, v.round);
       if (mark) spec.tags.push({ id: g.id, pos: g.pos, text: mark === 'moved' ? 'Moved' : 'New', badge: mark });
+      // the enemy Lord's orders in the last battle (an advance is no news)
+      const gs = g.type === 'lord' ? ghostStanceText(g, v.enemy.lastArmy ?? []) : null;
+      if (gs && gs.kind !== 'advance') spec.tags.push({ id: g.id, pos: g.pos, text: gs.short, badge: gs.kind, foe: true });
     }
     if (d?.kind === 'place' && moving && this.dragSpot) route(this.march({ type: d.unit, level: 1, items: { weapon: null, armor: null, relic: null }, pos: this.dragSpot }), true);
     const key = JSON.stringify(spec);
@@ -1219,6 +1345,18 @@ export class PlanningScreen {
     this.timingKey = key;
     this.scene.setTiming(spec.tags.length || spec.routes.length ? spec : null);
   }
+  /** My Lord's stance on the field: the watch ring (hold) or the tether to the squad he follows, where they are shown. */
+  private renderStance(): void {
+    const me = this.me;
+    if (!this.scene.setStance) return;
+    if (!me || !this.view) return this.scene.setStance(null);
+    const d = this.drag;
+    // the single squad being dragged counts where it would land
+    const shown = this.squadsShown().map((q) => (d?.kind === 'move' && d.id === q.id && d.moved && this.dragSpot ? { ...q, pos: this.dragSpot } : q));
+    const lordSel = this.sel.size === 1 && this.squad(this.selected)?.type === 'lord';
+    this.scene.setStance(stanceMarker(this.stanceNow(), shown, me.lord, this.seat, lordSel || this.picking));
+  }
+
   /** Where the single squad being dragged or placed would land (null: nowhere legal). */
   private dragSpot: Vec2 | null = null;
 
@@ -1319,6 +1457,21 @@ export class PlanningScreen {
       }
     }
     if (e.button !== 0) return;
+    if (this.picking && e.target === this.scene.canvas) {
+      // Follow pick mode: a click on one of my squads picks it; anything else is left to the camera (Esc cancels)
+      const hit = this.scene.squadAt(e.clientX, e.clientY);
+      if (hit && !hit.ghost) {
+        e.stopPropagation();
+        this.pickLead(hit.id);
+        return;
+      }
+      if (hit?.ghost) {
+        e.stopPropagation();
+        this.refuse('Pick one of your own squads for the Lord to follow');
+        return;
+      }
+      return;
+    }
     if (d?.kind === 'place' && !d.fromShop) {
       // click-to-place: placed on release
       d.moved = true;
@@ -1744,7 +1897,8 @@ export class PlanningScreen {
       e.preventDefault();
       if (!this.drag) this.cycleSquad(e.shiftKey ? -1 : 1);
     } else if (e.key === 'Escape') {
-      if (this.sellArmed) {
+      if (this.picking) this.endPick(true);
+      else if (this.sellArmed) {
         this.sellArmed = null;
         this.renderPanel();
       } else if (this.drag) this.endDrag();

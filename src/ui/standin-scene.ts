@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import type { DecodedReplay, ReplayEvent, Seat, SoldierTransforms, SquadType, Terrain, Vec2 } from '../sim/types.ts';
 import { FIELD_H, FIELD_W, KEYFRAME_TICKS } from '../sim/constants.ts';
 import { UNITS } from '../sim/data/units.ts';
-import type { CameraMode, PlaybackHandle, PreviewSpec, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual } from './scene-adapter.ts';
+import type { CameraMode, PlaybackHandle, PreviewSpec, RangeSpec, SceneAdapter, SceneMode, ScreenPoint, SquadVisual, StanceSpec } from './scene-adapter.ts';
 import { formation, squadRadius } from './gamedata.ts';
 import { RARITY_CSS } from './gamedata.ts';
 
@@ -364,6 +364,7 @@ export class StandInScene implements SceneAdapter {
     this.mode = m;
     this.zone.visible = this.zone.visible && m === 'planning';
     if (m !== 'planning') {
+      this.setStance(null);
       this.selRing.visible = this.hoverRing.visible = this.rangeRing.visible = this.minRing.visible = false;
       this.preview.begin();
       this.preview.end();
@@ -597,6 +598,45 @@ export class StandInScene implements SceneAdapter {
     this.wake();
     this.hovered = id;
     this.updateRings();
+  }
+
+  /** My Lord's stance: a dashed watch ring round his post (hold) or a dashed tether to the spot behind his squad (follow). */
+  private stance: THREE.Group | null = null;
+  private stanceKey: string | null = null;
+  setStance(st: StanceSpec | null): void {
+    const key = st ? JSON.stringify(st) : null;
+    if (key === this.stanceKey) return;
+    this.stanceKey = key;
+    this.wake();
+    if (this.stance) {
+      this.scene.remove(this.stance);
+      this.stance.traverse((o) => {
+        if (o instanceof THREE.Line) (o.geometry.dispose(), (o.material as THREE.Material).dispose());
+      });
+      this.stance = null;
+    }
+    if (!st) return;
+    const g = new THREE.Group();
+    const mat = (op: number) => new THREE.LineDashedMaterial({ color: '#94b6f6', transparent: true, opacity: op * (st.focus ? 1 : 0.62), dashSize: 0.7, gapSize: 0.5, depthWrite: false });
+    const line = (pts: THREE.Vector3[], op: number, loop = false) => {
+      const l = new (loop ? THREE.LineLoop : THREE.Line)(new THREE.BufferGeometry().setFromPoints(pts), mat(op));
+      l.computeLineDistances();
+      g.add(l);
+    };
+    const at = (p: Vec2, y = 0.1) => new THREE.Vector3(wx(p[0]), y, wz(p[1]));
+    if (st.kind === 'hold' || st.focus) {
+      const r = st.leash / 100;
+      const c = at(st.post);
+      line(Array.from({ length: 96 }, (_, i) => new THREE.Vector3(c.x + Math.cos((i / 96) * Math.PI * 2) * r, 0.1, c.z + Math.sin((i / 96) * Math.PI * 2) * r)), st.kind === 'hold' ? 0.85 : 0.55, true);
+    }
+    if (st.kind === 'follow') {
+      line([at(st.lord), at(st.post)], 0.95);
+      if (st.lead) line([at(st.post), at(st.lead)], 0.6);
+      const c = at(st.post);
+      line(Array.from({ length: 24 }, (_, i) => new THREE.Vector3(c.x + Math.cos((i / 24) * Math.PI * 2) * 1.1, 0.1, c.z + Math.sin((i / 24) * Math.PI * 2) * 1.1)), 0.95, true);
+    }
+    this.stance = g;
+    this.scene.add(g);
   }
 
   setHidden(id: number | null): void {

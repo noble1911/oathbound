@@ -47,14 +47,32 @@ export interface RangeSpec {
 /**
  * A small mark drawn at the left of a plate tag (relocation, DESIGN §2): `lock` locked in place, `open` locked but a
  * Muster relocation may move it, `reloc` relocated this round; on an enemy ghost `moved` (stood elsewhere the battle
- * before) or `new` (new last round). A tag with a badge may have empty text.
+ * before) or `new` (new last round). The Lord's stance (src/ui/stance.ts): `hold` / `follow` on my Lord's tag, and on
+ * the enemy Lord's ghost (with `foe`) the stance he fought the last battle with. A tag with a badge may have empty text.
  */
-export type TagBadge = 'lock' | 'open' | 'reloc' | 'moved' | 'new';
+export type TagBadge = 'lock' | 'open' | 'reloc' | 'moved' | 'new' | 'hold' | 'follow';
+
+/**
+ * My Lord's stance on the field (src/ui/stance.ts stanceMarker; field cm). Hold: a dashed watch ring round his post.
+ * Follow: a dashed tether from the Lord to the spot behind the squad he follows, a post mark there and a short line on
+ * to the squad (and its leash ring while the Lord is selected).
+ */
+export interface StanceSpec {
+  kind: 'hold' | 'follow';
+  lord: Vec2;
+  post: Vec2;
+  /** cm: the ring's radius (hold: the watch; follow: the leash round his spot). */
+  leash: number;
+  lead?: Vec2;
+  /** The Lord is selected: drawn brighter, and the follow leash ring shows. */
+  focus: boolean;
+  label: string;
+}
 
 /** The planning march preview (src/ui/timing.ts): plate tags, and route lines with their time marks. */
 export interface TimingSpec {
   /** A small seconds tag under a squad's plate (`pos` is the squad's field position). */
-  tags: { id: number; pos: Vec2; text: string; hot?: boolean; badge?: TagBadge }[];
+  tags: { id: number; pos: Vec2; text: string; hot?: boolean; badge?: TagBadge; foe?: boolean }[];
   /** Field-cm polylines; `marks` are labels along them (the river, the enemy front). */
   routes: { pts: Vec2[]; hot?: boolean; marks: { pos: Vec2; text: string; dim?: boolean }[] }[];
 }
@@ -132,6 +150,8 @@ export interface SceneAdapter {
   setSelection?(ids: number[]): void;
   /** The march preview; null clears it. Drawn only when it changes (render on demand). */
   setTiming?(t: TimingSpec | null): void;
+  /** My Lord's stance markers (null: Advance, or not in planning). Drawn only when it changes. */
+  setStance?(s: StanceSpec | null): void;
   setHovered(id: number | null): void;
   setRange(r: RangeSpec | null): void;
   /** Hide one squad while it is being dragged (its preview shows instead). */
