@@ -181,7 +181,7 @@ describe('match rules', () => {
     nextRound(s);
     const sq2 = p.squads[1];
     const before = p.gold;
-    // Items: weapon and armor at Lv1, relic at Lv3; Lord has all.
+    // Items: weapon and armor at Lv1, relic at Lv2; Lord has all.
     const mk = (slot: Item['slot'], id: number): Item => {
       const it = rollItem(new Rng(id), id, 2, 'magic');
       return { ...it, slot, base: slot === 'weapon' ? 'steel_blade' : slot === 'armor' ? 'mail_hauberk' : 'oath_ring' };

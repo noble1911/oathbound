@@ -68,8 +68,8 @@ describe('deploy footprints', () => {
 });
 
 describe('item slots and loot', () => {
-  it('weapon and armor open at Lv1, relic at Lv3', () => {
-    expect(SLOT_UNLOCK_LEVEL).toEqual({ weapon: 1, armor: 1, relic: 3 });
+  it('weapon and armor open at Lv1, relic at Lv2', () => {
+    expect(SLOT_UNLOCK_LEVEL).toEqual({ weapon: 1, armor: 1, relic: 2 });
     const s = newMatch(11, ['warden', 'warden']);
     const p = s.players[0];
     p.gold = 5000;
@@ -79,11 +79,9 @@ describe('item slots and loot', () => {
     p.stash.push(mk('weapon', 900), mk('armor', 901), mk('relic', 902));
     expect(applyIntent(s, 0, { t: 'equip', item: 900, squad: sq.id }).ok).toBe(true);
     expect(applyIntent(s, 0, { t: 'equip', item: 901, squad: sq.id }).ok).toBe(true);
-    expect(applyIntent(s, 0, { t: 'equip', item: 902, squad: sq.id })).toEqual({ ok: false, error: 'relic slot opens at level 3' });
+    expect(applyIntent(s, 0, { t: 'equip', item: 902, squad: sq.id })).toEqual({ ok: false, error: 'relic slot opens at level 2' });
     applyIntent(s, 0, { t: 'levelUp', squad: sq.id });
-    expect(applyIntent(s, 0, { t: 'equip', item: 902, squad: sq.id }).ok).toBe(false);
-    applyIntent(s, 0, { t: 'levelUp', squad: sq.id });
-    expect(sq.level).toBe(3);
+    expect(sq.level).toBe(2);
     expect(applyIntent(s, 0, { t: 'equip', item: 902, squad: sq.id }).ok).toBe(true);
   });
 
@@ -94,8 +92,10 @@ describe('item slots and loot', () => {
     const mk = (slot: Item['slot'], id: number): Item => ({ ...rollItem(new Rng(id), id, 2, 'common', slot), id });
     p.stash.push(mk('armor', 1), mk('relic', 2));
     expect(usableSlots(p)).toEqual(['weapon']);
-    squad(s, 0, 'knights', [2000, 3000], 2); // a Lv2 squad opens another armor slot
+    squad(s, 0, 'knights', [2000, 3000], 1); // a Lv1 squad opens another armor slot
     expect(usableSlots(p)).toEqual(['weapon', 'armor']);
+    squad(s, 0, 'knights', [5000, 3000], 2); // and a Lv2 squad a relic slot too
+    expect(usableSlots(p)).toEqual(['weapon', 'armor', 'relic']);
   });
 
   it('the offer does not depend on what the player can equip: it is the same three slots for everyone', () => {
@@ -439,7 +439,7 @@ describe('AI difficulty levels', () => {
     expect(t.players[0]).toEqual(s.players[0]);
   });
 
-  it('hard re-forms its army each round; every squad keeps its own ground', () => {
+  it('hard sets its new squads into formation each round; every squad keeps its own ground', () => {
     const s = planned('hard', 5, 5);
     for (const p of s.players) {
       for (const q of p.squads) expect(overlappingSquad(p.squads, q.type, q.pos, q.id)).toBe(null);

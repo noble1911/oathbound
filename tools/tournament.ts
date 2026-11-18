@@ -164,7 +164,7 @@ async function main(): Promise<void> {
         for (const l of Object.keys(tab)) tab[l] = Math.round(tab[l] + before - after);
         // A Lord that is still too weak with no reserve at all: everyone else keeps more instead (the table shifts up).
         const low = Math.min(...Object.values(tab));
-        for (const l of Object.keys(tab)) tab[l] = Math.max(0, Math.min(400, tab[l] - Math.min(0, low)));
+        for (const l of Object.keys(tab)) tab[l] = Math.max(0, Math.min(500, tab[l] - Math.min(0, low)));
       });
     }
     writeBalance(b);
